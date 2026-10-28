@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arqueo de caja · Prototipo Nexa</title>
+<style>
+:root{--bg:#EDEEF9;--card:#fff;--ink:#1c1c1e;--mut:#6b7280;--line:#d9dbe8;--pri:#4f46e5;--ok:#15803d;--okbg:#dcfce7;--bad:#b91c1c;--badbg:#fee2e2}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:13px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px;color:var(--mut)}
+.top{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:12px}
+button{font:inherit;border:0;border-radius:10px;padding:9px 14px;background:var(--pri);color:#fff;cursor:pointer}
+button.sec{background:#fff;color:var(--ink);border:1px solid var(--line)}button.del{background:#fff;color:var(--bad);border:1px solid var(--line);padding:4px 10px}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px #0001}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse}th,td{border:1px solid var(--line);padding:3px 6px;text-align:left}
+th{background:#f4f5fc;font-size:12px}td.n,th.n{text-align:right}
+input,textarea,select{font:inherit;width:100%;border:0;background:transparent;padding:4px;border-radius:6px}
+input:focus,textarea:focus{outline:2px solid var(--pri);background:#fff}
+td input.n{text-align:right}input,select,textarea{font-size:16px}@media print{input,select,textarea{font-size:inherit}}.top button{min-height:40px}.wrap{padding:12px}@media(max-width:520px){h1{font-size:18px}.top>div:last-child{width:100%}.top button{flex:1}th,td{padding:2px 3px}.card{padding:10px}td input{min-width:0}}tfoot td{font-weight:700;background:#f4f5fc}
+.res{display:flex;justify-content:space-between;align-items:center;font-weight:700;padding:12px;border-radius:12px}
+.res.ok{background:var(--okbg);color:var(--ok)}.res.bad{background:var(--badbg);color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}.tag{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
+.tag.ok{background:var(--okbg);color:var(--ok)}.tag.bad{background:var(--badbg);color:var(--bad)}
+label.f{display:block;font-size:12px;color:var(--mut);margin-bottom:2px}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.meta input{border:1px solid var(--line);background:#fff}
+textarea{border:1px solid var(--line);background:#fff;min-height:140px;resize:vertical}
+.hid{display:none}
+.firmas{display:none}
+@media print{@page{size:letter;margin:12mm}body{background:#fff;font-size:10px;line-height:1.2}.wrap{max-width:none;padding:0}.top button,.top>div:last-child,#vHist,#vSuc{display:none!important}
+.card{box-shadow:none;border:1px solid #999;border-radius:0;padding:6px;margin-bottom:6px;break-inside:avoid}.grid{grid-template-columns:1fr 1fr!important;gap:6px}
+input,textarea,select{border:0!important;appearance:none;-webkit-appearance:none;padding:1px}textarea{min-height:60px}input::placeholder,textarea::placeholder{color:transparent}
+th,td{padding:0 4px}.meta{grid-template-columns:repeat(4,1fr)}.firmas{margin-top:18px}.firmas{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}.firmas div{border-top:1px solid #000;padding-top:4px;text-align:center}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="wrap">
+<div class="top"><div><h1>Arqueo de caja</h1><small style="color:var(--mut)">Prototipo para Nexa · los datos se guardan en este navegador</small></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sec" id="bSuc">Sucursales</button><button class="sec" id="bHist">Historial</button><button class="sec" id="bNew">Nuevo</button><button class="sec" id="bPrint">Imprimir / PDF</button><button id="bSave">Guardar arqueo</button></div></div>
+
+<div id="vForm">
+<div class="card"><div class="meta">
+<div><label class="f">Fecha de realización</label><input type="date" id="fecha"></div>
+<div><label class="f">Sucursal</label><select id="suc" style="border:1px solid var(--line);background:#fff;padding:6px"></select></div>
+<div><label class="f">Encargado de fondo fijo</label><input id="resp" placeholder="Nombre"></div>
+<div><label class="f">Realizado por</label><input id="real" placeholder="Nombre"></div></div></div>
+
+<div class="grid">
+<div class="card"><h2>Efectivo</h2><table><thead><tr><th>Denominación</th><th class="n">Cantidad</th><th class="n">Total</th></tr></thead><tbody id="den"></tbody>
+<tfoot><tr><td colspan="2">Total efectivo</td><td class="n" id="tEf"></td></tr></tfoot></table></div>
+<div class="card"><h2>Documentos de pago</h2><table><thead><tr><th>Tipo de doc.</th><th>No. doc.</th><th class="n">Valor</th></tr></thead><tbody id="docs"></tbody>
+<tfoot><tr><td colspan="2">Total documentos</td><td class="n" id="tDo"></td></tr></tfoot></table></div></div>
+
+<div class="grid">
+<div class="card"><h2>Documentos de caja chica</h2><table><thead><tr><th>Tipo</th><th>Fecha</th><th class="n">Valor</th></tr></thead><tbody id="cch"></tbody>
+<tfoot><tr><td colspan="2">Total caja chica</td><td class="n" id="tCc"></td></tr></tfoot></table></div>
+<div class="card"><h2>Facturas emitidas de ventas</h2><table><thead><tr><th>No.</th><th>Fecha</th><th class="n">Valor</th></tr></thead><tbody id="fac"></tbody>
+<tfoot><tr><td colspan="2">Total facturas</td><td class="n" id="tFa"></td></tr></tfoot></table></div></div>
+
+<div class="grid">
+<div class="card"><h2>Resultado</h2><table><tbody>
+<tr><td>Ventas</td><td class="n"><input class="n" type="number" step="0.01" id="ventas" placeholder="0.00"></td></tr>
+<tr><td>Fondo fijo</td><td class="n"><input class="n" type="number" step="0.01" id="fondo" placeholder="0.00"></td></tr>
+<tr><td><b>Ventas + fondo fijo</b></td><td class="n" id="tVF"></td></tr>
+<tr><td><b>Efectivo + doctos. de pago</b></td><td class="n" id="tEP"></td></tr></tbody></table>
+<div class="res" id="res" style="margin-top:10px"></div></div>
+<div class="card"><h2>Revisión de documentos · Recibo provisional</h2><table><tbody>
+<tr><td>Último emitido</td><td><input id="rpNum" placeholder="No."></td></tr>
+<tr><td>Fecha</td><td><input type="date" id="rpFecha"></td></tr>
+<tr><td>Serie / en blanco desde</td><td><input id="rpIni" placeholder="Ej. 724"></td></tr>
+<tr><td>Hasta</td><td><input id="rpFin" placeholder="Ej. 1000"></td></tr></tbody></table></div></div>
+
+<div class="card"><h2>Observaciones y detalle del faltante / sobrante</h2>
+<div id="faltBox" class="hid" style="margin-bottom:8px;padding:10px;border-radius:10px;background:var(--badbg);color:var(--bad)"></div>
+<label class="f"><input type="checkbox" id="reint" style="width:auto"> Reintegrado en efectivo en la visita (se deja constancia firmada por el responsable del fondo fijo)</label>
+<textarea id="obs" placeholder="Escribe aquí cualquier detalle del arqueo…"></textarea></div>
+<div class="firmas"><div>Encargado de fondo fijo<br><b id="fmR"></b></div><div>Realizado por<br><b id="fmH"></b></div></div>
+</div>
+
+<div id="vSuc" class="hid"><div class="card"><h2>Sucursales, encargados y fondo fijo</h2>
+<table><thead><tr><th>Sucursal</th><th>Encargado de fondo fijo</th><th class="n">Monto fondo fijo</th><th></th></tr></thead><tbody id="sucT"></tbody></table>
+<div style="margin-top:10px;display:flex;gap:8px"><button class="sec" id="sAdd">+ Agregar sucursal</button><button id="sOk">Guardar</button></div></div></div>
+<div id="vHist" class="hid"><div class="card"><h2>Arqueos guardados</h2><div id="lista"></div></div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id),Q=n=>'Q'+(n<0?'-':'')+Math.abs(n).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2}),v=x=>parseFloat(x)||0;
+const DEN=[200,100,50,20,10,5,1,.5,.25,.1,.05],KEY='nexa_arqueos';let editId=null;
+const inp=(c,p,t)=>`<input class="${c}" ${t?`type="${t}"`:''} ${p?`placeholder="${p}"`:''} ${t==='number'?'step="0.01"':''}>`;
+$('den').innerHTML=DEN.map(d=>`<tr data-d="${d}"><td>Q${d.toFixed(2)}</td><td><input class="n c" type="number" min="0" step="1"></td><td class="n t"></td></tr>`).join('');
+const fill=(id,n,cols)=>$(id).innerHTML=Array.from({length:n},()=>'<tr>'+cols.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('');
+fill('docs',10,[inp('','Voucher / depósito…'),inp('','No.'),inp('n','','number')]);
+fill('cch',6,[inp('','Liquidación…'),inp('','','date'),inp('n','','number')]);
+fill('fac',6,[inp('','No.'),inp('','','date'),inp('n','','number')]);
+const sumCol=id=>[...$(id).querySelectorAll('tr')].reduce((s,r)=>s+v(r.querySelector('td:last-child input').value),0);
+function calc(){let ef=0;$('den').querySelectorAll('tr').forEach(r=>{const t=v(r.dataset.d)*v(r.querySelector('.c').value);r.querySelector('.t').textContent=Q(t);ef+=t});
+ const dO=sumCol('docs'),cc=sumCol('cch'),fa=sumCol('fac'),vf=v($('ventas').value)+v($('fondo').value),ep=ef+dO+cc+fa,dif=Math.round((ep-vf)*100)/100;
+ $('tEf').textContent=Q(ef);$('tDo').textContent=Q(dO);$('tCc').textContent=Q(cc);$('tFa').textContent=Q(fa);$('tVF').textContent=Q(vf);$('tEP').textContent=Q(ep);
+ const ok=dif===0;$('res').className='res '+(ok?'ok':'bad');
+ $('res').innerHTML=`<span>${ok?'✔ CUADRÓ':dif<0?'✖ NO CUADRÓ · FALTANTE':'✖ NO CUADRÓ · SOBRANTE'}</span><span>${Q(dif)}</span>`;
+ const fb=$('faltBox');fb.classList.toggle('hid',ok);fb.textContent=ok?'':`${dif<0?'Faltante':'Sobrante'} de ${Q(Math.abs(dif))}${$('reint').checked?' · reintegrado en efectivo':''}.`;
+ return{ef,dif,ok}}
+document.addEventListener('input',calc);document.addEventListener('change',calc);
+const gather=()=>({id:editId||Date.now()+'',...calc(),fecha:$('fecha').value,resp:$('resp').value,real:$('real').value,suc:$('suc').value,
+ ventas:$('ventas').value,fondo:$('fondo').value,reint:$('reint').checked,obs:$('obs').value,rp:[$('rpNum').value,$('rpFecha').value,$('rpIni').value,$('rpFin').value],
+ den:[...$('den').querySelectorAll('.c')].map(i=>i.value),
+ t:['docs','cch','fac'].map(id=>[...$(id).querySelectorAll('tr')].map(r=>[...r.querySelectorAll('input')].map(i=>i.value)))});
+function load(a){editId=a.id;$('fecha').value=a.fecha;$('resp').value=a.resp;$('real').value=a.real;sucOpts(a.suc);$('ventas').value=a.ventas;$('fondo').value=a.fondo;
+ $('reint').checked=a.reint;$('obs').value=a.obs;['rpNum','rpFecha','rpIni','rpFin'].forEach((k,i)=>$(k).value=a.rp[i]);
+ $('den').querySelectorAll('.c').forEach((e,i)=>e.value=a.den[i]);['docs','cch','fac'].forEach((id,k)=>$(id).querySelectorAll('tr').forEach((r,i)=>r.querySelectorAll('input').forEach((e,j)=>e.value=a.t[k][i][j])));calc()}
+const all=()=>{try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}};
+const put=l=>{try{localStorage.setItem(KEY,JSON.stringify(l))}catch(e){alert('No se pudo guardar en este navegador')}};
+function reset(){editId=null;document.querySelectorAll('#vForm input,#vForm textarea').forEach(e=>e.type==='checkbox'?e.checked=false:e.value='');$('fecha').value=new Date().toISOString().slice(0,10);sucOpts();sucPick()}
+function show(h){$('vForm').classList.toggle('hid',h!=='f');$('vHist').classList.toggle('hid',h!=='h');$('vSuc').classList.toggle('hid',h!=='s');if(h==='h')hist();if(h==='s')sucEdit()}
+const SK='nexa_arq_suc';let SUC=[];try{SUC=JSON.parse(localStorage.getItem(SK)||'[]')}catch(e){}
+if(!SUC.length)SUC=[{n:'Sucursal 1',e:'',f:5000}];
+const sucSave=()=>{try{localStorage.setItem(SK,JSON.stringify(SUC))}catch(e){}};
+function sucOpts(sel){$('suc').innerHTML=SUC.map(x=>`<option>${x.n}</option>`).join('');if(sel&&!SUC.some(x=>x.n===sel))$('suc').innerHTML+=`<option>${sel}</option>`;if(sel)$('suc').value=sel}
+function sucPick(){const x=SUC.find(y=>y.n===$('suc').value);if(x){$('resp').value=x.e;$('fondo').value=x.f}calc()}
+$('suc').onchange=sucPick;
+function sucEdit(){$('sucT').innerHTML=SUC.map((x,i)=>`<tr><td><input value="${x.n}"></td><td><input value="${x.e}"></td><td><input class="n" type="number" step="0.01" value="${x.f}"></td><td><button class="del" onclick="this.closest('tr').remove()">✕</button></td></tr>`).join('')}
+$('sAdd').onclick=()=>{$('sucT').insertAdjacentHTML('beforeend','<tr><td><input></td><td><input></td><td><input class="n" type="number" step="0.01"></td><td><button class="del" onclick="this.closest(\'tr\').remove()">✕</button></td></tr>')};
+$('sOk').onclick=()=>{SUC=[...$('sucT').querySelectorAll('tr')].map(r=>{const i=r.querySelectorAll('input');return{n:i[0].value.trim(),e:i[1].value.trim(),f:v(i[2].value)}}).filter(x=>x.n);sucSave();sucOpts();sucPick();show('f')};
+function hist(){const l=all().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+ $('lista').innerHTML=l.length?l.map(a=>`<div class="row"><div><b>${a.fecha||'sin fecha'}</b> · ${a.suc||'—'}<br><small style="color:var(--mut)">${a.real||''}${a.ok?'':' · '+(a.dif<0?'faltante ':'sobrante ')+Q(Math.abs(a.dif))}</small></div>
+ <div style="display:flex;gap:8px;align-items:center"><span class="tag ${a.ok?'ok':'bad'}">${a.ok?'Cuadró':'No cuadró'}</span><button class="sec" onclick='abrir("${a.id}")'>Abrir</button><button class="del" onclick='borrar("${a.id}")'>✕</button></div></div>`).join(''):'<small>Aún no hay arqueos guardados.</small>'}
+window.abrir=id=>{const a=all().find(x=>x.id===id);if(a){load(a);show('f')}};
+window.borrar=id=>{if(confirm('¿Eliminar este arqueo?')){put(all().filter(x=>x.id!==id));hist()}};
+$('bSave').onclick=()=>{const a=gather();if(!a.fecha){alert('Indica la fecha de realización');return}const l=all().filter(x=>x.id!==a.id);l.push(a);put(l);editId=a.id;alert(a.ok?'Arqueo guardado: CUADRÓ':'Arqueo guardado: NO CUADRÓ')};
+$('bPrint').onclick=()=>{$('fmR').textContent=$('resp').value;$('fmH').textContent=$('real').value;const t=document.title;document.title='Arqueo '+($('suc').value||'')+' '+$('fecha').value;window.print();document.title=t};
+$('bNew').onclick=()=>{reset();show('f')};$('bHist').onclick=()=>show('h');$('bSuc').onclick=()=>show('s');
+reset();
+</script></body></html>
