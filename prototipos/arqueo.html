@@ -31,7 +31,7 @@ textarea{border:1px solid var(--line);background:#fff;min-height:140px;resize:ve
 .card{box-shadow:none;border:1px solid #999;border-radius:0;padding:6px;margin-bottom:6px;break-inside:avoid}.grid{grid-template-columns:1fr 1fr!important;gap:6px}
 input,textarea,select{border:0!important;appearance:none;-webkit-appearance:none;padding:1px}textarea{min-height:60px}input::placeholder,textarea::placeholder{color:transparent}
 th,td{padding:0 4px}.meta{grid-template-columns:repeat(4,1fr)}.firmas{margin-top:18px}.firmas{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}.firmas div{border-top:1px solid #000;padding-top:4px;text-align:center}
-*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+input[type=date]::-webkit-calendar-picker-indicator{display:none}input[data-e]{color:transparent}input[type=checkbox]{display:none}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body><div class="wrap">
 <div class="top"><div><h1>Arqueo de caja</h1><small style="color:var(--mut)">Prototipo para Nexa · los datos se guardan en este navegador</small></div>
 <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sec" id="bSuc">Sucursales</button><button class="sec" id="bHist">Historial</button><button class="sec" id="bNew">Nuevo</button><button class="sec" id="bPrint">Imprimir / PDF</button><button id="bSave">Guardar arqueo</button></div></div>
@@ -124,7 +124,7 @@ function hist(){const l=all().sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'
 window.abrir=id=>{const a=all().find(x=>x.id===id);if(a){load(a);show('f')}};
 window.borrar=id=>{if(confirm('¿Eliminar este arqueo?')){put(all().filter(x=>x.id!==id));hist()}};
 $('bSave').onclick=()=>{const a=gather();if(!a.fecha){alert('Indica la fecha de realización');return}const l=all().filter(x=>x.id!==a.id);l.push(a);put(l);editId=a.id;alert(a.ok?'Arqueo guardado: CUADRÓ':'Arqueo guardado: NO CUADRÓ')};
-$('bPrint').onclick=()=>{$('fmR').textContent=$('resp').value;$('fmH').textContent=$('real').value;const t=document.title;document.title='Arqueo '+($('suc').value||'')+' '+$('fecha').value;window.print();document.title=t};
+$('bPrint').onclick=()=>{document.querySelectorAll('input[type=date]').forEach(i=>i.toggleAttribute('data-e',!i.value));$('fmR').textContent=$('resp').value;$('fmH').textContent=$('real').value;const t=document.title;document.title='Arqueo '+($('suc').value||'')+' '+$('fecha').value;window.print();document.title=t};
 $('bNew').onclick=()=>{reset();show('f')};$('bHist').onclick=()=>show('h');$('bSuc').onclick=()=>show('s');
 reset();
 </script></body></html>
