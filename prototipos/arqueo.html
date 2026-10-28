@@ -27,7 +27,7 @@ label.f{display:block;font-size:12px;color:var(--mut);margin-bottom:2px}
 textarea{border:1px solid var(--line);background:#fff;min-height:140px;resize:vertical}
 .hid{display:none}
 .firmas{display:none}
-@media print{@page{size:letter;margin:12mm}body{background:#fff;font-size:10px;line-height:1.2}.wrap{max-width:none;padding:0}.top button,.top>div:last-child,#vHist,#vSuc{display:none!important}
+#compBox{display:none!important}@media print{@page{size:letter;margin:12mm}body{background:#fff;font-size:10px;line-height:1.2}.wrap{max-width:none;padding:0}.top button,.top>div:last-child,#vHist,#vSuc{display:none!important}
 .card{box-shadow:none;border:1px solid #999;border-radius:0;padding:6px;margin-bottom:6px;break-inside:avoid}.grid{grid-template-columns:1fr 1fr!important;gap:6px}
 input,textarea,select{border:0!important;appearance:none;-webkit-appearance:none;padding:1px}textarea{min-height:60px}input::placeholder,textarea::placeholder{color:transparent}
 th,td{padding:0 4px}.meta{grid-template-columns:repeat(4,1fr)}.firmas{margin-top:18px}.firmas{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}.firmas div{border-top:1px solid #000;padding-top:4px;text-align:center}
@@ -70,6 +70,11 @@ input[type=date]::-webkit-calendar-picker-indicator{display:none}input[data-e]{c
 
 <div class="card"><h2>Observaciones y detalle del faltante / sobrante</h2>
 <div id="faltBox" class="hid" style="margin-bottom:8px;padding:10px;border-radius:10px;background:var(--badbg);color:var(--bad)"></div>
+<div id="compBox" class="hid" style="margin-bottom:8px;padding:10px;border-radius:10px;border:1px dashed var(--line)">
+<b>Comprobante de depósito del sobrante</b><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+<button class="sec" id="bComp" type="button">📎 Subir comprobante</button><input type="file" id="fComp" accept="image/*,application/pdf" class="hid">
+<span id="compName" style="color:var(--mut);font-size:13px"></span><button class="del hid" id="bCompX" type="button">Quitar</button></div>
+<img id="compImg" class="hid" style="max-width:100%;max-height:240px;margin-top:8px;border-radius:8px;border:1px solid var(--line)"></div>
 <label class="f"><input type="checkbox" id="reint" style="width:auto"> Reintegrado en efectivo en la visita (se deja constancia firmada por el responsable del fondo fijo)</label>
 <textarea id="obs" placeholder="Escribe aquí cualquier detalle del arqueo…"></textarea></div>
 <div class="firmas"><div>Encargado de fondo fijo<br><b id="fmR"></b></div><div>Realizado por<br><b id="fmH"></b></div></div>
@@ -95,19 +100,25 @@ function calc(){let ef=0;$('den').querySelectorAll('tr').forEach(r=>{const t=v(r
  $('tEf').textContent=Q(ef);$('tDo').textContent=Q(dO);$('tCc').textContent=Q(cc);$('tFa').textContent=Q(fa);$('tVF').textContent=Q(vf);$('tEP').textContent=Q(ep);
  const ok=dif===0;$('res').className='res '+(ok?'ok':'bad');
  $('res').innerHTML=`<span>${ok?'✔ CUADRÓ':dif<0?'✖ NO CUADRÓ · FALTANTE':'✖ NO CUADRÓ · SOBRANTE'}</span><span>${Q(dif)}</span>`;
- const fb=$('faltBox');fb.classList.toggle('hid',ok);fb.textContent=ok?'':`${dif<0?'Faltante':'Sobrante'} de ${Q(Math.abs(dif))}${$('reint').checked?' · reintegrado en efectivo':''}.`;
+ const fb=$('faltBox');fb.classList.toggle('hid',ok);$('compBox').classList.toggle('hid',!(dif>0));fb.textContent=ok?'':`${dif<0?'Faltante':'Sobrante'} de ${Q(Math.abs(dif))}${$('reint').checked?' · reintegrado en efectivo':''}.`;
  return{ef,dif,ok}}
 document.addEventListener('input',calc);document.addEventListener('change',calc);
-const gather=()=>({id:editId||Date.now()+'',...calc(),fecha:$('fecha').value,resp:$('resp').value,real:$('real').value,suc:$('suc').value,
+let COMP=null;
+function compShow(){const c=COMP;$('compName').textContent=c?c.name:'';$('bCompX').classList.toggle('hid',!c);const im=$('compImg');im.classList.toggle('hid',!(c&&c.data.startsWith('data:image')));if(c)im.src=c.data}
+$('bComp').onclick=()=>$('fComp').click();$('bCompX').onclick=()=>{COMP=null;$('fComp').value='';compShow()};
+$('fComp').onchange=e=>{const f=e.target.files[0];if(!f)return;const done=d=>{COMP={name:f.name,data:d};compShow()};
+ if(f.type==='application/pdf'){if(f.size>1500000){alert('El PDF pesa mucho (máx. 1.5 MB). Sube una foto.');return}const fr=new FileReader();fr.onload=()=>done(fr.result);fr.readAsDataURL(f)}
+ else{const im=new Image(),u=URL.createObjectURL(f);im.onload=()=>{const k=Math.min(1,1200/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);done(c.toDataURL('image/jpeg',.75))};im.src=u}};
+const gather=()=>({comp:COMP,id:editId||Date.now()+'',...calc(),fecha:$('fecha').value,resp:$('resp').value,real:$('real').value,suc:$('suc').value,
  ventas:$('ventas').value,fondo:$('fondo').value,reint:$('reint').checked,obs:$('obs').value,rp:[$('rpNum').value,$('rpFecha').value,$('rpIni').value,$('rpFin').value],
  den:[...$('den').querySelectorAll('.c')].map(i=>i.value),
  t:['docs','cch','fac'].map(id=>[...$(id).querySelectorAll('tr')].map(r=>[...r.querySelectorAll('input')].map(i=>i.value)))});
-function load(a){editId=a.id;$('fecha').value=a.fecha;$('resp').value=a.resp;$('real').value=a.real;sucOpts(a.suc);$('ventas').value=a.ventas;$('fondo').value=a.fondo;
+function load(a){editId=a.id;COMP=a.comp||null;compShow();$('fecha').value=a.fecha;$('resp').value=a.resp;$('real').value=a.real;sucOpts(a.suc);$('ventas').value=a.ventas;$('fondo').value=a.fondo;
  $('reint').checked=a.reint;$('obs').value=a.obs;['rpNum','rpFecha','rpIni','rpFin'].forEach((k,i)=>$(k).value=a.rp[i]);
  $('den').querySelectorAll('.c').forEach((e,i)=>e.value=a.den[i]);['docs','cch','fac'].forEach((id,k)=>$(id).querySelectorAll('tr').forEach((r,i)=>r.querySelectorAll('input').forEach((e,j)=>e.value=a.t[k][i][j])));calc()}
 const all=()=>{try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return[]}};
 const put=l=>{try{localStorage.setItem(KEY,JSON.stringify(l))}catch(e){alert('No se pudo guardar en este navegador')}};
-function reset(){editId=null;document.querySelectorAll('#vForm input,#vForm textarea').forEach(e=>e.type==='checkbox'?e.checked=false:e.value='');$('fecha').value=new Date().toISOString().slice(0,10);sucOpts();sucPick()}
+function reset(){editId=null;COMP=null;$('fComp').value='';compShow();document.querySelectorAll('#vForm input,#vForm textarea').forEach(e=>e.type==='checkbox'?e.checked=false:e.value='');$('fecha').value=new Date().toISOString().slice(0,10);sucOpts();sucPick()}
 function show(h){$('vForm').classList.toggle('hid',h!=='f');$('vHist').classList.toggle('hid',h!=='h');$('vSuc').classList.toggle('hid',h!=='s');if(h==='h')hist();if(h==='s')sucEdit()}
 const SK='nexa_arq_suc';let SUC=[];try{SUC=JSON.parse(localStorage.getItem(SK)||'[]')}catch(e){}
 if(!SUC.length)SUC=[{n:'Sucursal 1',e:'',f:5000}];
