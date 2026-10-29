@@ -17,6 +17,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Generar version.json desde index.html
+        run: |
+          V=$(grep -o "APP_VER='v[0-9]*'" nexa/index.html | grep -o "v[0-9]*")
+          echo "{\"v\":\"$V\"}" > nexa/version.json
+          cat nexa/version.json
       - name: Publicar carpeta nexa/ en el proyecto nexacorp
         uses: cloudflare/wrangler-action@v3
         with:
