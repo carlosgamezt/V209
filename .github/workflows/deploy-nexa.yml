@@ -1,0 +1,25 @@
+name: Publicar Nexa en Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['nexa/**', '.github/workflows/deploy-nexa.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-nexa
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publicar carpeta nexa/ en el proyecto nexacorp
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy nexa --project-name=nexacorp --branch=main --commit-dirty=true
