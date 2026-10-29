@@ -1,7 +1,7 @@
 {
   "name": "Nexa",
   "short_name": "Nexa",
-  "description": "Nexa (v421)",
+  "description": "Nexa (v422)",
   "lang": "es",
   "start_url": "./",
   "scope": "./",
@@ -10,19 +10,19 @@
   "theme_color": "#EDEEF9",
   "icons": [
     {
-      "src": "icon-192.png?v=421",
+      "src": "icon-192.png?v=422",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512.png?v=421",
+      "src": "icon-512.png?v=422",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512-maskable.png?v=421",
+      "src": "icon-512-maskable.png?v=422",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
