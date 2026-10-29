@@ -1,0 +1,26 @@
+/*
+  X-Robots-Tag: noindex, nofollow
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+  X-Frame-Options: DENY
+
+/index.html
+  Cache-Control: no-cache
+
+/config.js
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+/icon-*.png
+  Cache-Control: no-cache
+
+/apple-touch-icon.png
+  Cache-Control: no-cache
+
+/badge-*.png
+  Cache-Control: no-cache
