@@ -887,7 +887,7 @@ table.pl td .pb{display:none!important}table.pl td:nth-child(6){justify-content:
 /* ===== v404 · avisos urgentes (recordatorios de vencimiento) en rojo */
 #pn .urg{border-left:4px solid #E53935!important;background:rgba(229,57,53,.12)!important;border-radius:8px;padding-left:8px}
 #pn .urg:not(.un){opacity:.85}
-/* v422 · avisos flotantes (nueva versión / sesión por cerrar): tarjeta ancha, con título, texto con aire y botones separados */
+/* v423 · avisos flotantes (nueva versión / sesión por cerrar): en teléfono, tarjeta ancha con título, texto con aire y botones separados. En computadora se queda como siempre (franja oscura de una línea) */
 .nxbox{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);transform:translateX(-50%);z-index:99999;box-sizing:border-box;width:min(calc(100vw - 32px),420px);background:#1B1B39;color:#fff;border-radius:18px;padding:16px 18px 14px;box-shadow:0 18px 40px rgba(20,20,50,.38),0 0 0 1px rgba(255,255,255,.06);font-family:'Plus Jakarta Sans',Poppins,system-ui,sans-serif;animation:nxbIn .28s cubic-bezier(.2,.8,.2,1) both}
 .nxbox .nxb-t{font-size:15px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
 .nxbox .nxb-d{margin-top:4px;font-size:13px;font-weight:500;line-height:1.5;color:rgba(255,255,255,.72)}
@@ -897,6 +897,9 @@ table.pl td .pb{display:none!important}table.pl td:nth-child(6){justify-content:
 .nxbox .nxb-pri{background:#4654F5;color:#fff}.nxbox .nxb-pri:hover{background:#5a67ff}
 .nxbox .nxb-ghost{background:transparent;color:rgba(255,255,255,.78)}.nxbox .nxb-ghost:hover{background:rgba(255,255,255,.08)}
 @media(max-width:700px){.nxbox{bottom:calc(env(safe-area-inset-bottom,0px) + 92px)}.nxbox .nxb-a button{flex:1}}
+@media(min-width:701px){.nxbox{display:flex;gap:12px;align-items:center;width:auto;max-width:92vw;bottom:18px;padding:12px 16px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.35);font:600 13px Poppins,'Plus Jakarta Sans',sans-serif;animation:none}
+.nxbox .nxb-t,.nxbox .nxb-ghost{display:none}.nxbox .nxb-d{margin:0;font-size:13px;font-weight:600;color:#fff;line-height:1.4}.nxbox .nxb-a{margin:0}
+.nxbox button{padding:7px 14px;min-height:0;font:700 12px Poppins,'Plus Jakarta Sans',sans-serif}}
 @keyframes nxbIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
 @media(prefers-reduced-motion:reduce){.nxbox{animation:none}}
 /* ===== v421 · franja de los botones del sistema: se respeta el color por defecto del sistema (claro u oscuro) */
@@ -2238,7 +2241,7 @@ const IDLE_MIN={admin:120,supervisor:120,def:30},UPD_CHECK_MIN=5,UPD_IDLE_SEG=60
   const idle=Date.now()-last;
   if(me&&Supa.on){const L=lim();if(L>0){
     if(idle>=L&&!busy()){if(warn){warn.__fin=1;warn.remove();warn=null}LOGIN_ERR='Tu sesión se cerró por inactividad. Entra de nuevo.';nxLog('cierre por inactividad');logout();last=Date.now();return}
-    if(idle>=L-60000&&!warn&&!busy()){warn=box('<div class="nxb-t">Tu sesión está por cerrarse</div><div class="nxb-d">Se cerrará en 1 minuto por inactividad.</div><div class="nxb-a"><button class="nxb-pri" id="__keep">Seguir conectado</button></div>');warn.querySelector('#__keep').onclick=act}}}
+    if(idle>=L-60000&&!warn&&!busy()){warn=box('<div class="nxb-t">Sesión por cerrarse</div><div class="nxb-d">Tu sesión se cerrará en 1 minuto por inactividad.</div><div class="nxb-a"><button class="nxb-pri" id="__keep">Seguir conectado</button></div>');warn.querySelector('#__keep').onclick=act}}}
   if(newVer&&idle>=UPD_IDLE_SEG*1000&&!busy()){applyUpdate()}
  }
  async function chk(){if(document.hidden)return;try{const r=await fetch(new URL('index.html',location.href).href+'?_='+Date.now(),{cache:'no-store'});if(!r.ok)return;const t=await r.text(),m=t.match(/APP_VER='(v\d+)'/);if(m&&m[1]!==APP_VER&&!newVer){newVer=m[1];const b=box('<div class="nxb-t">Nueva versión disponible</div><div class="nxb-d">Nexa '+VER_LBL(newVer)+' está lista. Se actualizará sola cuando dejes de usar la app.</div><div class="nxb-a"><button class="nxb-ghost" id="__later">Más tarde</button><button class="nxb-pri" id="__upd">Actualizar ahora</button></div>');b.querySelector('#__later').onclick=()=>b.remove();b.querySelector('#__upd').onclick=()=>{if(busy()&&!confirm('Se están subiendo fotos. ¿Actualizar de todos modos?'))return;applyUpdate()}}}catch(e){}}
