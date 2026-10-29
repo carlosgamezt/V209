@@ -1,6 +1,6 @@
-/* Service worker de Nexa (v427).
+/* Service worker de Nexa (v428).
    Primero red y, si no hay internet, la copia guardada. También muestra los avisos push. No toca datos ni fotos. */
-const CACHE = 'pa-shell-nexacorp-v427';
+const CACHE = 'pa-shell-nexacorp-v428';
 const SHELL = ['./', './index.html', './config.js', './supabase.js', './manifest.webmanifest', './icon-192.png?v=424', './icon-512.png?v=424', './apple-touch-icon.png?v=424', './badge-96.png?v=424'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -30,7 +30,7 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let d = {}; try { d = e.data.json() } catch (_) { d = { body: e.data ? e.data.text() : '' } }
   try { self.navigator.setAppBadge && self.navigator.setAppBadge() } catch (_) {}
-  e.waitUntil((async () => { await self.registration.showNotification(d.title || 'Nexa', { body: d.body || '', icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', tag: d.pid || 'nexa', data: { pid: d.pid || null } }); if (typeof d.pend === 'number') { await pendSet(d.pend); await pendShow(d.pend) } })())
+  e.waitUntil((async () => { await self.registration.showNotification(d.title || 'Nexa', { body: d.body || '', icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', tag: d.pid || 'nexa', data: { pid: d.pid || null } }); if (typeof d.pend === 'number') { await pendSet(d.pend); const m = /envió evidencias/i.test(d.body || '') && /^Nexa · (.+)$/.exec(d.title || ''); if (m) await labSet(m[1]); await pendShow(d.pend) } })())
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close(); const pid = e.notification.data && e.notification.data.pid;
@@ -45,16 +45,19 @@ const PEND_URL = './__pend';
 async function pendGet() { try { const r = await (await caches.open('pa-state')).match(PEND_URL); return r ? parseInt(await r.text(), 10) || 0 : 0 } catch (_) { return 0 } }
 async function pendSet(n) { try { await (await caches.open('pa-state')).put(PEND_URL, new Response(String(n))) } catch (_) {} }
 async function pendOnGet() { try { const r = await (await caches.open('pa-state')).match('./__pendon'); return r ? (await r.text()) !== '0' : true } catch (_) { return true } }
+async function labGet() { try { const r = await (await caches.open('pa-state')).match('./__pendlab'); return r ? await r.text() : '' } catch (_) { return '' } }
+async function labSet(v) { try { await (await caches.open('pa-state')).put('./__pendlab', new Response(String(v || ''))) } catch (_) {} }
 async function pendShow(n) {
   try { self.navigator.setAppBadge && (n > 0 ? self.navigator.setAppBadge(n) : self.navigator.clearAppBadge()) } catch (_) {}
   const old = await self.registration.getNotifications({ tag: 'nexa-pend' });
+  const lab = await labGet();
   if (n <= 0 || !(await pendOnGet())) { old.forEach(x => x.close()); return }
   if (n <= 0) { old.forEach(x => x.close()); return }
-  return self.registration.showNotification('Nexa', { body: n === 1 ? '1 plan por revisar' : n + ' planes por revisar', tag: 'nexa-pend', renotify: false, silent: true, requireInteraction: true, icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', data: { pid: null, pend: 1 } });
+  return self.registration.showNotification('Nexa', { body: (n === 1 ? '1 plan por revisar' : n + ' planes por revisar') + (lab ? ' · ' + lab : ''), tag: 'nexa-pend', renotify: false, silent: true, requireInteraction: true, icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', data: { pid: null, pend: 1 } });
 }
 self.addEventListener('message', e => {
   const d = e.data || {}; if (typeof d.pend !== 'number') return;
-  e.waitUntil((async () => { if (typeof d.on === 'boolean') await (await caches.open('pa-state')).put('./__pendon', new Response(d.on ? '1' : '0')); await pendSet(d.pend); if (d.pend <= 0 || !d.show) { const o = await self.registration.getNotifications({ tag: 'nexa-pend' }); if (d.pend <= 0 || o.length) o.forEach(x => x.close()); if (d.pend > 0) return; return } await pendShow(d.pend) })());
+  e.waitUntil((async () => { if (typeof d.lab === 'string') await labSet(d.pend > 0 ? d.lab : ''); if (typeof d.on === 'boolean') await (await caches.open('pa-state')).put('./__pendon', new Response(d.on ? '1' : '0')); await pendSet(d.pend); if (d.pend <= 0 || !d.show) { const o = await self.registration.getNotifications({ tag: 'nexa-pend' }); if (d.pend <= 0 || o.length) o.forEach(x => x.close()); if (d.pend > 0) return; return } await pendShow(d.pend) })());
 });
 self.addEventListener('notificationclose', e => {
   if (e.notification.tag !== 'nexa-pend') return;
