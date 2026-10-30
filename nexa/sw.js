@@ -1,6 +1,6 @@
-/* Service worker de Nexa (v430).
+/* Service worker de Nexa (v431).
    Primero red y, si no hay internet, la copia guardada. También muestra los avisos push. No toca datos ni fotos. */
-const CACHE = 'pa-shell-nexacorp-v430';
+const CACHE = 'pa-shell-nexacorp-v431';
 const SHELL = ['./', './index.html', './config.js', './supabase.js', './manifest.webmanifest', './icon-192.png?v=424', './icon-512.png?v=424', './apple-touch-icon.png?v=424', './badge-96.png?v=424'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -43,10 +43,10 @@ self.addEventListener('push', e => {
   e.waitUntil((async () => { await self.registration.showNotification(d.title || 'Nexa', { body: d.body || '', icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', tag: d.pid || 'nexa', data: { pid: d.pid || null } }); if (typeof d.pend === 'number') { await pendSet(d.pend); const m = /envió evidencias/i.test(d.body || '') && /^Nexa · (.+)$/.exec(d.title || ''); if (m) await labSet(m[1]); await pendShow(d.pend) } })())
 });
 self.addEventListener('notificationclick', e => {
-  e.notification.close(); const pid = e.notification.data && e.notification.data.pid;
+  e.notification.close(); const nd = e.notification.data || {}, pid = nd.pid, go = nd.go;
   e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(l => {
-    for (const c of l) { if ('focus' in c) { c.postMessage({ pa: pid }); return c.focus() } }
-    return clients.openWindow(new URL('./' + (pid ? '?pa=' + encodeURIComponent(pid) : ''), self.registration.scope).href)
+    for (const c of l) { if ('focus' in c) { c.postMessage({ pa: pid, go }); return c.focus() } }
+    return clients.openWindow(new URL('./' + (pid ? '?pa=' + encodeURIComponent(pid) : go ? '?go=' + encodeURIComponent(go) : ''), self.registration.scope).href)
   }))
 });
 
@@ -63,7 +63,7 @@ async function pendShow(n) {
   const lab = await labGet();
   if (n <= 0 || !(await pendOnGet())) { old.forEach(x => x.close()); return }
   if (n <= 0) { old.forEach(x => x.close()); return }
-  return self.registration.showNotification('Nexa', { body: (n === 1 ? '1 plan por revisar' : n + ' planes por revisar') + (lab ? ' · ' + lab : ''), tag: 'nexa-pend', renotify: false, silent: true, requireInteraction: true, icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', data: { pid: null, pend: 1 } });
+  return self.registration.showNotification('Nexa', { body: (n === 1 ? '1 plan por revisar' : n + ' planes por revisar') + (lab ? ' · ' + lab : ''), tag: 'nexa-pend', renotify: false, silent: true, requireInteraction: true, icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', data: { pid: null, pend: 1, go: 'pend' } });
 }
 self.addEventListener('message', e => {
   const d = e.data || {}; if (typeof d.pend !== 'number') return;
