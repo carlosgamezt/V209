@@ -5,7 +5,7 @@
 // Ya vencido -> UN solo aviso final, el día siguiente al plazo (1 día de atraso). Solo actividades que no están aprobadas.
 // Dos tareas más (misma función, se eligen con "mode" en el cuerpo de la llamada):
 //  - mode "unread": cada hora (7 a. m. a 7 p. m.) avisa a la SUCURSAL que no ha abierto un plan asignado: a las 4, 8 y 12 horas.
-//  - mode "badge": cada 15 min repone el aviso fijo "N planes por revisar" (y el numerito del ícono) si el usuario lo borró. Solo supervisores y sucursales con pendientes.
+//  - mode "badge": cada 15 min repone el aviso fijo "N planes por revisar" (y el numerito del ícono) si el usuario lo borró. Supervisores, administrador (región 2) y sucursales con pendientes.
 // Usa los mismos secretos que super-api: SB_SECRET (o SUPABASE_SERVICE_ROLE_KEY), VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT.
 // Secreto nuevo: CRON_SECRET (cualquier texto largo). Desplegar con "Verify JWT" DESACTIVADO (se protege con CRON_SECRET).
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -108,14 +108,14 @@ function construirSinLeer(notifs: any[], plans: any[], users: any[], ahora: numb
 function contarPendientes(plans: any[], users: any[]) {
   const out: Array<{ id: string; n: number; lab: string }> = []
   for (const u of users) {
-    if (u.role !== 'sucursal' && u.role !== 'supervisor') continue
+    if (u.role !== 'sucursal' && u.role !== 'supervisor' && u.role !== 'admin') continue
     let n = 0
     const ramas = new Map<string, number>()
     for (const p of plans) {
       if (!p) continue
       if (u.role === 'sucursal') {
         if (p.status === 'En proceso' && String(p.region) === String(u.region) && p.branch === u.branch && (p.acts || []).some((a: any) => HECHO_PENDIENTE.includes(a.st))) n++
-      } else if (String(p.region) === String(u.region)) {
+      } else if (u.role === 'admin' ? String(p.region) === '2' : String(p.region) === String(u.region)) { // el administrador ve la región 2, igual que en los avisos normales
         let t = 0, c = 0
         for (const a of p.acts || []) if (a && a.st === 'Enviada') { c++; for (const x of a.tl || []) if (x && x[0] === 'e') t = Math.max(t, Number(x[1]) || 0) }
         if (c) { n += c; ramas.set(p.branch, Math.max(ramas.get(p.branch) || 0, t)) }
