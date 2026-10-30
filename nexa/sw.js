@@ -1,6 +1,6 @@
-/* Service worker de Nexa (v428).
+/* Service worker de Nexa (v429).
    Primero red y, si no hay internet, la copia guardada. También muestra los avisos push. No toca datos ni fotos. */
-const CACHE = 'pa-shell-nexacorp-v428';
+const CACHE = 'pa-shell-nexacorp-v429';
 const SHELL = ['./', './index.html', './config.js', './supabase.js', './manifest.webmanifest', './icon-192.png?v=424', './icon-512.png?v=424', './apple-touch-icon.png?v=424', './badge-96.png?v=424'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -30,6 +30,16 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let d = {}; try { d = e.data.json() } catch (_) { d = { body: e.data ? e.data.text() : '' } }
   try { self.navigator.setAppBadge && self.navigator.setAppBadge() } catch (_) {}
+  if (d.refresh) {
+    /* repone el aviso fijo (y el numerito del ícono) si el usuario lo borró; siempre muestra algo para cumplir con el permiso de avisos */
+    e.waitUntil((async () => {
+      const n = Number(d.pend) || 0
+      await pendSet(n); if (typeof d.lab === 'string') await labSet(n > 0 ? d.lab : '')
+      if (n > 0 && (await pendOnGet())) { await pendShow(n); return }
+      try { await self.registration.showNotification('Nexa', { tag: 'nexa-refresh', silent: true, body: '' }); (await self.registration.getNotifications({ tag: 'nexa-refresh' })).forEach(x => x.close()) } catch (_) {}
+    })())
+    return
+  }
   e.waitUntil((async () => { await self.registration.showNotification(d.title || 'Nexa', { body: d.body || '', icon: 'icon-192.png?v=424', badge: 'badge-96.png?v=424', tag: d.pid || 'nexa', data: { pid: d.pid || null } }); if (typeof d.pend === 'number') { await pendSet(d.pend); const m = /envió evidencias/i.test(d.body || '') && /^Nexa · (.+)$/.exec(d.title || ''); if (m) await labSet(m[1]); await pendShow(d.pend) } })())
 });
 self.addEventListener('notificationclick', e => {
