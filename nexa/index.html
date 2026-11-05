@@ -2381,7 +2381,7 @@ function arqView(){
  if(!Supa.on)return hd('arqueos','Arqueo de caja','Control del efectivo y del fondo fijo','')+'<div class="card">El arqueo necesita la conexión con la nube (Supabase).</div>';
  if(!ARQ.loaded&&!ARQ.loading)arqLoad();
  return ARQ.d?arqWizard():arqList()}
-function arqList(){const all=arqLatest(),fs=ARQ.fil,const regs=me.role==='admin'?regIds():[String(me.region),...xRegs()].filter((x,i,a)=>a.indexOf(x)===i);if(fs.r&&!regs.includes(String(fs.r)))fs.r='';const inR=r=>!fs.r||String(r.region)===String(fs.r),rows=all.filter(r=>inR(r)&&(!fs.s||r.branch_user_id===fs.s)&&(!fs.e||(fs.e==='dep'?arqDepPend(r):r.estado===fs.e)));
+function arqList(){const all=arqLatest(),fs=ARQ.fil;if(fs.r&&me.role!=='admin'&&![String(me.region),...xRegs()].includes(String(fs.r)))fs.r='';const regs=me.role==='admin'?regIds():[String(me.region),...xRegs()].filter((x,i,a)=>a.indexOf(x)===i),inR=r=>!fs.r||String(r.region)===String(fs.r),rows=all.filter(r=>inR(r)&&(!fs.s||r.branch_user_id===fs.s)&&(!fs.e||(fs.e==='dep'?arqDepPend(r):r.estado===fs.e)));
  const cn=t=>rows.filter(r=>r.estado==='completo'&&r.tipo_resultado===t).length,sel=(v,o)=>v===o?'selected':'';
  const k=(i,l,n,c)=>`<div class="aqk"><span class="aqki" style="background:${c}">${i}</span><div><small>${l}</small><b>${n}</b></div></div>`;
  const br=[...new Map(all.filter(inR).map(r=>[r.branch_user_id,r.branch])).entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'es'));
