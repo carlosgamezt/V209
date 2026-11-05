@@ -136,9 +136,11 @@ Deno.serve(async (req) => {
 
     /* ----- Asignar el encargado de fondo fijo de una sucursal (solo administrador) ----- */
     if (b.action === 'ff_assign') {
-      if (me.role !== 'admin') throw new Err('Solo el administrador asigna encargados de fondo fijo', 403)
+      if (me.role !== 'admin' && me.role !== 'supervisor') throw new Err('Solo administradores y supervisores asignan encargados de fondo fijo', 403)
       const suc = await userDoc(a, b.branch_user_id)
       if (!suc || suc.role !== 'sucursal') throw new Err('Esa sucursal no existe')
+      if (!(await puede(a, me, suc))) throw new Err('No tienes permiso en esa sucursal', 403)
+      if (String(b.encargado_user_id) === me.user_id) throw new Err('No puedes asignarte a ti mismo como encargado del fondo fijo')
       const enc = await userDoc(a, b.encargado_user_id)
       if (!enc) throw new Err('Ese usuario no existe')
       const { data: pr } = await a.from('pa_profiles').select('auth_id').eq('user_id', String(b.encargado_user_id)).maybeSingle()
