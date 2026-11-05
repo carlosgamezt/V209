@@ -64,5 +64,5 @@ jobs:
           for n in ${{ steps.ch.outputs.fn }}; do
             [ -d "supabase/functions/$n" ] || continue
             echo "== $n"
-            supabase functions deploy "$n" --project-ref "$PROJECT_REF"
+            supabase functions deploy "$n" --project-ref "$PROJECT_REF" --yes
           done
