@@ -1,0 +1,61 @@
+name: Publicar Supabase (SQL y funciones)
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/auto/**', 'supabase/functions/**', 'supabase/config.toml', '.github/workflows/deploy-supabase.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-supabase
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Revisar secretos
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" && test -n "$PROJECT_REF" || { echo "Faltan los secretos SUPABASE_ACCESS_TOKEN y SUPABASE_PROJECT_REF en GitHub"; exit 1; }
+      - name: Qué cambió
+        id: ch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "sql=$(ls supabase/auto/*.sql 2>/dev/null | tr '\n' ' ')" >> $GITHUB_OUTPUT
+            echo "fn=$(ls supabase/functions | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          else
+            D=$(git diff --name-only HEAD~1 HEAD)
+            echo "sql=$(echo "$D" | grep -E '^supabase/auto/.*\.sql$' | tr '\n' ' ')" >> $GITHUB_OUTPUT
+            echo "fn=$(echo "$D" | grep -E '^supabase/functions/' | cut -d/ -f3 | sort -u | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          fi
+      - name: Ejecutar SQL cambiado
+        if: steps.ch.outputs.sql != ''
+        run: |
+          for f in ${{ steps.ch.outputs.sql }}; do
+            echo "== $f"
+            jq -Rs '{query: .}' "$f" > /tmp/q.json
+            code=$(curl -sS -o /tmp/out.json -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" --data @/tmp/q.json)
+            cat /tmp/out.json; echo
+            [ "$code" -lt 300 ] || { echo "Falló $f (HTTP $code)"; exit 1; }
+          done
+      - uses: supabase/setup-cli@v1
+        if: steps.ch.outputs.fn != ''
+        with:
+          version: latest
+      - name: Desplegar funciones cambiadas
+        if: steps.ch.outputs.fn != ''
+        run: |
+          for n in ${{ steps.ch.outputs.fn }}; do
+            [ -d "supabase/functions/$n" ] || continue
+            echo "== $n"
+            supabase functions deploy "$n" --project-ref "$PROJECT_REF"
+          done

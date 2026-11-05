@@ -1,0 +1,8 @@
+# Lo usa el flujo "Publicar Supabase" para desplegar las funciones con la configuración correcta.
+project_id = "nexa"
+
+[functions.arqueos]
+verify_jwt = true
+
+[functions.recordatorios-de-nexa]
+verify_jwt = false
