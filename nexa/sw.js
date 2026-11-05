@@ -1,6 +1,6 @@
-/* Service worker de Nexa (v456).
+/* Service worker de Nexa (v457).
    Primero red y, si no hay internet, la copia guardada. También muestra los avisos push. No toca datos ni fotos. */
-const CACHE = 'pa-shell-nexacorp-v456';
+const CACHE = 'pa-shell-nexacorp-v457';
 const SHELL = ['./', './index.html', './config.js', './supabase.js', './manifest.webmanifest', './icon-192.png?v=424', './icon-512.png?v=424', './apple-touch-icon.png?v=424', './badge-96.png?v=424'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

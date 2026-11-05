@@ -60,7 +60,7 @@ function limpiar(d: any) {
     }).filter((o: any) => o.valor || campos.some((c) => o[c]))
   }
   const rec = d.recibo || {}
-  if (rec.fecha && !isDate(rec.fecha) && !/^[\p{L}\p{N} .,-]{1,40}$/u.test(String(rec.fecha))) throw new Err('La fecha del recibo provisional no es válida')
+  if (rec.fecha && !isDate(rec.fecha) && !/^[\p{L}\p{N} .,\/-]{1,40}$/u.test(String(rec.fecha))) throw new Err('La fecha del recibo provisional no es válida')
   return {
     den,
     docs: filas(d.docs, MAX_DOCS, 'documentos de pago', ['tipo', 'no']),
