@@ -133,6 +133,7 @@ Deno.serve(async (req) => {
     const a = db()
     const yo = await userDoc(a, me.user_id)
     const miNombre = (yo && yo.name) || me.login || me.user_id
+    if (b.action === 'ping') return json({ ok: true }) // calienta la función para que la primera acción no espere
 
     /* ----- Asignar el encargado de fondo fijo de una sucursal (administrador o supervisor) ----- */
     if (b.action === 'ff_assign') {
