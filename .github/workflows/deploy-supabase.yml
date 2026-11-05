@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths: ['supabase/auto/**', 'supabase/functions/**', 'supabase/config.toml', '.github/workflows/deploy-supabase.yml']
   workflow_dispatch:
+    inputs:
+      funciones:
+        description: 'Funciones a desplegar (separadas por espacio; vacío = todas)'
+        required: false
+        default: ''
 
 concurrency:
   group: deploy-supabase
@@ -21,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - name: Revisar secretos
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN" && test -n "$PROJECT_REF" || { echo "Faltan los secretos SUPABASE_ACCESS_TOKEN y SUPABASE_PROJECT_REF en GitHub"; exit 1; }
@@ -30,9 +35,11 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "sql=$(ls supabase/auto/*.sql 2>/dev/null | tr '\n' ' ')" >> $GITHUB_OUTPUT
-            echo "fn=$(ls supabase/functions | tr '\n' ' ')" >> $GITHUB_OUTPUT
+            F="${{ github.event.inputs.funciones }}"; [ -n "$F" ] || F=$(ls supabase/functions | tr '\n' ' ')
+            echo "fn=$F" >> $GITHUB_OUTPUT
           else
-            D=$(git diff --name-only HEAD~1 HEAD)
+            B="${{ github.event.before }}"; case "$B" in 0000000*|'') B=HEAD~1;; esac
+            D=$(git diff --name-only $B HEAD)
             echo "sql=$(echo "$D" | grep -E '^supabase/auto/.*\.sql$' | tr '\n' ' ')" >> $GITHUB_OUTPUT
             echo "fn=$(echo "$D" | grep -E '^supabase/functions/' | cut -d/ -f3 | sort -u | tr '\n' ' ')" >> $GITHUB_OUTPUT
           fi
