@@ -5,7 +5,9 @@
 // Ya vencido -> UN solo aviso final, el día siguiente al plazo (1 día de atraso). Solo actividades que no están aprobadas.
 // Dos tareas más (misma función, se eligen con "mode" en el cuerpo de la llamada):
 //  - mode "unread": cada hora (7 a. m. a 7 p. m.) avisa a la SUCURSAL que no ha abierto un plan asignado: a las 4, 8 y 12 horas.
-//  - mode "badge": cada 15 min repone el aviso fijo "N planes por revisar" (y el numerito del ícono) si el usuario lo borró. Supervisores, administrador (región 2) y sucursales con pendientes.
+//  - mode "badge": cada 15 min repone el aviso fijo (y el numerito del ícono) si el usuario lo borró: "N planes por revisar" para supervisores, administrador (región 2) y sucursales,
+//    y "N planes por descargar" para Inventarios (planes completados con informe disponible que nadie de Inventarios ha descargado).
+//  - mode "unread" también avisa a INVENTARIOS cuando un informe lleva 4, 8 y 12 horas disponible sin que nadie de Inventarios lo descargue.
 // Usa los mismos secretos que super-api: SB_SECRET (o SUPABASE_SERVICE_ROLE_KEY), VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT.
 // Secreto nuevo: CRON_SECRET (cualquier texto largo). Desplegar con "Verify JWT" DESACTIVADO (se protege con CRON_SECRET).
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -104,10 +106,54 @@ function construirSinLeer(notifs: any[], plans: any[], users: any[], ahora: numb
   }
   return out
 }
+// Informes de Inventarios disponibles que nadie de Inventarios ha descargado (tabla pa_descargas). Disponible = plan Completado y (informe enviado o envío por correo desactivado).
+const disponible = (p: any, invMailOn: boolean) => p && p.type === 'Inventarios' && p.status === 'Completado' && (p.sent || !invMailOn)
+const sucPermitidas = (u: any, users: any[]) => {
+  if (!Array.isArray(u.assigned)) return null // sin lista = todas las sucursales
+  return new Set(users.filter((x) => u.assigned.includes(x.id)).map((x) => `${x.region}|${x.branch}`))
+}
+function horaDisponible(p: any) {
+  if (p.sentAt) return Number(p.sentAt)
+  let t = 0
+  for (const a of p.acts || []) for (const x of a.tl || []) if (x && x[0] === 'a') t = Math.max(t, Number(x[1]) || 0)
+  return t
+}
+function construirSinDescargar(plans: any[], users: any[], descargados: Set<string>, invMailOn: boolean, ahora: number, sent: Set<string>) {
+  const out: any[] = []
+  const invs = users.filter((u) => u.role === 'inventarios')
+  for (const p of plans) {
+    if (!disponible(p, invMailOn) || descargados.has(p.id)) continue
+    const t = horaDisponible(p)
+    if (!t) continue
+    const k = Math.floor((ahora - t) / (SIN_LEER_CADA_H * 3600e3))
+    if (k < 1 || k > SIN_LEER_MAX) continue
+    const to = invs.filter((u) => { const sp = sucPermitidas(u, users); return !sp || sp.has(`${p.region}|${p.branch}`) }).map((u) => u.id)
+    if (!to.length) continue
+    const key = `${p.id}|dl|${k}`
+    if (sent.has(key)) continue
+    out.push({ key, to, plan: p.id, branch: p.branch, urgent: false, aud: 'inventarios', kind: 'sin-descargar', d: 0,
+      text: `⏳ ${p.id} (${p.branch}): el informe está disponible y aún no se ha descargado (hace ${k * SIN_LEER_CADA_H} horas).` })
+  }
+  return out
+}
 // Cuántos pendientes tiene cada usuario para el aviso fijo (mismo criterio que super-api) y de qué sucursales (las más recientes primero)
-function contarPendientes(plans: any[], users: any[]) {
-  const out: Array<{ id: string; n: number; lab: string }> = []
+function contarPendientes(plans: any[], users: any[], descargados: Set<string> = new Set(), invMailOn = true) {
+  const out: Array<{ id: string; n: number; lab: string; kind?: string }> = []
   for (const u of users) {
+    if (u.role === 'inventarios') {
+      const sp = sucPermitidas(u, users)
+      const ramas = new Map<string, number>()
+      let n = 0
+      for (const p of plans) {
+        if (!disponible(p, invMailOn) || descargados.has(p.id)) continue
+        if (sp && !sp.has(`${p.region}|${p.branch}`)) continue
+        n++; ramas.set(p.branch, Math.max(ramas.get(p.branch) || 0, horaDisponible(p)))
+      }
+      if (n <= 0) continue
+      const l = [...ramas.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0])
+      out.push({ id: u.id, n, kind: 'dl', lab: !l.length ? '' : l.length === 1 ? l[0] : l[0] + ' y ' + (l.length - 1) + (l.length === 2 ? ' sucursal más' : ' sucursales más') })
+      continue
+    }
     if (u.role !== 'sucursal' && u.role !== 'supervisor' && u.role !== 'admin') continue
     let n = 0
     const ramas = new Map<string, number>()
@@ -124,7 +170,7 @@ function contarPendientes(plans: any[], users: any[]) {
     if (n <= 0) continue
     const l = [...ramas.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0])
     const lab = !l.length ? '' : l.length === 1 ? l[0] : l[0] + ' y ' + (l.length - 1) + (l.length === 2 ? ' sucursal más' : ' sucursales más')
-    out.push({ id: u.id, n, lab })
+    out.push({ id: u.id, n, lab, kind: '' })
   }
   return out
 }
@@ -169,10 +215,17 @@ Deno.serve(async (req) => {
     const { data: pl } = await a.from('pa_docs').select('data').eq('col', 'plans').limit(5000)
     const { data: us } = await a.from('pa_docs').select('id,data').eq('col', 'users').limit(5000)
     const plans = (pl || []).map((r: any) => r.data)
-    const users = (us || []).map((r: any) => ({ id: r.id, role: r.data && r.data.role, region: r.data && r.data.region, branch: r.data && r.data.branch }))
+    const users = (us || []).map((r: any) => ({ id: r.id, role: r.data && r.data.role, region: r.data && r.data.region, branch: r.data && r.data.branch, assigned: r.data && r.data.assigned }))
+    const { data: cf } = await a.from('pa_docs').select('data').eq('col', 'meta').eq('id', 'cfg').maybeSingle()
+    const invMailOn = !(cf && cf.data && cf.data.invMail === false)
+    let descargados = new Set<string>()
+    try {
+      const { data: dl } = await a.from('pa_descargas').select('plan_id,role,manual').or('role.eq.inventarios,manual.eq.true').limit(20000)
+      descargados = new Set((dl || []).map((r: any) => r.plan_id))
+    } catch (_) { /* si la tabla aún no existe, no hay avisos de descarga */ }
 
     if (mode === 'badge') {
-      const lista = contarPendientes(plans, users)
+      const lista = contarPendientes(plans, users, descargados, invMailOn)
       if (dry) return json({ ok: true, dry: true, mode, total: lista.length, usuarios: lista })
       const pub = env('VAPID_PUBLIC_KEY'), priv = env('VAPID_PRIVATE_KEY')
       if (!pub || !priv) return json({ ok: false, error: 'Faltan las claves VAPID' }, 500)
@@ -180,7 +233,7 @@ Deno.serve(async (req) => {
       let n = 0
       for (const u of lista) {
         const { data: subs } = await a.from('pa_push').select('endpoint,sub').eq('user_id', u.id)
-        const payload = JSON.stringify({ title: 'Nexa', body: '', refresh: true, pend: u.n, lab: u.lab })
+        const payload = JSON.stringify({ title: 'Nexa', body: '', refresh: true, pend: u.n, lab: u.lab, kind: u.kind || '' })
         await Promise.all((subs || []).map(async (s: any) => {
           try { await webpush.sendNotification(s.sub, payload, { TTL: 900, urgency: 'normal' }); n++ }
           catch (e: any) { if (e && (e.statusCode === 404 || e.statusCode === 410)) await a.from('pa_push').delete().eq('endpoint', s.endpoint) }
@@ -195,7 +248,7 @@ Deno.serve(async (req) => {
     if (mode === 'unread') {
       const desde = Date.now() - (SIN_LEER_MAX + 1) * SIN_LEER_CADA_H * 3600e3
       const { data: nt } = await a.from('pa_docs').select('data').eq('col', 'notifs').gte('data->>ts', String(desde)).limit(5000)
-      avisos = construirSinLeer((nt || []).map((r: any) => r.data), plans, users, Date.now(), sent)
+      avisos = construirSinLeer((nt || []).map((r: any) => r.data), plans, users, Date.now(), sent).concat(construirSinDescargar(plans, users, descargados, invMailOn, Date.now(), sent))
     } else avisos = construirAvisos(plans, users, hoy, slot, sent)
     if (dry) return json({ ok: true, dry: true, mode, hoy, slot, total: avisos.length, avisos: avisos.map((x) => ({ plan: x.plan, para: x.aud, d: x.d, urgente: x.urgent, texto: x.text })) })
     const push = await enviar(a, avisos)
