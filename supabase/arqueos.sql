@@ -14,6 +14,8 @@ create table if not exists public.pa_ff_asignaciones (
   creado_por         text
 );
 alter table public.pa_ff_asignaciones add column if not exists monto numeric(14,2) not null default 0;
+-- El encargado de fondo fijo NO tiene cuenta propia: se usa la cuenta de la sucursal (encargado_user_id = id de la sucursal) y se guarda el NOMBRE de la persona.
+alter table public.pa_ff_asignaciones add column if not exists encargado_nombre text;
 create unique index if not exists pa_ff_vigente_uq on public.pa_ff_asignaciones (branch_user_id) where hasta is null;
 
 -- 2) Arqueos: una fila por VERSIÓN (una corrección crea una versión nueva y conserva la anterior)
@@ -37,12 +39,14 @@ create table if not exists public.pa_arqueos (
   totales            jsonb       not null default '{}'::jsonb,
   resultado          numeric(14,2) not null default 0, -- efectivo + doctos. - (ventas + fondo)
   tipo_resultado     text        not null default 'cuadrado' check (tipo_resultado in ('cuadrado','faltante','sobrante')),
+  modo_firma         text        not null default 'digital' check (modo_firma in ('digital','papel')), -- digital en pantalla, o firma y sello en papel después de imprimir
   hash               text,                            -- huella del contenido al pasar a firmas
   bloqueado_at       timestamptz,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   primary key (folio, version)
 );
+alter table public.pa_arqueos add column if not exists modo_firma text not null default 'digital';
 create index if not exists pa_arqueos_fecha_idx on public.pa_arqueos (fecha desc);
 
 -- 3) Firmas (solo se agregan; ligadas a la versión exacta y a la cuenta autenticada de la persona)

@@ -140,19 +140,16 @@ Deno.serve(async (req) => {
       const suc = await userDoc(a, b.branch_user_id)
       if (!suc || suc.role !== 'sucursal') throw new Err('Esa sucursal no existe')
       if (!(await puede(a, me, suc))) throw new Err('No tienes permiso en esa sucursal', 403)
-      if (String(b.encargado_user_id) === me.user_id) throw new Err('No puedes asignarte a ti mismo como encargado del fondo fijo')
-      const enc = await userDoc(a, b.encargado_user_id)
-      if (!enc) throw new Err('Ese usuario no existe')
-      const { data: pr } = await a.from('pa_profiles').select('auth_id').eq('user_id', String(b.encargado_user_id)).maybeSingle()
-      if (!pr) throw new Err('Esa persona todavía no tiene cuenta de acceso en Nexa')
+      const nombre = txt(b.nombre, 80)
+      if (!nombre) throw new Err('Escribe el nombre del encargado de fondo fijo')
       const monto = val(b.monto)
       if (isNaN(monto)) throw new Err('Escribe el monto del fondo fijo')
       const { data: vig } = await a.from('pa_ff_asignaciones').select('*').eq('branch_user_id', suc.id).is('hasta', null).maybeSingle()
-      if (vig && vig.encargado_user_id === b.encargado_user_id && Number(vig.monto) === monto) return json({ ok: true, sinCambios: true })
+      if (vig && vig.encargado_nombre === nombre && Number(vig.monto) === monto) return json({ ok: true, sinCambios: true })
       if (vig) await a.from('pa_ff_asignaciones').update({ hasta: new Date().toISOString() }).eq('id', vig.id)
-      const { error } = await a.from('pa_ff_asignaciones').insert({ branch_user_id: suc.id, encargado_user_id: String(b.encargado_user_id), monto, creado_por: me.user_id })
+      const { error } = await a.from('pa_ff_asignaciones').insert({ branch_user_id: suc.id, encargado_user_id: suc.id, encargado_nombre: nombre, monto, creado_por: me.user_id })
       if (error) throw new Err('No se pudo guardar la asignación: ' + error.message)
-      await audit(a, { branch_user_id: suc.id }, 'ff_asignado', me, miNombre, { sucursal: suc.branch, encargado: enc.name, monto, anterior: vig ? vig.encargado_user_id : null, montoAnterior: vig ? Number(vig.monto) : null })
+      await audit(a, { branch_user_id: suc.id }, 'ff_asignado', me, miNombre, { sucursal: suc.branch, encargado: nombre, monto, anterior: vig ? vig.encargado_nombre : null, montoAnterior: vig ? Number(vig.monto) : null })
       return json({ ok: true })
     }
 
@@ -180,13 +177,11 @@ Deno.serve(async (req) => {
       const { data: asig } = await a.from('pa_ff_asignaciones').select('*').eq('branch_user_id', suc.id).is('hasta', null).maybeSingle()
       if (!asig) throw new Err('Esa sucursal no tiene encargado de fondo fijo asignado. Asígnalo en Arqueos, sección Encargados de fondo fijo y monto por sucursal.')
       const fondo = Number(asig.monto) // el monto lo define el administrador o el supervisor por sucursal; no viene de la pantalla
-      const enc = await userDoc(a, asig.encargado_user_id)
-      if (asig.encargado_user_id === me.user_id) throw new Err('Quien hace el arqueo no puede ser el encargado del fondo fijo de esa sucursal')
       const { data: folio } = await a.rpc('pa_arqueo_next_folio')
       const c = calc(data, fondo)
       const nuevo = {
         folio, version: 1, estado: 'borrador', branch_user_id: suc.id, region: String(suc.region ?? ''), branch: suc.branch || suc.name, fecha: b.fecha, fondo,
-        supervisor_user_id: me.user_id, supervisor_name: miNombre, ff_user_id: asig.encargado_user_id, ff_name: (enc && enc.name) || asig.encargado_user_id,
+        supervisor_user_id: me.user_id, supervisor_name: miNombre, ff_user_id: suc.id, ff_name: asig.encargado_nombre || suc.branch || suc.name,
         data, totales: c, resultado: c.resultado, tipo_resultado: c.tipo,
       }
       const { error } = await a.from('pa_arqueos').insert(nuevo)
@@ -228,30 +223,39 @@ Deno.serve(async (req) => {
       return json({ ok: true })
     }
     if (b.action === 'sign_encargado') {
-      // El encargado firma con SU propia cuenta: se verifica su usuario y contraseña sin tocar la sesión de quien hace el arqueo.
+      // Firma EN LA VISITA: el supervisor le pasa el teléfono al encargado y firma en pantalla. No tiene cuenta propia:
+      // queda registrado su nombre, la sucursal, la hora del servidor y la sesión desde donde se firmó.
       if (row.estado !== 'pend_encargado') throw new Err('Este arqueo no está esperando la firma del encargado de fondo fijo')
       if (row.supervisor_user_id !== me.user_id && me.role !== 'admin') throw new Err('Solo quien realiza el arqueo puede pedir esta firma', 403)
       const firma = firmaOk(b.firma)
+      const nom = txt(b.nombre, 80) || row.ff_name
+      if (!nom) throw new Err('Escribe el nombre de quien firma')
+      // Opcional: firmar con la cuenta de la sucursal (usuario y contraseña de la sucursal), para dejar la firma ligada a esa cuenta.
+      let authId = me.auth_id, conCuenta = false
       const login = String(b.usuario || '').trim().toLowerCase()
-      if (!login || !b.password) throw new Err('Escribe el usuario y la contraseña del encargado')
-      const email = login.includes('@') ? login : `${login.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]/g, '')}@planes.sistegua.com`
-      const r = await fetch(`${env('SUPABASE_URL')}/auth/v1/token?grant_type=password`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: env('SUPABASE_ANON_KEY') },
-        body: JSON.stringify({ email, password: String(b.password) }),
-      })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok || !j.access_token) throw new Err('Usuario o contraseña del encargado incorrectos')
-      const { data: u } = await a.auth.getUser(j.access_token)
-      if (!u || !u.user) throw new Err('No se pudo verificar la cuenta del encargado')
-      const { data: pr } = await a.from('pa_profiles').select('user_id,auth_id').eq('auth_id', u.user.id).maybeSingle()
-      if (!pr || pr.user_id !== row.ff_user_id) throw new Err('Esa cuenta no es la del encargado de fondo fijo asignado a esta sucursal')
-      if (pr.user_id === row.supervisor_user_id) throw new Err('El encargado de fondo fijo y quien hace el arqueo no pueden ser la misma persona')
-      const ed = await userDoc(a, pr.user_id)
-      const nom = (ed && ed.name) || row.ff_name
-      const { error } = await a.from('pa_arqueo_firmas').insert({ folio: row.folio, version: row.version, rol: 'encargado', user_id: pr.user_id, user_name: nom, auth_id: pr.auth_id, firma, doc_hash: row.hash })
+      if (login || b.password) {
+        if (!login || !b.password) throw new Err('Escribe el usuario y la contraseña de la sucursal')
+        const email = login.includes('@') ? login : `${login.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]/g, '')}@planes.sistegua.com`
+        const r = await fetch(`${env('SUPABASE_URL')}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: env('SUPABASE_ANON_KEY') }, body: JSON.stringify({ email, password: String(b.password) }) })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok || !j.access_token) throw new Err('Usuario o contraseña de la sucursal incorrectos')
+        const { data: u } = await a.auth.getUser(j.access_token)
+        const { data: pr } = u && u.user ? await a.from('pa_profiles').select('user_id,auth_id').eq('auth_id', u.user.id).maybeSingle() : { data: null }
+        if (!pr || pr.user_id !== row.branch_user_id) throw new Err('Esa cuenta no es la de la sucursal de este arqueo')
+        authId = pr.auth_id; conCuenta = true
+      }
+      const { error } = await a.from('pa_arqueo_firmas').insert({ folio: row.folio, version: row.version, rol: 'encargado', user_id: row.branch_user_id, user_name: nom, auth_id: authId, firma, doc_hash: row.hash })
       if (error) throw new Err('No se pudo registrar la firma: ' + error.message)
-      await a.from('pa_arqueos').update({ estado: 'completo' }).eq('folio', row.folio).eq('version', row.version)
-      await audit(a, row, 'firma_encargado', me, miNombre, { firmo: nom, hash: row.hash })
+      await a.from('pa_arqueos').update({ estado: 'completo', modo_firma: 'digital' }).eq('folio', row.folio).eq('version', row.version)
+      await audit(a, row, 'firma_encargado', me, miNombre, { firmo: nom, en_visita: true, con_cuenta_sucursal: conCuenta, hash: row.hash })
+      return json({ ok: true })
+    }
+    if (b.action === 'finish_paper') { // firma y sello en papel: se imprime y se agregan a mano
+      if (row.estado !== 'pend_supervisor' && row.estado !== 'pend_encargado') throw new Err('Este arqueo no está esperando firmas')
+      if (row.supervisor_user_id !== me.user_id && me.role !== 'admin') throw new Err('Solo quien realiza el arqueo puede hacerlo', 403)
+      const { error } = await a.from('pa_arqueos').update({ estado: 'completo', modo_firma: 'papel' }).eq('folio', row.folio).eq('version', row.version)
+      if (error) throw new Err('No se pudo cerrar: ' + error.message)
+      await audit(a, row, 'cierre_firma_papel', me, miNombre, { hash: row.hash, firmas_digitales: row.estado === 'pend_encargado' ? ['supervisor'] : [] })
       return json({ ok: true })
     }
     if (b.action === 'deposito') { // se agrega DESPUÉS de firmar; no cambia la versión firmada
@@ -273,7 +277,7 @@ Deno.serve(async (req) => {
       if (ult && ult.version !== row.version) throw new Err('Ya existe una versión más reciente de este arqueo')
       const motivo = txt(b.motivo, 1000)
       if (!motivo) throw new Err('Escribe el motivo de la corrección')
-      const nv = { ...row, version: row.version + 1, estado: 'borrador', corrige_de: row.version, motivo_correccion: motivo, hash: null, bloqueado_at: null, supervisor_user_id: me.user_id, supervisor_name: miNombre }
+      const nv = { ...row, version: row.version + 1, estado: 'borrador', corrige_de: row.version, motivo_correccion: motivo, hash: null, bloqueado_at: null, modo_firma: 'digital', supervisor_user_id: me.user_id, supervisor_name: miNombre }
       delete nv.created_at; delete nv.updated_at
       const { error } = await a.from('pa_arqueos').insert(nv)
       if (error) throw new Err('No se pudo crear la corrección: ' + error.message)
