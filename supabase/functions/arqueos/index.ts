@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
     const yo = await userDoc(a, me.user_id)
     const miNombre = (yo && yo.name) || me.login || me.user_id
 
-    /* ----- Asignar el encargado de fondo fijo de una sucursal (solo administrador) ----- */
+    /* ----- Asignar el encargado de fondo fijo de una sucursal (administrador o supervisor) ----- */
     if (b.action === 'ff_assign') {
       if (me.role !== 'admin' && me.role !== 'supervisor') throw new Err('Solo administradores y supervisores asignan encargados de fondo fijo', 403)
       const suc = await userDoc(a, b.branch_user_id)
@@ -178,8 +178,8 @@ Deno.serve(async (req) => {
       if (!suc || suc.role !== 'sucursal') throw new Err('Elige una sucursal')
       if (!(await puede(a, me, suc))) throw new Err('No tienes permiso en esa sucursal', 403)
       const { data: asig } = await a.from('pa_ff_asignaciones').select('*').eq('branch_user_id', suc.id).is('hasta', null).maybeSingle()
-      if (!asig) throw new Err('Esa sucursal no tiene encargado de fondo fijo asignado. Pide al administrador que lo configure.')
-      const fondo = Number(asig.monto) // el monto lo define el administrador por sucursal; no viene de la pantalla
+      if (!asig) throw new Err('Esa sucursal no tiene encargado de fondo fijo asignado. Asígnalo en Arqueos, sección Encargados de fondo fijo y monto por sucursal.')
+      const fondo = Number(asig.monto) // el monto lo define el administrador o el supervisor por sucursal; no viene de la pantalla
       const enc = await userDoc(a, asig.encargado_user_id)
       if (asig.encargado_user_id === me.user_id) throw new Err('Quien hace el arqueo no puede ser el encargado del fondo fijo de esa sucursal')
       const { data: folio } = await a.rpc('pa_arqueo_next_folio')
@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
       const firma = firmaOk(b.firma)
       const login = String(b.usuario || '').trim().toLowerCase()
       if (!login || !b.password) throw new Err('Escribe el usuario y la contraseña del encargado')
-      const email = login.includes('@') ? login : `${login.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9._-]/g, '')}@planes.sistegua.com`
+      const email = login.includes('@') ? login : `${login.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]/g, '')}@planes.sistegua.com`
       const r = await fetch(`${env('SUPABASE_URL')}/auth/v1/token?grant_type=password`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', apikey: env('SUPABASE_ANON_KEY') },
         body: JSON.stringify({ email, password: String(b.password) }),
