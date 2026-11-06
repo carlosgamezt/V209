@@ -6,3 +6,6 @@ verify_jwt = true
 
 [functions.recordatorios-de-nexa]
 verify_jwt = false
+
+[functions.supervision-sucursal]
+verify_jwt = true
