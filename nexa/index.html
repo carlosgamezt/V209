@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v477</title>
+</script><title>Nexa v478</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -979,7 +979,7 @@ new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v477';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v478';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -2658,12 +2658,18 @@ function supQ(suc,q){
  else ctl='<input id="sqv_'+n+'" value="'+esc(vv.v)+'" readonly autocomplete="off"'+d+'>';
  const r35=n===35&&!supRow(suc,35)?supRow(suc,3501):null,hint=r35&&r35.v!==''?'<small class="sqcd">CD (hojas): '+esc(r35.v)+' — suma las transferencias</small>':'';
  return '<div class="card sq'+(f?' falta':'')+'" id="sq_'+n+'"><div class="sqh"><span class="sqn">'+n+'</span><div class="sqt"><b>'+esc(t)+'</b>'+(h?'<small>'+esc(h)+'</small>':'')+'</div><span class="sqtag '+tg[1]+'" id="sqg_'+n+'">'+tg[0]+'</span></div><div class="sqc">'+ctl+'<button class="sec" type="button" onclick="supCopy('+n+')">Copiar</button></div>'+hint+'</div>'}
+async function spPend(){const j=await dmFn({action:'pendientes'});SUP.pend=j.ok?(j.pendientes||[]):[];SUP.pendL=1;if(view==='sup'&&!supTyping())render()}
+async function spRes(i,ap){const x=(SUP.pend||[])[i];if(!x)return;let nota='';if(!ap){nota=prompt('Motivo del rechazo (lo verá la sucursal)');if(nota==null)return}
+ const j=await dmFn({action:'resolver',sucursal_codigo:x.sucursal_codigo,mes:x.mes,aprobar:ap,nota});if(!j.ok){toast(j.error||'No se pudo resolver');return}toast(ap?'Aprobado: la sucursal ya puede editar':'Solicitud rechazada');spPend()}
+const spPanel=()=>{const l=SUP.pend||[];if(!l.length)return'';const nom=c=>(SUP_SUC.find(x=>x[0]===c)||[c,c])[1];
+ return'<div class="sqav"><b>Solicitudes de cambio ('+l.length+')</b>'+l.map((x,i)=>'<div style="margin-top:8px"><b>'+esc(nom(x.sucursal_codigo))+'</b> · '+esc(x.mes)+'<br>'+esc(x.motivo||'')+'<div style="display:flex;gap:8px;margin-top:6px"><button type="button" onclick="spRes('+i+',true)">Aprobar</button><button type="button" class="sec" onclick="spRes('+i+',false)">Rechazar</button></div></div>').join('')+'</div>'};
 function supView(){
  const btn='<button id="supBtn" onclick="supSync()"'+(SUP.running?' disabled':'')+'>'+(SUP.running?'Actualizando…':'Actualizar todo')+'</button>';
  const head=hd('sup','Supervisión mensual','Guía de solo lectura para llenar el Forms de Supervisión General a Sucursal. Los datos salen de tus hojas de Google.',btn);
  if(me.role!=='admin')return hd('sup','Supervisión mensual','','')+'<div class="card">Este módulo es solo para el administrador.</div>';
  if(!Supa.on)return head+'<div class="card">La supervisión necesita la conexión con la nube (Supabase).</div>';
  if(!SUP.loaded&&!SUP.loading)supLoad();
+ if(!SUP.pendL){SUP.pendL=1;spPend()}
  const suc=SUP.suc;
  const bar='<div class="sqbar"><div><label>Mes a evaluar</label><select onchange="supMes(this.value)">'+supMeses().map(m=>'<option value="'+m[0]+'"'+(m[0]===SUP.mes?' selected':'')+'>'+m[1]+'</option>').join('')+'</select></div></div>';
  const tabs='<div class="sqtabs">'+SUP_SUC.map(x=>{const k=SUP.loaded?supFaltas(x[0]).length:0;return '<button type="button" class="sqtab'+(x[0]===suc?' on':'')+'" onclick="supSuc(\''+x[0]+'\')">'+esc(x[1])+' <i id="supb_'+x[0]+'" class="'+(k?'':'z')+'">'+k+'</i></button>'}).join('')+'</div>';
@@ -2676,10 +2682,10 @@ function supView(){
   let lst='';SUP_Q.forEach(q=>{const sec=SUP_SEC[q[0]];if(sec)lst+='<div class="sqsec"><h3>'+esc(sec[0])+'</h3>'+(sec[1]?'<small>'+esc(sec[1])+'</small>':'')+'</div>';lst+=supQ(suc,q)});
   const l=SUP.log,foot='<div class="sqfoot">'+(l?'Última sincronización: <b>'+supDT(l.ejecutado_en)+'</b> · '+esc(l.ejecutado_por||'—')+' · '+(l.filas==null?'—':l.filas)+' filas'+(l.ok===false?' · <span style="color:#c81e35">con error</span>':''):'Todavía no se ha sincronizado.')+'</div>';
   body=av+vacio+'<div id="sup-falt" class="sqban'+(supFaltas(suc).length?'':' ok')+'">'+supBanner(suc)+'</div>'+lst+foot}
- return head+bar+tabs+'<div id="supBody">'+body+'</div>'}
+ return head+spPanel()+bar+tabs+'<div id="supBody">'+body+'</div>'}
 V.sup=()=>supView();
 /* ===== v476 · DATOS DEL MES (sucursal): cada sucursal captura lo suyo; cae en la hoja de Google y en Supabase ===== */
-const DM={mes:'',v:{},loaded:false,loading:false,saving:false,err:''};
+const DM={mes:'',v:{},estado:'nuevo',motivo:'',nota:'',loaded:false,loading:false,saving:false,err:''};
 const DM_G=[['UVIT (soporte técnico)',[13,14,15,16]],['Transferencias y entregas',[17,18]],['RRHH',[28,33]],['Mercadería',[35,36,37]],['Comercial y Marketing',[45,46,47]],['Camión y piloto',[49,50]]];
 const DM_T={13:'f',14:'t',15:'n',16:'n',17:'n',18:'n',28:'n',33:'n',35:'n',36:'n',37:'n',45:'e',46:'e',47:'a',49:'n',50:'n'};
 async function dmFn(b){const c=Supa.cfg();let tk=c.key;try{const s=await Supa.session();if(s)tk=s.access_token}catch(e){}
@@ -2687,7 +2693,9 @@ async function dmFn(b){const c=Supa.cfg();let tk=c.key;try{const s=await Supa.se
   if(r.status===404)return{ok:false,error:'Falta publicar la función "supervision-sucursal" en Supabase'};
   return await r.json().catch(()=>({ok:false,error:'Respuesta no válida ('+r.status+')'}))}catch(e){return{ok:false,error:'No se pudo contactar el servidor'}}}
 async function dmLoad(){if(DM.loading)return;DM.loading=true;const j=await dmFn({action:'get',mes:DM.mes});DM.loading=false;
- if(j.ok){DM.v=j.valores||{};DM.err=''}else DM.err=j.error||'Error';DM.loaded=true;if(view==='datosmes'&&!(document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))render()}
+ if(j.ok){DM.v=j.valores||{};DM.estado=j.estado||'nuevo';DM.motivo=j.motivo||'';DM.nota=j.nota||'';DM.err=''}else DM.err=j.error||'Error';DM.loaded=true;if(view==='datosmes'&&!(document.activeElement&&/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))render()}
+async function dmPedir(){const m=prompt('¿Qué dato necesitas cambiar y por qué? (el supervisor lo revisará)');if(m==null)return;if(m.trim().length<5){toast('Escribe el motivo del cambio');return}
+ const j=await dmFn({action:'solicitar',mes:DM.mes,motivo:m.trim()});if(!j.ok){toast(j.error||'No se pudo enviar');return}toast('Solicitud enviada. Espera la aprobación del supervisor.');DM.loaded=false;dmLoad()}
 function dmMes(v){DM.mes=v;DM.v={};DM.loaded=false;render()}
 async function dmSave(){if(DM.saving)return;const valores={};Object.keys(DM_T).forEach(q=>{const e=document.getElementById('dmv_'+q);if(e)valores[q]=e.value.trim()});
  DM.saving=true;const b=document.getElementById('dmBtn');if(b){b.disabled=true;b.textContent='Guardando…'}
@@ -2695,20 +2703,23 @@ async function dmSave(){if(DM.saving)return;const valores={};Object.keys(DM_T).f
  if(!j.ok){toast(j.error||'No se pudo guardar');return}
  toast('Guardado'+(j.aviso?'. Aviso: '+j.aviso:'. Ya está en la hoja de Google.'));DM.loaded=false;dmLoad()}
 function dmView(){
- const head=hd('datosmes','Datos del mes','Escribe lo que corresponde a tu sucursal. Solo tú ves y editas lo tuyo.','<button id="dmBtn" onclick="dmSave()">Guardar datos</button>');
+ const ed=DM.estado==='nuevo'||DM.estado==='abierto';
+ const head=hd('datosmes','Datos del mes','Escribe lo que corresponde a tu sucursal. Solo tú ves y editas lo tuyo.',ed?'<button id="dmBtn" onclick="dmSave()">Guardar datos</button>':DM.estado==='enviado'?'<button id="dmBtn" onclick="dmPedir()">Solicitar cambios</button>':'');
  if(me.role!=='sucursal')return head+'<div class="card">Esta captura es solo para las sucursales.</div>';
  if(!Supa.on)return head+'<div class="card">Necesita la conexión con la nube.</div>';
  if(!DM.mes)DM.mes=supMesDef();
  if(!DM.loaded&&!DM.loading)dmLoad();
- const bar='<div class="sqban ok" style="margin:6px 0"><b>Mes a capturar: '+esc((supMeses().find(m=>m[0]===DM.mes)||['',DM.mes])[1])+'</b><br><small>Solo se captura el mes vencido.</small></div>';
+ const est=DM.estado==='solicitado'?'<br><small>Cambios solicitados, esperando la aprobación del supervisor. Motivo: '+esc(DM.motivo)+'</small>':DM.estado==='enviado'?'<br><small>Datos enviados. Para modificarlos, toca Solicitar cambios.'+(DM.nota?' Última respuesta del supervisor: '+esc(DM.nota):'')+'</small>':DM.estado==='abierto'?'<br><small>El supervisor aprobó tus cambios. Corrige y guarda de nuevo.</small>':'<br><small>Solo se captura el mes vencido.</small>';
+ const bar='<div class="sqban'+(ed?' ok':'')+'" style="margin:6px 0"><b>Mes a capturar: '+esc((supMeses().find(m=>m[0]===DM.mes)||['',DM.mes])[1])+'</b>'+est+'</div>';
  if(DM.err)return head+bar+'<div class="card" style="border:1px solid #fca5a5;background:#fff5f5;color:#9b1c1c">'+esc(DM.err)+'</div>';
  if(!DM.loaded)return head+bar+'<div class="card">Cargando…</div>';
  const campo=n=>{const q=SUP_Q.find(x=>x[0]===n),t=DM_T[n],v=DM.v[n]==null?'':String(DM.v[n]);let c;
-  if(t==='a')c='<textarea id="dmv_'+n+'" rows="3">'+esc(v)+'</textarea>';
-  else if(t==='e')c='<select id="dmv_'+n+'">'+supOpts(['1','2','3','4','5','6','7','8','9','10'],v)+'</select>';
-  else c='<input id="dmv_'+n+'" value="'+esc(v)+'" autocomplete="off" '+(t==='f'?'placeholder="dd/mm/aaaa" inputmode="numeric"':t==='n'?'inputmode="decimal"':'')+'>';
+  const dis=ed?'':' disabled';
+  if(t==='a')c='<textarea id="dmv_'+n+'" rows="3"'+(ed?'':' readonly')+'>'+esc(v)+'</textarea>';
+  else if(t==='e')c='<select id="dmv_'+n+'"'+dis+'>'+supOpts(['1','2','3','4','5','6','7','8','9','10'],v)+'</select>';
+  else c='<input id="dmv_'+n+'" value="'+esc(v)+'" autocomplete="off"'+(ed?'':' readonly')+' '+(t==='f'?'placeholder="dd/mm/aaaa" inputmode="numeric"':t==='n'?'inputmode="decimal"':'')+'>';
   return '<div class="card sq"><div class="sqh"><span class="sqn">'+n+'</span><div class="sqt"><b>'+esc(q[1])+'</b>'+(q[2]?'<small>'+esc(q[2])+'</small>':'')+'</div></div><div class="sqc">'+c+'</div></div>'};
- return head+bar+DM_G.map(g=>'<div class="sqsec"><h3>'+esc(g[0])+'</h3></div>'+g[1].map(campo).join('')).join('')+'<div style="margin:14px 0"><button onclick="dmSave()">Guardar datos</button></div>'}
+ return head+bar+DM_G.map(g=>'<div class="sqsec"><h3>'+esc(g[0])+'</h3></div>'+g[1].map(campo).join('')).join('')+(ed?'<div style="margin:14px 0"><button onclick="dmSave()">Guardar datos</button></div>':'')}
 V.datosmes=()=>dmView();
 
 setInterval(()=>{try{if(view==='sup'&&!document.hidden&&Supa.on&&!SUP.running&&!supTyping())supLoad(true)}catch(e){}},60000);

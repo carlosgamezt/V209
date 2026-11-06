@@ -120,21 +120,49 @@ Deno.serve(async (req) => {
   try {
     const me = await caller(req)
     if (!me) throw new Err('Sesión no válida', 401)
-    if (me.role !== 'sucursal') throw new Err('Esta captura es solo para las sucursales', 403)
     const a = db()
+    const b = await req.json().catch(() => ({}))
+    if (me.role === 'admin') {
+      // El administrador aprueba o rechaza las solicitudes de cambio.
+      if (b.action === 'pendientes') {
+        const { data } = await a.from('supervision_envios').select('sucursal_codigo,mes,motivo,solicitado_en').eq('estado', 'solicitado').order('solicitado_en')
+        return json({ ok: true, pendientes: (data || []).map((x: any) => ({ ...x, mes: String(x.mes).slice(0, 7) })) })
+      }
+      if (b.action === 'resolver') {
+        const cod2 = String(b.sucursal_codigo || ''), mes2 = String(b.mes || '')
+        if (!/^\d{4}-\d{2}$/.test(mes2) || !cod2) throw new Err('Solicitud no válida')
+        const { data: e } = await a.from('supervision_envios').select('estado').eq('sucursal_codigo', cod2).eq('mes', mes2 + '-01').maybeSingle()
+        if (!e || e.estado !== 'solicitado') throw new Err('Esa solicitud ya no está pendiente')
+        const aprobar = !!b.aprobar
+        const { error } = await a.from('supervision_envios').update({ estado: aprobar ? 'abierto' : 'enviado', nota: aprobar ? null : String(b.nota || 'Solicitud rechazada').slice(0, 300), resuelto_por: me.email, resuelto_en: new Date().toISOString() }).eq('sucursal_codigo', cod2).eq('mes', mes2 + '-01')
+        if (error) throw new Err('No se pudo resolver: ' + error.message, 500)
+        return json({ ok: true })
+      }
+      throw new Err('El administrador no captura aquí', 403)
+    }
+    if (me.role !== 'sucursal') throw new Err('Esta captura es solo para las sucursales', 403)
     const u = await userDoc(a, me.user_id)
     const cod = codigo(u && (u.branch || u.name))
     if (!cod) throw new Err('No pude identificar tu sucursal en la supervisión. Avisa al administrador.', 403)
-    const b = await req.json().catch(() => ({}))
     const mes = mesValido(b.mes)
     const mesDate = mes + '-01'
+    const { data: envio } = await a.from('supervision_envios').select('estado,motivo,nota').eq('sucursal_codigo', cod).eq('mes', mesDate).maybeSingle()
     if (b.action === 'get') {
       const { data, error } = await a.from('supervision_mensual').select('pregunta,valor,fuente').eq('sucursal_codigo', cod).eq('mes', mesDate).in('pregunta', Object.keys(PREG).map(Number))
       if (error) throw new Err('No se pudieron leer los datos: ' + error.message, 500)
       const valores: Record<number, string> = {}; for (const r of data || []) valores[r.pregunta] = r.valor
-      return json({ ok: true, valores })
+      return json({ ok: true, valores, estado: envio ? envio.estado : 'nuevo', motivo: envio?.motivo ?? '', nota: envio?.nota ?? '' })
+    }
+    if (b.action === 'solicitar') {
+      if (!envio || envio.estado !== 'enviado') throw new Err('Solo puedes pedir cambios de datos ya enviados')
+      const motivo = String(b.motivo || '').trim().slice(0, 300)
+      if (motivo.length < 5) throw new Err('Escribe el motivo del cambio')
+      const { error } = await a.from('supervision_envios').update({ estado: 'solicitado', motivo, nota: null, solicitado_en: new Date().toISOString() }).eq('sucursal_codigo', cod).eq('mes', mesDate)
+      if (error) throw new Err('No se pudo enviar la solicitud: ' + error.message, 500)
+      return json({ ok: true })
     }
     if (b.action === 'save') {
+      if (envio && envio.estado !== 'abierto') throw new Err('Ya enviaste los datos de este mes. Para cambiarlos, solicita cambios y espera la aprobación.')
       const vals: Record<number, string> = {}
       for (const [k, v] of Object.entries(b.valores || {})) {
         const q = Number(k); if (!(q in PREG)) continue
@@ -148,6 +176,7 @@ Deno.serve(async (req) => {
       const borrar = Object.entries(vals).filter(([q, v]) => v === '' && !bloq.has(+q)).map(([q]) => +q)
       if (subir.length) { const { error } = await a.from('supervision_mensual').upsert(subir, { onConflict: 'sucursal_codigo,mes,pregunta' }); if (error) throw new Err('No se pudo guardar: ' + error.message, 500) }
       if (borrar.length) await a.from('supervision_mensual').delete().eq('sucursal_codigo', cod).eq('mes', mesDate).eq('fuente', 'sucursal').in('pregunta', borrar)
+      await a.from('supervision_envios').upsert({ sucursal_codigo: cod, mes: mesDate, estado: 'enviado', motivo: null, nota: null, enviado_en: ahora }, { onConflict: 'sucursal_codigo,mes' })
       const aviso = await escribirHoja(mes, cod, Object.fromEntries(Object.entries(vals).filter(([q]) => !bloq.has(+q))))
       return json({ ok: true, guardados: subir.length, bloqueados: [...bloq], aviso })
     }
