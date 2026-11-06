@@ -72,12 +72,29 @@ async function googleToken(): Promise<string> {
   if (!j.access_token) throw new Error('Google no dio token')
   return j.access_token
 }
+// Crea la pestaña del mes duplicando la más reciente (AAAA-MM) y vaciando sus datos; conserva títulos, códigos y formato.
+async function crearPestana(tk: string, mes: string) {
+  const H = { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' }
+  const m = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?fields=sheets.properties(sheetId,title)`, { headers: H })
+  if (!m.ok) return
+  const hojas: { sheetId: number; title: string }[] = ((await m.json()).sheets ?? []).map((x: any) => x.properties)
+  if (hojas.some((h) => h.title === mes)) return
+  const fuente = hojas.filter((h) => /^\d{4}-\d{2}$/.test(h.title)).sort((x, y) => y.title.localeCompare(x.title))[0]
+  if (!fuente) return
+  const d = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`, { method: 'POST', headers: H,
+    body: JSON.stringify({ requests: [{ duplicateSheet: { sourceSheetId: fuente.sheetId, newSheetName: mes } }] }) })
+  if (!d.ok) return
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchClear`, { method: 'POST', headers: H,
+    body: JSON.stringify({ ranges: [`'${mes}'!C3:K80`] }) })
+}
 const letra = (i: number) => String.fromCharCode(65 + i) // columnas A..K
 async function escribirHoja(mes: string, cod: string, valores: Record<number, string>): Promise<string | null> {
   try {
     const tk = await googleToken()
     const rango = encodeURIComponent(`'${mes}'!A1:K80`)
-    const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${rango}`, { headers: { Authorization: `Bearer ${tk}` } })
+    const leer = () => fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${rango}`, { headers: { Authorization: `Bearer ${tk}` } })
+    let r = await leer()
+    if (!r.ok) { await crearPestana(tk, mes); r = await leer() } // mes nuevo: se crea la pestaña copiando la más reciente
     if (!r.ok) return `No se encontró la pestaña ${mes} en la hoja de Google (código ${r.status}). Avísale a tu supervisor.`
     const v: string[][] = (await r.json()).values ?? []
     const col = (v[0] ?? []).findIndex((x, i) => i >= 2 && String(x).trim() === cod)
