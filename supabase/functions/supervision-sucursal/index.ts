@@ -115,6 +115,58 @@ async function escribirHoja(mes: string, cod: string, valores: Record<number, st
   } catch (e) { return 'No se pudo escribir en la hoja de Google: ' + String((e as Error).message || e) }
 }
 
+/* ---- Visitas del supervisor -> hoja VENTAS (columna FECHA DE ÚLTIMA VISITA SUPERVISOR) ---- */
+const INV_ID = '1tUqhdBVUj64oMAgbbhV_8XPQZcVaHdd4oss7OGKxgUQ'
+const serial = (iso: string) => Math.round((Date.parse(iso + 'T00:00:00Z') - Date.parse('1899-12-30T00:00:00Z')) / 86400000)
+const dmy = (t: string) => { const m = String(t).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '' }
+// Para cada mes de VENTAS desde el mes siguiente a la visita: la fecha = última visita anterior al primer día de ese mes.
+// Si el mes no existe en la hoja, se crea copiando las filas (sucursal y series) del último mes: así entran solas las sucursales nuevas.
+async function visitaHoja(a: any, fechaIso: string): Promise<string | null> {
+  try {
+    const tk = await googleToken(); const H = { Authorization: `Bearer ${tk}`, 'Content-Type': 'application/json' }
+    const base = `https://sheets.googleapis.com/v4/spreadsheets/${INV_ID}`
+    const meta = await fetch(`${base}?fields=sheets.properties(sheetId,title)`, { headers: H })
+    if (!meta.ok) return `No pude abrir la hoja de VENTAS (código ${meta.status}). ¿Está compartida como editor con nexa-lector?`
+    const sid = ((await meta.json()).sheets ?? []).map((x: any) => x.properties).find((x: any) => x.title === 'VENTAS')?.sheetId
+    if (sid == null) return 'No encontré la pestaña VENTAS.'
+    const rd = await fetch(`${base}/values/${encodeURIComponent("'VENTAS'!A1:V3000")}`, { headers: H })
+    const v: string[][] = (await rd.json()).values ?? []
+    const mesDe = (r: string[]) => dmy(r[3] ?? '').slice(0, 7)
+    const ym = fechaIso.slice(0, 7); const [yy, mm] = ym.split('-').map(Number)
+    const T = mm === 12 ? `${yy + 1}-01` : `${yy}-${String(mm + 1).padStart(2, '0')}`
+    let ultimaA = 0; v.forEach((r, i) => { if (i > 0 && String(r[0] ?? '').trim()) ultimaA = i })
+    const meses = new Set(v.map((r, i) => (i > 0 && String(r[0] ?? '').trim() ? mesDe(r) : '')).filter(Boolean))
+    const reqs: unknown[] = []
+    const data: unknown[] = []
+    if (!meses.has(T)) { // crear el mes: copiar el bloque del último mes anterior
+      const prev = [...meses].filter((m) => m < T).sort().pop()
+      if (prev) {
+        const bloque = v.map((r, i) => ({ r, i })).filter((x) => x.i > 0 && String(x.r[0] ?? '').trim() && mesDe(x.r) === prev)
+        bloque.forEach((x, k) => { const fila = ultimaA + 2 + k; v[fila - 1] = [x.r[0], x.r[1] ?? '', x.r[2] ?? '', `1/${T.slice(5)}/${T.slice(0, 4)}`]
+          data.push({ range: `'VENTAS'!A${fila}:D${fila}`, values: [[x.r[0], x.r[1] ?? '', x.r[2] ?? '', serial(T + '-01')]] }) })
+        meses.add(T)
+      }
+    }
+    const { data: vis } = await a.from('supervision_visitas').select('sucursal_codigo,fecha')
+    for (let i = 1; i < v.length; i++) {
+      const r = v[i] ?? []; const m = mesDe(r); const cod = codigo(r[0])
+      if (!cod || !m || m < T) continue
+      const lim = m + '-01'
+      const ult = (vis || []).filter((x: any) => x.sucursal_codigo === cod && x.fecha < lim).map((x: any) => x.fecha).sort().pop()
+      const fila = i + 1
+      data.push({ range: `'VENTAS'!U${fila}`, values: [[ult ? serial(ult) : '']] })
+      if (ult) reqs.push({ repeatCell: { range: { sheetId: sid, startRowIndex: i, endRowIndex: i + 1, startColumnIndex: 20, endColumnIndex: 21 }, cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'd/m/yyyy' } } }, fields: 'userEnteredFormat.numberFormat' } })
+      if (!reqs.length && !data.length) break
+    }
+    if (data.length) {
+      const w = await fetch(`${base}/values:batchUpdate`, { method: 'POST', headers: H, body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data }) })
+      if (!w.ok) return `No se pudo escribir en VENTAS (código ${w.status}). ¿Está compartida como editor con nexa-lector?`
+    }
+    if (reqs.length) await fetch(`${base}:batchUpdate`, { method: 'POST', headers: H, body: JSON.stringify({ requests: reqs }) })
+    return null
+  } catch (e) { return 'No se pudo actualizar VENTAS: ' + String((e as Error).message || e) }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   try {
@@ -127,6 +179,10 @@ Deno.serve(async (req) => {
       if (b.action === 'pendientes') {
         const { data } = await a.from('supervision_envios').select('sucursal_codigo,mes,motivo,solicitado_en').eq('estado', 'solicitado').order('solicitado_en')
         return json({ ok: true, pendientes: (data || []).map((x: any) => ({ ...x, mes: String(x.mes).slice(0, 7) })) })
+      }
+      if (b.action === 'visita_hoja') {
+        const f = String(b.fecha || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) throw new Err('Fecha no válida')
+        return json({ ok: true, aviso: await visitaHoja(a, f) })
       }
       if (b.action === 'resolver') {
         const cod2 = String(b.sucursal_codigo || ''), mes2 = String(b.mes || '')
