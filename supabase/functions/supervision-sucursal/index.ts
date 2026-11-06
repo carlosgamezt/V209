@@ -17,7 +17,7 @@ class Err extends Error { status: number; constructor(m: string, status = 400) {
 
 const SHEET_ID = '1yhx7amI36V_3Hy4cQg66VwrRyuhBBKIPDgNuMvWodHY'
 // pregunta -> tipo: f fecha dd/mm/aaaa, n número, e entero 1-10, t texto
-const PREG: Record<number, string> = { 13: 'f', 14: 't', 15: 'n', 16: 'n', 17: 'n', 18: 'n', 28: 'n', 33: 'n', 35: 'n', 36: 'n', 37: 'n', 45: 'e', 46: 'e', 47: 't', 49: 'n', 50: 'n' }
+const PREG: Record<number, string> = { 13: 'f', 14: 'd', 15: 'n', 16: 'n', 17: 'n', 18: 'n', 28: 'n', 33: 'n', 35: 'n', 36: 'n', 37: 'n', 45: 'e', 46: 'e', 47: 't', 49: 'n', 50: 'n' }
 const SUC: Record<string, string> = {
   'SAN JUAN': '136', JOCOTENANGO: '128', CHIMALTENANGO: '13', SOLOLA: '131', QUICHE: '21',
   HUEHUETENANGO: '18', XELA: '3', QUETZALTENANGO: '3', TOTONICAPAN: '146', SACAPULAS: '151',
@@ -53,6 +53,7 @@ function limpiar(q: number, v: unknown): string {
   const k = PREG[q]
   if (k === 'f') { const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (!m) throw new Err(`Pregunta ${q}: la fecha va como dd/mm/aaaa`); return `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[3]}` }
   if (k === 'n') { const n = Number(t.replace(/[Q,\s]/g, '')); if (!isFinite(n) || n < 0) throw new Err(`Pregunta ${q}: escribe solo un número`); return String(n) }
+  if (k === 'd') { const d = t.replace(/\s/g, ''); if (!/^\d+$/.test(d)) throw new Err(`Pregunta ${q}: escribe solo números`); return d }
   if (k === 'e') { const n = Number(t); if (!Number.isInteger(n) || n < 1 || n > 10) throw new Err(`Pregunta ${q}: la nota va de 1 a 10`); return String(n) }
   return t.slice(0, 500)
 }
