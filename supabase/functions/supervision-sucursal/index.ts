@@ -38,12 +38,13 @@ async function userDoc(a: any, id: string) {
   const { data } = await a.from('pa_docs').select('data').eq('col', 'users').eq('id', String(id || '')).maybeSingle()
   return data ? data.data : null
 }
+// Solo se captura el mes vencido (el mes anterior al actual, hora de Guatemala).
 function mesValido(m: unknown): string {
   const s = String(m || '')
-  if (!/^\d{4}-\d{2}$/.test(s)) throw new Err('Mes no válido')
-  const [y, mm] = s.split('-').map(Number); const hoy = new Date()
-  const dif = (hoy.getFullYear() - y) * 12 + (hoy.getMonth() + 1 - mm)
-  if (mm < 1 || mm > 12 || dif < 0 || dif > 12) throw new Err('Solo se puede capturar de los últimos 12 meses')
+  const g = new Date(Date.now() - 6 * 3600 * 1000)
+  const ant = new Date(Date.UTC(g.getUTCFullYear(), g.getUTCMonth() - 1, 1))
+  const ok = `${ant.getUTCFullYear()}-${String(ant.getUTCMonth() + 1).padStart(2, '0')}`
+  if (s !== ok) throw new Err(`Solo se puede capturar el mes vencido (${ok}).`)
   return s
 }
 function limpiar(q: number, v: unknown): string {
