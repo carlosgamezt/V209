@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v481</title>
+</script><title>Nexa v482</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -979,7 +979,7 @@ new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v481';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v482';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -2645,18 +2645,38 @@ function supCopy(n){
 function supGo(n){const c=document.getElementById('sq_'+n);if(!c)return;try{c.scrollIntoView({behavior:'smooth',block:'center'})}catch(e){c.scrollIntoView()}const i=document.getElementById('sqv_'+n);if(i)setTimeout(()=>{try{i.focus({preventScroll:true})}catch(e){}},350)}
 function supSuc(c){SUP.suc=c;render();window.scrollTo(0,0)}
 function supMes(v){SUP.mes=v;SUP.rows={};SUP.loaded=false;render()}
+function supPaint(){
+ const suc=SUP.suc;
+ SUP_Q.forEach(q=>{const n=q[0],c=document.getElementById('sq_'+n);if(!c)return;const f=supFalta(suc,n),vv=supVal(suc,n);c.classList.toggle('falta',f);const g=document.getElementById('sqg_'+n);if(g){const t=supTag(n,vv,f);g.className='sqtag '+t[1];g.textContent=t[0]}});
+ const b=document.getElementById('sup-falt');if(b){b.className='sqban'+(supFaltas(suc).length?'':' ok');b.innerHTML=supBanner(suc)}
+ SUP_SUC.forEach(x=>{const e=document.getElementById('supb_'+x[0]);if(e){const k=supFaltas(x[0]).length;e.textContent=k;e.className=k?'':'z'}})}
+async function supSave(n,el){
+ const suc=el.dataset.suc,mes=SUP.mes+'-01',val=String(el.value||'').trim(),key=suc+'|'+n,prev=SUP.rows[key];
+ if(prev&&val===supFmt(n,prev.v).trim())return;
+ if(!prev&&val===supDerivado(suc,n))return;
+ if(!Supa.on||!Supa.sb){toast('Sin conexión con la nube');return}
+ if(val===''){
+  if(prev&&prev.f==='admin'){
+   const r=await Supa.sb.from('supervision_mensual').delete().eq('sucursal_codigo',suc).eq('mes',mes).eq('pregunta',n);
+   if(r.error){toast('No se pudo borrar: '+(r.error.message||r.error));return}
+   delete SUP.rows[key];supPaint();toast('Dato borrado');return}
+  if(prev){toast('Ese dato viene de '+(prev.f==='hojas'?'tus hojas':'la sucursal')+' y no se borra. Para cambiarlo, escribe otro valor.');el.value=supFmt(n,prev.v);return}
+  return}
+ const r=await Supa.sb.from('supervision_mensual').upsert({sucursal_codigo:suc,mes:mes,pregunta:n,valor:val,fuente:'admin',actualizado_en:new Date().toISOString(),actualizado_por:(me.email||me.name||me.id)},{onConflict:'sucursal_codigo,mes,pregunta'});
+ if(r.error){const m=String(r.error.message||r.error);toast('No se pudo guardar: '+m+(/row-level|permission|denied/i.test(m)?' · falta correr nexa_supervision_admin.sql':''));return}
+ SUP.rows[key]={v:val,f:'admin'};supPaint()}
 function supBanner(suc){
  const f=supFaltas(suc);
  if(!f.length)return '<b>'+esc(supSucNom(suc))+'</b>: no falta ningún dato obligatorio.';
- return 'Te faltan <b>'+f.length+'</b> dato'+(f.length>1?'s':'')+' de <b>'+esc(supSucNom(suc))+'</b><small class="sqhint">Complétalos en tus hojas de Google y toca Actualizar todo.</small>'+'<div class="sqchips">'+f.map(n=>{const q=SUP_Q.find(x=>x[0]===n);return '<a class="sqchip" onclick="supGo('+n+')" title="'+esc(q[1])+'"><b>'+n+'</b> '+esc(q[1])+'</a>'}).join('')+'</div>'}
+ return 'Te faltan <b>'+f.length+'</b> dato'+(f.length>1?'s':'')+' de <b>'+esc(supSucNom(suc))+'</b><small class="sqhint">Escríbelos aquí abajo, en el campo rojo (toca el número para ir a él), o complétalos en tus hojas de Google y toca Actualizar todo.</small>'+'<div class="sqchips">'+f.map(n=>{const q=SUP_Q.find(x=>x[0]===n);return '<a class="sqchip" onclick="supGo('+n+')" title="'+esc(q[1])+'"><b>'+n+'</b> '+esc(q[1])+'</a>'}).join('')+'</div>'}
 const supOpts=(lst,cur)=>['<option value="">—</option>'].concat(lst.map(o=>'<option'+(cur===o?' selected':'')+'>'+o+'</option>')).concat(cur&&!lst.includes(cur)?['<option selected>'+esc(cur)+'</option>']:[]).join('');
 function supQ(suc,q){
- const n=q[0],t=q[1],h=q[2],tp=q[3],vv=supVal(suc,n),f=supFalta(suc,n),tg=supTag(n,vv,f),d='';
+ const n=q[0],t=q[1],h=q[2],tp=q[3],vv=supVal(suc,n),f=supFalta(suc,n),tg=supTag(n,vv,f),ed=vv.f!=='auto',d=ed?' data-suc="'+suc+'" placeholder="Escríbelo aquí" onchange="supSave('+n+',this)"':' readonly',dd=ed?d:' disabled';
  let ctl;
- if(tp==='a')ctl='<textarea id="sqv_'+n+'" rows="3" readonly'+d+'>'+esc(vv.v)+'</textarea>';
- else if(tp==='s')ctl='<select id="sqv_'+n+'" disabled'+d+'>'+supOpts(['Titular','Suplente'],vv.v)+'</select>';
- else if(tp==='r')ctl='<select id="sqv_'+n+'" disabled'+d+'>'+supOpts(['1','2','3','4','5','6','7','8','9','10'],vv.v)+'</select>';
- else ctl='<input id="sqv_'+n+'" value="'+esc(vv.v)+'" readonly autocomplete="off"'+d+'>';
+ if(tp==='a')ctl='<textarea id="sqv_'+n+'" rows="3"'+d+'>'+esc(vv.v)+'</textarea>';
+ else if(tp==='s')ctl='<select id="sqv_'+n+'"'+dd.replace(' placeholder="Escríbelo aquí"','')+'>'+supOpts(['Titular','Suplente'],vv.v)+'</select>';
+ else if(tp==='r')ctl='<select id="sqv_'+n+'"'+dd.replace(' placeholder="Escríbelo aquí"','')+'>'+supOpts(['1','2','3','4','5','6','7','8','9','10'],vv.v)+'</select>';
+ else ctl='<input id="sqv_'+n+'" value="'+esc(vv.v)+'" autocomplete="off"'+d+'>';
  const r35=n===35&&!supRow(suc,35)?supRow(suc,3501):null,hint=r35&&r35.v!==''?'<small class="sqcd">CD (hojas): '+esc(r35.v)+' — suma las transferencias</small>':'';
  return '<div class="card sq'+(f?' falta':'')+'" id="sq_'+n+'"><div class="sqh"><span class="sqn">'+n+'</span><div class="sqt"><b>'+esc(t)+'</b>'+(h?'<small>'+esc(h)+'</small>':'')+'</div><span class="sqtag '+tg[1]+'" id="sqg_'+n+'">'+tg[0]+'</span></div><div class="sqc">'+ctl+'<button class="sec" type="button" onclick="supCopy('+n+')">Copiar</button></div>'+hint+'</div>'}
 async function spVisLoad(){try{const r=await Supa.sb.from('supervision_visitas').select('id,sucursal_codigo,fecha,nota,registrado_por').order('fecha',{ascending:false}).limit(1000);SUP.vis=r.error?[]:(r.data||[]);SUP.visErr=r.error?(/does not exist|relation|schema cache/i.test(r.error.message||'')?'Falta crear la tabla de visitas (se crea al publicar).':String(r.error.message)):''}catch(e){SUP.vis=[]}
@@ -2680,7 +2700,7 @@ const spPanel=()=>{const l=SUP.pend||[];if(!l.length)return'';const nom=c=>(SUP_
  return'<div class="sqav"><b>Solicitudes de cambio ('+l.length+')</b>'+l.map((x,i)=>'<div style="margin-top:8px"><b>'+esc(nom(x.sucursal_codigo))+'</b> · '+esc(x.mes)+'<br>'+esc(x.motivo||'')+'<div style="display:flex;gap:8px;margin-top:6px"><button type="button" onclick="spRes('+i+',true)">Aprobar</button><button type="button" class="sec" onclick="spRes('+i+',false)">Rechazar</button></div></div>').join('')+'</div>'};
 function supView(){
  const btn='<button id="supBtn" onclick="supSync()"'+(SUP.running?' disabled':'')+'>'+(SUP.running?'Actualizando…':'Actualizar todo')+'</button>';
- const head=hd('sup','Supervisión mensual','Guía de solo lectura para llenar el Forms de Supervisión General a Sucursal. Los datos salen de tus hojas de Google.','<button type="button" class="sec" onclick="spVisToggle()">Registrar visita</button> '+btn);
+ const head=hd('sup','Supervisión mensual','Guía para llenar el Forms de Supervisión General a Sucursal. Puedes corregir cualquier dato aquí; lo que escribas manda sobre las hojas.','<button type="button" class="sec" onclick="spVisToggle()">Registrar visita</button> '+btn);
  if(me.role!=='admin')return hd('sup','Supervisión mensual','','')+'<div class="card">Este módulo es solo para el administrador.</div>';
  if(!Supa.on)return head+'<div class="card">La supervisión necesita la conexión con la nube (Supabase).</div>';
  if(!SUP.loaded&&!SUP.loading)supLoad();
