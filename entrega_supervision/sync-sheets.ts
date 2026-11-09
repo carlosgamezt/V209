@@ -58,9 +58,15 @@ async function googleToken(): Promise<string> {
 }
 async function hoja(tok: string, id: string, nombre: string): Promise<string[][]> {
   const u = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`'${nombre}'`)}?valueRenderOption=FORMATTED_VALUE`;
-  const r = await fetch(u, { headers: { Authorization: `Bearer ${tok}` } });
-  if (!r.ok) { avisos.push(`No pude leer la hoja "${nombre}" (${r.status}). ¿Existe la pestaña y está compartida con nexa-lector?`); return []; }
-  return (await r.json()).values ?? [];
+  // Si Google tarda demasiado (libros muy pesados), se corta a los 45 s y se sigue con las demás hojas.
+  try {
+    const r = await fetch(u, { headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(45000) });
+    if (!r.ok) { avisos.push(`No pude leer la hoja "${nombre}" (${r.status}). ¿Existe la pestaña y está compartida con nexa-lector?`); return []; }
+    return (await r.json()).values ?? [];
+  } catch (_e) {
+    avisos.push(`La hoja "${nombre}" tardó más de 45 s en responder (Google estaba lento). Vuelve a actualizar en unos minutos.`);
+    return [];
+  }
 }
 const conEncabezado = (v: string[][]) => { const h = (v[0] ?? []).map(norm); return v.slice(1).map((r) => Object.fromEntries(h.map((k, i) => [k, r[i] ?? ""]))); };
 
