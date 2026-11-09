@@ -22,6 +22,18 @@ const IDS = {
   SUC: "1yhx7amI36V_3Hy4cQg66VwrRyuhBBKIPDgNuMvWodHY", // datos complementarios de sucursales
   PUENTE: "1QKBgWD8RQb8lDV3SZAW4IFRfisLtCZNUlEYtZ3gc3qM", // copia liviana (IMPORTRANGE) de entregas, ausencias y descargas de FORMATOS CONSOLIDADOS
 };
+// Libros "FORMATOS" de cada sucursal (los mismos que consolida FORMATOS CONSOLIDADOS, que ya no responde por pesado).
+const LIBROS: Record<string, string> = {
+  "136": "1PVgGopEzJouVgTXzdgez9D1OWm5jXzrKcdETQ-E_Mow", // San Juan
+  "128": "10sOgu0jptDD3ChF5XjgsKEIOFu9_QRhJMZMYWsrqU6s", // Jocotenango
+  "13": "1DMbGo0F9ppaMU2fb8apKKJg9ElrMCcIpWrNdD2-jOrw", // Chimaltenango
+  "131": "1EMe811zQI17PVkRPmrtNsU6shbJY1ju8Gysed1G4iiU", // Sololá
+  "21": "1bfj6lB8oh8tMMAaj1KJilKOEEfBo0vfLGxyqbImIhzU", // Quiché
+  "18": "1g7K14Nz5fC0EqeG54TlApwBvj_eLWexcoFRpHhZaebo", // Huehuetenango
+  "3": "1xUAQEyB_YSJ3ikUNdTr9m9zRpr3wAEdNpv6LminPvt4", // Xela
+  "146": "1HSRSHY4inbkiY3vR6iUlFBsmBA7kbAqKzJNZrH439_c", // Totonicapán
+  "151": "1IJh3Fwz5k8qW9vZDVYFzixar_fgTDNe1p4eZizeOcJA", // Sacapulas
+};
 const SUC: Record<string, string> = { // palabra clave -> código de sucursal
   "SAN JUAN": "136", JOCOTENANGO: "128", CHIMALTENANGO: "13", SOLOLA: "131", QUICHE: "21",
   HUEHUETENANGO: "18", XELA: "3", QUETZALTENANGO: "3", TOTONICAPAN: "146", SACAPULAS: "151",
@@ -135,6 +147,22 @@ function entregas(v: string[][]): Fila[] {
   }
   return out;
 }
+// Dinero y números en cualquier formato regional: "Q16.921,25", "Q9,110.25", "14,39", "5.5".
+const dinero = (t: unknown) => {
+  let x = String(t ?? "").replace(/[Q\s]/g, ""); if (!x) return 0;
+  if (/,\d{1,2}$/.test(x)) x = x.replace(/\./g, "").replace(",", "."); else x = x.replace(/,/g, "");
+  const n = parseFloat(x); return isFinite(n) ? n : 0;
+};
+// Entregas del mes calculadas desde la pestaña "1 ENTREGAS" de cada sucursal (columnas: B mes, C año, D sucursal, J monto, N km, O combustible Q, P galones, Q costo flete).
+function entregasDirecto(cod: string, v: string[][], mes: string, anio: string): Fila[] {
+  const rows = v.slice(1).filter((r) => String(r[1] ?? "").toLowerCase() === mes && String(r[2] ?? "").trim() === anio && codigo(r[3]) === cod);
+  if (!rows.length) return [];
+  const suma = (i: number) => rows.reduce((t, r) => t + dinero(r[i]), 0);
+  const fletes = rows.filter((r) => dinero(r[16]) > 0).length, km = suma(13), gal = suma(15);
+  const f = (n: number) => (Math.round(n * 100) / 100).toString();
+  return [{ s: cod, q: 48, v: f(suma(9)) }, { s: cod, q: 51, v: String(rows.length - fletes) }, { s: cod, q: 52, v: String(fletes) },
+    { s: cod, q: 53, v: f(suma(16)) }, { s: cod, q: 54, v: f(km) }, { s: cod, q: 55, v: f(suma(14)) }, { s: cod, q: 56, v: gal > 0 ? f(km / gal) : "0" }];
+}
 function ausencias(v: string[][], mes: string, anio: string): Fila[] {
   const permisos: Record<string, Set<string>> = {}, sin: Record<string, number> = {};
   for (const r of conEncabezado(v)) {
@@ -216,14 +244,18 @@ Deno.serve(async (req) => {
     const { mes } = await req.json(); // "2026-10"
     const [anio, m] = mes.split("-").map(Number); const nombre = MESES[m - 1]; const fin = new Date(anio, m, 0);
     const g = await googleToken();
-    const [vt, inv, he, ab, ent, au, cd, pe, co] = await Promise.all([
+    const [vt, inv, he, ab, pe, co, suc] = await Promise.all([
       hoja(g, IDS.INV, "VENTAS"), hoja(g, IDS.INV, "R INVENTARIOS"), hoja(g, IDS.HE, "HORAS EXTRAS"),
-      hoja(g, IDS.HE, "ALTAS,BAJAS,IGSS"), hoja(g, IDS.PUENTE, "DASHBOARD ENTREGAS OP.2"),
-      hoja(g, IDS.PUENTE, "5 AUSENCIAS"), hoja(g, IDS.PUENTE, "3 DESCARGAS CD"), hoja(g, IDS.PERS, "DATOS PARA EDITAR"),
-      hoja(g, IDS.SUC, mes),
+      hoja(g, IDS.HE, "ALTAS,BAJAS,IGSS"), hoja(g, IDS.PERS, "DATOS PARA EDITAR"), hoja(g, IDS.SUC, mes),
+      // entregas, ausencias y descargas CD: de cada libro de sucursal (más livianos que el consolidado)
+      Promise.all(Object.entries(LIBROS).map(async ([cod, id]) => {
+        const [en, au, cd] = await Promise.all([hoja(g, id, "1 ENTREGAS"), hoja(g, id, "5 AUSENCIAS"), hoja(g, id, "3 DESCARGAS CD")]);
+        return { cod, en, au, cd };
+      })),
     ]);
     const filasHojas: Fila[] = [...ventas(vt, nombre, String(anio)), ...inventarios(inv, fin), ...horasExtras(he), ...altasBajas(ab),
-      ...entregas(ent), ...ausencias(au, nombre, String(anio)), ...descargasCD(cd, m, anio), ...planilla(pe), ...encargados(pe)]
+      ...suc.flatMap((x) => entregasDirecto(x.cod, x.en, nombre, String(anio))), ...suc.flatMap((x) => ausencias(x.au, nombre, String(anio)).filter((f) => f.s === x.cod)),
+      ...suc.flatMap((x) => descargasCD(x.cd, m, anio).filter((f) => f.s === x.cod)), ...planilla(pe), ...encargados(pe)]
       .filter((f) => f.v !== "");
     // lo de las sucursales solo completa lo que tus hojas no trajeron
     const conHojas = new Set(filasHojas.map((f) => `${f.s}|${f.q}`));
