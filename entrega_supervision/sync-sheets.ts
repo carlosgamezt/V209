@@ -20,6 +20,7 @@ const IDS = {
   FORM: "1qlDfumJRtkZrbhroxxdBZpbDKrqG4CgedASi0LFNaQw",
   PERS: "1ASuMmF22tKZNEgY_O8aLm17Po4y79C1j-TM3OK5-gIA",
   SUC: "1yhx7amI36V_3Hy4cQg66VwrRyuhBBKIPDgNuMvWodHY", // datos complementarios de sucursales
+  PUENTE: "1QKBgWD8RQb8lDV3SZAW4IFRfisLtCZNUlEYtZ3gc3qM", // copia liviana (IMPORTRANGE) de entregas, ausencias y descargas de FORMATOS CONSOLIDADOS
 };
 const SUC: Record<string, string> = { // palabra clave -> código de sucursal
   "SAN JUAN": "136", JOCOTENANGO: "128", CHIMALTENANGO: "13", SOLOLA: "131", QUICHE: "21",
@@ -217,8 +218,8 @@ Deno.serve(async (req) => {
     const g = await googleToken();
     const [vt, inv, he, ab, ent, au, cd, pe, co] = await Promise.all([
       hoja(g, IDS.INV, "VENTAS"), hoja(g, IDS.INV, "R INVENTARIOS"), hoja(g, IDS.HE, "HORAS EXTRAS"),
-      hoja(g, IDS.HE, "ALTAS,BAJAS,IGSS"), hoja(g, IDS.FORM, "DASHBOARD ENTREGAS OP.2"),
-      hoja(g, IDS.FORM, "5 AUSENCIAS"), hoja(g, IDS.FORM, "3 DESCARGAS CD"), hoja(g, IDS.PERS, "DATOS PARA EDITAR"),
+      hoja(g, IDS.HE, "ALTAS,BAJAS,IGSS"), hoja(g, IDS.PUENTE, "DASHBOARD ENTREGAS OP.2"),
+      hoja(g, IDS.PUENTE, "5 AUSENCIAS"), hoja(g, IDS.PUENTE, "3 DESCARGAS CD"), hoja(g, IDS.PERS, "DATOS PARA EDITAR"),
       hoja(g, IDS.SUC, mes),
     ]);
     const filasHojas: Fila[] = [...ventas(vt, nombre, String(anio)), ...inventarios(inv, fin), ...horasExtras(he), ...altasBajas(ab),
