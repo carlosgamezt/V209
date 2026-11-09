@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v500</title>
+</script><title>Nexa v501</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -989,7 +989,7 @@ new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v500';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v501';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -2613,7 +2613,7 @@ const SUP_Q=[
 [48,"Monto entregas","Monto de entregas facturadas en Q"],[49,"Días operativos camión","Días activo y operativo (restar taller/servicio)"],[50,"Días operativos piloto","Días activo y operativo"],[51,"Cantidad entregas","Entregas con vehículo propio"],[52,"Cantidad entregas flete","Entregas con fletero"],[53,"Total flete pagado","Monto pagado por fletes Q"],[54,"Kilómetros recorridos","Km inicio de mes - Km fin de mes"],[55,"Consumo de combustible Q","Valor en dinero del combustible"],[56,"Consumo combustible Km/gl","Kilómetros entre galones"],
 [57,"Observaciones generales","","a"],[58,"Observaciones específicas 2",""],[59,"Observaciones específicas 1",""],[60,"Quejas","Quejas de clientes trasladadas de SAC a supervisores"]];
 const SUP_OPC=new Set([21,34,47,57,58,59,60]);
-const SUP_SUC=[["136","San Juan"],["128","Jocotenango"],["13","Chimaltenango"],["131","Sololá"],["21","Quiché"],["18","Huehuetenango"],["3","Xela"],["146","Totonicapán"],["151","Sacapulas"]];
+const SUP_SUC0=['136','128','13','131','21','18','3','146','151'];let SUP_SUC=[["136","San Juan"],["128","Jocotenango"],["13","Chimaltenango"],["131","Sololá"],["21","Quiché"],["18","Huehuetenango"],["3","Xela"],["146","Totonicapán"],["151","Sacapulas"]];
 const SUP_MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const supMesDef=()=>{const d=new Date(),y=d.getFullYear(),m=d.getMonth();return m===0?(y-1)+'-12':y+'-'+String(m).padStart(2,'0')};
 const supMeses=()=>{const d=new Date(),r=[];for(let i=0;i<12;i++){const x=new Date(d.getFullYear(),d.getMonth()-i,1);r.push([x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0'),SUP_MESES[x.getMonth()]+' '+x.getFullYear()])}return r};
@@ -2639,7 +2639,7 @@ async function supLoad(silent){
   if(mes!==SUP.mes){SUP.loading=false;return supLoad(silent)}
   const er=a.error||b.error;
   if(er)SUP.err=/does not exist|relation|schema cache/i.test(er.message||'')?'Faltan las tablas de supervisión en Supabase (supervision_mensual y supervision_sync_log).':/permission|denied|row-level/i.test(er.message||'')?'Sin permiso para leer la supervisión. Entra con el usuario administrador.':String(er.message||er);
-  else{SUP.err='';const R={};(a.data||[]).forEach(r=>{R[r.sucursal_codigo+'|'+r.pregunta]={v:r.valor==null?'':String(r.valor),f:r.fuente}});SUP.rows=R;SUP.log=(b.data&&b.data[0])||null}
+  else{SUP.err='';const R={};(a.data||[]).forEach(r=>{R[r.sucursal_codigo+'|'+r.pregunta]={v:r.valor==null?'':String(r.valor),f:r.fuente}});SUP.rows=R;SUP.log=(b.data&&b.data[0])||null;const NM={};(a.data||[]).forEach(r=>{if(+r.pregunta===0&&r.valor)NM[r.sucursal_codigo]=String(r.valor)});if(Object.keys(NM).length){SUP_SUC=Object.keys(NM).sort((x,y)=>{const i=SUP_SUC0.indexOf(x),j=SUP_SUC0.indexOf(y);return (i<0?99:i)-(j<0?99:j)||x.localeCompare(y)}).map(c=>[c,NM[c]]);if(!SUP_SUC.some(x=>x[0]===SUP.suc))SUP.suc=SUP_SUC[0][0]}}
  }catch(e){SUP.err=String(e.message||e)}
  SUP.loaded=true;SUP.loading=false;
  if(view==='sup'&&!supTyping()&&(!silent||antes!==JSON.stringify([SUP.rows,SUP.log])))render()}

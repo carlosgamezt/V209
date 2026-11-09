@@ -18,7 +18,7 @@ class Err extends Error { status: number; constructor(m: string, status = 400) {
 const SHEET_ID = '1yhx7amI36V_3Hy4cQg66VwrRyuhBBKIPDgNuMvWodHY'
 // pregunta -> tipo: f fecha dd/mm/aaaa, n número, e entero 1-10, t texto
 const PREG: Record<number, string> = { 13: 'f', 14: 'd', 15: 'n', 16: 'n', 17: 'n', 18: 'n', 28: 'n', 33: 'n', 35: 'n', 36: 'n', 37: 'n', 45: 'e', 46: 'e', 47: 't', 49: 'n', 50: 'n' }
-const SUC: Record<string, string> = {
+let SUC: Record<string, string> = {
   'SAN JUAN': '136', JOCOTENANGO: '128', CHIMALTENANGO: '13', SOLOLA: '131', QUICHE: '21',
   HUEHUETENANGO: '18', XELA: '3', QUETZALTENANGO: '3', TOTONICAPAN: '146', SACAPULAS: '151',
 }
@@ -90,6 +90,21 @@ async function crearPestana(tk: string, mes: string) {
     body: JSON.stringify({ ranges: [`'${mes}'!C3:K80`] }) })
 }
 const letra = (i: number) => String.fromCharCode(65 + i) // columnas A..K
+// Las palabras clave de cada sucursal salen de la pestaña "Sucursales" de la hoja; si no responde, se usa la lista de arriba.
+async function cargarClaves() {
+  try {
+    const tk = await googleToken()
+    const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent("'Sucursales'!A2:E200")}`, { headers: { Authorization: `Bearer ${tk}` }, signal: AbortSignal.timeout(15000) })
+    if (!r.ok) return
+    const suc: Record<string, string> = {}
+    for (const f of ((await r.json()).values ?? []) as string[][]) {
+      if (norm(f[4] ?? 'SI') === 'NO') continue
+      const cod = String(f[0] ?? '').trim()
+      for (const k of String(f[2] ?? '').split(';')) if (cod && norm(k)) suc[norm(k)] = cod
+    }
+    if (Object.keys(suc).length) SUC = suc
+  } catch (_e) { /* se queda con la lista por defecto */ }
+}
 async function escribirHoja(mes: string, cod: string, valores: Record<number, string>): Promise<string | null> {
   try {
     const tk = await googleToken()
@@ -199,6 +214,7 @@ Deno.serve(async (req) => {
     }
     if (me.role !== 'sucursal') throw new Err('Esta captura es solo para las sucursales', 403)
     const u = await userDoc(a, me.user_id)
+    await cargarClaves()
     const cod = codigo(u && (u.branch || u.name))
     if (!cod) throw new Err('No pude identificar tu sucursal en la supervisión. Avisa al administrador.', 403)
     const mes = mesValido(b.mes)

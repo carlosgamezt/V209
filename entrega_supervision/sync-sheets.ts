@@ -23,7 +23,7 @@ const IDS = {
   PUENTE: "1QKBgWD8RQb8lDV3SZAW4IFRfisLtCZNUlEYtZ3gc3qM", // copia liviana (IMPORTRANGE) de entregas, ausencias y descargas de FORMATOS CONSOLIDADOS
 };
 // Libros "FORMATOS" de cada sucursal (los mismos que consolida FORMATOS CONSOLIDADOS, que ya no responde por pesado).
-const LIBROS: Record<string, string> = {
+let LIBROS: Record<string, string> = {
   "136": "1PVgGopEzJouVgTXzdgez9D1OWm5jXzrKcdETQ-E_Mow", // San Juan
   "128": "10sOgu0jptDD3ChF5XjgsKEIOFu9_QRhJMZMYWsrqU6s", // Jocotenango
   "13": "1DMbGo0F9ppaMU2fb8apKKJg9ElrMCcIpWrNdD2-jOrw", // Chimaltenango
@@ -34,11 +34,12 @@ const LIBROS: Record<string, string> = {
   "146": "1HSRSHY4inbkiY3vR6iUlFBsmBA7kbAqKzJNZrH439_c", // Totonicapán
   "151": "1IJh3Fwz5k8qW9vZDVYFzixar_fgTDNe1p4eZizeOcJA", // Sacapulas
 };
-const SUC: Record<string, string> = { // palabra clave -> código de sucursal
+let SUC: Record<string, string> = { // palabra clave -> código de sucursal
   "SAN JUAN": "136", JOCOTENANGO: "128", CHIMALTENANGO: "13", SOLOLA: "131", QUICHE: "21",
   HUEHUETENANGO: "18", XELA: "3", QUETZALTENANGO: "3", TOTONICAPAN: "146", SACAPULAS: "151",
 };
-const CODIGOS = ["136", "128", "13", "131", "21", "18", "3", "146", "151"];
+let CODIGOS = ["136", "128", "13", "131", "21", "18", "3", "146", "151"];
+let NOMBRES: Record<string, string> = {};
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
 const norm = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
@@ -82,6 +83,24 @@ async function hoja(tok: string, id: string, nombre: string): Promise<string[][]
   }
 }
 const conEncabezado = (v: string[][]) => { const h = (v[0] ?? []).map(norm); return v.slice(1).map((r) => Object.fromEntries(h.map((k, i) => [k, r[i] ?? ""]))); };
+
+// Lista de sucursales: sale de la pestaña "Sucursales" de la hoja de datos de sucursales (código, nombre, palabra clave, libro FORMATOS, activa).
+// Para agregar una sucursal nueva basta una fila ahí; si la hoja no responde se usa la lista de arriba.
+async function cargarSucursales(tok: string) {
+  const v = await hoja(tok, IDS.SUC, "Sucursales");
+  const filas = v.slice(1).filter((r) => String(r[0] ?? "").trim() && norm(r[4] ?? "SI") !== "NO");
+  if (!filas.length) return;
+  const suc: Record<string, string> = {}, libros: Record<string, string> = {}, nom: Record<string, string> = {}, cods: string[] = [];
+  for (const r of filas) {
+    const cod = String(r[0]).trim();
+    if (!cods.includes(cod)) cods.push(cod);
+    nom[cod] = String(r[1] ?? "").trim() || cod;
+    for (const k of String(r[2] ?? "").split(";")) if (norm(k)) suc[norm(k)] = cod;
+    const id = String(r[3] ?? "").match(/\/d\/([\w-]+)/)?.[1] ?? String(r[3] ?? "").trim();
+    if (id) libros[cod] = id;
+  }
+  SUC = suc; LIBROS = libros; CODIGOS = cods; NOMBRES = nom;
+}
 
 // ---------- lectores por hoja ----------
 function ventas(v: string[][], mes: string, anio: string): Fila[] {
@@ -244,6 +263,7 @@ Deno.serve(async (req) => {
     const { mes } = await req.json(); // "2026-10"
     const [anio, m] = mes.split("-").map(Number); const nombre = MESES[m - 1]; const fin = new Date(anio, m, 0);
     const g = await googleToken();
+    await cargarSucursales(g);
     const [vt, inv, he, ab, pe, co, suc] = await Promise.all([
       hoja(g, IDS.INV, "VENTAS"), hoja(g, IDS.INV, "R INVENTARIOS"), hoja(g, IDS.HE, "HORAS EXTRAS"),
       hoja(g, IDS.HE, "ALTAS,BAJAS,IGSS"), hoja(g, IDS.PERS, "DATOS PARA EDITAR"), hoja(g, IDS.SUC, mes),
@@ -255,7 +275,7 @@ Deno.serve(async (req) => {
     ]);
     const filasHojas: Fila[] = [...ventas(vt, nombre, String(anio)), ...inventarios(inv, fin), ...horasExtras(he), ...altasBajas(ab),
       ...suc.flatMap((x) => entregasDirecto(x.cod, x.en, nombre, String(anio))), ...suc.flatMap((x) => ausencias(x.au, nombre, String(anio)).filter((f) => f.s === x.cod)),
-      ...suc.flatMap((x) => descargasCD(x.cd, m, anio).filter((f) => f.s === x.cod)), ...planilla(pe), ...encargados(pe)]
+      ...suc.flatMap((x) => descargasCD(x.cd, m, anio).filter((f) => f.s === x.cod)), ...planilla(pe), ...encargados(pe), ...CODIGOS.map((s) => ({ s, q: 0, v: NOMBRES[s] ?? s }))]
       .filter((f) => f.v !== "");
     // lo de las sucursales solo completa lo que tus hojas no trajeron
     const conHojas = new Set(filasHojas.map((f) => `${f.s}|${f.q}`));
