@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v499</title>
+</script><title>Nexa v500</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -989,7 +989,7 @@ new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v499';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v500';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -2651,7 +2651,7 @@ async function supSync(){
   const c=Supa.cfg(),ss=await Supa.session();
   if(!ss||!ss.access_token)msg='Tu sesión venció; vuelve a entrar';
   else{
-   const r=await fetch(c.url+'/functions/v1/rapid-function',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+ss.access_token},body:JSON.stringify({mes:SUP.mes})});
+   const ac=new AbortController(),tm=setTimeout(()=>ac.abort(),100000);let r;try{r=await fetch(c.url+'/functions/v1/rapid-function',{method:'POST',signal:ac.signal,headers:{'Content-Type':'application/json',Authorization:'Bearer '+ss.access_token},body:JSON.stringify({mes:SUP.mes})})}catch(e){clearTimeout(tm);throw new Error(e&&e.name==='AbortError'?'La función tardó más de 100 segundos y se cortó. Revisa sus registros (Supabase · Edge Functions · rapid-function · Logs) o vuelve a intentar.':String(e&&e.message||e))}clearTimeout(tm);
    const j=await r.json().catch(()=>({}));
    if(r.status===404)msg='Falta publicar la función "rapid-function" en Supabase';
    else if(r.status===403)msg='Tu correo no está autorizado para actualizar (revisa el secreto ADMIN_EMAILS de la función)';
