@@ -1,0 +1,47 @@
+name: NEXA FEL · pruebas
+# Solo pruebas, con Supabase LOCAL efímero. No se conecta a ningún proyecto real ni publica nada.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['fel-**']
+    paths: ['fel/**', '.github/workflows/fel-tests.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  funcion:
+    name: Función fel-api (Deno)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Tipos y pruebas
+        working-directory: fel/supabase/functions/fel-api
+        run: |
+          deno check index.ts nucleo.ts acciones.ts lib/*.ts
+          deno test lib/ nucleo_test.ts
+
+  base-de-datos:
+    name: Migraciones y RLS (Supabase local)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Levantar Supabase local y aplicar migraciones
+        run: supabase --workdir fel start
+      - name: Ejecutar pruebas SQL
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for f in fel/supabase/tests/*.sql; do
+            echo "== $f"
+            psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -q -X -f "$f"
+          done
+      - name: Detener
+        if: always()
+        run: supabase --workdir fel stop --no-backup

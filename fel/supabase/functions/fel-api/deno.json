@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "test": "deno test lib/ nucleo_test.ts",
+    "check": "deno check index.ts nucleo.ts acciones.ts lib/*.ts"
+  },
+  "lint": { "rules": { "exclude": ["no-explicit-any"] } }
+}
