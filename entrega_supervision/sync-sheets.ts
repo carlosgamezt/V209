@@ -70,17 +70,28 @@ async function googleToken(): Promise<string> {
   if (!j.access_token) throw new Error("Google no dio token: " + JSON.stringify(j));
   return j.access_token;
 }
-async function hoja(tok: string, id: string, nombre: string): Promise<string[][]> {
-  const u = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(`'${nombre}'`)}?valueRenderOption=FORMATTED_VALUE`;
-  // Si Google tarda demasiado (libros muy pesados), se corta a los 45 s y se sigue con las demás hojas.
-  try {
-    const r = await fetch(u, { headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(45000) });
-    if (!r.ok) { avisos.push(`No pude leer la hoja "${nombre}" (${r.status}). ¿Existe la pestaña y está compartida con nexa-lector?`); return []; }
-    return (await r.json()).values ?? [];
-  } catch (_e) {
-    avisos.push(`La hoja "${nombre}" tardó más de 45 s en responder (Google estaba lento). Vuelve a actualizar en unos minutos.`);
-    return [];
+const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Google limita las lecturas por minuto (error 429): se reintenta con espera y se juntan varias pestañas en una sola petición.
+async function pedir(tok: string, u: string): Promise<Response | null> {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await fetch(u, { headers: { Authorization: `Bearer ${tok}` }, signal: AbortSignal.timeout(45000) });
+      if (r.status !== 429 && r.status !== 503) return r;
+      await espera(2500 * (i + 1));
+    } catch (_e) { return null; }
   }
+  return null;
+}
+async function hojas(tok: string, id: string, nombres: string[]): Promise<string[][][]> {
+  const u = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values:batchGet?valueRenderOption=FORMATTED_VALUE&` + nombres.map((n) => "ranges=" + encodeURIComponent(`'${n}'`)).join("&");
+  const r = await pedir(tok, u);
+  if (!r) { avisos.push(`El libro ${id.slice(0, 8)}… (${nombres.join(", ")}) no respondió. Vuelve a actualizar en unos minutos.`); return nombres.map(() => []); }
+  if (!r.ok) { avisos.push(`No pude leer ${nombres.join(", ")} del libro ${id.slice(0, 8)}… (${r.status}). ¿Existen las pestañas y está compartido con nexa-lector?`); return nombres.map(() => []); }
+  const vr = (await r.json()).valueRanges ?? [];
+  return nombres.map((_, k) => vr[k]?.values ?? []);
+}
+async function hoja(tok: string, id: string, nombre: string): Promise<string[][]> {
+  return (await hojas(tok, id, [nombre]))[0];
 }
 const conEncabezado = (v: string[][]) => { const h = (v[0] ?? []).map(norm); return v.slice(1).map((r) => Object.fromEntries(h.map((k, i) => [k, r[i] ?? ""]))); };
 
@@ -264,12 +275,12 @@ Deno.serve(async (req) => {
     const [anio, m] = mes.split("-").map(Number); const nombre = MESES[m - 1]; const fin = new Date(anio, m, 0);
     const g = await googleToken();
     await cargarSucursales(g);
-    const [vt, inv, he, ab, pe, co, suc] = await Promise.all([
-      hoja(g, IDS.INV, "VENTAS"), hoja(g, IDS.INV, "R INVENTARIOS"), hoja(g, IDS.HE, "HORAS EXTRAS"),
-      hoja(g, IDS.HE, "ALTAS,BAJAS,IGSS"), hoja(g, IDS.PERS, "DATOS PARA EDITAR"), hoja(g, IDS.SUC, mes),
-      // entregas, ausencias y descargas CD: de cada libro de sucursal (más livianos que el consolidado)
+    const [[vt, inv], [he, ab], pe, co, suc] = await Promise.all([
+      hojas(g, IDS.INV, ["VENTAS", "R INVENTARIOS"]), hojas(g, IDS.HE, ["HORAS EXTRAS", "ALTAS,BAJAS,IGSS"]),
+      hoja(g, IDS.PERS, "DATOS PARA EDITAR"), hoja(g, IDS.SUC, mes),
+      // entregas, ausencias y descargas CD: de cada libro de sucursal (una sola petición por libro)
       Promise.all(Object.entries(LIBROS).map(async ([cod, id]) => {
-        const [en, au, cd] = await Promise.all([hoja(g, id, "1 ENTREGAS"), hoja(g, id, "5 AUSENCIAS"), hoja(g, id, "3 DESCARGAS CD")]);
+        const [en, au, cd] = await hojas(g, id, ["1 ENTREGAS", "5 AUSENCIAS", "3 DESCARGAS CD"]);
         return { cod, en, au, cd };
       })),
     ]);
