@@ -16,14 +16,13 @@ insert into auth.users (id, email, email_confirmed_at) values
   ('00000000-0000-0000-0000-0000000000a4', 'sinconfirmar@fel.test', null),
   ('00000000-0000-0000-0000-0000000000a5', 'segundo@fel.test', now()),
   ('00000000-0000-0000-0000-0000000000a6', 'bloqueado@fel.test', now());
--- La tabla real de Supabase exige id y fechas (no tienen valor por defecto): se envían completos.
-insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at)
-select gen_random_uuid(), v.u::uuid, 'totp', v.st, now(), now() from (values
-  ('00000000-0000-0000-0000-0000000000a1', 'verified'),
-  ('00000000-0000-0000-0000-0000000000a3', 'unverified'),
-  ('00000000-0000-0000-0000-0000000000a4', 'verified'),
-  ('00000000-0000-0000-0000-0000000000a5', 'verified'),
-  ('00000000-0000-0000-0000-0000000000a6', 'verified')) as v(u, st);
+-- La tabla real de Supabase exige id y fechas (sin valor por defecto) y usa tipos enumerados: se envían literales completos.
+insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at) values
+  (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'totp', 'verified', now(), now()),
+  (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a3', 'totp', 'unverified', now(), now()),
+  (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a4', 'totp', 'verified', now(), now()),
+  (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a5', 'totp', 'verified', now(), now()),
+  (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a6', 'totp', 'verified', now(), now());
 insert into public.perfiles (user_id, activo) values ('00000000-0000-0000-0000-0000000000a6', false);
 
 -- rechazos
