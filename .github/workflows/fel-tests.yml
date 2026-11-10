@@ -24,6 +24,23 @@ jobs:
           deno check index.ts nucleo.ts acciones.ts lib/*.ts seguridad_test.ts
           deno test lib/ nucleo_test.ts seguridad_test.ts
 
+  interfaz:
+    name: Interfaz (modo demostración)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Instalar navegador de pruebas
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Pruebas de interfaz
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: node fel/app/tests/ui.cjs
+
   base-de-datos:
     name: Migraciones y RLS (Supabase local)
     runs-on: ubuntu-latest
