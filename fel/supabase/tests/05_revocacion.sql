@@ -15,6 +15,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000c3', 'emisorA@fel.test'),
   ('00000000-0000-0000-0000-0000000000c4', 'emisor2A@fel.test'),
   ('00000000-0000-0000-0000-0000000000d1', 'propB@fel.test');
+insert into public.perfiles (user_id) select id from auth.users on conflict (user_id) do nothing;
 insert into public.plataforma_admins (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado)
 select e.id, e.n, e.n || ' S.A.', e.nit, r.id, 'habilitada'
@@ -53,7 +54,7 @@ reset role;
 select pg_temp.espera_error($$select public.fel_op_cliente_guardar('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', null, 'NIT', '5555555-5', 'X', null, null, null, null)$$, 'FEL_NO_AUTORIZADO');
 
 -- ---- 3. administrador maestro con perfil desactivado pierde sus poderes
-insert into public.perfiles (user_id, activo) values ('00000000-0000-0000-0000-0000000000a1', false);
+insert into public.perfiles (user_id, activo) values ('00000000-0000-0000-0000-0000000000a1', false) on conflict (user_id) do update set activo = false;
 select pg_temp.espera_error($$select public.fel_admin_empresa_estado('00000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a', 'suspendida', 'Motivo válido')$$, 'FEL_NO_AUTORIZADO');
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated"}', true) as _cfg \gset

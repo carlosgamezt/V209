@@ -6,13 +6,13 @@ import * as v from "./lib/validacion.ts";
 
 const EMPRESA = "10000000-0000-0000-0000-00000000000a";
 
-interface Opc { limitar?: Deps["limitar"]; activo?: boolean; admin?: unknown; config?: Deps["config"]; getUser?: Deps["getUser"]; maestro?: boolean; conPermisos?: string[] }
+interface Opc { cuenta?: "activa" | "bloqueada" | "sin_perfil"; limitar?: Deps["limitar"]; activo?: boolean; admin?: unknown; config?: Deps["config"]; getUser?: Deps["getUser"]; maestro?: boolean; conPermisos?: string[] }
 function deps(o: Opc = {}): Deps {
   return {
     admin: (o.admin as Deps["admin"]) ?? { rpc: () => { throw new Error("no debía llamarse a la base de datos"); } },
     config: o.config ?? { origenesPermitidos: ["https://app.test"], emisionRealPermitida: false, appUrl: "https://app.test" },
     getUser: o.getUser ?? ((t) => Promise.resolve(t ? { id: "u1", email: "u1@test.com" } : null)),
-    usuarioActivo: () => Promise.resolve(o.activo ?? true),
+    estadoCuenta: () => Promise.resolve(o.cuenta ?? (o.activo === false ? "bloqueada" : "activa")),
     limitar: o.limitar ?? (() => Promise.resolve({ permitido: true, reintentarEn: 1 })),
     esPlataforma: () => Promise.resolve(o.maestro ?? false),
     permisos: () => Promise.resolve(o.conPermisos ?? []),

@@ -13,6 +13,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000c2', 'lectorA@fel.test'),
   ('00000000-0000-0000-0000-0000000000c3', 'emisorA@fel.test'),
   ('00000000-0000-0000-0000-0000000000d1', 'propB@fel.test');
+insert into public.perfiles (user_id) select id from auth.users on conflict (user_id) do nothing;
 insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado)
 select e.id, e.n, e.n || ' S.A.', e.nit, r.id, 'habilitada'
   from (values ('10000000-0000-0000-0000-00000000000a'::uuid, 'Empresa A', '1111111-1'),

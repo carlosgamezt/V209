@@ -13,7 +13,7 @@ const MAESTRO = "00000000-0000-0000-0000-0000000000a1";
 const CONFIG = { origenesPermitidos: [], emisionRealPermitida: false, appUrl: "https://app.test" };
 
 // ---- base de datos falsa que imita las reglas de las funciones SQL
-interface Estado { bloqueados: Set<string>; maestros: Set<string>; permisos: Record<string, string[]>; fallar?: Set<string> }
+interface Estado { bloqueados: Set<string>; sinPerfil?: Set<string>; maestros: Set<string>; permisos: Record<string, string[]>; fallar?: Set<string> }
 function adminFalso(e: Estado, llamadas: string[]) {
   return {
     auth: { getUser: (t: string) => Promise.resolve(t === "token-maestro"
@@ -24,7 +24,7 @@ function adminFalso(e: Estado, llamadas: string[]) {
       llamadas.push(nombre);
       if (e.fallar?.has(nombre)) return Promise.resolve({ data: null, error: { message: "boom" } });
       switch (nombre) {
-        case "fel_usuario_activo": return Promise.resolve({ data: !e.bloqueados.has(args.p_user as string), error: null });
+        case "fel_estado_cuenta": return Promise.resolve({ data: e.bloqueados.has(args.p_user as string) ? "bloqueada" : e.sinPerfil?.has(args.p_user as string) ? "sin_perfil" : "activa", error: null });
         case "fel_es_plataforma": return Promise.resolve({ data: !e.bloqueados.has(args.p_user as string) && e.maestros.has(args.p_user as string), error: null });
         case "fel_permisos_efectivos": return Promise.resolve({ data: e.bloqueados.has(args.p_user as string) ? [] : (e.permisos[`${args.p_empresa}:${args.p_user}`] ?? []), error: null });
         case "fel_limite_consumir": return Promise.resolve({ data: [{ permitido: true, reintentar_en: 1 }], error: null });
@@ -53,12 +53,13 @@ Deno.test("construirDeps.esPlataforma: maestro activo sí; maestro con perfil bl
   assertEquals(await construirDeps(adminFalso(roto, []), CONFIG).esPlataforma(MAESTRO), false); // ante la duda, no
 });
 
-Deno.test("construirDeps.usuarioActivo: bloqueado = false; error = 503 (no se asume permiso)", async () => {
-  const e = estado(); e.bloqueados.add("u1");
+Deno.test("construirDeps.estadoCuenta: bloqueada / sin_perfil / activa; error = 503 (no se asume permiso)", async () => {
+  const e = estado(); e.bloqueados.add("u1"); e.sinPerfil = new Set(["u3"]);
   const d = construirDeps(adminFalso(e, []), CONFIG);
-  assertEquals(await d.usuarioActivo("u1"), false);
-  assertEquals(await d.usuarioActivo("u2"), true);
-  const roto = estado(); roto.fallar = new Set(["fel_usuario_activo"]);
+  assertEquals(await d.estadoCuenta("u1"), "bloqueada");
+  assertEquals(await d.estadoCuenta("u3"), "sin_perfil");
+  assertEquals(await d.estadoCuenta("u2"), "activa");
+  const roto = estado(); roto.fallar = new Set(["fel_estado_cuenta"]);
   const r = await leer(await pedir({ accion: "yo" }, construirDeps(adminFalso(roto, []), CONFIG), "token-u1"));
   assertEquals([r.status, r.codigo], [503, "verificacion"]);
 });
@@ -81,7 +82,7 @@ Deno.test("cuenta bloqueada: ninguna acción real (administrativa, de empresa o 
     const ll: string[] = [];
     const r = await leer(await pedir({ accion: nombre, empresa_id: EMPRESA }, construirDeps(adminFalso(e, ll), CONFIG), "token-u1"));
     assertEquals([nombre, r.status, r.codigo], [nombre, 403, "cuenta_desactivada"]);
-    assertEquals(ll.filter((n) => n !== "fel_usuario_activo" && n !== "fel_limite_consumir"), [], `${nombre} hizo consultas con la cuenta bloqueada`);
+    assertEquals(ll.filter((n) => n !== "fel_estado_cuenta" && n !== "fel_limite_consumir"), [], `${nombre} hizo consultas con la cuenta bloqueada`);
   }
 });
 
@@ -116,7 +117,7 @@ function limitadorFalso() {
 function depsLim(o: { limitar: Deps["limitar"]; permisos?: string[]; getUser?: Deps["getUser"]; maestro?: boolean; llamadasRpc?: string[] }): Deps {
   return {
     admin: { rpc: (n: string) => { o.llamadasRpc?.push(n); return Promise.resolve({ data: { id: "x" }, error: null }); } },
-    config: CONFIG, limitar: o.limitar, usuarioActivo: () => Promise.resolve(true),
+    config: CONFIG, limitar: o.limitar, estadoCuenta: () => Promise.resolve("activa" as const),
     getUser: o.getUser ?? ((t) => Promise.resolve(t ? { id: t, email: `${t}@test.com` } : null)),
     esPlataforma: () => Promise.resolve(o.maestro ?? false), permisos: () => Promise.resolve(o.permisos ?? []),
   };
@@ -263,4 +264,42 @@ Deno.test("ninguna acción de la API puede certificar, anular, conciliar ni toca
   // la única forma de tocar el indicador de emisión es fel_admin_emision, y solo desde las dos acciones de emisión
   const conEmision = Object.entries(reales).filter(([, a]) => a.ejecutar.toString().includes("fel_admin_emision")).map(([n]) => n).sort();
   assertEquals(conEmision, ["emision_real_deshabilitar", "emision_real_habilitar"]);
+});
+
+// ================================================================ cuenta SIN perfil: sin acceso, salvo aceptar una invitación vigente
+Deno.test("cuenta sin perfil: TODAS las acciones dan 403 sin_perfil salvo aceptar_invitacion, y no tocan la base de datos", async () => {
+  const e = estado(); e.sinPerfil = new Set(["u1"]); e.permisos[`${EMPRESA}:u1`] = ["clientes.escribir", "borradores.ver", "usuarios.gestionar"];
+  for (const nombre of Object.keys(reales)) {
+    if (nombre === "aceptar_invitacion") continue;
+    const ll: string[] = [];
+    const r = await leer(await pedir({ accion: nombre, empresa_id: EMPRESA }, construirDeps(adminFalso(e, ll), CONFIG), "token-u1"));
+    assertEquals([nombre, r.status, r.codigo], [nombre, 403, "sin_perfil"]);
+    assertEquals(ll.filter((n) => n !== "fel_estado_cuenta" && n !== "fel_limite_consumir"), [], `${nombre} hizo consultas sin perfil`);
+  }
+});
+
+Deno.test("cuenta sin perfil: aceptar_invitacion SÍ llega a la base de datos con el usuario del token (la base exige la invitación vigente)", async () => {
+  const e = estado(); e.sinPerfil = new Set(["u1"]);
+  const ll: string[] = []; const args: Array<Record<string, unknown>> = [];
+  const admin = adminFalso(e, ll); const rpc = admin.rpc.bind(admin);
+  admin.rpc = (n: string, a: Record<string, unknown>) => { if (n === "fel_op_invitacion_aceptar") args.push(a); return rpc(n, a); };
+  const r = await leer(await pedir({ accion: "aceptar_invitacion" }, construirDeps(admin, CONFIG), "token-u1"));
+  assertEquals(r.status, 200);
+  assertEquals(args, [{ p_user: "u1", p_email: "u1@test.com" }]);   // identidad y correo salen del token validado por Auth
+  // el cliente no puede mandar otro usuario ni otro correo
+  const r2 = await leer(await pedir({ accion: "aceptar_invitacion", user_id: "otro", email: "x@x.com" }, construirDeps(admin, CONFIG), "token-u1"));
+  assertEquals(r2.status, 400);
+});
+
+Deno.test("cuenta bloqueada: ni siquiera aceptar_invitacion llega a la base de datos", async () => {
+  const e = estado(); e.bloqueados.add("u1");
+  const ll: string[] = [];
+  const r = await leer(await pedir({ accion: "aceptar_invitacion" }, construirDeps(adminFalso(e, ll), CONFIG), "token-u1"));
+  assertEquals([r.status, r.codigo], [403, "cuenta_desactivada"]);
+  assertEquals(ll.includes("fel_op_invitacion_aceptar"), false);
+});
+
+Deno.test("la excepción para cuentas sin perfil está acotada a UNA sola acción", () => {
+  const conExcepcion = Object.entries(reales).filter(([, a]) => a.permiteSinPerfil).map(([n]) => n);
+  assertEquals(conExcepcion, ["aceptar_invitacion"]);
 });

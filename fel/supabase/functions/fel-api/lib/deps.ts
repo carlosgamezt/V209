@@ -13,11 +13,12 @@ export function construirDeps(admin: any, config: Config): Deps {
       if (error || !data?.user || !data.user.email) return null;
       return { id: data.user.id, email: data.user.email };
     },
-    // Cuenta bloqueada (perfiles.activo = false) = ninguna acción. Si no se puede comprobar, se rechaza con 503.
-    async usuarioActivo(userId) {
-      const { data, error } = await admin.rpc("fel_usuario_activo", { p_user: userId });
+    // Estado de la cuenta: solo "activa" (perfil existente y activo) tiene acceso general. "sin_perfil" solo puede aceptar una
+    // invitación; "bloqueada" no puede nada. Si no se puede comprobar, se rechaza con 503; un valor desconocido = bloqueada.
+    async estadoCuenta(userId) {
+      const { data, error } = await admin.rpc("fel_estado_cuenta", { p_user: userId });
       if (error) throw new ErrorFel(503, "No se pudo verificar la cuenta; intenta de nuevo", "verificacion");
-      return data === true;
+      return data === "activa" || data === "sin_perfil" ? data : "bloqueada";
     },
     // Administrador maestro = está en plataforma_admins Y su perfil está activo (misma regla que usa la base de datos).
     async esPlataforma(userId) {

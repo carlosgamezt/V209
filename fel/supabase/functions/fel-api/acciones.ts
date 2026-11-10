@@ -52,6 +52,7 @@ export const acciones: Acciones = {
 
   aceptar_invitacion: {
     limite: "gestion_usuarios",
+    permiteSinPerfil: true,
     requisito: {},
     validar: (b) => { v.soloCampos(b, []); return {}; },
     async ejecutar(ctx) {

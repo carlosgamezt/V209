@@ -17,7 +17,7 @@ export interface Usuario { id: string; email: string }
 export interface Deps {
   config: Config;
   getUser(token: string): Promise<Usuario | null>;              // valida el JWT con Supabase Auth
-  usuarioActivo(userId: string): Promise<boolean>;               // perfil no bloqueado; un JWT vigente NO basta
+  estadoCuenta(userId: string): Promise<"activa" | "bloqueada" | "sin_perfil">; // un JWT vigente NO basta: se exige perfil activo
   limitar(clave: string, ventanaSeg: number, max: number): Promise<{ permitido: boolean; reintentarEn: number }>; // contador compartido en la base de datos
   esPlataforma(userId: string): Promise<boolean>;                // consulta plataforma_admins
   permisos(empresaId: string, userId: string): Promise<string[]>; // fel_permisos_efectivos (única fuente de verdad)
@@ -31,6 +31,7 @@ export interface Contexto extends Deps {
 }
 
 export interface Accion<P = unknown> {
+  permiteSinPerfil?: boolean; // SOLO aceptar_invitacion: una cuenta sin perfil puede ejecutarla (la base exige invitación vigente)
   limite: string;           // categoría de límite de peticiones (ver lib/limites.ts)
   requisito: Requisito;
   validar(b: Cuerpo): P;
@@ -103,8 +104,12 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
     if (!usuario) throw new ErrorFel(401, "La sesión no es válida o venció", "sin_sesion");
     const aal = decodificarClaims(token).aal; // el token ya fue validado por Supabase Auth
 
-    // Un JWT vigente NO basta: la cuenta bloqueada no ejecuta NINGUNA acción (ni siquiera de lectura de sesión).
-    if (!(await deps.usuarioActivo(usuario.id))) throw new ErrorFel(403, "La cuenta está desactivada", "cuenta_desactivada");
+    // Un JWT vigente NO basta. Cuenta bloqueada: ninguna acción. Cuenta sin perfil: solo la aceptación de una invitación vigente.
+    const cuenta = await deps.estadoCuenta(usuario.id);
+    if (cuenta === "bloqueada") throw new ErrorFel(403, "La cuenta está desactivada", "cuenta_desactivada");
+    if (cuenta === "sin_perfil" && !accion.permiteSinPerfil) {
+      throw new ErrorFel(403, "Tu cuenta todavía no tiene acceso a NEXA FEL; necesitas una invitación vigente", "sin_perfil");
+    }
 
     const params = accion.validar(cuerpo);
 

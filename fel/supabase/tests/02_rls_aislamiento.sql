@@ -9,6 +9,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000c3', 'emisorA@fel.test'),
   ('00000000-0000-0000-0000-0000000000d1', 'propB@fel.test'),
   ('00000000-0000-0000-0000-0000000000e1', 'sinempresa@fel.test');
+insert into public.perfiles (user_id) select id from auth.users on conflict (user_id) do nothing;
 insert into public.plataforma_admins (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 
 insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado)
@@ -84,7 +85,7 @@ do $$ begin
   assert (select count(*) from public.miembros) = 1, 'el lector solo ve su propia membresía';
   assert (select count(*) from public.auditoria) = 0, 'el lector no ve auditoría';
   assert (select count(*) from public.invitaciones) = 0, 'el lector no ve invitaciones';
-  assert (select count(*) from public.perfiles) = 0, 'el lector no ve perfiles ajenos';
+  assert (select count(*) from public.perfiles where user_id <> auth.uid()) = 0, 'el lector no ve perfiles ajenos';
 end $$;
 reset role;
 

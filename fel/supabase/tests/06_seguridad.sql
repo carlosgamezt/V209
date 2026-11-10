@@ -12,17 +12,18 @@ end $$;
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'maestro@fel.test'),
   ('00000000-0000-0000-0000-0000000000b1', 'prop@fel.test');
+insert into public.perfiles (user_id) select id from auth.users;
 insert into public.plataforma_admins (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 
 -- ================= cuenta activa / maestro activo (las usa la API en cada petición)
 do $$ begin
-  assert public.fel_usuario_activo('00000000-0000-0000-0000-0000000000b1'), 'sin perfil = activo';
+  assert public.fel_usuario_activo('00000000-0000-0000-0000-0000000000b1'), 'con perfil activo debe estar activa';
   assert public.fel_es_plataforma('00000000-0000-0000-0000-0000000000a1'), 'maestro activo debe serlo';
   assert not public.fel_es_plataforma('00000000-0000-0000-0000-0000000000b1'), 'un usuario común no es maestro';
   assert not public.fel_usuario_activo(null), 'nulo no es activo';
   assert not public.fel_es_plataforma(null), 'nulo no es maestro';
 end $$;
-insert into public.perfiles (user_id, activo) values ('00000000-0000-0000-0000-0000000000a1', false);
+update public.perfiles set activo = false where user_id = '00000000-0000-0000-0000-0000000000a1';
 do $$ begin
   assert not public.fel_usuario_activo('00000000-0000-0000-0000-0000000000a1'), 'perfil bloqueado sigue activo';
   assert not public.fel_es_plataforma('00000000-0000-0000-0000-0000000000a1'), 'maestro bloqueado sigue siendo maestro';
@@ -44,6 +45,7 @@ begin
   if not v_ok then raise exception 'ESPERABA ERROR /%/ pero no ocurrió, en: %', p_patron, p_sql; end if;
 end $$;
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'maestro@fel.test');
+insert into public.perfiles (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 insert into public.plataforma_admins (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 
 -- ================= interruptor de emisión real a nivel de base de datos
@@ -81,6 +83,7 @@ update public.plataforma_config set valor = true where clave = 'emision_real_dis
 select public.fel_admin_emision('00000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a', true, 'Habilitada solo para esta prueba');
 update public.plataforma_config set valor = false where clave = 'emision_real_disponible';
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b1', 'prop@fel.test');
+insert into public.perfiles (user_id) values ('00000000-0000-0000-0000-0000000000b1');
 insert into public.miembros (empresa_id, user_id, rol) values ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000b1', 'propietario');
 select pg_temp.espera_error($$select public.fel_op_certificacion_iniciar('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', gen_random_uuid(), 'clave-0000000000001', repeat('a',64), 'p')$$, 'FEL_EMISION_BLOQUEADA');
 select pg_temp.espera_error($$select public.fel_op_anulacion_iniciar('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', gen_random_uuid(), 'anul-00000000000001', repeat('a',64), 'Motivo válido', 'p')$$, 'FEL_EMISION_BLOQUEADA');

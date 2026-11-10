@@ -14,6 +14,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000b1', 'prop@fel.test'),
   ('00000000-0000-0000-0000-0000000000b3', 'emisor@fel.test'),
   ('00000000-0000-0000-0000-0000000000b9', 'prop2@fel.test');
+insert into public.perfiles (user_id) select id from auth.users on conflict (user_id) do nothing;
 insert into public.plataforma_admins (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 
 insert into public.regimenes_fiscales (codigo, version, nombre, reglas, fuente, vigente_desde)

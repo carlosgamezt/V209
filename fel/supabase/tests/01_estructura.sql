@@ -21,6 +21,7 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000b2', 'admin@fel.test'),
   ('00000000-0000-0000-0000-0000000000b3', 'emisor@fel.test'),
   ('00000000-0000-0000-0000-0000000000b4', 'otro@fel.test');
+insert into public.perfiles (user_id) select id from auth.users where id <> '00000000-0000-0000-0000-0000000000b4' on conflict (user_id) do nothing;
 insert into public.plataforma_admins (user_id) values ('00000000-0000-0000-0000-0000000000a1');
 
 -- 1. RLS activo en todas las tablas de public
@@ -139,6 +140,7 @@ do $$ begin
 end $$;
 
 -- 9. aceptar invitaciones: crea la membresía; una vencida no
+update auth.users set email = 'nuevo@fel.test', email_confirmed_at = now() where id = '00000000-0000-0000-0000-0000000000b4';
 do $$ declare n int; begin
   n := public.fel_op_invitacion_aceptar('00000000-0000-0000-0000-0000000000b4', 'nuevo@fel.test');
   assert n = 1, 'debía aceptar 1 invitación, aceptó ' || n;
@@ -146,8 +148,10 @@ do $$ declare n int; begin
 end $$;
 insert into public.invitaciones (empresa_id, email, rol, expira_en)
 values ('10000000-0000-0000-0000-000000000001', 'tarde@fel.test', 'lector', now() - interval '1 day');
+insert into auth.users (id, email, email_confirmed_at) values ('00000000-0000-0000-0000-0000000000b5', 'tarde@fel.test', now());
+insert into public.perfiles (user_id) values ('00000000-0000-0000-0000-0000000000b5');
 do $$ declare n int; begin
-  n := public.fel_op_invitacion_aceptar('00000000-0000-0000-0000-0000000000b4', 'tarde@fel.test');
+  n := public.fel_op_invitacion_aceptar('00000000-0000-0000-0000-0000000000b5', 'tarde@fel.test');
   assert n = 0, 'una invitación vencida no debe aceptarse';
   assert (select estado from public.invitaciones where email = 'tarde@fel.test') = 'vencida', 'no se marcó vencida';
 end $$;

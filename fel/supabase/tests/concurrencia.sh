@@ -7,6 +7,7 @@ q() { $P -v ON_ERROR_STOP=1 -q -X -t -A -c "$1"; }
 A=00000000-0000-0000-0000-0000000000a1; U=00000000-0000-0000-0000-0000000000b1
 E=10000000-0000-0000-0000-0000000000c1
 q "insert into auth.users (id,email) values ('$A','m-conc@fel.test'),('$U','p-conc@fel.test');
+   insert into public.perfiles (user_id) values ('$A'),('$U') on conflict (user_id) do nothing;
    insert into public.plataforma_admins (user_id) values ('$A');
    insert into public.regimenes_fiscales (codigo,version,nombre,reglas,fuente,vigente_desde) values ('conc_reg',1,'Conc','{\"esquema\":1,\"impuestos\":[],\"precios_incluyen_impuesto\":false,\"redondeo\":{\"modo\":\"x\"}}','Referencia de prueba',current_date);
    update public.regimenes_fiscales set estado='verificado', verificado_por='$A', verificado_en=now() where codigo='conc_reg';
