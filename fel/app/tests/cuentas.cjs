@@ -165,7 +165,7 @@ const NUEVA = "Otra-Clave-Segura-456";
     const g = crear(); const q = await pagina(g);
     await login(q, "propietario@fel.test"); await q.waitForSelector("text=Nuevo cliente"); await q.waitForSelector('aside a.nv:has-text("Usuarios")');
     g.setRol("propietario@fel.test", "emp-1", "lector");
-    await q.click('aside a.nv:has-text("Conceptos")'); await q.waitForFunction(() => !document.querySelector('aside a.nv[href="#/usuarios"]'));
+    await q.click('aside a.nv:has-text("Conceptos")'); await q.waitForSelector('aside a.nv[href="#/usuarios"]', { state: "detached" });
     assert.equal(await q.locator("text=Nuevo concepto").count(), 0, "ya no puede crear");
     // c) escribir con permisos ya revocados: el servidor responde 403 y la interfaz recarga los permisos (no se queda con botones falsos)
     await q.context().close();
@@ -174,7 +174,7 @@ const NUEVA = "Otra-Clave-Segura-456";
     await r.click("text=Nuevo cliente"); await r.fill('input[name=nombre]', "Prueba"); await r.fill('input[name=numero]', "5551234-6");
     h.setRol("propietario@fel.test", "emp-1", "lector"); await r.click(".modal .btn-pri");
     await r.waitForSelector("text=No tienes permiso para esta operación"); await r.waitForSelector("text=Tus permisos cambiaron"); await r.keyboard.press("Escape");
-    await r.waitForFunction(() => !document.body.innerText.includes("Nuevo cliente")); await r.context().close();
+    await r.waitForSelector("button:has-text('Nuevo cliente')", { state: "detached" }); await r.context().close();
     // d) cuenta bloqueada mientras trabaja
     const i = crear(); const s = await pagina(i);
     await login(s, "propietario@fel.test"); await s.waitForSelector(".shell");
@@ -224,7 +224,7 @@ const NUEVA = "Otra-Clave-Segura-456";
     await p.click('.tabs a:has-text("Invitaciones")'); await p.waitForSelector("text=secreta-de-b@fel.test"); assert.equal(await p.locator("text=pendiente@fel.test").count(), 0);
     assert.ok(f.urls.filter((u) => /\/rest\/v1\/invitaciones/.test(u)).every((u) => u.includes("empresa_id=eq.emp-2")), "las invitaciones se piden solo de la empresa activa");
     await p.selectOption('select[aria-label="Empresa activa"]', "emp-1"); await p.waitForSelector("text=Tu rol solo permite consultar clientes").catch(() => {});
-    await p.waitForFunction(() => !document.querySelector('aside a.nv[href="#/usuarios"]'));
+    await p.waitForSelector('aside a.nv[href="#/usuarios"]', { state: "detached" });
     assert.ok(f.urls.filter((u) => /\/rest\/v1\/(clientes|conceptos)/.test(u)).every((u) => /empresa_id=eq\.emp-[12]/.test(u)));
     await p.context().close();
   }

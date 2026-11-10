@@ -131,7 +131,7 @@ if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
   // ================= roles
   await p.selectOption('select[aria-label="Rol de demostración"]', "lector");
-  await p.waitForFunction(() => !document.querySelector('aside a.nv[href="#/usuarios"]'));
+  await p.waitForSelector('aside a.nv[href="#/usuarios"]', { state: "detached" });
   await p.waitForSelector("text=Nuevo borrador", { state: "detached" }); // el lector no crea borradores
   await p.click('a.nv:has-text("Clientes")'); await p.waitForSelector("text=Tu rol solo permite consultar clientes");
   assert.equal(await p.locator("text=Nuevo cliente").count(), 0); assert.equal(await p.locator('button[aria-label^="Editar"]').count(), 0);
