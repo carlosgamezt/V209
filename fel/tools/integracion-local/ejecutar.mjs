@@ -99,6 +99,7 @@ await escenario("J01", "tokens hostiles", async () => {
   const buenos = { sub: U.prop.id, role: "authenticated", aal: "aal2", exp: sec() + 3600, amr: [{ method: "password", timestamp: sec() }, { method: "totp", timestamp: sec() }] };
   for (const [nombre, token] of [["basura", "no-es-un-jwt"], ["firma falsa (secreto equivocado)", firmaFalsa(buenos)], ["clave anon como usuario", ANON], ["clave service_role como usuario", SERVICE], ["sin token", ""]]) {
     const f = await fel("yo", {}, token); afirmar(`J01-${nombre}`, `fel-api rechaza: ${nombre}`, f.status === 401, `status ${f.status}`);
+    if (token === SERVICE) continue;   // la clave service_role ES el acceso de servicio: PostgREST la acepta por diseño; lo que importa es que fel-api no la tome por una persona
     const r = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, token || ANON); afirmar(`J01r-${nombre}`, `PostgREST no entrega datos: ${nombre}`, !(Array.isArray(r.datos) && r.datos.length > 0), `status ${r.status} ${JSON.stringify(r.datos).slice(0, 80)}`);
   }
   const caducado = firmaFalsa({ ...buenos, exp: sec() - 60 });

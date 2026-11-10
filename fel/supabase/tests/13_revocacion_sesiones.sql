@@ -27,7 +27,7 @@ insert into public.miembros (empresa_id, user_id, rol) values
   ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000b2', 'emisor'),
   ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000b3', 'lector');
 select public.fel_op_cliente_guardar('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', null, 'NIT', '3333333-3', 'Cliente', null, null, null, null);
-insert into auth.sessions (user_id) values ('00000000-0000-0000-0000-0000000000b2'), ('00000000-0000-0000-0000-0000000000b2'), ('00000000-0000-0000-0000-0000000000b3');
+insert into auth.sessions (id, user_id) values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000b2'), (gen_random_uuid(), '00000000-0000-0000-0000-0000000000b2'), (gen_random_uuid(), '00000000-0000-0000-0000-0000000000b3');
 
 -- ================= sin marca de revocación, el token vale (aunque no traiga amr)
 set local role authenticated;
