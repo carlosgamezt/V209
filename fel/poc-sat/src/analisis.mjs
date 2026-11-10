@@ -6,8 +6,17 @@ const esAyuda = (c) => c.tag === "button" && /^\(\s*\?\s*\)$/.test(c.texto);
 const esDesplegable = (c) => c.tag === "button" && /^---.*---$/.test(c.texto);
 
 /** Estabilidad del mejor localizador conocido. */
-export function estabilidad(c) {
+export function estabilidad(c, todos = []) {
   const k = c.candidatos ?? [];
+  const m = c.ng?.model;
+  if (m && c.tag !== "button") {
+    const mismos = todos.filter((x) => x.ng?.model === m && x.tag === c.tag);
+    if (mismos.length === 1) return "estable_ng_model";
+    if (c.ng.repeat) return "estable_ng_model_en_fila (acotar por fila o usar name con índice)";
+    if (c.type === "radio" && k.some((x) => x.estrategia === "etiqueta" && x.unico)) return "estable_etiqueta (ng-model compartido por el grupo)";
+    if (mismos.filter((x) => x.visible).length === 1) return "estable_ng_model_solo_visible (usar :visible)";
+    return "ng_model_repetido";
+  }
   if (c.rol === "tab") return k.some((x) => x.estrategia === "rol" && x.unico) ? "estable_rol_texto" : "ambiguo";
   if (esAyuda(c)) return "ayuda_sin_localizador_propio";
   const n = k.find((x) => x.estrategia === "ng_model" && x.unico); if (n) return "estable_ng_model";
@@ -18,6 +27,8 @@ export function estabilidad(c) {
   if (k.some((x) => x.estrategia === "rol" && x.unico)) return "estable_rol_texto";
   return "sin_identificador";
 }
+
+const categoriaModelo = (m, defecto) => (/^datosGenerales\.idp|transportista/.test(m) ? "idp / traslado" : /^complemento/.test(m) ? "complemento" : /^resultadoNIT|nitReceptor|cuiReceptor|pasaporte|direccionReceptor|tipoIdentificacion/.test(m) ? "receptor" : /^marca/.test(m) ? "marcas de complementos" : /^det\./.test(m) ? "articulos" : defecto);
 
 export function analizar(inv, cfg) {
   const C = inv.controles, filas = [];
@@ -40,19 +51,21 @@ export function analizar(inv, cfg) {
       if (!funcion) { let j = i - 1; while (j >= 0 && !esAyuda(C[j])) j--; funcion = j >= 0 && i - j < 12 ? `desconocida (sigue a la ayuda «${C[j].titulo}»)` : "desconocida"; confianza = "baja"; }
     }
     if (c.tag === "button" && c.marcador === "dd/mm/aaaa") { funcion = "botón del selector de fecha (calendario)"; categoria = "acción"; confianza = "media (placeholder)"; }
-    const cl = clasificarControl(c);
+    if (c.ng?.model && c.tag !== "button" && !stemInfo && c.type !== "radio") { funcion = (cfg.modelos?.[c.ng.model] ?? [null, `modelo ${c.ng.model}`])[1]; categoria = cfg.modelos?.[c.ng.model]?.[0] ?? categoriaModelo(c.ng.model, categoria); confianza = "alta (ng-model)"; }
+    if (c.ng?.click && c.tag === "button") { funcion = `${c.texto || c.titulo || "botón sin texto"} → ${c.ng.click.replace(/\(.*$/, "()")}`; categoria = "acción"; confianza = "alta (ng-click)"; }
+    const cl = clasificarControl({ ...c, texto: c.texto, nombre: c.nombre, titulo: c.titulo, ngclick: c.ng?.click });
     const calculado = c.deshabilitado && c.tag === "input" && /^Total|^total/.test(c.nombre ?? "");
     let accion;
     if (esAyuda(c)) accion = "ayuda: no se pulsa";
     else if (esDesplegable(c)) accion = "BLOQUEADA (desplegable personalizado: requiere diseño aparte)";
-    else if (cl.nivel === "prohibido") accion = "BLOQUEADA (prohibida)";
+    else if (cl.nivel === "prohibido" || /^(validarInformacion|eliminarItem|eliminarItemEspectaculo)\b/.test(c.ng?.click ?? "")) accion = "BLOQUEADA (prohibida)";
     else if (c.tag === "button" && c.marcador === "dd/mm/aaaa") accion = "BLOQUEADA (calendario: requiere diseño aparte)";
     else if (c.tag === "button" || (c.rol === "button")) accion = cl.nivel === "ambiguo" || !c.texto ? "BLOQUEADA (ambigua/sin texto: requiere aprobación humana)" : "revisar";
     else if (c.rol === "tab") accion = "clic_seguro (solo navegación, con verificación)";
     else if (c.soloLectura || c.deshabilitado) accion = calculado ? "solo lectura (valor calculado)" : "solo lectura / deshabilitado";
     else accion = c.visible ? "llenar/seleccionar/marcar (tras confirmar localizador)" : "dinámico: aparece tras una acción manual";
     const mejor = c.mejor ? `${c.mejor.estrategia}${c.mejor.tag ? `[${c.mejor.tag}]` : ""}: ${c.mejor.valor}` : "";
-    filas.push({ idx: i, n: c.n, seccion, subseccion: sub, visible: c.visible, tag: c.tag, tipo: c.type || c.rol, requerido: c.requerido, funcion, confianza_funcion: confianza, categoria, estabilidad: estabilidad(c), mejor_localizador: mejor, opciones_n: c.opciones_n ?? null, accion, nombre: c.nombre ?? "", clasificacion_guardia: cl.nivel });
+    filas.push({ idx: i, n: c.n, seccion, subseccion: sub, visible: c.visible, tag: c.tag, tipo: c.type || c.rol, requerido: c.requerido, funcion, confianza_funcion: confianza, categoria, estabilidad: estabilidad(c, C), modelo: c.ng?.model ?? "", ng_click: c.ng?.click ?? "", ng_repeat: c.ng?.repeat ?? "", mejor_localizador: mejor, opciones_n: c.opciones_n ?? null, accion, nombre: c.nombre ?? "", clasificacion_guardia: cl.nivel });
   });
   // campos repetidos con sufijo numérico
   const grupos = {};

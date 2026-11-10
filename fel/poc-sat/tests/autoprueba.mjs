@@ -7,6 +7,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { spawnSync, execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 const ejecutarAsync = (cmd, args, o) => promisify(execFile)(cmd, args, o).then((r) => ({ status: 0, stdout: r.stdout, stderr: r.stderr }), (e) => ({ status: e.code ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(e) }));
 import { chromium } from "../src/playwright.mjs";
@@ -360,6 +361,28 @@ await caso("SEGUNDA OBSERVACIÓN (Angular simulado): ng-model, ayuda adyacente, 
   const a = analizar(inv, { subsecciones_datos_generales: [], stems_linea: { BienOServicio: ["articulos", "tipo"], Cantidad: ["cantidades", "cantidad"], Descripcion: ["descripciones", "descripción"], PrecioUnitario: ["precios", "precio"], Total: ["totales", "total"] } });
   assert.ok(a.filas.some((f) => f.funcion === "cantidad" && f.estabilidad === "estable_ng_model"), JSON.stringify(a.por_estabilidad)); assert.ok(a.filas.some((f) => /Vista Previa/.test(f.funcion) && /BLOQUEADA/.test(f.accion)), "Vista Previa bloqueada");
   assert.ok(a.filas.some((f) => /Eliminar item/.test(f.funcion) && /BLOQUEADA/.test(f.accion)) && a.filas.some((f) => /Editar impuestos/.test(f.funcion) && /BLOQUEADA/.test(f.accion)));
+  await context.close();
+});
+
+await caso("TERCERA observación (fragmento 3): sin texto de opciones salvo lista permitida, ng-model completo, solo lectura; fragmento 2 intacto", async () => {
+  const { context, page } = await nuevaPagina(); await page.goto(URL_BASE + "ang");
+  const cfg = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-preliminar.json"), "utf8")), css = cfg.comprobar_css;
+  const f3 = fuenteConsola({ extendido: true, css, version: 3, permitidas: [] }), disco3 = fs.readFileSync(path.join(AQUI, "../consola/observar-consola-3.js"), "utf8");
+  assert.equal(disco3, f3, "consola/observar-consola-3.js desactualizado: ejecuta node bin/generar-consola.mjs");
+  const h = (x) => createHash("sha256").update(x).digest("hex"), doc = fs.readFileSync(path.join(AQUI, "../../docs/fase-2-informe-sat-2a.md"), "utf8");
+  assert.ok(doc.includes(h(disco3)), `el informe debe citar la huella del fragmento 3: ${h(disco3)}`);
+  assert.equal(h(fs.readFileSync(path.join(AQUI, "../consola/observar-consola-2.js"), "utf8")), "3f953dc0597b08da9b47a829483f204251b5f912da5e78c256b1cd29195c998e", "el fragmento 2 revisado no debe cambiar");
+  assert.equal(h(fs.readFileSync(path.join(AQUI, "../consola/observar-consola.js"), "utf8")), "368a6a5dc32760fe1b85be87cdcc9c051c7c28966f4c32e3c61971eacea483a1", "el fragmento 1 revisado no debe cambiar");
+  assert.equal(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|\.click\s*\(|\.submit\s*\(|\.value\s*=|setAttribute|dispatchEvent|\.focus\s*\(|localStorage|sessionStorage|document\.cookie|WebSocket|eval\s*\(|new Function|createElement|innerHTML\s*=/.test(f3), false);
+  assert.throws(() => fuenteConsola({ extendido: true, css, version: 3, permitidas: ["a; fetch(1)"] }), /no permitido/);
+  let json = null; page.on("console", (m) => { if (m.text().startsWith("{")) json = m.text(); });
+  const antes = await page.evaluate(() => document.documentElement.outerHTML.length); await page.evaluate(f3); assert.equal(await page.evaluate(() => document.documentElement.outerHTML.length), antes);
+  const raw = JSON.parse(json), ex = raw.frames[0].r.extra.extras, ctl = raw.frames[0].r.controles;
+  assert.equal(raw.version, 3); assert.ok(ex.every((e) => !("opciones" in e)), "ningún texto de opciones"); assert.equal(ex[ctl.findIndex((c) => c.nombre === "BienOServicio0")].opciones_n, 3, "solo el conteo");
+  assert.ok(!json.includes("Servicio\"") || !json.includes("\"Bien\""), "no aparece el texto de las opciones");
+  const largo = ex.find((e) => e.ng.model.startsWith("complementoNotasDC.")).ng.model; assert.ok(largo.length > 80 && largo.endsWith("DeDoscientosCaracteres"), "ng-model completo");
+  const f3p = fuenteConsola({ extendido: true, css: [], version: 3, permitidas: ["item.tipo"] }); json = null; await page.evaluate(f3p);
+  const ex2 = JSON.parse(json).frames[0].r.extra.extras; assert.deepEqual(ex2.find((e) => e.ng.model === "item.tipo").opciones, ["Seleccione", "Bien", "Servicio"], "con lista permitida sí");
   await context.close();
 });
 

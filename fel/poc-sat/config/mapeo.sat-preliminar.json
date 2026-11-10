@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "estado": "PRELIMINAR a partir de la observación 1 (211 controles, 31 visibles). NO es ejecutable: todos los pasos tienen verificado=false y varios campos no tienen localizador. Se completa con la observación 2.",
+  "estado": "PRELIMINAR v2 (observaciones 1 y 2a, ambas del portal real). NO es ejecutable: verificado=false en todos los pasos hasta una prueba en seco aprobada. «confirmado_en_observacion» significa: existe, es único (comprobación CSS real) y su identificador parece estable.",
   "dominios_permitidos": [
     "felav.c.sat.gob.gt"
   ],
@@ -25,24 +25,54 @@
     {
       "id": "p000-sesion",
       "tipo": "manual",
-      "instruccion": "Abre tú mismo el formulario FEL de PRUEBA en la sesión ya iniciada, en la pestaña «Datos Generales», sin emitir ni usar la vista previa, y pulsa Enter."
+      "instruccion": "Abre tú mismo el formulario FEL de PRUEBA en la sesión ya iniciada, en «Datos Generales», sin emitir ni usar la vista previa, y pulsa Enter."
     },
     {
-      "id": "p010-receptor-usa-nit",
+      "id": "p010-receptor-radio-nit",
       "tipo": "marcar",
-      "comentario": "Radio «NIT». Único por etiqueta en la observación 1. El name (14) es un id interno de Angular: NO usar.",
+      "comentario": "Radio «NIT». El name (14) es un id interno de Angular: no se usa. Los 3 radios comparten ng-model datosGenerales.tipoIdentificacion; se distinguen por etiqueta.",
+      "evidencia": "obs1+obs2a: etiqueta única; [type=radio] total=3, visibles=3",
       "localizador": {
         "estrategia": "etiqueta",
         "valor": "NIT",
         "exacto": true
       },
-      "dato": "receptor.usa_nit",
+      "dato": "receptor.identificar_con_nit",
+      "verificado": false
+    },
+    {
+      "id": "p020-receptor-nit",
+      "tipo": "llenar",
+      "comentario": "Al escribir un NIT la página consulta y rellena resultadoNIT.nombre: podría requerir red (bloqueada). Medir antes de usar. Con «CF» no se sabe.",
+      "evidencia": "obs2a: ng-model único (visible); requerido; autocomplete=off",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "datosGenerales.nitReceptor",
+        "tag": "input",
+        "visible": true
+      },
+      "dato": "receptor.nit",
+      "verificado": false
+    },
+    {
+      "id": "p030-receptor-direccion",
+      "tipo": "llenar",
+      "comentario": "Campo visible de dirección.",
+      "evidencia": "obs2a: ng-model único",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "datosGenerales.direccionReceptor",
+        "tag": "input",
+        "visible": true
+      },
+      "dato": "receptor.direccion",
       "verificado": false
     },
     {
       "id": "p100-linea0-tipo",
       "tipo": "seleccionar",
-      "comentario": "Lista de 3 opciones (Seleccione/Bien/Servicio, por confirmar en la observación 2).",
+      "comentario": "Opciones: Seleccione / Bien / Servicio. ng-model alternativo en fila: det.BienOServicio.",
+      "evidencia": "obs2a: CSS select[name=BienOServicio0] total=1, visibles=1",
       "localizador": {
         "estrategia": "nombre",
         "valor": "BienOServicio0",
@@ -54,7 +84,8 @@
     {
       "id": "p110-linea0-cantidad",
       "tipo": "llenar",
-      "comentario": "Único con tag en la observación 1.",
+      "comentario": "ng-model en fila: det.Cantidad (se repite por línea).",
+      "evidencia": "obs2a: CSS input[name=Cantidad0] total=1, visibles=1; input[name^=Cantidad] total=1",
       "localizador": {
         "estrategia": "nombre",
         "valor": "Cantidad0",
@@ -66,7 +97,8 @@
     {
       "id": "p120-linea0-descripcion",
       "tipo": "llenar",
-      "comentario": "Hay también un <select name=Descripcion0> oculto (modo catálogo): por eso se exige tag=input. Comprobar cuál se muestra.",
+      "comentario": "Modo texto libre. El modo catálogo es otro control (select, ng-model det.DescripcionIdp, oculto).",
+      "evidencia": "obs2a: CSS input[name=Descripcion0] total=1, visibles=1; select[name=Descripcion0] total=1, visibles=0",
       "localizador": {
         "estrategia": "nombre",
         "valor": "Descripcion0",
@@ -78,7 +110,8 @@
     {
       "id": "p130-linea0-precio",
       "tipo": "llenar",
-      "comentario": "Único con tag en la observación 1.",
+      "comentario": "ng-model en fila: det.PrecioUnitario.",
+      "evidencia": "obs2a: CSS total=1, visibles=1",
       "localizador": {
         "estrategia": "nombre",
         "valor": "PrecioUnitario0",
@@ -90,7 +123,8 @@
     {
       "id": "p140-linea0-descuento",
       "tipo": "llenar",
-      "comentario": "Único con tag en la observación 1.",
+      "comentario": "ng-model en fila: det.Descuento.",
+      "evidencia": "obs2a: CSS total=1, visibles=1",
       "localizador": {
         "estrategia": "nombre",
         "valor": "Descuento0",
@@ -112,83 +146,89 @@
         "valor": "Total0",
         "tag": "input"
       },
-      "nota": "Deshabilitado: valor calculado por la página. Solo se lee, nunca se escribe."
+      "nota": "Deshabilitado, calculado por la página (ng-model det.Total, repetido por línea). Solo se lee.",
+      "evidencia": "obs2a: CSS input[name=Total0] total=1, visibles=1"
+    },
+    {
+      "id": "l-receptor-nombre",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "resultadoNIT.nombre",
+        "tag": "input",
+        "visible": true
+      },
+      "nota": "Nombre devuelto por la consulta de NIT. El mismo modelo está en 3 controles (1 deshabilitado c23 y 2 ocultos con name=nombre): hay que usar :visible y comprobar cuál se muestra según el tipo de identificación.",
+      "evidencia": "obs2a: ng-model compartido por c23, c26, c29"
     }
   ],
   "pendientes_localizador": [
     {
-      "campo": "Fecha de emisión (c1 input readonly + c2 botón calendario)",
-      "motivo": "sin name ni etiqueta; el campo es de solo lectura y se llena con un calendario (requiere diseño aparte)",
-      "necesita": "ng-model, comportamiento del calendario"
+      "campo": "Fecha de emisión (c1 input solo lectura + c2 botón calendario; ng-model datosGenerales.fechaEmision)",
+      "motivo": "se llena con un calendario; no admite fill",
+      "necesita": "decidir: dejar la fecha por defecto de la página (recomendado) o diseñar el calendario"
     },
     {
-      "campo": "NIT del receptor (c21, visible, requerido)",
-      "motivo": "sin name ni etiqueta; solo se infiere por la ayuda «NIT del Receptor» que lo sigue",
-      "necesita": "ng-model; comportamiento al escribir un NIT (¿consulta de red?)"
+      "campo": "Tipo de documento (datosGenerales.tipoDte)",
+      "motivo": "decisión de negocio: la lista depende de la cuenta y cambia las secciones visibles",
+      "necesita": "que la persona indique qué opción se usará en la prueba"
     },
     {
-      "campo": "Dirección del receptor (c30)",
-      "motivo": "sin name ni etiqueta (ayuda «Dirección del Receptor»)",
-      "necesita": "ng-model"
+      "campo": "Consulta del NIT (resultadoNIT.nombre ×3)",
+      "motivo": "escribir el NIT dispara una consulta (probable red); el nombre aparece en 3 controles con el mismo modelo",
+      "necesita": "observación sat-2d + medición de red (método y ruta)"
     },
     {
-      "campo": "Nombre/CUI/ID extranjero del receptor (c23, c24, c26, c27, c29: ocultos)",
-      "motivo": "ocultos; dos con name=nombre repetido; c23 deshabilitado",
-      "necesita": "observarlos tras elegir el tipo de identificación a mano"
-    },
-    {
-      "campo": "Listas de encabezado c4–c8 y c11–c14, c17",
-      "motivo": "selects sin name, etiqueta ni ayuda propia (c6: 6 opciones, c8: 28 opciones visibles)",
-      "necesita": "ng-model y etiquetas de opciones"
-    },
-    {
-      "campo": "Impuestos por línea",
-      "motivo": "no hay campos de impuestos en el DOM observado; solo el botón «Editar impuestos» (abre algo)",
-      "necesita": "observar a mano tras abrir ese diálogo (observación 2C)"
-    },
-    {
-      "campo": "Casillas c9, c15, c49, c56–c60",
-      "motivo": "sin identificador; c9/c15 se infieren por ayuda (ubicación temporal / exportación)",
-      "necesita": "ng-model"
+      "campo": "Impuestos",
+      "motivo": "sin campos en el DOM; botón «Editar impuestos» (ng-click mostrarModalImpuestos) abre un diálogo; checkbox det.afecto oculto",
+      "necesita": "sat-2c solo si hay que editar impuestos; probablemente automático según el tipo de documento"
     },
     {
       "campo": "Líneas 2..n",
-      "motivo": "solo existe el índice 0; no se sabe cómo crece el sufijo ni qué pasa al borrar",
-      "necesita": "observación 2B tras agregar un ítem a mano"
+      "motivo": "ng-repeat «det in detalleFactura»; solo se ve la línea 0",
+      "necesita": "sat-2b solo para implementar varias líneas (no hace falta para una línea)"
+    },
+    {
+      "campo": "8 controles ocultos de complementos con ng-model truncado a 80 caracteres (c77, c79, c134, c136, c138, c141 y 2 más)",
+      "motivo": "el fragmento 2 recorta el ng-model a 80 caracteres y dos modelos distintos colisionan",
+      "necesita": "fragmento 3 con límite mayor, solo si esas pestañas se usan"
     }
   ],
   "bloqueados": [
     {
-      "control": "c210 «Vista Previa»",
-      "motivo": "PROHIBIDO: no se usa la vista previa (la emisión suele estar detrás de ella; no existe botón Emitir en el DOM observado)"
+      "control": "c210 «Vista Previa» (ng-click validarInformacion())",
+      "motivo": "PROHIBIDO: valida y abre la vista previa, paso previo a emitir"
     },
     {
-      "control": "c54 «Eliminar item» (title)",
+      "control": "c54 (ng-click eliminarItem($index,1)…) «Eliminar item»",
       "motivo": "PROHIBIDO: destruye datos"
     },
     {
-      "control": "c128 «Eliminar item espectáculo» (title)",
+      "control": "c128 (ng-click eliminarItemEspectaculo($index)…)",
       "motivo": "PROHIBIDO: destruye datos"
     },
     {
-      "control": "c53 «Editar impuestos» (title, sin texto)",
-      "motivo": "BLOQUEADO: abre un diálogo no observado; se decide tras la observación 2C"
+      "control": "c53 «Editar impuestos» (ng-click mostrarModalImpuestos($index))",
+      "motivo": "BLOQUEADO: abre un diálogo no observado"
     },
     {
-      "control": "c55, c72, c120, c129, c201, c204 «Agregar …»",
-      "motivo": "BLOQUEADOS: acción no repetible; solo con aprobación humana y comprobación de conteo (ver plantilla_lineas)"
+      "control": "c55 (agregarItem()), c72 (agregarCantidadPagos()), c120 (agregarCantidadCobros()), c129 (nuevoItemEspectaculosPublicos()), c201/c204 (agregarItemLista())",
+      "motivo": "BLOQUEADOS: acciones no repetibles; solo con aprobación humana y comprobación de conteo"
     },
     {
-      "control": "c2, c85, c113, c144, c155, c166, c209 (calendarios)",
+      "control": "calendarios c2, c85, c113, c144, c155, c166, c209",
       "motivo": "BLOQUEADOS: requieren diseño aparte"
     },
     {
       "control": "c61–c67 «--- Seleccione Frase … ---»",
-      "motivo": "BLOQUEADOS: desplegables personalizados"
+      "motivo": "BLOQUEADOS: desplegables personalizados (sin identificador propio)"
     },
     {
       "control": "botones ( ? ) de ayuda",
       "motivo": "no se pulsan"
+    },
+    {
+      "control": "no existe botón Emitir/Certificar/Guardar en el DOM observado",
+      "motivo": "nada que desbloquear; la emisión no es alcanzable sin pasar por Vista Previa"
     }
   ],
   "plantilla_lineas": {
@@ -237,5 +277,139 @@
     "legend",
     "[ng-show]",
     "[ng-hide]"
-  ]
+  ],
+  "confirmados_en_observacion": {
+    "criterio": "existe en el portal real, comprobación CSS total=1 (o etiqueta única) y identificador no autogenerado. NO significa comprobado en una ejecución.",
+    "campos": [
+      "radio NIT/CUI/ID EXTRANJERO (etiqueta)",
+      "línea 0: BienOServicio0, Cantidad0, Descripcion0 (input), PrecioUnitario0, Descuento0, OtrosDescuento0, Total0 (lectura), CodigoProducto0 (oculto), Observaciones0 (oculto)",
+      "NIT del receptor (ng-model datosGenerales.nitReceptor)",
+      "dirección del receptor (ng-model datosGenerales.direccionReceptor)",
+      "tipo de documento (ng-model datosGenerales.tipoDte) y moneda (datosGenerales.moneda): listas visibles",
+      "casillas esUbicacionTemporal, esExportacion, marcaMediosPago",
+      "pestañas por rol+texto (18)"
+    ]
+  },
+  "comprobaciones_obs2a": [
+    {
+      "css": "input[name=\"Cantidad0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "select[name=\"BienOServicio0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "input[name=\"Descripcion0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "select[name=\"Descripcion0\"]",
+      "total": 1,
+      "visibles": 0
+    },
+    {
+      "css": "input[name=\"PrecioUnitario0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "input[name=\"Descuento0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "input[name=\"OtrosDescuento0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "input[name=\"Total0\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "select[name=\"CodigoProducto0\"]",
+      "total": 1,
+      "visibles": 0
+    },
+    {
+      "css": "input[name=\"Observaciones0\"]",
+      "total": 1,
+      "visibles": 0
+    },
+    {
+      "css": "input[name^=\"Cantidad\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "button[title=\"NIT del Receptor\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "button[title=\"Dirección del Receptor\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "button[title=\"Fecha Emisión\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "button[title=\"Editar impuestos\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "button[title=\"Eliminar item\"]",
+      "total": 1,
+      "visibles": 1
+    },
+    {
+      "css": "input[type=\"radio\"]",
+      "total": 3,
+      "visibles": 3
+    },
+    {
+      "css": "[role=\"tab\"]",
+      "total": 18,
+      "visibles": 1
+    },
+    {
+      "css": "[ng-model]",
+      "total": 125,
+      "visibles": 19
+    },
+    {
+      "css": "[ng-repeat]",
+      "total": 34,
+      "visibles": 2
+    },
+    {
+      "css": "[ng-click]",
+      "total": 11,
+      "visibles": 5
+    },
+    {
+      "css": "fieldset",
+      "total": 19,
+      "visibles": 2
+    },
+    {
+      "css": "legend",
+      "total": 0,
+      "visibles": 0
+    }
+  ],
+  "decision_sat2b": {
+    "necesario_ahora": false,
+    "razon": "Para una factura de UNA línea el mapeo ya está completo (NIT, dirección y línea 0 con CSS comprobados). La repetición es un ng-repeat «det in detalleFactura»; el patrón de varias líneas puede acotarse por fila o por el name con índice y se verificará con un conteo antes y después en la prueba controlada.",
+    "cuando_si": "solo antes de implementar varias líneas"
+  }
 }

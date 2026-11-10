@@ -225,9 +225,12 @@ test("mapeo preliminar de SAT: no es ejecutable (solo falla por verificado=false
   assert.ok(!mp.pasos.some((p) => p.tipo === "clic_seguro"), "ningún clic en el mapeo preliminar");
   assert.deepEqual(mp.dominios_permitidos, ["felav.c.sat.gob.gt"]); assert.deepEqual(mp.permitir_post, []);
   for (const p of mp.pasos.filter((x) => x.localizador)) assert.ok(p.verificado === false && p.dato);
-  const cl = JSON.parse(fs.readFileSync(new URL("../analisis/obs1/clasificacion.json", import.meta.url), "utf8")), conocidos = new Set(cl.filas.map((f) => f.mejor_localizador));
+  const cl = JSON.parse(fs.readFileSync(new URL("../analisis/obs1/clasificacion.json", import.meta.url), "utf8")), c2 = JSON.parse(fs.readFileSync(new URL("../analisis/obs2a/clasificacion.json", import.meta.url), "utf8")), conocidos = new Set([...cl.filas, ...c2.filas].map((f) => f.mejor_localizador));
   for (const p of mp.pasos.filter((x) => x.localizador && x.localizador.estrategia !== "rol")) { const l = p.localizador, k = `${l.estrategia}${l.tag ? `[${l.tag}]` : ""}: ${l.valor}`; assert.ok(conocidos.has(k), `el localizador «${k}» no sale de la observación 1`); }
-  assert.equal(cl.total, 211); assert.equal(cl.visibles, 31);
+  assert.equal(cl.total, 211); assert.equal(cl.visibles, 31); assert.equal(c2.total, 211); assert.equal(c2.visibles, 30);
+  assert.ok(c2.filas.filter((f) => f.estabilidad === "sin_identificador").length <= 11 && c2.filas.every((f) => !("opciones" in f)), "la clasificación 2a no guarda el texto de las opciones de las listas (pueden llevar datos personales)");
+  assert.ok(!mp.pasos.some((p) => p.localizador?.estrategia === "ng_model" && !p.localizador.visible && /resultadoNIT/.test(p.localizador.valor)), "modelo compartido solo con :visible");
+  assert.equal(mp.decision_sat2b.necesario_ahora, false);
   for (const f of cl.filas.filter((x) => /Vista Previa|Eliminar item/.test(x.funcion))) assert.match(f.accion, /BLOQUEADA/);
   const dl = JSON.parse(fs.readFileSync(new URL("../config/datos-ficticios-lineas.json", import.meta.url), "utf8")); assert.ok(validarDatos(dl).ok);
 });

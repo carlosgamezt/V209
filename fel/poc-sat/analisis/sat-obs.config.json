@@ -1,0 +1,165 @@
+{
+  "comentario": "Configuración de lectura para las observaciones 1 y 2a del formulario FEL real. Las observaciones con ng-model sustituyen la inferencia por ayuda adyacente.",
+  "subsecciones_datos_generales": [
+    {
+      "nombre": "Encabezado del documento",
+      "desde": 1,
+      "hasta": 17
+    },
+    {
+      "nombre": "Receptor",
+      "desde": 18,
+      "hasta": 38
+    },
+    {
+      "nombre": "Artículos (tabla)",
+      "desde": 39,
+      "hasta": 55
+    },
+    {
+      "nombre": "Frases y escenarios",
+      "desde": 56,
+      "hasta": 67
+    }
+  ],
+  "subpestanas": {
+    "Factura Especifica": [
+      "Detalle de productos",
+      "Almacenamiento y Galonaje",
+      "Información Gas Licuado de Petróleo GLP",
+      "Referencia boleta despacho IDP"
+    ]
+  },
+  "stems_linea": {
+    "BienOServicio": [
+      "articulos",
+      "tipo de línea (bien/servicio)"
+    ],
+    "CodigoProducto": [
+      "articulos",
+      "código de producto (catálogo)"
+    ],
+    "CodigoFEL": [
+      "articulos",
+      "código FEL"
+    ],
+    "DescripcionCI": [
+      "articulos",
+      "descripción CI"
+    ],
+    "Observaciones": [
+      "articulos",
+      "observaciones de la línea"
+    ],
+    "Cantidad": [
+      "cantidades",
+      "cantidad"
+    ],
+    "Descripcion": [
+      "descripciones",
+      "descripción"
+    ],
+    "PrecioUnitario": [
+      "precios",
+      "precio unitario"
+    ],
+    "Descuento": [
+      "descuentos",
+      "descuento"
+    ],
+    "OtrosDescuento": [
+      "descuentos",
+      "otros descuentos"
+    ],
+    "Total": [
+      "totales",
+      "total de la línea (calculado)"
+    ],
+    "numeroAutorizacion": [
+      "espectaculos",
+      "número de autorización"
+    ],
+    "nombreEvento": [
+      "espectaculos",
+      "nombre del evento"
+    ],
+    "nombreLocalidad": [
+      "espectaculos",
+      "nombre de la localidad"
+    ],
+    "precioAdmision": [
+      "espectaculos",
+      "precio de admisión"
+    ],
+    "cantidadBoletos": [
+      "espectaculos",
+      "cantidad de boletos"
+    ],
+    "totalBoleto": [
+      "espectaculos",
+      "total del boleto (calculado)"
+    ]
+  },
+  "modelos": {
+    "datosGenerales.fechaEmision": [
+      "encabezado",
+      "fecha de emisión (solo lectura + calendario)"
+    ],
+    "datosGenerales.clasificacionEmisor": [
+      "encabezado",
+      "clasificación del emisor (lista, oculta)"
+    ],
+    "datosGenerales.establecimiento": [
+      "encabezado",
+      "establecimiento del emisor (lista, oculta; sus opciones contienen datos personales: no se registran)"
+    ],
+    "datosGenerales.tipoDte": [
+      "encabezado",
+      "tipo de documento (lista)"
+    ],
+    "datosGenerales.moneda": [
+      "encabezado",
+      "moneda (lista)"
+    ],
+    "datosGenerales.esUbicacionTemporal": [
+      "encabezado",
+      "casilla: emisión en ubicación temporal"
+    ],
+    "datosGenerales.esExportacion": [
+      "encabezado",
+      "casilla: exportación"
+    ],
+    "datosGenerales.destinoVenta": [
+      "encabezado",
+      "destino de la venta (lista, oculta)"
+    ],
+    "datosGenerales.tipoIdentificacion": [
+      "receptor",
+      "tipo de identificación del receptor (radios)"
+    ],
+    "datosGenerales.nitReceptor": [
+      "receptor",
+      "NIT del receptor"
+    ],
+    "datosGenerales.cuiReceptor": [
+      "receptor",
+      "CUI del receptor (oculto)"
+    ],
+    "datosGenerales.pasaporte": [
+      "receptor",
+      "ID extranjero / pasaporte del receptor (oculto)"
+    ],
+    "resultadoNIT.nombre": [
+      "receptor",
+      "nombre del receptor devuelto por la consulta (¿red?) — mismo modelo en 3 controles"
+    ],
+    "datosGenerales.direccionReceptor": [
+      "receptor",
+      "dirección del receptor"
+    ],
+    "det.Total": [
+      "totales",
+      "total de la línea (calculado)"
+    ]
+  }
+}

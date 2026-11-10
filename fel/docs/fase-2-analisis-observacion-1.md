@@ -1,5 +1,7 @@
 # Fase 2 — Análisis de la observación 1 del formulario FEL real (solo datos del archivo)
 
+> **Aviso (tras sat-2a):** el fragmento 2 (`observar-consola-2.js`) captura el texto de las opciones de las listas, y una de ellas contenía datos personales. **No lo vuelvas a usar**; las observaciones siguientes usan el fragmento 3. Ver `docs/fase-2-informe-sat-2a.md`.
+
 > **Qué es esto:** análisis de `observacion-fel.json` (obtenido con el fragmento de solo lectura `consola/observar-consola.js`, SHA-256 `368a6a5dc32760fe1b85be87cdcc9c051c7c28966f4c32e3c61971eacea483a1`). **Se trabajó únicamente con los datos del archivo**; no se tocó SAT, no se llenó nada, no se pulsó nada, no se guardó ni se emitió, no se modificó `main`.
 > **Corrección de premisa:** la página real usa **AngularJS y jQuery** (`frameworks: angular, jquery`). **No** se detectó JSF/PrimeFaces en los controles: 0 componentes `ui-*`, 0 `<form>`, sin `ViewState`. La extensión `.jsf` de la URL (`/fel-web/privado/vistas/fel.jsf`) solo indica la tecnología del servidor. Las heurísticas de PrimeFaces del observador quedan inofensivas aquí (conteos en 0), y la guía de la fase 2 debe leerse con esta corrección.
 > Detalle completo de los **211 controles** (uno por fila, con sección, visibilidad, función, estabilidad, localizador y acción): `fel/poc-sat/analisis/obs1/clasificacion.md` (y `.json`). Mapeo preliminar: `fel/poc-sat/config/mapeo.sat-preliminar.json`. Datos ficticios con líneas: `config/datos-ficticios-lineas.json`.

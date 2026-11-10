@@ -182,7 +182,39 @@ export function obstaculos(inv, nMarcos = inv.marcos.length) {
 }
 
 /** Fragmento de JavaScript para pegar en la consola de Chrome (DevTools) de la pestaña con el formulario. SOLO LECTURA: no hace peticiones, no escribe, no hace clic; copia el resultado al portapapeles. */
-export function fuenteConsola({ extendido = false, css = [] } = {}) {
+/** Fuente de recogerExtra para la versión 3: ng-model completo (hasta 200 caracteres) y texto de opciones SOLO de las listas cuyo ng-model esté en la lista permitida (por defecto ninguna). */
+function extraV3Fuente() {
+  let f = recogerExtra.toString();
+  const reemplazar = (a, b) => { if (f.split(a).length !== 2) throw new Error(`no se pudo derivar la versión 3: ${a.slice(0, 40)}`); f = f.replace(a, b); };
+  reemplazar("function recogerExtra({ css })", "function recogerExtra({ css, permitidas })");
+  reemplazar('?? "", 80);', '?? "", n === "ng-model" ? 200 : 80);');
+  reemplazar('if (el.tagName === "SELECT" && el.options.length <= 30) o.opciones = [...el.options].map((x) => txt(x.textContent, 40));', 'if (el.tagName === "SELECT") { o.opciones_n = el.options.length; if ((permitidas || []).includes(o.ng.model)) o.opciones = [...el.options].slice(0, 30).map((x) => txt(x.textContent, 40)); }');
+  return f;
+}
+
+export function fuenteConsola({ extendido = false, css = [], version = 2, permitidas = [] } = {}) {
+  if (extendido && version === 3) {
+    for (const q of css) if (!/^[\p{L}\p{N}_\-\[\]="'.:>#*^$~| ,]+$/u.test(q) || /(eval|function|=>|javascript)/i.test(q)) throw new Error(`selector CSS no permitido en la lista cerrada: ${q}`);
+    for (const m of permitidas) if (!/^[A-Za-z0-9_.\[\]]+$/.test(m)) throw new Error(`modelo no permitido en la lista de opciones: ${m}`);
+    return `// === NEXA FEL · TERCERA observación de solo lectura (consola de Chrome) ===
+// No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Describe controles, lee atributos ng-* (nombres de
+// variables/acciones del código de la página) y cuenta cuántos elementos coinciden con una lista CERRADA de selectores CSS (CSS_A_COMPROBAR).
+// NO captura el texto de las opciones de las listas, salvo las de la lista OPCIONES_PERMITIDAS (por defecto vacía): esas opciones pueden contener datos personales.
+// Lo único que "escribe" es el portapapeles de tu equipo (copy). Textos con números largos o correos salen como [REDACTADO].
+(() => {
+  const CSS_A_COMPROBAR = ${JSON.stringify(css, null, 2)};
+  const OPCIONES_PERMITIDAS = ${JSON.stringify(permitidas)};
+  const recoger = ${recoger.toString()};
+  const extra = ${extraV3Fuente()};
+  const r = recoger({ incluirOpciones: false }), top = { host: location.hostname, ruta: r.ruta_pagina };
+  r.extra = extra({ css: CSS_A_COMPROBAR, permitidas: OPCIONES_PERMITIDAS });
+  const salida = { version: 3, origen: "consola", pagina: { ...top, titulo: r.titulo_pagina }, frames: [{ indice: 0, principal: true, ...top, r }], marcos_sin_inspeccionar: r.marcos };
+  const json = JSON.stringify(salida);
+  try { copy(json); console.log("Copiado al portapapeles (" + json.length + " caracteres). Pégalo en un archivo .json y envíalo tras revisarlo"); } catch (e) { console.log(json); }
+  return { controles: r.controles.length, comprobaciones: r.extra.comprobaciones.length, marcos_sin_inspeccionar: r.marcos.length };
+})();
+`;
+  }
   if (extendido) {
     for (const q of css) if (!/^[\p{L}\p{N}_\-\[\]="'.:>#*^$~| ,]+$/u.test(q) || /(eval|function|=>|javascript)/i.test(q)) throw new Error(`selector CSS no permitido en la lista cerrada: ${q}`);
     return `// === NEXA FEL · SEGUNDA observación de solo lectura (consola de Chrome) ===

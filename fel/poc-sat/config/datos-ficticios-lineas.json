@@ -2,9 +2,26 @@
   "ficticio": true,
   "aviso": "Datos inventados para la PoC del formulario FEL de SAT. Nombres y descripciones llevan la palabra PRUEBA; el NIT es CF. Nunca uses datos de terceros.",
   "nits_de_prueba_declarados": [],
-  "receptor": { "usa_nit": true, "nit": "CF", "nombre": "RECEPTOR DE PRUEBA", "direccion": "CIUDAD DE PRUEBA" },
+  "receptor": {
+    "nit": "CF",
+    "nombre": "RECEPTOR DE PRUEBA",
+    "direccion": "CIUDAD DE PRUEBA",
+    "identificar_con_nit": true
+  },
   "lineas": [
-    { "tipo": "Servicio", "cantidad": "2", "descripcion": "SERVICIO DE PRUEBA UNO - NO EMITIR", "precio": "125.50", "descuento": "0" },
-    { "tipo": "Bien", "cantidad": "1", "descripcion": "BIEN DE PRUEBA DOS - NO EMITIR", "precio": "10.00", "descuento": "0" }
+    {
+      "tipo": "Servicio",
+      "cantidad": "2",
+      "descripcion": "SERVICIO DE PRUEBA UNO - NO EMITIR",
+      "precio": "125.50",
+      "descuento": "0"
+    },
+    {
+      "tipo": "Bien",
+      "cantidad": "1",
+      "descripcion": "BIEN DE PRUEBA DOS - NO EMITIR",
+      "precio": "10.00",
+      "descuento": "0"
+    }
   ]
 }
