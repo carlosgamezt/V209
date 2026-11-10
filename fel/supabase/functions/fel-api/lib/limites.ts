@@ -19,6 +19,11 @@ export const LIMITES: Record<string, ReglaLimite> = {
   // clientes, conceptos y borradores
   escritura: { falla: "cerrado", cubetas: [
     { ambito: "usuario", ventanaSeg: 60, max: 120 }, { ambito: "empresa", ventanaSeg: 60, max: 600 }] },
+  // lecturas por la API (lista de miembros, solicitudes de recuperación)
+  lectura: { falla: "cerrado", cubetas: [
+    { ambito: "usuario", ventanaSeg: 60, max: 240 }, { ambito: "empresa", ventanaSeg: 60, max: 1200 }] },
+  // solicitar recuperar el acceso (MFA perdido): poquísimas por hora
+  recuperacion: { falla: "cerrado", cubetas: [{ ambito: "usuario", ventanaSeg: 3600, max: 5 }] },
   // administrador maestro (empresas, regímenes, emisión)
   admin: { falla: "cerrado", cubetas: [{ ambito: "usuario", ventanaSeg: 60, max: 30 }] },
   // reservada para certificar / anular / conciliar (no existen en la API de la Fase 1)

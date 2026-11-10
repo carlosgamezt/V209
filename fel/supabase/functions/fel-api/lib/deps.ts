@@ -2,6 +2,7 @@
 // Regla de oro: ante cualquier error de la base de datos, se DENIEGA (nunca se asume permiso).
 import { ErrorFel } from "./errores.ts";
 import type { Config, Deps } from "../nucleo.ts";
+import { decodificarClaims } from "./jwt.ts";
 
 // deno-lint-ignore no-explicit-any
 export function construirDeps(admin: any, config: Config): Deps {
@@ -11,6 +12,10 @@ export function construirDeps(admin: any, config: Config): Deps {
     async getUser(token) {
       const { data, error } = await admin.auth.getUser(token);
       if (error || !data?.user || !data.user.email) return null;
+      // Supabase Auth ya verificó la firma y que la sesión siga viva. Además se exige que los claims que luego se leen
+      // (aal) pertenezcan a ESTE usuario y a un token de usuario (no la clave anon ni un token de otro): sub y role coherentes.
+      const c = decodificarClaims(token);
+      if (c.sub !== data.user.id || c.role !== "authenticated") return null;
       return { id: data.user.id, email: data.user.email };
     },
     // Estado de la cuenta: solo "activa" (perfil existente y activo) tiene acceso general. "sin_perfil" solo puede aceptar una

@@ -102,7 +102,8 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
 
     const usuario = await deps.getUser(token);
     if (!usuario) throw new ErrorFel(401, "La sesión no es válida o venció", "sin_sesion");
-    const aal = decodificarClaims(token).aal; // el token ya fue validado por Supabase Auth
+    const aalCrudo = decodificarClaims(token).aal; // el token ya fue validado por Supabase Auth (ver lib/deps.ts)
+    const aal = aalCrudo === "aal1" || aalCrudo === "aal2" ? aalCrudo : undefined; // solo valores exactos
 
     // Un JWT vigente NO basta. Cuenta bloqueada: ninguna acción. Cuenta sin perfil: solo la aceptación de una invitación vigente.
     const cuenta = await deps.estadoCuenta(usuario.id);

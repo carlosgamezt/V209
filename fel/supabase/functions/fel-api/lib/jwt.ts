@@ -1,5 +1,5 @@
 // Lectura de claims del JWT. SOLO se usa DESPUÉS de que Supabase Auth validó el token (auth.getUser).
-export interface Claims { sub?: string; aal?: string; exp?: number; amr?: unknown }
+export interface Claims { sub?: string; aal?: string; role?: string; exp?: number; amr?: unknown }
 
 export function decodificarClaims(token: string): Claims {
   const partes = token.split(".");

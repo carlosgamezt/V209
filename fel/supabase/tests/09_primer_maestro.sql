@@ -40,17 +40,51 @@ do $$ declare u uuid; begin
   assert exists (select 1 from public.plataforma_admins where user_id = u), 'sin fila de maestro';
   assert public.fel_estado_cuenta(u) = 'activa', 'sin perfil activo';
   assert public.fel_es_plataforma(u), 'no es maestro';
-  assert exists (select 1 from public.auditoria where accion = 'plataforma.maestro_creado' and actor_user_id = u and datos ->> 'adicional' = 'false'), 'sin auditoría';
+  assert exists (select 1 from public.auditoria where accion = 'plataforma.primer_maestro_creado' and actor_user_id = u), 'sin auditoría';
 end $$;
--- ya existe uno: otro exige indicarlo expresamente; repetir con el mismo es inocuo
+
+-- ================= SEPARACIÓN: el primer maestro y los adicionales son procedimientos distintos
+-- el procedimiento del primero NO sirve para agregar otro (ni con el mismo operador de la base de datos)
 select pg_temp.espera_error($$select public.fel_bootstrap_primer_maestro('segundo@fel.test')$$, 'ya existe un administrador maestro');
+select pg_temp.espera_error($$select public.fel_bootstrap_primer_maestro('maestro@fel.test')$$, 'ya existe un administrador maestro');
+-- un adicional exige autorización previa
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('segundo@fel.test')$$, 'no hay una autorización vigente');
+-- la autorización la emite SOLO un maestro activo, con motivo
+select pg_temp.espera_error($$select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a2', 'segundo@fel.test', 'Ampliar el equipo de administración')$$, 'FEL_NO_AUTORIZADO');
+select pg_temp.espera_error($$select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'segundo@fel.test', 'corto')$$, 'motivo');
+select pg_temp.espera_error($$select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'maestro@fel.test', 'Intento sobre quien ya es maestro')$$, 'ya es administradora');
+select pg_temp.espera_error($$select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'no-es-correo', 'Motivo suficientemente largo')$$, 'correo no válido');
+create temp table t_aut as select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', ' Segundo@Fel.Test ', 'Ampliar el equipo de administración') as id;
+select pg_temp.espera_error($$select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'segundo@fel.test', 'Segunda autorización duplicada')$$, 'ya hay una autorización abierta');
+-- la autorización de OTRO correo no sirve; y el candidato debe cumplir TODO (TOTP, correo confirmado, cuenta activa)
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('sinmfa@fel.test')$$, 'TOTP verificado|autorización vigente');
 do $$ begin
-  perform public.fel_bootstrap_primer_maestro('maestro@fel.test', true);
-  assert (select count(*) from public.plataforma_admins) = 1, 'duplicó al maestro';
-  perform public.fel_bootstrap_primer_maestro('segundo@fel.test', true);
-  assert (select count(*) from public.plataforma_admins) = 2, 'no agregó al segundo con la autorización expresa';
-  assert exists (select 1 from public.auditoria where accion = 'plataforma.maestro_creado' and datos ->> 'adicional' = 'true'), 'sin auditoría del adicional';
+  assert exists (select 1 from public.auditoria where accion = 'plataforma.maestro_autorizado' and datos ->> 'email' = 'segundo@fel.test'), 'sin auditoría de la autorización';
+  assert not exists (select 1 from public.plataforma_admins where user_id = '00000000-0000-0000-0000-0000000000a5'), 'se creó un maestro sin consumir la autorización';
 end $$;
+-- una autorización vencida o revocada no se puede usar
+update public.autorizaciones_maestro set expira_en = now() - interval '1 minute' where id = (select id from t_aut);
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('segundo@fel.test')$$, 'no hay una autorización vigente');
+create temp table t_aut2 as select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'segundo@fel.test', 'Nueva autorización tras vencer la anterior') as id;
+select public.fel_admin_maestro_revocar_autorizacion('00000000-0000-0000-0000-0000000000a1', (select id from t_aut2));
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('segundo@fel.test')$$, 'no hay una autorización vigente');
+select pg_temp.espera_error($$select public.fel_admin_maestro_revocar_autorizacion('00000000-0000-0000-0000-0000000000a1', (select id from t_aut2))$$, 'ya no está abierta');
+-- ahora sí: autorización vigente → se consume una sola vez
+create temp table t_aut3 as select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'segundo@fel.test', 'Autorización definitiva para la prueba') as id;
+do $$ declare u uuid; begin
+  u := public.fel_agregar_maestro_adicional('segundo@fel.test');
+  assert u = '00000000-0000-0000-0000-0000000000a5' and public.fel_es_plataforma(u), 'no quedó como maestro';
+  assert (select usada_en from public.autorizaciones_maestro where id = (select id from t_aut3)) is not null, 'no se consumió la autorización';
+  assert exists (select 1 from public.auditoria where accion = 'plataforma.maestro_adicional_creado' and datos ->> 'autorizado_por' = '00000000-0000-0000-0000-0000000000a1'), 'sin auditoría del adicional';
+end $$;
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('segundo@fel.test')$$, 'no hay una autorización vigente');   -- no es reutilizable
+-- si el maestro que autorizó deja de estar activo, la autorización muere con él
+insert into auth.users (id, email, email_confirmed_at) values ('00000000-0000-0000-0000-0000000000a7', 'tercero@fel.test', now());
+insert into auth.mfa_factors (id, user_id, factor_type, status, created_at, updated_at) values (gen_random_uuid(), '00000000-0000-0000-0000-0000000000a7', 'totp', 'verified', now(), now());
+select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'tercero@fel.test', 'Autorización que perderá a su emisor');
+update public.perfiles set activo = false where user_id = '00000000-0000-0000-0000-0000000000a1';
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('tercero@fel.test')$$, 'maestro activo');
+update public.perfiles set activo = true where user_id = '00000000-0000-0000-0000-0000000000a1';
 
 -- ================= lecturas del maestro por RLS: solo con aal2
 insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado)

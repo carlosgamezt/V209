@@ -10,6 +10,13 @@ const ROLES = {
   emisor: ["empresa.ver", "clientes.ver", "clientes.escribir", "conceptos.ver", "conceptos.escribir", "borradores.ver", "borradores.crear", "borradores.editar", "historial.ver", "fiscal.ver"],
   lector: ["empresa.ver", "clientes.ver", "conceptos.ver", "borradores.ver", "historial.ver", "fiscal.ver"],
 };
+const DESCRIPCIONES = {
+  "empresa.ver": "Ver los datos de la empresa", "usuarios.ver": "Ver los usuarios de la empresa", "usuarios.gestionar": "Invitar, cambiar rol o permisos y desactivar usuarios",
+  "clientes.ver": "Ver clientes", "clientes.escribir": "Crear y editar clientes", "conceptos.ver": "Ver conceptos", "conceptos.escribir": "Crear y editar conceptos",
+  "borradores.ver": "Ver borradores", "borradores.crear": "Crear borradores", "borradores.editar": "Editar borradores", "borradores.revisar": "Marcar borradores como revisados",
+  "borradores.archivar": "Archivar borradores", "historial.ver": "Ver el historial de estados de un documento", "auditoria.ver": "Ver la auditoría de la empresa", "fiscal.ver": "Ver la configuración fiscal de la empresa",
+};
+const RANGO = { propietario: 4, administrador: 3, emisor: 2, lector: 1 };
 const TIPOS = [
   { codigo: "NIT", nombre: "Número de Identificación Tributaria", verificado: false },
   { codigo: "CUI", nombre: "Código Único de Identificación (DPI)", verificado: false },
@@ -61,6 +68,25 @@ export function crearDemo({ rol = "propietario" } = {}) {
   nuevoDoc(clientes[3], [{ concepto_id: conceptos[3].id, descripcion: conceptos[3].descripcion, cantidad: "2", precio_unitario: "385.00", descuento_tipo: "monto", descuento_valor: "20" }]);
   nuevoDoc(clientes[2], [{ concepto_id: conceptos[5].id, descripcion: conceptos[5].descripcion, cantidad: "1", precio_unitario: "1200.00" }], "archivado", "2026-10-30");
 
+  // ---- usuarios, invitaciones y solicitudes de recuperación (datos de ejemplo de ESTA empresa)
+  const YO = "demo-yo";
+  const miembros = [
+    { user_id: YO, email: "demo@nexa.test", nombre: "Tú (demostración)", rol: "propietario", permisos_extra: [], permisos_revocados: [], activo: true, cuenta: "activa" },
+    { user_id: "u-ana", email: "ana.gomez@distribuidora.example", nombre: "Ana Gómez", rol: "administrador", permisos_extra: [], permisos_revocados: ["auditoria.ver"], activo: true, cuenta: "activa" },
+    { user_id: "u-luis", email: "luis.perez@distribuidora.example", nombre: "Luis Pérez", rol: "emisor", permisos_extra: ["borradores.revisar"], permisos_revocados: [], activo: true, cuenta: "activa" },
+    { user_id: "u-eva", email: "eva.morales@distribuidora.example", nombre: "Eva Morales", rol: "lector", permisos_extra: [], permisos_revocados: [], activo: true, cuenta: "activa" },
+    { user_id: "u-marco", email: "marco.ruiz@distribuidora.example", nombre: "Marco Ruiz", rol: "emisor", permisos_extra: [], permisos_revocados: [], activo: false, cuenta: "activa" },
+  ];
+  const invitaciones = [
+    { id: uuid(), empresa_id: EMP, email: "nuevo.contador@despacho.example", rol: "lector", estado: "pendiente", creado_en: "2026-11-09T10:00:00Z", expira_en: "2026-11-16T10:00:00Z" },
+    { id: uuid(), empresa_id: EMP, email: "carla.soto@distribuidora.example", rol: "emisor", estado: "pendiente", creado_en: "2026-11-08T15:30:00Z", expira_en: "2026-11-15T15:30:00Z" },
+    { id: uuid(), empresa_id: EMP, email: "eva.morales@distribuidora.example", rol: "lector", estado: "aceptada", creado_en: "2026-10-20T09:00:00Z", expira_en: "2026-10-27T09:00:00Z" },
+    { id: uuid(), empresa_id: EMP, email: "pedro.lima@example.com", rol: "emisor", estado: "revocada", creado_en: "2026-10-15T09:00:00Z", expira_en: "2026-10-22T09:00:00Z" },
+    { id: uuid(), empresa_id: EMP, email: "vieja@example.com", rol: "lector", estado: "vencida", creado_en: "2026-09-01T09:00:00Z", expira_en: "2026-09-08T09:00:00Z" },
+  ];
+  const solicitudes = [{ id: uuid(), user_id: "u-luis", email: "luis.perez@distribuidora.example", motivo: "Perdí mi teléfono en un viaje y no puedo generar códigos.", estado: "pendiente", solicitada_en: "2026-11-10T08:15:00Z" }];
+  const efectivos = (m) => { const base = new Set(ROLES[m.rol]); for (const p of m.permisos_extra) base.add(p); for (const p of m.permisos_revocados) base.delete(p); return [...base].sort(); };
+
   const permisos = () => ROLES[rolActual];
   const exigir = (p) => { if (!permisos().includes(p)) throw new ErrorApi("No tienes permiso para esta operación.", "no_autorizado", 403); };
   const texto = (v, campo, min, max) => { const t = String(v ?? "").trim(); if (t.length < min || t.length > max) throw new ErrorApi(`${campo}: entre ${min} y ${max} caracteres.`, "entrada_invalida"); return t; };
@@ -78,9 +104,46 @@ export function crearDemo({ rol = "propietario" } = {}) {
     cambiarRol(r) { rolActual = r; },
     async sesion() {
       await dormir();
-      return { usuario: { email: "demo@nexa.test" }, empresas: [{ empresa: { id: EMP, nombre_comercial: "Distribuidora Demo", razon_social: "Distribuidora Demo, S.A.", nit: "1111111-1", emision_real_habilitada: false }, rol: rolActual, permisos: permisos() }] };
+      return { usuario: { id: YO, email: "demo@nexa.test" }, plataforma: false, mfa: "aal2", empresas: [{ empresa: { id: EMP, nombre_comercial: "Distribuidora Demo", razon_social: "Distribuidora Demo, S.A.", nit: "1111111-1", emision_real_habilitada: false }, rol: rolActual, permisos: permisos() }] };
     },
     async tiposIdentificacion() { return copia(TIPOS); },
+
+    async listarMiembros() {
+      exigir("usuarios.ver"); await dormir();
+      return copia(miembros.map((m) => ({ ...m, permisos_efectivos: efectivos(m) })).sort((a, b) => RANGO[b.rol] - RANGO[a.rol] || a.email.localeCompare(b.email)));
+    },
+    async listarInvitaciones() { exigir("usuarios.gestionar"); await dormir(); return copia(invitaciones); },
+    async listarRolesPermisos() { await dormir(); return { catalogo: TODOS.slice().sort().map((codigo) => ({ codigo, descripcion: DESCRIPCIONES[codigo] })), roles: copia(ROLES) }; },
+    async invitarMiembro(_e, d) {
+      exigir("usuarios.gestionar"); await dormir();
+      const email = String(d.email ?? "").trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new ErrorApi("El correo no es válido.", "entrada_invalida");
+      if (rolActual !== "propietario" && RANGO[d.rol] >= RANGO[rolActual]) throw new ErrorApi("No puedes asignar ese rol.", "no_autorizado", 403);
+      if (invitaciones.some((i) => i.email === email && i.estado === "pendiente")) throw new ErrorApi("Ya existe un registro con esos datos.", "duplicado", 409);
+      invitaciones.unshift({ id: uuid(), empresa_id: EMP, email, rol: d.rol, estado: "pendiente", creado_en: ahora(), expira_en: new Date(Date.now() + 7 * 864e5).toISOString() });
+      return { invitacion_id: invitaciones[0].id, correo_enviado: true, aviso: null };
+    },
+    async revocarInvitacion(_e, id) {
+      exigir("usuarios.gestionar"); await dormir();
+      const i = invitaciones.find((x) => x.id === id && x.estado === "pendiente"); if (!i) throw new ErrorApi("Invitación pendiente no encontrada.", "no_encontrado", 404); i.estado = "revocada";
+    },
+    async actualizarMiembro(_e, userId, c) {
+      exigir("usuarios.gestionar"); await dormir();
+      const m = miembros.find((x) => x.user_id === userId); if (!m) throw new ErrorApi("Miembro no encontrado.", "no_encontrado", 404);
+      if (userId === YO) throw new ErrorApi("No puedes modificar tu propia membresía.", "no_autorizado", 403);
+      if (rolActual !== "propietario" && (RANGO[m.rol] >= RANGO[rolActual] || (c.rol && RANGO[c.rol] >= RANGO[rolActual]))) throw new ErrorApi("No puedes modificar a un usuario de rol igual o superior.", "no_autorizado", 403);
+      for (const p of c.permisos_extra ?? []) if (!permisos().includes(p)) throw new ErrorApi("No puedes conceder permisos que tú no tienes.", "no_autorizado", 403);
+      if (c.rol) m.rol = c.rol; if (c.permisos_extra) m.permisos_extra = c.permisos_extra; if (c.permisos_revocados) m.permisos_revocados = c.permisos_revocados;
+      if (typeof c.activo === "boolean") m.activo = c.activo;
+    },
+    async listarSolicitudesMfa() { exigir("usuarios.gestionar"); await dormir(); return copia(solicitudes.filter((s) => ["pendiente", "aprobada"].includes(s.estado))); },
+    async aprobarSolicitudMfa(id, verificacion) {
+      exigir("usuarios.gestionar"); await dormir();
+      if (String(verificacion).trim().length < 20) throw new ErrorApi("Describe cómo verificaste la identidad (mínimo 20 caracteres).", "regla", 422);
+      const s = solicitudes.find((x) => x.id === id); if (!s) throw new ErrorApi("No puedes resolver esta solicitud.", "no_autorizado", 403);
+      s.estado = "ejecutada"; return { factores_eliminados: 1 };
+    },
+    async rechazarSolicitudMfa(id) { exigir("usuarios.gestionar"); await dormir(); const s = solicitudes.find((x) => x.id === id); if (s) s.estado = "rechazada"; },
 
     async listarClientes(_e, { buscar = "", inactivos = false } = {}) {
       exigir("clientes.ver"); await dormir();

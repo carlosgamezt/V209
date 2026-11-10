@@ -42,6 +42,7 @@ jobs:
         run: |
           node fel/app/tests/ui.cjs
           node fel/app/tests/auth.cjs
+          node fel/app/tests/cuentas.cjs
 
   base-de-datos:
     name: Migraciones y RLS (Supabase local)

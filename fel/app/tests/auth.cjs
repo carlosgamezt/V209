@@ -47,7 +47,8 @@ if (capturas) fs.mkdirSync(capturas, { recursive: true });
     const f = crear(); const p = await pagina(f);
     await login(p, "propietario@fel.test"); await p.waitForSelector(".shell"); await p.waitForSelector("text=Comercial Los Pinos");
     const a = await almacen(p), access = ultimoAccess(f);
-    assert.deepEqual(Object.keys(a.session), ["fel.rt"], "solo el token de renovación en sessionStorage");
+    assert.deepEqual(Object.keys(a.session).sort(), ["fel.rt", "fel.t0", "fel.ua"], "solo el token de renovación y dos marcas de tiempo en sessionStorage");
+    assert.ok(!/eyJ/.test(a.session["fel.t0"] + a.session["fel.ua"]) && /^\d+$/.test(a.session["fel.t0"]) && /^\d+$/.test(a.session["fel.ua"]), "las marcas son solo números");
     assert.deepEqual(a.local, {}, "nada en localStorage");
     assert.ok(!JSON.stringify(a).includes(access), "el token de acceso no se guarda");
     assert.ok(!(await p.url()).includes(access), "el token no va en la URL");
@@ -103,7 +104,8 @@ if (capturas) fs.mkdirSync(capturas, { recursive: true });
   // ================= 6. recuperación: no se acepta una sesión sin el nivel que la cuenta exige
   {
     const f = crear(); const rt = f.sembrarRefresco("mfa@fel.test", "aal1");
-    const p = await pagina(f, { inicio: { fn: ([k, v]) => sessionStorage.setItem(k, v), arg: ["fel.rt", rt] } });
+    const ahora = String(Date.now());
+    const p = await pagina(f, { inicio: { fn: ([rt_, t]) => { sessionStorage.setItem("fel.rt", rt_); sessionStorage.setItem("fel.t0", t); sessionStorage.setItem("fel.ua", t); }, arg: [rt, ahora] } });
     await p.waitForSelector(".login-card"); assert.equal(await p.locator(".shell").count(), 0, "un token aal1 de una cuenta con TOTP no entra");
     await p.context().close();
     const g = crear(); const q = await pagina(g, { inicio: { fn: ([k, v]) => sessionStorage.setItem(k, v), arg: ["fel.rt", "rt-inexistente"] } });

@@ -3,13 +3,16 @@
 // Pendiente (no incluido en la Fase 1.1): verificación en dos pasos (MFA), necesaria solo para acciones administrativas.
 import { ErrorApi } from "./api.js";
 
-const CLAVE_RT = "fel.rt"; // única cosa que se guarda en el navegador: el token de renovación, en sessionStorage (se borra al cerrar la pestaña)
+// Lo ÚNICO que se guarda en el navegador (sessionStorage: se borra al cerrar la pestaña): el token de renovación y dos marcas de tiempo
+// NO secretas (cuándo se autenticó la persona y cuándo fue su última actividad) para aplicar la duración máxima y la inactividad.
+const CLAVE_RT = "fel.rt", CLAVE_T0 = "fel.t0", CLAVE_UA = "fel.ua";
 const RE_CODIGO = /^\d{6}$/;
 const almacen = {
-  leer() { try { return sessionStorage.getItem(CLAVE_RT); } catch { return null; } },
-  guardar(v) { try { sessionStorage.setItem(CLAVE_RT, v); } catch { /* sin almacenamiento: la sesión no sobrevivirá a una recarga */ } },
-  borrar() { try { sessionStorage.removeItem(CLAVE_RT); } catch { /* nada */ } },
+  leer: (k = CLAVE_RT) => { try { return sessionStorage.getItem(k); } catch { return null; } },
+  guardar(v, k = CLAVE_RT) { try { sessionStorage.setItem(k, String(v)); } catch { /* sin almacenamiento: la sesión no sobrevivirá a una recarga */ } },
+  borrar() { try { for (const k of [CLAVE_RT, CLAVE_T0, CLAVE_UA]) sessionStorage.removeItem(k); } catch { /* nada */ } },
 };
+const POLITICA_CLAVE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,72}$/; // igual que config.toml: 12+ con minúsculas, mayúsculas y dígitos
 function claims(jwt) { // solo para mostrar el nivel en pantalla; quien decide es el servidor
   try { return JSON.parse(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); } catch { return {}; }
 }
@@ -18,8 +21,10 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
   const { supabaseUrl, anonKey } = config;
   const apiUrl = config.apiUrl ?? `${supabaseUrl}/functions/v1/fel-api`;
   // fase: anonimo → (mfa_pendiente) → autenticado. Solo "autenticado" puede leer o escribir datos.
-  let fase = "anonimo", sesion = null, pendiente = null, temporizador = null, refrescando = null;
-  const api = { modo: "remoto", alPerderSesion: null };
+  const inactividadMs = Number(config.inactividadMs) || 30 * 60 * 1000;      // sin actividad: se cierra la sesión
+  const duracionMaximaMs = Number(config.duracionMaximaMs) || 8 * 60 * 60 * 1000;   // desde que la persona se autenticó, como máximo
+  let fase = "anonimo", sesion = null, pendiente = null, restablecer = null, temporizador = null, vigilante = null, refrescando = null, t0 = 0, ultima = 0, ultimaGuardada = 0;
+  const api = { modo: "remoto", alPerderSesion: null, alCambiarPermisos: null };
 
   const auth = async (ruta, { metodo = "POST", token, cuerpo } = {}) => {
     const r = await fetchFn(`${supabaseUrl}/auth/v1/${ruta}`, { method: metodo, headers: { apikey: anonKey, "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: cuerpo ? JSON.stringify(cuerpo) : undefined });
@@ -40,11 +45,28 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
     if (!r.ok) throw new ErrorApi("No se pudo verificar la seguridad de tu cuenta. Intenta de nuevo.", "verificacion", 503);
     return (j.factors ?? []).filter((f) => f.factor_type === "totp" && f.status === "verified");
   }
+  const alActividad = () => { ultima = Date.now(); if (ultima - ultimaGuardada > 15000) { ultimaGuardada = ultima; almacen.guardar(ultima, CLAVE_UA); } };
+  const EVENTOS = ["pointerdown", "keydown", "visibilitychange"];
   function olvidar() {
-    clearTimeout(temporizador); temporizador = null; sesion = null; pendiente = null; fase = "anonimo"; almacen.borrar();
+    clearTimeout(temporizador); clearInterval(vigilante); temporizador = vigilante = null; sesion = null; pendiente = null; restablecer = null; fase = "anonimo"; almacen.borrar();
+    for (const e of EVENTOS) globalThis.removeEventListener?.(e, alActividad);
   }
-  function confirmar(s) {
+  // Duración máxima e inactividad (cierre del lado del cliente: el límite REAL lo fija el servidor, ver docs/seguridad-sesion.md)
+  function vigilar() {
+    clearInterval(vigilante);
+    vigilante = setInterval(async () => {
+      if (fase !== "autenticado") return;
+      const ahora = Date.now();
+      const motivo = ahora - t0 > duracionMaximaMs ? "Tu sesión alcanzó su duración máxima. Inicia sesión de nuevo." : ahora - ultima > inactividadMs ? "Cerraste sesión por inactividad." : null;
+      if (motivo) { await api.cerrarSesion(); api.alPerderSesion?.(motivo); }
+    }, Math.min(30000, Math.max(200, Math.floor(Math.min(inactividadMs, duracionMaximaMs) / 4))));
+  }
+  function confirmar(s, { nueva = true } = {}) {
     sesion = s; pendiente = null; fase = "autenticado"; almacen.guardar(s.refresh_token);
+    if (nueva) { t0 = Date.now(); almacen.guardar(t0, CLAVE_T0); }   // la duración máxima cuenta desde la AUTENTICACIÓN, no desde cada renovación
+    ultima = ultimaGuardada = Date.now(); almacen.guardar(ultima, CLAVE_UA);
+    for (const e of EVENTOS) globalThis.addEventListener?.(e, alActividad);
+    vigilar();
     clearTimeout(temporizador);
     temporizador = setTimeout(() => { refrescar().catch(() => {}); }, Math.max(5000, (s.expira - Date.now()) * 0.8));
   }
@@ -52,7 +74,7 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
   function refrescar() {
     if (!sesion?.refresh_token) return Promise.reject(new ErrorApi("Inicia sesión.", "sin_sesion", 401));
     refrescando ??= (async () => {
-      try { confirmar(await pedirToken("refresh_token", { refresh_token: sesion.refresh_token })); }
+      try { confirmar(await pedirToken("refresh_token", { refresh_token: sesion.refresh_token }), { nueva: false }); }
       catch (e) { const habia = fase === "autenticado"; olvidar(); if (habia) api.alPerderSesion?.(); throw e; }
       finally { refrescando = null; }
     })();
@@ -102,15 +124,18 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
     async recuperarSesion() {
       const rt = almacen.leer();
       if (!rt) return false;
+      const antes = Number(almacen.leer(CLAVE_T0)), ua = Number(almacen.leer(CLAVE_UA)), ahora = Date.now();
+      if (!antes || !ua || ahora - antes > duracionMaximaMs || ahora - ua > inactividadMs) { almacen.borrar(); return false; }   // sin marcas o vencidas: no se recupera
+      t0 = antes;
       try {
         const s = await pedirToken("refresh_token", { refresh_token: rt });
         const totp = await factoresVerificados(s.access_token);
         if (totp.length && s.aal !== "aal2") { almacen.borrar(); return false; }
-        confirmar(s); return true;
+        confirmar(s, { nueva: false }); return true;
       } catch { olvidar(); return false; }
     },
     async cerrarSesion() {
-      const token = sesion?.access_token ?? pendiente?.sesion.access_token;
+      const token = sesion?.access_token ?? pendiente?.sesion.access_token ?? restablecer?.sesion.access_token;
       olvidar();
       if (token) { try { await auth("logout?scope=local", { token }); } catch { /* el cierre local ya se hizo */ } }
     },
@@ -129,12 +154,54 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
     },
     async confirmarEnrolamientoTotp(factorId, codigo) {
       await vigente();
-      confirmar(await desafiarYVerificar(factorId, codigo, sesion.access_token));
+      confirmar(await desafiarYVerificar(factorId, codigo, sesion.access_token), { nueva: false });
     },
     async sesion() {
       // Una cuenta nueva con invitación vigente la acepta aquí; si no tiene invitación, el servidor responde 403 y se sigue al paso siguiente.
-      try { await accion("aceptar_invitacion"); } catch (e) { if (e.status !== 403) throw e; }
-      return accion("yo");
+      try { await accion("aceptar_invitacion", {}, { silencioso: true }); } catch (e) { if (e.status !== 403) throw e; }
+      return accion("yo", {}, { silencioso: true });
+    },
+    // Revalida el acceso (al cambiar de pantalla o volver a la pestaña): un bloqueo o un cambio de permisos se nota en seguida.
+    revalidar: () => accion("yo"),
+
+    // ---------------- recuperación de contraseña (Supabase Auth: correo con enlace → nueva contraseña)
+    // La respuesta es SIEMPRE la misma exista o no la cuenta (no se revela quién tiene cuenta).
+    async solicitarRestablecimiento(email) {
+      const destino = config.urlRetorno ?? (globalThis.location ? globalThis.location.origin + globalThis.location.pathname : "");
+      const { r } = await auth(`recover?redirect_to=${encodeURIComponent(destino)}`, { cuerpo: { email } });
+      if (r.status === 429) { const e = new ErrorApi("Ya pediste un enlace hace poco. Espera unos minutos.", "limite_excedido", 429); e.reintentarEn = Number(r.headers?.get?.("retry-after")) || undefined; throw e; }
+    },
+    // Llega con el enlace del correo (recuperación o invitación). Esta sesión NO sirve para entrar: solo para fijar la contraseña.
+    // Si la cuenta tiene TOTP, primero hay que dar el código (Supabase exige aal2 para cambiar la contraseña con MFA activo).
+    async iniciarRestablecimiento({ access_token, refresh_token }) {
+      olvidar();
+      const s = aSesion({ access_token, refresh_token, expires_in: 3600 });
+      const [totp] = await factoresVerificados(access_token).catch(() => { throw new ErrorApi("El enlace venció o no es válido. Pide uno nuevo.", "enlace", 401); });
+      restablecer = { sesion: s, factorId: totp?.id ?? null };
+      return { requiereMfa: !!totp && s.aal !== "aal2" };
+    },
+    async verificarMfaRestablecimiento(codigo) {
+      if (!restablecer?.factorId) throw new ErrorApi("El enlace venció; pide uno nuevo.", "enlace", 401);
+      restablecer.sesion = await desafiarYVerificar(restablecer.factorId, codigo, restablecer.sesion.access_token);
+    },
+    async fijarContrasena(nueva) {
+      if (!restablecer) throw new ErrorApi("El enlace venció; pide uno nuevo.", "enlace", 401);
+      if (!POLITICA_CLAVE.test(nueva)) throw new ErrorApi("La contraseña necesita 12 caracteres o más, con mayúsculas, minúsculas y números.", "entrada_invalida", 400);
+      const { r, j } = await auth("user", { metodo: "PUT", token: restablecer.sesion.access_token, cuerpo: { password: nueva } });
+      if (!r.ok) {
+        const e = new ErrorApi(/aal/i.test(`${j.error_code ?? ""} ${j.msg ?? ""}`) ? "Falta verificar el código de tu app autenticadora." : "No se pudo cambiar la contraseña. Puede que el enlace haya vencido, que sea débil o igual a la anterior.", "contrasena", r.status);
+        throw e;
+      }
+      const token = restablecer.sesion.access_token; restablecer = null;
+      try { await auth("logout?scope=local", { token }); } catch { /* el enlace de un solo uso ya no sirve */ }
+    },
+    // Pérdida del dispositivo TOTP: se registra una SOLICITUD. No cambia nada del MFA: la aprueba otra persona tras verificar la identidad.
+    async solicitarRecuperacionMfa(motivo) {
+      const token = pendiente?.sesion.access_token ?? restablecer?.sesion.access_token ?? sesion?.access_token;
+      if (!token) throw new ErrorApi("Inicia sesión.", "sin_sesion", 401);
+      const r = await fetchFn(apiUrl, { method: "POST", headers: { apikey: anonKey, authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ accion: "mfa_recuperacion_solicitar", motivo }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) { const e = new ErrorApi(j.error ?? "No se pudo registrar la solicitud.", j.codigo ?? "error", r.status); e.reintentarEn = Number(r.headers?.get?.("retry-after")) || undefined; throw e; }
     },
   });
 
@@ -143,12 +210,19 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
     if (!r.ok) throw new ErrorApi(r.status === 406 ? "No encontrado." : "No se pudo leer la información.", r.status === 406 ? "no_encontrado" : "lectura", r.status === 406 ? 404 : r.status);
     return r.json();
   }
-  async function accion(nombre, datos = {}) {
+  // silencioso: no reaccionar a un 403 (se usa durante el arranque, donde el 403 es una respuesta esperada)
+  async function accion(nombre, datos = {}, { silencioso = false } = {}) {
     const r = await con401(() => fetchFn(apiUrl, { method: "POST", headers: { ...cab(), "content-type": "application/json" }, body: JSON.stringify({ accion: nombre, ...datos }) }));
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.ok === false) {
       const e = new ErrorApi(j.error ?? "No se pudo completar la operación.", j.codigo ?? "error", r.status);
-      e.reintentarEn = Number(r.headers?.get?.("retry-after")) || undefined; throw e;
+      e.reintentarEn = Number(r.headers?.get?.("retry-after")) || undefined;
+      if (!silencioso && r.status === 403) {
+        // Acceso revocado o cambiado mientras la persona trabajaba: cuenta bloqueada / sin perfil = fuera; permisos distintos = se recargan
+        if (e.codigo === "cuenta_desactivada" || e.codigo === "sin_perfil") { await api.cerrarSesion(); api.alPerderSesion?.("Tu acceso fue revocado. Contacta a tu administrador."); }
+        else if (e.codigo === "no_autorizado") api.alCambiarPermisos?.();
+      }
+      throw e;
     }
     return j.datos;
   }
@@ -161,6 +235,22 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
   };
 
   return Object.assign(api, {
+    // ---------------- usuarios, invitaciones a la empresa, roles y permisos (siempre de LA empresa indicada; la RLS y la API lo vuelven a imponer)
+    async listarMiembros(e) { return (await accion("miembros_listar", { empresa_id: e })).miembros; },
+    listarInvitaciones: (e) => leer(`invitaciones?select=*&empresa_id=eq.${encodeURIComponent(e)}&order=creado_en.desc`),
+    async listarRolesPermisos() {
+      const [catalogo, rp] = await Promise.all([leer("permisos_catalogo?select=*&order=codigo.asc"), leer("rol_permisos?select=*")]);
+      const roles = { propietario: [], administrador: [], emisor: [], lector: [] };
+      for (const x of rp) roles[x.rol]?.push(x.permiso);
+      return { catalogo, roles };
+    },
+    invitarMiembro: (e, d) => accion("miembro_invitar", { empresa_id: e, email: d.email, rol: d.rol, permisos_extra: d.permisos_extra ?? [] }),
+    revocarInvitacion: (e, id) => accion("invitacion_revocar", { empresa_id: e, invitacion_id: id }),
+    actualizarMiembro: (e, userId, c) => accion("miembro_actualizar", { empresa_id: e, user_id: userId, ...c }),
+    async listarSolicitudesMfa() { return (await accion("mfa_recuperacion_listar")).solicitudes; },
+    aprobarSolicitudMfa: (id, verificacion) => accion("mfa_recuperacion_aprobar", { solicitud_id: id, verificacion }),
+    rechazarSolicitudMfa: (id, motivo) => accion("mfa_recuperacion_rechazar", { solicitud_id: id, motivo }),
+
     tiposIdentificacion: () => leer("identificaciones_tipos?select=codigo,nombre,verificado&activo=eq.true&order=codigo"),
 
     listarClientes: (e, o) => leer(`clientes?select=*&${filtro(e, o, ["nombre", "numero_identificacion", "email"])}&order=nombre.asc`),

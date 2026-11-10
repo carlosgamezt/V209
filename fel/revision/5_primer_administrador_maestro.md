@@ -23,20 +23,31 @@
    de recuperación que defina tu proceso (Supabase no los genera para TOTP: conserva un segundo dispositivo o respaldo de la clave).
 5. **Dar el rol de maestro** desde la consola SQL del panel (rol `postgres`):
    ```sql
-   select public.fel_bootstrap_primer_maestro('correo-del-administrador@ejemplo.com');
+   select public.fel_bootstrap_primer_maestro('correo-del-administrador@ejemplo.com');   -- SOLO si todavía no existe ningún maestro
    ```
    La función se niega si: el usuario no existe, el correo no está confirmado, no hay un factor TOTP **verificado**, la cuenta está
-   desactivada, o ya existe un maestro (para un segundo maestro: `select public.fel_bootstrap_primer_maestro('otro@ejemplo.com', true);`).
-   Crea el perfil activo y la fila en `plataforma_admins`, y deja un registro en la auditoría (`plataforma.maestro_creado`).
+   desactivada, o **ya existe un maestro** (en ese caso este procedimiento no sirve: ver "Agregar un maestro adicional").
+   Crea el perfil activo y la fila en `plataforma_admins`, y deja un registro en la auditoría (`plataforma.primer_maestro_creado`).
 6. **Verificar**:
    ```sql
    select user_id from plataforma_admins;                                        -- debe listar solo al administrador
-   select accion, ocurrido_en from auditoria where accion = 'plataforma.maestro_creado' order by id desc limit 1;
+   select accion, ocurrido_en from auditoria where accion = 'plataforma.primer_maestro_creado' order by id desc limit 1;
    select valor from plataforma_config where clave = 'emision_real_disponible';  -- debe seguir en false
    ```
    Cierra sesión, vuelve a entrar (contraseña + código TOTP) y comprueba que la interfaz muestra `plataforma: true` y nivel de sesión aal2.
 7. **Probar los negativos**: entra con contraseña y **sin** completar el código: no debe ver empresas ni poder ejecutar acciones de
    administrador (la API responde 403 `mfa_requerido`).
+
+## Agregar un maestro ADICIONAL (autorización separada)
+El primer maestro y los adicionales son **procedimientos distintos**. Un adicional necesita una **autorización previa** de un maestro activo:
+1. Un maestro con sesión **aal2** autoriza por la API (`maestro_autorizar`: correo + motivo ≥ 10 caracteres). Queda auditada y **vence a las 24 h** (máx. 3 abiertas; revocable con `maestro_autorizacion_revocar`).
+2. La persona candidata cumple los mismos requisitos (invitación aceptada, correo confirmado, **TOTP verificado**, cuenta activa).
+3. El propietario de la base de datos ejecuta en la consola SQL:
+   ```sql
+   select public.fel_agregar_maestro_adicional('otro-administrador@ejemplo.com');
+   ```
+   Consume la autorización (una sola vez). Se niega si no hay una vigente, si venció o fue revocada, **si quien la emitió ya no es un maestro activo** o si es la propia persona.
+Quien tenga acceso a la consola SQL **no puede por sí solo** agregar un maestro: necesita la autorización de un maestro (y su aal2). Quedan registros `plataforma.maestro_autorizado` y `plataforma.maestro_adicional_creado`.
 
 ## Revertir o dar de baja a un maestro
 ```sql

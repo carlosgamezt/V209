@@ -30,11 +30,13 @@ do $$ declare f record; publicas text[]; anon_ text[]; auth_ text[]; faltan text
   select coalesce(array_agg(p.proname::text order by p.proname), '{}') into faltan
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname like 'fel\_%' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype
-     and p.proname <> 'fel_bootstrap_primer_maestro'
-     and not has_function_privilege('service_role', p.oid, 'EXECUTE')
-     and p.proname not in ('fel__rango');
+     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__rango')
+     and not has_function_privilege('service_role', p.oid, 'EXECUTE');
   assert faltan = '{}', 'funciones que service_role no puede ejecutar: ' || faltan::text;
-  assert not has_function_privilege('service_role', 'public.fel_bootstrap_primer_maestro(text,boolean)', 'EXECUTE'), 'service_role puede crear maestros';
+  assert not has_function_privilege('service_role', 'public.fel_bootstrap_primer_maestro(text)', 'EXECUTE'), 'service_role puede crear maestros';
+  assert not has_function_privilege('service_role', 'public.fel_agregar_maestro_adicional(text)', 'EXECUTE'), 'service_role puede agregar maestros';
+  assert not has_function_privilege('service_role', 'public.fel__puede_resolver_mfa(uuid,uuid)', 'EXECUTE'), 'service_role consulta resolutores';
+  assert not has_function_privilege('service_role', 'public.fel_registrar_recuperacion_manual(text,text)', 'EXECUTE'), 'service_role registra recuperaciones manuales';
 end $$;
 
 -- ================= las funciones de escritura no se pueden invocar con los roles de la app (error de privilegios real)
@@ -58,7 +60,12 @@ do $$ declare r text; q text; begin
       $q$select public.fel_op_invitacion_aceptar('00000000-0000-0000-0000-0000000000a1', 'victima@fel.test')$q$,
       $q$select public.fel_estado_cuenta('00000000-0000-0000-0000-0000000000a1')$q$,
       $q$select public.fel_es_plataforma('00000000-0000-0000-0000-0000000000a1')$q$,
-      $q$select public.fel_bootstrap_primer_maestro('atacante@fel.test', true)$q$,
+      $q$select public.fel_bootstrap_primer_maestro('atacante@fel.test')$q$,
+      $q$select public.fel_agregar_maestro_adicional('atacante@fel.test')$q$,
+      $q$select public.fel_admin_maestro_autorizar('00000000-0000-0000-0000-0000000000a1', 'x@fel.test', 'motivo de prueba largo')$q$,
+      $q$select public.fel_op_miembros_listar('00000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a')$q$,
+      $q$select public.fel_op_mfa_recuperacion_aprobar('00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'verificación de prueba muy larga')$q$,
+      $q$select public.fel_op_mfa_recuperacion_solicitar('00000000-0000-0000-0000-0000000000a1', 'motivo de prueba largo')$q$,
       $q$select public.fel_limite_consumir('x', 60, 5)$q$] loop
       begin execute q; raise exception 'SE EJECUTÓ como %: %', r, q;
       exception when insufficient_privilege then null; end;
@@ -68,7 +75,8 @@ do $$ declare r text; q text; begin
 end $$;
 -- service_role tampoco puede crear maestros
 set local role service_role;
-select pg_temp.espera_error($$select public.fel_bootstrap_primer_maestro('atacante@fel.test', true)$$, '42501');
+select pg_temp.espera_error($$select public.fel_bootstrap_primer_maestro('atacante@fel.test')$$, '42501');
+select pg_temp.espera_error($$select public.fel_agregar_maestro_adicional('atacante@fel.test')$$, '42501');
 reset role;
 
 -- ================= suplantación: la identidad sale de Auth, no del llamador

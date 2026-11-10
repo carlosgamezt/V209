@@ -223,6 +223,85 @@ export const acciones: Acciones = {
     },
   },
 
+  // ------------------------------------------------------------ usuarios de la empresa: lista con correo (solo 'usuarios.ver')
+  miembros_listar: {
+    limite: "lectura",
+    requisito: { permiso: "usuarios.ver" },
+    validar: (b) => { v.soloCampos(b, ["empresa_id"]); return { empresa_id: v.uuid(b, "empresa_id") }; },
+    empresaDe: (p) => p.empresa_id,
+    async ejecutar(ctx, p) {
+      return { miembros: await rpc(ctx, "fel_op_miembros_listar", { p_actor: ctx.usuario.id, p_empresa: p.empresa_id }) };
+    },
+  },
+
+  // ------------------------------------------------------------ administradores maestros ADICIONALES: autorización (la emite un maestro con aal2)
+  // El primer maestro y la incorporación de un adicional se hacen en la consola SQL (no por la API); aquí solo se AUTORIZA.
+  maestro_autorizar: {
+    limite: "admin",
+    requisito: { plataforma: true, aal2: true },
+    validar: (b) => { v.soloCampos(b, ["email", "motivo"]); return { email: v.email(b, "email"), motivo: v.texto(b, "motivo", 10, 500) }; },
+    async ejecutar(ctx, p) {
+      const id = await rpc(ctx, "fel_admin_maestro_autorizar", { p_actor: ctx.usuario.id, p_email: p.email, p_motivo: p.motivo });
+      return { autorizacion_id: id, vence_en_horas: 24 };
+    },
+  },
+  maestro_autorizacion_revocar: {
+    limite: "admin",
+    requisito: { plataforma: true, aal2: true },
+    validar: (b) => { v.soloCampos(b, ["autorizacion_id"]); return { autorizacion_id: v.uuid(b, "autorizacion_id") }; },
+    async ejecutar(ctx, p) {
+      await rpc(ctx, "fel_admin_maestro_revocar_autorizacion", { p_actor: ctx.usuario.id, p_id: p.autorizacion_id });
+      return { autorizacion_id: p.autorizacion_id, estado: "revocada" };
+    },
+  },
+
+  // ------------------------------------------------------------ recuperación del acceso cuando se pierde el dispositivo TOTP
+  // Solicitar: cualquier cuenta ACTIVA, incluso con sesión aal1 (aún no pudo dar el código). NO cambia nada del MFA.
+  mfa_recuperacion_solicitar: {
+    limite: "recuperacion",
+    requisito: {},
+    validar: (b) => { v.soloCampos(b, ["motivo"]); return { motivo: v.texto(b, "motivo", 10, 500) }; },
+    async ejecutar(ctx, p) {
+      const id = await rpc(ctx, "fel_op_mfa_recuperacion_solicitar", { p_user: ctx.usuario.id, p_motivo: p.motivo });
+      return { solicitud_id: id };
+    },
+  },
+  // Resolver (listar/aprobar/rechazar): exige aal2 de quien resuelve; la base decide si puede (maestro, o propietario de una empresa compartida; nunca la propia).
+  mfa_recuperacion_listar: {
+    limite: "lectura",
+    requisito: { aal2: true },
+    validar: (b) => { v.soloCampos(b, []); return {}; },
+    async ejecutar(ctx) { return { solicitudes: await rpc(ctx, "fel_op_mfa_recuperacion_listar", { p_actor: ctx.usuario.id }) }; },
+  },
+  mfa_recuperacion_aprobar: {
+    limite: "gestion_usuarios",
+    requisito: { aal2: true },
+    validar: (b) => { v.soloCampos(b, ["solicitud_id", "verificacion"]); return { solicitud_id: v.uuid(b, "solicitud_id"), verificacion: v.texto(b, "verificacion", 20, 500) }; },
+    async ejecutar(ctx, p) {
+      // 1) la base valida quién puede y exige la evidencia de la verificación de identidad; devuelve los factores a eliminar
+      const r = await rpc(ctx, "fel_op_mfa_recuperacion_aprobar", { p_actor: ctx.usuario.id, p_solicitud: p.solicitud_id, p_verificacion: p.verificacion });
+      // 2) se eliminan con la API de administración de Auth; si falla, la solicitud queda "aprobada" y se puede repetir
+      let eliminados = 0;
+      for (const id of (r.factores ?? []) as string[]) {
+        const { error } = await ctx.admin.auth.admin.mfa.deleteFactor({ id, userId: r.user_id });
+        if (error) throw new ErrorFel(502, "No se pudo eliminar el factor; la solicitud quedó aprobada, vuelve a intentarlo", "recuperacion_parcial");
+        eliminados++;
+      }
+      // 3) se cierra la solicitud
+      await rpc(ctx, "fel_op_mfa_recuperacion_cerrar", { p_actor: ctx.usuario.id, p_solicitud: p.solicitud_id, p_eliminados: eliminados });
+      return { solicitud_id: p.solicitud_id, factores_eliminados: eliminados, siguiente_paso: "La persona inicia sesión con su contraseña y activa un dispositivo nuevo" };
+    },
+  },
+  mfa_recuperacion_rechazar: {
+    limite: "gestion_usuarios",
+    requisito: { aal2: true },
+    validar: (b) => { v.soloCampos(b, ["solicitud_id", "motivo"]); return { solicitud_id: v.uuid(b, "solicitud_id"), motivo: v.texto(b, "motivo", 5, 300) }; },
+    async ejecutar(ctx, p) {
+      await rpc(ctx, "fel_op_mfa_recuperacion_rechazar", { p_actor: ctx.usuario.id, p_solicitud: p.solicitud_id, p_motivo: p.motivo });
+      return { solicitud_id: p.solicitud_id, estado: "rechazada" };
+    },
+  },
+
   // ------------------------------------------------------------ clientes y conceptos
   cliente_guardar: {
     limite: "escritura",

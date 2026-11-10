@@ -108,7 +108,7 @@ Deno.test("CORS: solo los orígenes permitidos reciben cabeceras", async () => {
 // ---------------------------------------------------------------- registro real de acciones
 Deno.test("integridad del registro: toda acción (salvo yo y aceptar_invitacion) exige algo, y las administrativas exigen MFA", () => {
   for (const [nombre, a] of Object.entries(reales)) {
-    if (nombre === "yo" || nombre === "aceptar_invitacion") { assertEquals(a.requisito, {}, nombre); continue; }
+    if (["yo", "aceptar_invitacion", "mfa_recuperacion_solicitar"].includes(nombre)) { assertEquals(a.requisito, {}, nombre); continue; }
     assertEquals(Object.keys(a.requisito).length > 0, true, `${nombre} no exige nada`);
     if (/^(empresa_|regimen_|emision_)/.test(nombre)) {
       assertEquals([a.requisito.plataforma, a.requisito.aal2], [true, true], `${nombre} debe ser de plataforma con MFA`);

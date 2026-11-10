@@ -126,6 +126,20 @@ input:disabled,select:disabled,textarea:disabled{background:var(--fondo);color:v
 .clave-manual{display:block;margin:4px 0;padding:8px 10px;border-radius:10px;background:var(--fondo);font-size:14px;letter-spacing:.08em;word-break:break-all}
 .acciones-fila{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
 
+/* ---- usuarios */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px;border-bottom:1px solid var(--line)}
+.tab{padding:10px 16px;border-radius:12px 12px 0 0;color:var(--mut);font-weight:700;text-decoration:none;border-bottom:3px solid transparent;margin-bottom:-1px}.tab:hover{color:var(--pri)}.tab.on{color:var(--pri);border-bottom-color:var(--pri)}
+.fila-usr{grid-template-columns:2.2fr 1fr 1.3fr 1.2fr 88px}.fila-inv{grid-template-columns:2.2fr 1fr 1fr 1fr 60px}.fila-sol{grid-template-columns:1.6fr 2.4fr 1fr 1.4fr 110px}
+.nota{font-size:12.5px;margin:12px 4px}.explica .mut{font-size:13.5px}.dos-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}.dos-col strong{display:block;margin-bottom:4px}
+.btn-chico{min-height:34px;padding:0 12px;font-size:13px}.modal-lg{max-width:720px}.sel-empresa{margin:0 0 10px;min-height:40px}
+.rejilla-permisos{display:grid;grid-template-columns:1fr 1fr;gap:8px}.permiso{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer}
+.permiso small{display:block;color:var(--mut);font-size:12px}.permiso input{width:18px;height:18px;margin-top:2px;accent-color:var(--pri);flex:none}.permiso>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.permiso-tag{display:block;margin-top:6px}.barra .ph-ac{margin-left:auto}
+.permiso-extra{border-color:var(--pri);background:var(--soft)}.permiso-quitado{border-color:var(--warn);background:var(--warn-bg)}
+.matriz-caja{overflow:auto}.matriz{width:100%;border-collapse:collapse;font-size:13.5px}.matriz th{background:var(--soft);color:var(--pri);font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:10px 14px;text-align:left}
+.matriz td{padding:10px 14px;border-bottom:1px solid var(--line)}.matriz td small{display:block;color:var(--mut);font-size:12px}.matriz .si{color:var(--ok);display:inline-flex}.matriz .no{color:var(--neutro)}
+@media(max-width:900px){.fila-usr,.fila-inv,.fila-sol{grid-template-columns:1fr auto}.dos-col,.rejilla-permisos{grid-template-columns:1fr}}
+
 /* ---- adaptable */
 @media(max-width:1000px){.doc-grid{grid-template-columns:1fr}.totales{position:static}}
 @media(max-width:900px){

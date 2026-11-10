@@ -92,8 +92,46 @@ if (capturas) fs.mkdirSync(capturas, { recursive: true });
   await p.click("text=Restaurar como borrador"); await p.waitForSelector("text=Guardar cambios");
   await p.click("text=Volver"); await p.waitForSelector("text=BR-0005");
 
+  // ================= usuarios (modo demostración, propietario)
+  await p.click('aside a.nv:has-text("Usuarios")'); await p.waitForSelector("text=Ana Gómez");
+  assert.deepEqual(await p.locator(".tabs a").allInnerTexts(), ["Usuarios", "Invitaciones", "Roles y permisos", "Recuperación de acceso"]);
+  assert.equal(await p.locator(".fila-usr:not(.fila-cab)").count(), 5);
+  assert.equal(await p.locator('button[aria-label^="Cambiar rol y permisos de demo@"]').count(), 0, "uno no se edita a sí mismo");
+  await foto(p, "23-usuarios-escritorio.png");
+  // editar: Luis (emisor) → se le quita un permiso del rol y se le da uno extra
+  await p.click('button[aria-label="Cambiar rol y permisos de luis.perez@distribuidora.example"]'); await p.waitForSelector(".rejilla-permisos");
+  assert.equal(await p.locator('input[aria-label="usuarios.gestionar"]').isChecked(), false);
+  await p.check('input[aria-label="usuarios.ver"]'); await p.uncheck('input[aria-label="clientes.escribir"]');
+  assert.ok(await p.locator(".permiso-extra").count() >= 1 && await p.locator(".permiso-quitado").count() >= 1, "se distinguen extra y quitado");
+  await foto(p, "24-usuarios-editar-permisos.png");
+  await p.click(".modal .btn-pri"); await p.waitForSelector("text=Cambios guardados"); await p.waitForSelector("text=+2 extra");
+  // desactivar a Eva y reactivarla
+  await p.click('button[aria-label="Desactivar a eva.morales@distribuidora.example"]'); await p.waitForSelector("text=Persona desactivada");
+  await p.waitForSelector(".fila-usr.inactivo >> text=Eva Morales"); await p.click('button[aria-label="Reactivar a eva.morales@distribuidora.example"]'); await p.waitForSelector("text=Persona reactivada");
+  // invitaciones: se explican las dos cosas distintas
+  await p.click('.tabs a:has-text("Invitaciones")'); await p.waitForSelector("text=Dos cosas distintas"); await p.waitForSelector("text=Correo de cuenta (Supabase Auth)");
+  assert.equal(await p.locator(".fila-inv:not(.fila-cab)").count(), 5);
+  await foto(p, "25-invitaciones-escritorio.png");
+  await p.click("text=Invitar a la empresa"); await p.fill('input[aria-label="Correo de la persona"]', "no-es-correo"); await p.click(".modal .btn-pri"); await p.waitForSelector(".modal .err:not(:empty)");
+  await p.fill('input[aria-label="Correo de la persona"]', "carla.soto@distribuidora.example"); await p.click(".modal .btn-pri"); await p.waitForSelector("text=Ya existe un registro con esos datos"); await p.fill('input[aria-label="Correo de la persona"]', "nueva.persona@example.com");
+  await p.click(".modal .btn-pri"); await p.waitForSelector("text=Invitación registrada"); await p.waitForSelector("text=nueva.persona@example.com");
+  await p.click('button[aria-label="Revocar la invitación de nueva.persona@example.com"]'); await p.waitForSelector("text=Invitación revocada");
+  // roles y permisos: matriz de solo lectura
+  await p.click('.tabs a:has-text("Roles y permisos")'); await p.waitForSelector("table.matriz");
+  assert.equal(await p.locator('td[aria-label="usuarios.gestionar para Lector: no"]').count(), 1); assert.equal(await p.locator('td[aria-label="usuarios.gestionar para Propietario: sí"]').count(), 1);
+  assert.equal(await p.locator('td[aria-label="clientes.escribir para Emisor: sí"]').count(), 1);
+  await foto(p, "26-roles-y-permisos.png");
+  // recuperación de acceso: exige evidencia y confirmación
+  await p.click('.tabs a:has-text("Recuperación de acceso")'); await p.waitForSelector("text=Cuando alguien pierde su dispositivo TOTP");
+  await foto(p, "27-recuperacion-de-acceso.png");
+  await p.click("text=Revisar"); await p.click(".modal .btn-peligro"); await p.waitForSelector("text=Confirma que verificaste la identidad");
+  await p.check('input[aria-label="Confirmo la verificación"]'); await p.click(".modal .btn-peligro"); await p.waitForSelector("text=mínimo 20 caracteres");
+  await p.fill('textarea[aria-label="Cómo verificaste su identidad"]', "Videollamada con documento en mano; confirmé nombre y cargo."); await p.click(".modal .btn-peligro");
+  await p.waitForSelector("text=Recuperación aplicada"); await p.waitForSelector("text=Sin solicitudes");
+
   // ================= roles
   await p.selectOption('select[aria-label="Rol de demostración"]', "lector");
+  await p.waitForFunction(() => !document.querySelector('aside a.nv[href="#/usuarios"]'));
   await p.waitForSelector("text=Nuevo borrador", { state: "detached" }); // el lector no crea borradores
   await p.click('a.nv:has-text("Clientes")'); await p.waitForSelector("text=Tu rol solo permite consultar clientes");
   assert.equal(await p.locator("text=Nuevo cliente").count(), 0); assert.equal(await p.locator('button[aria-label^="Editar"]').count(), 0);
@@ -106,7 +144,7 @@ if (capturas) fs.mkdirSync(capturas, { recursive: true });
   // ================= móvil
   const m = await nueva({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await m.waitForSelector(".fila:not(.fila-cab)"); await sinDesbordeHorizontal(m, "clientes móvil");
-  assert.equal(await m.locator(".nav-movil .nv").count(), 3); await foto(m, "08-clientes-movil.png");
+  assert.equal(await m.locator(".nav-movil .nv").count(), 4); await foto(m, "08-clientes-movil.png");
   await m.click('.nav-movil a:has-text("Borradores")'); await m.waitForSelector("text=BR-0004"); await sinDesbordeHorizontal(m, "borradores móvil"); await foto(m, "09-borradores-movil.png");
   await m.click("text=Nuevo borrador"); await m.waitForSelector(".lineas"); await sinDesbordeHorizontal(m, "editor móvil"); await foto(m, "10-editor-movil.png", { fullPage: true });
   await m.context().close();
