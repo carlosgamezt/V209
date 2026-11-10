@@ -462,6 +462,7 @@ Deno.test("sesión revocada: un token viejo RENOVADO conserva sus eventos de aut
   const llamar = async (t: string) => leer(await pedir({ accion: "miembros_listar", empresa_id: EMPRESA }, construir(e, [], undefined), t));
   assertEquals((await llamar(tk("u1", viejo))).codigo, "sesion_revocada");
   assertEquals((await llamar(tk("u1", { ...viejo, iat: ahoraS(), exp: ahoraS() + 3600 }))).codigo, "sesion_revocada");    // renovado: iat/exp nuevos, amr igual
+  assertEquals((await llamar(tk("u1", { aal: "aal1", amr: [{ method: "password", timestamp: desde }] }))).codigo, "sesion_revocada");   // mismo segundo que la marca: ambiguo → se rechaza
   assertEquals((await llamar(tk("u1", { aal: "aal1", amr: [{ method: "password", timestamp: desde + 5 }] }))).status, 200);   // inicio de sesión posterior
 });
 

@@ -176,6 +176,10 @@ await escenario("I01", "invitaciones", async () => {
     const rr = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, l.sesion.access_token); afirmar("I01f", "antes de aceptar no lee datos de la empresa", rr.datos.length === 0, JSON.stringify(rr.datos));
     const acepta = await fel("aceptar_invitacion", {}, l.sesion.access_token); afirmar("I01g", "aceptar_invitacion con correo confirmado → 200", acepta.status === 200 && acepta.datos.datos.aceptadas === 1, JSON.stringify(acepta));
     const despues = await fel("yo", {}, l.sesion.access_token); afirmar("I01h", "después: yo → rol lector en la empresa", despues.status === 200 && despues.datos.datos.empresas[0]?.rol === "lector", JSON.stringify(despues));
+    const inv = await rest("invitaciones?select=empresa_id,estado", propAal2.access_token);
+    afirmar("I01j", "el propietario de A ve SOLO invitaciones de A (RLS)", Array.isArray(inv.datos) && inv.datos.length >= 1 && inv.datos.every((x) => x.empresa_id === EMP_A), JSON.stringify(inv.datos));
+    const invLec = await rest("invitaciones?select=id", S.lec.access_token); afirmar("I01k", "un lector no ve invitaciones", Array.isArray(invLec.datos) && invLec.datos.length === 0, JSON.stringify(invLec.datos));
+    const invOtro = await rest(`invitaciones?select=id&empresa_id=eq.${EMP_A}`, S.otro.access_token); afirmar("I01l", "el propietario de B no ve invitaciones de A", Array.isArray(invOtro.datos) && invOtro.datos.length === 0, JSON.stringify(invOtro.datos));
     const rr2 = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, l.sesion.access_token); afirmar("I01i", "después de aceptar lee los clientes (RLS)", rr2.datos.length === 2, JSON.stringify(rr2.datos));
   }
 });
@@ -218,9 +222,10 @@ await escenario("X01", "recuperación de MFA", async () => {
   afirmar("X01f", "aprobar con aal2 reciente → 200 y elimina el factor con la API de administración REAL", ap.status === 200 && ap.datos.datos.factores_eliminados >= 1, JSON.stringify(ap));
   afirmar("X01g", "el factor TOTP ya no existe en Auth", sql(`select count(*) from auth.mfa_factors where user_id='${U.emi.id}'`) === "0");
   observar("X01h", "sesiones de Auth de la persona antes → después de aprobar", `${sesionesAntes} → ${sql(`select count(*) from auth.sessions where user_id='${U.emi.id}'`)}`);
+  afirmar("X01h2", "la aprobación y la evidencia quedaron en la auditoría", Number(sql(`select count(*) from public.auditoria where accion='plataforma.mfa_recuperacion_aprobada' and datos->>'usuario'='${U.emi.id}' and datos ? 'verificacion'`)) === 1);
   afirmar("X01i", "quedó la marca de revocación", sql(`select count(*) from public.revocaciones_sesion where user_id='${U.emi.id}'`) === "1");
   // la sesión vieja (aal2) ya no sirve, ni por fel-api ni por PostgREST
-  const yoViejo = await fel("yo", {}, viejoAal2.access_token); afirmar("X01j", "la sesión aal2 ANTERIOR → fel-api 401 sesion_revocada", yoViejo.status === 401 && yoViejo.datos.codigo === "sesion_revocada", JSON.stringify(yoViejo));
+  const yoViejo = await fel("yo", {}, viejoAal2.access_token); afirmar("X01j", "la sesión aal2 ANTERIOR → fel-api 401 (sesion_revocada por la marca, o sin_sesion si Auth ya la rechaza)", yoViejo.status === 401 && ["sesion_revocada", "sin_sesion"].includes(yoViejo.datos.codigo), JSON.stringify(yoViejo));
   const rViejo = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, viejoAal2.access_token); afirmar("X01k", "la sesión aal2 ANTERIOR → PostgREST no entrega datos (RLS)", Array.isArray(rViejo.datos) && rViejo.datos.length === 0, JSON.stringify(rViejo.datos));
   const aal1Viejo = await fel("yo", {}, nuevoLogin.sesion.access_token); afirmar("X01l", "también la sesión aal1 anterior a la aprobación queda revocada", aal1Viejo.status === 401, JSON.stringify(aal1Viejo));
   const ren = await refrescar(viejoAal2.refresh_token);
@@ -228,11 +233,39 @@ await escenario("X01", "recuperación de MFA", async () => {
   if (ren.datos?.access_token) { const y2 = await fel("yo", {}, ren.datos.access_token); afirmar("X01n", "un token RENOVADO desde la sesión vieja sigue rechazado (la marca no depende de Auth)", y2.status === 401, JSON.stringify(y2)); }
   const viejoAuth = await auth("user", { metodo: "GET", token: viejoAal2.access_token }); observar("X01o", "GET /auth/v1/user con el token viejo (¿Auth ya lo rechaza?)", viejoAuth.status);
   // inicio de sesión nuevo → aal1 (ya no hay factor): lo operativo sí, lo sensible no hasta configurar y verificar TOTP de nuevo
+  await new Promise((r) => setTimeout(r, 1300));   // los instantes del token son segundos enteros: un inicio de sesión legítimo ocurre después del segundo de la marca
   const fresco = await login(U.emi.email); const yo = await fel("yo", {}, fresco.sesion.access_token); afirmar("X01p", "un inicio de sesión nuevo funciona (aal1)", yo.status === 200 && yo.datos.datos.mfa === "aal1", JSON.stringify(yo));
   const sens = await fel("mfa_recuperacion_listar", {}, fresco.sesion.access_token); afirmar("X01q", "lo sensible exige aal2 hasta verificar un TOTP nuevo → 403 mfa_requerido", sens.status === 403 && sens.datos.codigo === "mfa_requerido", JSON.stringify(sens));
   const nuevo = await activarTotp(U.emi.email, fresco.sesion);
   const sens2 = await fel("mfa_recuperacion_listar", {}, nuevo.sesion.access_token); afirmar("X01r", "tras configurar y verificar un TOTP NUEVO, lo sensible vuelve a estar permitido", sens2.status === 200, JSON.stringify(sens2));
   const rep = await fel("mfa_recuperacion_aprobar", { solicitud_id: sol.datos?.datos?.solicitud_id, verificacion: "Reintento sobre una solicitud ya ejecutada por completo" }, propFresco.access_token); afirmar("X01s", "repetir la aprobación después de ejecutada no hace nada (4xx)", rep.status >= 400 && rep.status < 500, JSON.stringify(rep));
+});
+
+// ================================================================ 9b. Cuenta bloqueada con token vigente: la RLS corta las lecturas directas de inmediato
+await escenario("B01", "bloqueo en caliente", async () => {
+  const l = await login(U.lec.email, "Nueva-Clave-Segura-456");
+  const antes = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, l.sesion.access_token); afirmar("B01a", "antes del bloqueo el lector lee clientes", antes.datos.length === 2, JSON.stringify(antes.datos));
+  sql(`update public.perfiles set activo=false where user_id='${U.lec.id}'`);
+  const despues = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, l.sesion.access_token); afirmar("B01b", "bloqueada la cuenta, el MISMO token ya no lee nada (PostgREST + RLS)", Array.isArray(despues.datos) && despues.datos.length === 0, JSON.stringify(despues.datos));
+  const f = await fel("yo", {}, l.sesion.access_token); afirmar("B01c", "y fel-api responde 403 cuenta_desactivada", f.status === 403 && f.datos.codigo === "cuenta_desactivada", JSON.stringify(f));
+  sql(`update public.perfiles set activo=true where user_id='${U.lec.id}'`);
+  const re = await rest(`clientes?select=id&empresa_id=eq.${EMP_A}`, l.sesion.access_token); afirmar("B01d", "reactivada, vuelve a leer", re.datos.length === 2, JSON.stringify(re.datos));
+});
+
+// ================================================================ 9c. Persona con dos empresas: permisos separados por empresa
+await escenario("MU01", "multiempresa", async () => {
+  const multi = { email: E("multi"), id: await crearUsuario(E("multi")) };
+  sql(`insert into public.perfiles (user_id) values ('${multi.id}'); insert into public.miembros (empresa_id, user_id, rol) values ('${EMP_A}','${multi.id}','lector'),('${EMP_B}','${multi.id}','propietario');`);
+  const s = (await login(multi.email)).sesion;
+  const yo = await fel("yo", {}, s.access_token); const roles = Object.fromEntries((yo.datos?.datos?.empresas ?? []).map((x) => [x.empresa.id, x.rol]));
+  afirmar("MU01a", "yo lista las dos empresas con su rol de cada una", roles[EMP_A] === "lector" && roles[EMP_B] === "propietario", JSON.stringify(roles));
+  const todos = await rest("clientes?select=nombre", s.access_token); afirmar("MU01b", "sin filtro ve los clientes de AMBAS (es miembro de las dos), nada más", todos.datos.length === 3, JSON.stringify(todos.datos));
+  const soloB = await rest(`clientes?select=nombre&empresa_id=eq.${EMP_B}`, s.access_token); afirmar("MU01c", "filtrando por B solo ve los de B", soloB.datos.length === 1 && soloB.datos[0].nombre === "Cliente B1", JSON.stringify(soloB.datos));
+  const wA = await fel("cliente_guardar", { empresa_id: EMP_A, tipo_identificacion: "NIT", numero_identificacion: "7000001-1", nombre: "Escribe en A" }, s.access_token); afirmar("MU01d", "en A (lector) no puede escribir → 403", wA.status === 403, JSON.stringify(wA));
+  const wB = await fel("cliente_guardar", { empresa_id: EMP_B, tipo_identificacion: "NIT", numero_identificacion: "7000002-2", nombre: "Escribe en B" }, s.access_token); afirmar("MU01e", "en B (propietario) sí puede escribir → 200", wB.status === 200, JSON.stringify(wB));
+  afirmar("MU01f", "lo escrito quedó solo en B", sql(`select string_agg(empresa_id::text, ',') from public.clientes where nombre in ('Escribe en A','Escribe en B')`) === EMP_B);
+  const lA = await fel("miembros_listar", { empresa_id: EMP_A }, s.access_token); const lB = await fel("miembros_listar", { empresa_id: EMP_B }, s.access_token);
+  afirmar("MU01g", "listar miembros: 403 en A (lector), 200 en B (propietario) y solo de B", lA.status === 403 && lB.status === 200 && lB.datos.datos.miembros.every((m) => [U.otro.id, multi.id].includes(m.user_id)), `${lA.status} ${lB.status} ${JSON.stringify(lB.datos).slice(0, 160)}`);
 });
 
 // ================================================================ 10. Revocación por cierre de sesión (comportamiento de Supabase, solo se observa)

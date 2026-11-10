@@ -69,6 +69,8 @@ do $$ declare ts bigint := current_setting('fel.test_ts')::bigint; c text; begin
   end loop;
   -- inicio de sesión NUEVO (evento de autenticación igual o posterior a la marca): vale
   perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s}]}', ts), true);
+  assert not public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'un evento en el MISMO segundo que la marca es ambiguo y no debe valer';
+  perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s}]}', ts + 1), true);
   assert public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver') and (select count(*) from public.clientes) = 1, 'un inicio de sesión posterior debe valer';
   perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', ts + 5, ts + 60), true);
   assert public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'un token con autenticación reciente debe valer';

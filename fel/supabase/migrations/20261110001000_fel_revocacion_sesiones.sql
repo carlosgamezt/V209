@@ -25,7 +25,9 @@ begin
   begin v_claims := nullif(current_setting('request.jwt.claims', true), '')::jsonb; exception when others then return false; end;
   select max(case when jsonb_typeof(e.v) = 'object' and (e.v ->> 'timestamp') ~ '^[0-9]{1,12}$' then (e.v ->> 'timestamp')::bigint end) into v_inicio
     from jsonb_array_elements(case when jsonb_typeof(v_claims -> 'amr') = 'array' then v_claims -> 'amr' else '[]'::jsonb end) as e(v);
-  return coalesce(v_inicio, 0) >= floor(extract(epoch from v_desde));
+  -- ESTRICTO: los instantes del token son segundos enteros; un evento dentro del mismo segundo que la marca es ambiguo y se rechaza
+  -- (hallazgo de la integración real: con >= una sesión aal2 anterior, en el mismo segundo, seguía valiendo).
+  return coalesce(v_inicio, 0) > floor(extract(epoch from v_desde));
 end $$;
 
 -- Las comprobaciones que usan las políticas RLS exigen además sesión no revocada.
