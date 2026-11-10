@@ -89,3 +89,24 @@ export function mensajeError(e) {
 
 // replaceChildren que ignora null/false (replaceChildren nativo escribiría "null" como texto).
 export function poner(el, ...hijos) { el.replaceChildren(...hijos.flat().filter((x) => x !== null && x !== undefined && x !== false)); }
+
+// Paso intermedio de seguridad: pide el código TOTP y lo verifica con `verificar(codigo)` (que lanza si es incorrecto). Devuelve true/false.
+export function pedirCodigoTotp(verificar) {
+  return new Promise((resolve) => {
+    const codigo = h("input", { class: "codigo", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, placeholder: "000000", "aria-label": "Código de 6 dígitos" });
+    const err = h("p", { class: "err", role: "alert" });
+    let m, ocupado = false, terminado = false;
+    const fin = (v) => { if (terminado) return; terminado = true; m.cerrar(); resolve(v); };
+    const ok = boton("Confirmar", { onclick: async () => {
+      if (ocupado) return; ocupado = true; ok.disabled = true; err.textContent = "";
+      try { await verificar(codigo.value.trim()); fin(true); } catch (e) { err.textContent = mensajeError(e); codigo.value = ""; ok.disabled = false; codigo.focus(); } finally { ocupado = false; }
+    } });
+    m = modal({ titulo: "Confirma tu código", ancho: "sm", contenido: h("form", { class: "form", onsubmit: (e) => { e.preventDefault(); ok.click(); } },
+      h("p", { class: "mut" }, "Por seguridad, esta operación necesita un código reciente de tu app autenticadora."), codigo, err),
+      pie: [boton("Cancelar", { tipo: "sec", onclick: () => fin(false) }), ok] });
+    // si se cierra con Escape o clic fuera, cuenta como cancelado
+    const obs = new MutationObserver(() => { if (!document.body.contains(m.caja)) { obs.disconnect(); fin(false); } });
+    obs.observe(document.body, { childList: true });
+    codigo.focus();
+  });
+}

@@ -173,7 +173,7 @@ export const acciones: Acciones = {
   // ------------------------------------------------------------ usuarios de la empresa
   miembro_invitar: {
     limite: "invitacion_envio",
-    requisito: { permiso: "usuarios.gestionar", aal2: true },
+    requisito: { permiso: "usuarios.gestionar", aal2: true, aal2Reciente: true },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "email", "rol", "permisos_extra"]);
       return { empresa_id: v.uuid(b, "empresa_id"), email: v.email(b, "email"), rol: v.enumerado(b, "rol", ROLES), permisos_extra: v.listaPermisos(b, "permisos_extra") ?? [] };
@@ -205,7 +205,7 @@ export const acciones: Acciones = {
 
   miembro_actualizar: {
     limite: "gestion_usuarios",
-    requisito: { permiso: "usuarios.gestionar", aal2: true },
+    requisito: { permiso: "usuarios.gestionar", aal2: true, aal2Reciente: true },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "user_id", "rol", "permisos_extra", "permisos_revocados", "activo"]);
       const rol = b.rol === undefined || b.rol === null ? null : v.enumerado(b, "rol", ROLES);
@@ -238,7 +238,7 @@ export const acciones: Acciones = {
   // El primer maestro y la incorporación de un adicional se hacen en la consola SQL (no por la API); aquí solo se AUTORIZA.
   maestro_autorizar: {
     limite: "admin",
-    requisito: { plataforma: true, aal2: true },
+    requisito: { plataforma: true, aal2: true, aal2Reciente: true },
     validar: (b) => { v.soloCampos(b, ["email", "motivo"]); return { email: v.email(b, "email"), motivo: v.texto(b, "motivo", 10, 500) }; },
     async ejecutar(ctx, p) {
       const id = await rpc(ctx, "fel_admin_maestro_autorizar", { p_actor: ctx.usuario.id, p_email: p.email, p_motivo: p.motivo });
@@ -247,7 +247,7 @@ export const acciones: Acciones = {
   },
   maestro_autorizacion_revocar: {
     limite: "admin",
-    requisito: { plataforma: true, aal2: true },
+    requisito: { plataforma: true, aal2: true, aal2Reciente: true },
     validar: (b) => { v.soloCampos(b, ["autorizacion_id"]); return { autorizacion_id: v.uuid(b, "autorizacion_id") }; },
     async ejecutar(ctx, p) {
       await rpc(ctx, "fel_admin_maestro_revocar_autorizacion", { p_actor: ctx.usuario.id, p_id: p.autorizacion_id });
@@ -275,7 +275,7 @@ export const acciones: Acciones = {
   },
   mfa_recuperacion_aprobar: {
     limite: "gestion_usuarios",
-    requisito: { aal2: true },
+    requisito: { aal2: true, aal2Reciente: true },
     validar: (b) => { v.soloCampos(b, ["solicitud_id", "verificacion"]); return { solicitud_id: v.uuid(b, "solicitud_id"), verificacion: v.texto(b, "verificacion", 20, 500) }; },
     async ejecutar(ctx, p) {
       // 1) la base valida quién puede y exige la evidencia de la verificación de identidad; devuelve los factores a eliminar
@@ -284,17 +284,19 @@ export const acciones: Acciones = {
       let eliminados = 0;
       for (const id of (r.factores ?? []) as string[]) {
         const { error } = await ctx.admin.auth.admin.mfa.deleteFactor({ id, userId: r.user_id });
-        if (error) throw new ErrorFel(502, "No se pudo eliminar el factor; la solicitud quedó aprobada, vuelve a intentarlo", "recuperacion_parcial");
-        eliminados++;
+        // "no existe" = otra ejecución ya lo borró (reintento o aprobación simultánea): no es un fallo ni se cuenta dos veces
+        const yaNoExiste = !!error && (error.status === 404 || /not.?found/i.test(`${error.code ?? ""} ${error.message ?? ""}`));
+        if (error && !yaNoExiste) throw new ErrorFel(502, "No se pudo eliminar el factor; la solicitud quedó aprobada y sus sesiones anteriores ya no valen. Vuelve a intentarlo", "recuperacion_parcial");
+        if (!error) eliminados++;
       }
       // 3) se cierra la solicitud
       await rpc(ctx, "fel_op_mfa_recuperacion_cerrar", { p_actor: ctx.usuario.id, p_solicitud: p.solicitud_id, p_eliminados: eliminados });
-      return { solicitud_id: p.solicitud_id, factores_eliminados: eliminados, siguiente_paso: "La persona inicia sesión con su contraseña y activa un dispositivo nuevo" };
+      return { solicitud_id: p.solicitud_id, factores_eliminados: r.total ?? eliminados, eliminados_en_esta_ejecucion: eliminados, siguiente_paso: "La persona inicia sesión con su contraseña y activa un dispositivo nuevo" };
     },
   },
   mfa_recuperacion_rechazar: {
     limite: "gestion_usuarios",
-    requisito: { aal2: true },
+    requisito: { aal2: true, aal2Reciente: true },
     validar: (b) => { v.soloCampos(b, ["solicitud_id", "motivo"]); return { solicitud_id: v.uuid(b, "solicitud_id"), motivo: v.texto(b, "motivo", 5, 300) }; },
     async ejecutar(ctx, p) {
       await rpc(ctx, "fel_op_mfa_recuperacion_rechazar", { p_actor: ctx.usuario.id, p_solicitud: p.solicitud_id, p_motivo: p.motivo });

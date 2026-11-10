@@ -229,6 +229,57 @@ const NUEVA = "Otra-Clave-Segura-456";
     await p.context().close();
   }
 
+  // ================= 9. paso intermedio: un TOTP antiguo no basta para una acción sensible
+  {
+    const f = crear(); const p = await pagina(f);
+    await entrarConMfa(p, "mfa@fel.test");
+    await p.click('aside a.nv:has-text("Usuarios")'); await p.click('.tabs a:has-text("Invitaciones")'); await p.waitForSelector("text=pendiente@fel.test");
+    f.envejecerMfa(f.ultimoAccess());                                                                       // el último código se dio hace 16 minutos
+    await p.click("text=Invitar a la empresa"); await p.fill('input[aria-label="Correo de la persona"]', "paso.intermedio@fel.test"); await p.click(".modal .btn-pri");
+    await p.waitForSelector("text=Confirma tu código"); await foto(p, "36-confirmar-codigo.png");
+    assert.equal(f.invitaciones["emp-1"].some((i) => i.email === "paso.intermedio@fel.test"), false, "antes de confirmar el código no se crea nada");
+    await p.fill('.modal:has-text("Confirma tu código") input[aria-label="Código de 6 dígitos"]', "111111"); await p.click(".modal:has-text('Confirma tu código') .btn-pri");
+    await p.waitForSelector("text=Código incorrecto o vencido"); assert.equal(f.invitaciones["emp-1"].some((i) => i.email === "paso.intermedio@fel.test"), false);
+    await p.fill('.modal:has-text("Confirma tu código") input[aria-label="Código de 6 dígitos"]', CODIGO_OK); await p.click(".modal:has-text('Confirma tu código') .btn-pri");
+    await p.waitForSelector("text=Invitación registrada"); assert.equal(f.invitaciones["emp-1"].filter((i) => i.email === "paso.intermedio@fel.test").length, 1, "se crea una sola vez");
+    assert.equal(f.log.filter((l) => l === "POST /functions/v1/fel-api").length >= 2, true);
+    // cancelar el paso intermedio: la operación NO se hace
+    f.envejecerMfa(f.ultimoAccess());
+    await p.click("text=Invitar a la empresa"); await p.fill('input[aria-label="Correo de la persona"]', "cancelada@fel.test"); await p.click(".modal .btn-pri");
+    await p.waitForSelector("text=Confirma tu código"); await p.click(".modal:has-text('Confirma tu código') button:has-text('Cancelar')");
+    await p.waitForSelector("text=Confirma de nuevo tu código de verificación"); assert.equal(f.invitaciones["emp-1"].some((i) => i.email === "cancelada@fel.test"), false);
+    await p.context().close();
+  }
+
+  // ================= 10. recuperar el MFA revoca las sesiones anteriores; hay que volver a configurar y verificar TOTP para lo sensible
+  {
+    const f = crear();
+    const viejo = await pagina(f);                                                                           // sesión aal2 de quien perderá el dispositivo (y de un atacante que la robara)
+    await entrarConMfa(viejo, "maestro@fel.test");
+    f.solicitudes.push({ id: "s-prueba", user: f.usuarios["maestro@fel.test"], motivo: "Perdí el dispositivo del administrador", estado: "pendiente", solicitada_en: "2026-11-10T09:00:00Z" });
+    const r = await pagina(f); await entrarConMfa(r, "mfa@fel.test");
+    await r.click('aside a.nv:has-text("Usuarios")'); await r.click('.tabs a:has-text("Recuperación de acceso")'); await r.waitForSelector("text=maestro@fel.test"); await r.click("text=Revisar");
+    await r.check('input[aria-label="Confirmo la verificación"]'); await r.fill('textarea[aria-label="Cómo verificaste su identidad"]', "Videollamada con documento en mano; confirmé nombre, cargo y teléfono.");
+    await r.click(".modal .btn-peligro"); await r.waitForSelector("text=Recuperación aplicada"); assert.equal(f.usuarios["maestro@fel.test"].factor, null);
+    await r.context().close();
+
+    // la sesión vieja ya no sirve: al cambiar de pantalla se revalida y se pide iniciar sesión (renovar no la rescata)
+    const rt0 = cuenta(f, /refresh_token/);
+    await viejo.click('aside a.nv:has-text("Conceptos")'); await viejo.waitForSelector(".login-card"); await viejo.waitForSelector("text=Tu sesión fue revocada");
+    assert.ok(cuenta(f, /refresh_token/) > rt0, "se intentó renovar y aun así quedó fuera: la revocación no depende del token de renovación");
+    assert.equal(await viejo.evaluate(() => sessionStorage.length), 0, "se borra todo"); await foto(viejo, "37-sesion-revocada-por-recuperacion.png");
+    // inicio de sesión nuevo: solo contraseña (ya no hay factor) → aal1: puede lo operativo, NO lo sensible
+    await login(viejo, "maestro@fel.test"); await viejo.waitForSelector(".shell"); await viejo.waitForSelector("text=Administrador maestro: activa la verificación en dos pasos");
+    await viejo.click('aside a.nv:has-text("Usuarios")'); await viejo.waitForSelector("text=Para invitar o modificar usuarios necesitas verificación en dos pasos");
+    await viejo.click('.tabs a:has-text("Invitaciones")'); assert.equal(await viejo.locator("button:has-text('Invitar a la empresa')").isDisabled(), true, "sin TOTP nuevo no hay acciones sensibles");
+    // configurar y verificar de nuevo el TOTP → recupera lo sensible
+    await viejo.click('aside a.nv:has-text("Seguridad")'); await viejo.click("button:has-text('Activar verificación en dos pasos')"); await viejo.waitForSelector("img.qr");
+    await viejo.fill('input[aria-label="Código de 6 dígitos"]', CODIGO_OK); await viejo.click("button:has-text('Confirmar y activar')"); await viejo.waitForSelector("text=Verificación en dos pasos activada");
+    await viejo.click('aside a.nv:has-text("Usuarios")'); await viejo.click('.tabs a:has-text("Invitaciones")');
+    await viejo.click("text=Invitar a la empresa"); await viejo.fill('input[aria-label="Correo de la persona"]', "tras.recuperar@fel.test"); await viejo.click(".modal .btn-pri");
+    await viejo.waitForSelector("text=Invitación registrada"); await viejo.context().close();
+  }
+
   for (const f of falsos) assert.deepEqual(f.violaciones, [], `peticiones indebidas:\n${f.violaciones.join("\n")}`);
   await navegador.close(); servidor.close();
   assert.deepEqual(errores, [], `errores en la consola:\n${errores.join("\n")}`);

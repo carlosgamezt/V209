@@ -24,7 +24,7 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
   const inactividadMs = Number(config.inactividadMs) || 30 * 60 * 1000;      // sin actividad: se cierra la sesión
   const duracionMaximaMs = Number(config.duracionMaximaMs) || 8 * 60 * 60 * 1000;   // desde que la persona se autenticó, como máximo
   let fase = "anonimo", sesion = null, pendiente = null, restablecer = null, temporizador = null, vigilante = null, refrescando = null, t0 = 0, ultima = 0, ultimaGuardada = 0;
-  const api = { modo: "remoto", alPerderSesion: null, alCambiarPermisos: null };
+  const api = { modo: "remoto", alPerderSesion: null, alCambiarPermisos: null, pedirCodigoMfa: null };
 
   const auth = async (ruta, { metodo = "POST", token, cuerpo } = {}) => {
     const r = await fetchFn(`${supabaseUrl}/auth/v1/${ruta}`, { method: metodo, headers: { apikey: anonKey, "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: cuerpo ? JSON.stringify(cuerpo) : undefined });
@@ -84,10 +84,19 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
     if (fase !== "autenticado") throw new ErrorApi("Inicia sesión.", "sin_sesion", 401);
     if (Date.now() > sesion.expira - 15000) await refrescar();
   }
+  // 401: se renueva el token y se reintenta UNA vez. Si sigue siendo 401 (p. ej. la sesión fue revocada tras recuperar el MFA: renovar un
+  // token viejo no crea una autenticación nueva), se cierra la sesión y se pide iniciar sesión de nuevo.
   async function con401(fn) {
     await vigente();
     let r = await fn();
-    if (r.status === 401) { await refrescar(); r = await fn(); }
+    if (r.status === 401) {
+      await refrescar();
+      r = await fn();
+      if (r.status === 401) {
+        await api.cerrarSesion(); api.alPerderSesion?.("Tu sesión fue revocada o venció. Inicia sesión de nuevo.");
+        throw new ErrorApi("Tu sesión fue revocada o venció.", "sin_sesion", 401);
+      }
+    }
     return r;
   }
   const cab = () => ({ apikey: anonKey, authorization: `Bearer ${sesion.access_token}` });
@@ -138,6 +147,14 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
       const token = sesion?.access_token ?? pendiente?.sesion.access_token ?? restablecer?.sesion.access_token;
       olvidar();
       if (token) { try { await auth("logout?scope=local", { token }); } catch { /* el cierre local ya se hizo */ } }
+    },
+    // Paso intermedio: confirma de nuevo el TOTP con la sesión actual y obtiene tokens con un evento TOTP reciente (sin ampliar la duración máxima).
+    async reautenticarMfa(codigo) {
+      await vigente();
+      const { r, j } = await auth("user", { metodo: "GET", token: sesion.access_token });
+      const totp = r.ok ? (j.factors ?? []).find((f) => f.factor_type === "totp" && f.status === "verified") : null;
+      if (!totp) throw new ErrorApi("Esta cuenta no tiene verificación en dos pasos activa.", "mfa_requerido", 403);
+      confirmar(await desafiarYVerificar(totp.id, codigo, sesion.access_token), { nueva: false });
     },
     async estadoMfa() {
       await vigente();
@@ -211,12 +228,17 @@ export function crearRemoto(config, fetchFn = (...a) => fetch(...a)) {
     return r.json();
   }
   // silencioso: no reaccionar a un 403 (se usa durante el arranque, donde el 403 es una respuesta esperada)
-  async function accion(nombre, datos = {}, { silencioso = false } = {}) {
+  async function accion(nombre, datos = {}, { silencioso = false, reintento = false } = {}) {
     const r = await con401(() => fetchFn(apiUrl, { method: "POST", headers: { ...cab(), "content-type": "application/json" }, body: JSON.stringify({ accion: nombre, ...datos }) }));
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.ok === false) {
       const e = new ErrorApi(j.error ?? "No se pudo completar la operación.", j.codigo ?? "error", r.status);
       e.reintentarEn = Number(r.headers?.get?.("retry-after")) || undefined;
+      // Acción sensible con un código TOTP antiguo: se pide confirmar el código de nuevo (paso intermedio) y se reintenta UNA vez.
+      if (r.status === 403 && e.codigo === "mfa_reciente" && !reintento && api.pedirCodigoMfa) {
+        const ok = await api.pedirCodigoMfa((c) => api.reautenticarMfa(c));
+        if (ok) return accion(nombre, datos, { silencioso, reintento: true });
+      }
       if (!silencioso && r.status === 403) {
         // Acceso revocado o cambiado mientras la persona trabajaba: cuenta bloqueada / sin perfil = fuera; permisos distintos = se recargan
         if (e.codigo === "cuenta_desactivada" || e.codigo === "sin_perfil") { await api.cerrarSesion(); api.alPerderSesion?.("Tu acceso fue revocado. Contacta a tu administrador."); }

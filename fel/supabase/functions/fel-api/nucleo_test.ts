@@ -12,6 +12,7 @@ function deps(o: Opc = {}): Deps {
     admin: (o.admin as Deps["admin"]) ?? { rpc: () => { throw new Error("no debía llamarse a la base de datos"); } },
     config: o.config ?? { origenesPermitidos: ["https://app.test"], emisionRealPermitida: false, appUrl: "https://app.test" },
     getUser: o.getUser ?? ((t) => Promise.resolve(t ? { id: "u1", email: "u1@test.com" } : null)),
+    sesionRevocadaDesde: () => Promise.resolve(null),
     estadoCuenta: () => Promise.resolve(o.cuenta ?? (o.activo === false ? "bloqueada" : "activa")),
     limitar: o.limitar ?? (() => Promise.resolve({ permitido: true, reintentarEn: 1 })),
     esPlataforma: () => Promise.resolve(o.maestro ?? false),

@@ -30,13 +30,15 @@ do $$ declare f record; publicas text[]; anon_ text[]; auth_ text[]; faltan text
   select coalesce(array_agg(p.proname::text order by p.proname), '{}') into faltan
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname like 'fel\_%' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype
-     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__rango')
+     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__borrar_sesiones_auth', 'fel__rango')
      and not has_function_privilege('service_role', p.oid, 'EXECUTE');
   assert faltan = '{}', 'funciones que service_role no puede ejecutar: ' || faltan::text;
   assert not has_function_privilege('service_role', 'public.fel_bootstrap_primer_maestro(text)', 'EXECUTE'), 'service_role puede crear maestros';
   assert not has_function_privilege('service_role', 'public.fel_agregar_maestro_adicional(text)', 'EXECUTE'), 'service_role puede agregar maestros';
   assert not has_function_privilege('service_role', 'public.fel__puede_resolver_mfa(uuid,uuid)', 'EXECUTE'), 'service_role consulta resolutores';
   assert not has_function_privilege('service_role', 'public.fel_registrar_recuperacion_manual(text,text)', 'EXECUTE'), 'service_role registra recuperaciones manuales';
+  assert not has_function_privilege('service_role', 'public.fel__borrar_sesiones_auth(uuid)', 'EXECUTE'), 'service_role borra sesiones directamente';
+  assert not has_function_privilege('authenticated', 'public.fel_sesion_revocada_desde(uuid)', 'EXECUTE'), 'authenticated consulta marcas de revocación';
 end $$;
 
 -- ================= las funciones de escritura no se pueden invocar con los roles de la app (error de privilegios real)

@@ -1,6 +1,6 @@
 // NEXA FEL · interfaz: Clientes, Conceptos, Borradores, Usuarios y Seguridad. JavaScript modular sin dependencias ni paso de compilación.
 import { crearApi } from "./api.js";
-import { h, boton, toast, campo, mensajeError, poner } from "./ui.js";
+import { h, boton, toast, campo, mensajeError, poner, pedirCodigoTotp } from "./ui.js";
 import { icono } from "./icons.js";
 import { pantallaClientes } from "./pantallas/clientes.js";
 import { pantallaConceptos } from "./pantallas/conceptos.js";
@@ -36,6 +36,7 @@ async function iniciar(mensaje) {
   const api = apiUnica;
   if (api.modo === "remoto") {
     api.alPerderSesion = (m) => iniciar(m ?? "Tu sesión venció. Inicia sesión de nuevo.");
+    api.pedirCodigoMfa = pedirCodigoTotp;
     if (enlaceInicial) { const e = enlaceInicial; enlaceInicial = null; return e.error ? pantallaLogin(api, "El enlace venció o no es válido. Pide uno nuevo.") : pantallaNuevaContrasena(api, e); }
     if (!api.haySesion()) {
       if (api.fase() === "mfa_pendiente") return pantallaMfa(api);

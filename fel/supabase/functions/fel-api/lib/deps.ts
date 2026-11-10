@@ -16,6 +16,7 @@ export function construirDeps(admin: any, config: Config): Deps {
       // (aal) pertenezcan a ESTE usuario y a un token de usuario (no la clave anon ni un token de otro): sub y role coherentes.
       const c = decodificarClaims(token);
       if (c.sub !== data.user.id || c.role !== "authenticated") return null;
+      if (typeof c.exp !== "number" || c.exp * 1000 <= Date.now()) return null; // defensa propia: nunca aceptar un token vencido ni sin vencimiento
       return { id: data.user.id, email: data.user.email };
     },
     // Estado de la cuenta: solo "activa" (perfil existente y activo) tiene acceso general. "sin_perfil" solo puede aceptar una
@@ -24,6 +25,12 @@ export function construirDeps(admin: any, config: Config): Deps {
       const { data, error } = await admin.rpc("fel_estado_cuenta", { p_user: userId });
       if (error) throw new ErrorFel(503, "No se pudo verificar la cuenta; intenta de nuevo", "verificacion");
       return data === "activa" || data === "sin_perfil" ? data : "bloqueada";
+    },
+    // Marca de revocación (tras recuperar el MFA): instante (s) desde el cual valen los tokens de la persona. Si no se puede comprobar: 503.
+    async sesionRevocadaDesde(userId) {
+      const { data, error } = await admin.rpc("fel_sesion_revocada_desde", { p_user: userId });
+      if (error) throw new ErrorFel(503, "No se pudo verificar la sesión; intenta de nuevo", "verificacion");
+      return data === null || data === undefined ? null : Number(data);
     },
     // Administrador maestro = está en plataforma_admins Y su perfil está activo (misma regla que usa la base de datos).
     async esPlataforma(userId) {

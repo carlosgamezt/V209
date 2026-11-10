@@ -2,7 +2,7 @@
 // Recibe sus dependencias por parámetro para poder probarlo sin red.
 import { ErrorFel } from "./lib/errores.ts";
 import { evaluar, type Requisito } from "./lib/autorizacion.ts";
-import { decodificarClaims } from "./lib/jwt.ts";
+import { decodificarClaims, eventosAuth } from "./lib/jwt.ts";
 import type { Cuerpo } from "./lib/validacion.ts";
 import { claveLimite, hashCorto, LIMITE_IP, LIMITES, type Cubeta, type ReglaLimite } from "./lib/limites.ts";
 
@@ -17,6 +17,7 @@ export interface Usuario { id: string; email: string }
 export interface Deps {
   config: Config;
   getUser(token: string): Promise<Usuario | null>;              // valida el JWT con Supabase Auth
+  sesionRevocadaDesde(userId: string): Promise<number | null>;   // marca de revocación de sesiones (segundos Unix)
   estadoCuenta(userId: string): Promise<"activa" | "bloqueada" | "sin_perfil">; // un JWT vigente NO basta: se exige perfil activo
   limitar(clave: string, ventanaSeg: number, max: number): Promise<{ permitido: boolean; reintentarEn: number }>; // contador compartido en la base de datos
   esPlataforma(userId: string): Promise<boolean>;                // consulta plataforma_admins
@@ -102,8 +103,16 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
 
     const usuario = await deps.getUser(token);
     if (!usuario) throw new ErrorFel(401, "La sesión no es válida o venció", "sin_sesion");
-    const aalCrudo = decodificarClaims(token).aal; // el token ya fue validado por Supabase Auth (ver lib/deps.ts)
-    const aal = aalCrudo === "aal1" || aalCrudo === "aal2" ? aalCrudo : undefined; // solo valores exactos
+    const claims = decodificarClaims(token); // el token ya fue validado por Supabase Auth (ver lib/deps.ts)
+    const aal = claims.aal === "aal1" || claims.aal === "aal2" ? claims.aal : undefined; // solo valores exactos
+    const eventos = eventosAuth(claims);
+
+    // Sesión revocada (p. ej. tras una recuperación de MFA): el token debe contener una autenticación POSTERIOR a la marca.
+    // Renovar un token viejo no crea autenticaciones nuevas, así que no sirve para saltarse la revocación.
+    const desde = await deps.sesionRevocadaDesde(usuario.id);
+    if (desde !== null && (eventos.inicio === null || eventos.inicio < desde)) {
+      throw new ErrorFel(401, "Tu sesión fue revocada; inicia sesión de nuevo", "sesion_revocada");
+    }
 
     // Un JWT vigente NO basta. Cuenta bloqueada: ninguna acción. Cuenta sin perfil: solo la aceptación de una invitación vigente.
     const cuenta = await deps.estadoCuenta(usuario.id);
@@ -126,7 +135,7 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
       if (!empresaId) throw new ErrorFel(400, "Falta la empresa", "entrada_invalida");
       permisos = await deps.permisos(empresaId, usuario.id);
     }
-    evaluar(req_, { esPlataforma, permisos, aal });
+    evaluar(req_, { esPlataforma, permisos, aal, totpEn: eventos.totp });
 
     // Límites por empresa: SOLO después de autorizar, para que nadie agote el cupo de una empresa ajena enviando su id.
     const empresaLimite = accion.empresaDe?.(params);

@@ -32,14 +32,17 @@ function crear() {
   };
   const correo = (u) => Object.keys(e.usuarios).find((k) => e.usuarios[k] === u);
   const jwt = (u, aal) => `${b64({ alg: "HS256" })}.${b64({ sub: u.id, role: "authenticated", aal, exp: Math.floor(Date.now() / 1000) + e.expiresIn })}.firma-falsa`;
-  e.nuevaSesion = (u, aal) => {
+  // inicio = cuándo se AUTENTICÓ la persona (se conserva al renovar); totpEn = cuándo dio el último código TOTP
+  e.nuevaSesion = (u, aal, extra = {}) => {
     const n = ++e.n, access = jwt(u, aal) + `.${n}`, refresh = `rt-${u.id}-${n}`;
-    e.sesiones.set(access, { u, aal, vencido: false }); e.refrescos.set(refresh, { u, aal });
+    const inicio = extra.inicio ?? Date.now(), totpEn = extra.totpEn ?? null;
+    e.sesiones.set(access, { u, aal, vencido: false, inicio, totpEn, refresh }); e.refrescos.set(refresh, { u, aal, inicio, totpEn });
     return { access_token: access, refresh_token: refresh, expires_in: e.expiresIn, user: { email: correo(u) } };
   };
+  e.envejecerMfa = (access) => { const x = e.sesiones.get(access); x.totpEn = Date.now() - 16 * 60 * 1000; const r = e.refrescos.get(x.refresh); if (r) r.totpEn = x.totpEn; };   // el último TOTP fue hace 16 min
   e.vencer = (access) => { const s = e.sesiones.get(access); if (s) s.vencido = true; };
   e.revocarRefrescos = () => e.refrescos.clear();
-  e.sembrarRefresco = (email, aal) => { const u = e.usuarios[email]; const rt = `rt-sembrado-${++e.n}`; e.refrescos.set(rt, { u, aal }); return rt; };
+  e.sembrarRefresco = (email, aal) => { const u = e.usuarios[email]; const rt = `rt-sembrado-${++e.n}`; e.refrescos.set(rt, { u, aal, inicio: Date.now(), totpEn: null }); return rt; };
   e.enlaceCorreo = (email, tipo = "recovery") => { const s = e.nuevaSesion(e.usuarios[email], "aal1"); return `#access_token=${s.access_token}&refresh_token=${s.refresh_token}&expires_in=3600&token_type=bearer&type=${tipo}`; };
   e.setRol = (email, emp, rol) => { e.usuarios[email].empresas[emp] = rol; };            // cambio hecho "por un administrador" mientras la persona trabaja
   e.setEstado = (email, estado) => { e.usuarios[email].estado = estado; };
@@ -87,7 +90,7 @@ function crear() {
         const r = e.refrescos.get(cuerpo.refresh_token);
         if (!r) return json(route, 400, { error: "invalid_grant" });
         e.refrescos.delete(cuerpo.refresh_token);
-        return json(route, 200, e.nuevaSesion(r.u, r.aal));
+        return json(route, 200, e.nuevaSesion(r.u, r.aal, { inicio: r.inicio, totpEn: r.totpEn }));   // renovar NO crea una autenticación nueva
       }
     }
     if (ruta === "/auth/v1/recover" && m === "POST") {
@@ -122,15 +125,18 @@ function crear() {
       if (!valida || !cuerpo.challenge_id) return json(route, 401, {});
       if (cuerpo.code !== CODIGO_OK) return json(route, 400, { msg: "código inválido" });
       ses.u.factor = { ...(ses.u.factor ?? {}), id: mm[1], verificado: true };
-      return json(route, 200, e.nuevaSesion(ses.u, "aal2"));
+      return json(route, 200, e.nuevaSesion(ses.u, "aal2", { inicio: ses.inicio, totpEn: Date.now() }));
     }
     if (ruta === "/auth/v1/logout") { if (ses) e.sesiones.delete(bearer); return json(route, 204, {}); }
 
     // ---------------- datos (PostgREST con RLS): la empresa pedida solo responde si la persona es miembro activa
     if (!valida) return json(route, 401, { message: "JWT expirado" });
     const emp = (url.searchParams.get("empresa_id") ?? "").replace(/^eq\./, "");
-    const miembro = !ses.u.estado && !!ses.u.empresas[emp];
+    const revocada = !!ses.u.revocadoDesde && ses.inicio < ses.u.revocadoDesde;     // sesión anterior a una recuperación de MFA
+    if (revocada && ruta === "/functions/v1/fel-api") return json(route, 401, { ok: false, error: "Tu sesión fue revocada; inicia sesión de nuevo", codigo: "sesion_revocada" });
+    const miembro = !ses.u.estado && !revocada && !!ses.u.empresas[emp];
     if (ruta.startsWith("/rest/v1/")) {
+      if (revocada) return json(route, 200, []);      // la RLS no entrega nada a una sesión revocada
       if (ruta === "/rest/v1/identificaciones_tipos") return json(route, 200, [{ codigo: "NIT", nombre: "NIT", verificado: false }, { codigo: "CF", nombre: "CF", verificado: false }]);
       if (ruta === "/rest/v1/permisos_catalogo") return json(route, 200, ses.u.estado ? [] : TODOS.map((c) => ({ codigo: c, descripcion: `Permite ${c}` })));
       if (ruta === "/rest/v1/rol_permisos") return json(route, 200, ses.u.estado ? [] : Object.entries(BASE).flatMap(([rol, ps]) => ps.map((permiso) => ({ rol, permiso }))));
@@ -158,6 +164,8 @@ function crear() {
       const pe = permisos(ses.u, cuerpo.empresa_id);
       const necesitaAal2 = ["miembro_invitar", "miembro_actualizar", "invitacion_revocar", "mfa_recuperacion_listar", "mfa_recuperacion_aprobar", "mfa_recuperacion_rechazar"].includes(a);
       if (necesitaAal2 && ses.aal !== "aal2") return err(403, "Esta operación exige verificación en dos pasos (MFA)", "mfa_requerido");
+      const sensible = ["miembro_invitar", "miembro_actualizar", "mfa_recuperacion_aprobar", "mfa_recuperacion_rechazar"].includes(a);
+      if (sensible && (!ses.totpEn || Date.now() - ses.totpEn > 15 * 60 * 1000)) return err(403, "Confirma de nuevo tu código de verificación para esta operación", "mfa_reciente");
       if (a === "miembros_listar") {
         if (!pe.includes("usuarios.ver")) return err(403, "No tienes permiso para esta operación", "no_autorizado");
         return json(route, 200, { ok: true, datos: { miembros: Object.entries(e.usuarios).filter(([, u]) => u.empresas[cuerpo.empresa_id]).map(([mail, u]) => ({ user_id: u.id, email: mail, nombre: null, rol: u.empresas[cuerpo.empresa_id], permisos_extra: u.extra?.[cuerpo.empresa_id] ?? [], permisos_revocados: u.quitados?.[cuerpo.empresa_id] ?? [], activo: true, cuenta: "activa", permisos_efectivos: permisos(u, cuerpo.empresa_id), creado_en: "2026-10-01T00:00:00Z" })) } });
@@ -195,7 +203,7 @@ function crear() {
         if (!s || !resolutor(s)) return err(403, "No puedes resolver esta solicitud", "no_autorizado");
         if (a === "mfa_recuperacion_rechazar") { s.estado = "rechazada"; return json(route, 200, { ok: true, datos: {} }); }
         if (String(cuerpo.verificacion ?? "").length < 20) return err(422, "Describe cómo verificaste la identidad", "regla");
-        const n = s.user.factor ? 1 : 0; s.user.factor = null; s.estado = "ejecutada"; e.ultimaAccion = `mfa-recuperada:${s.user.id}`;
+        const n = s.user.factor ? 1 : 0; s.user.factor = null; s.user.revocadoDesde = Date.now(); s.estado = "ejecutada"; e.ultimaAccion = `mfa-recuperada:${s.user.id}`;
         return json(route, 200, { ok: true, datos: { factores_eliminados: n } });
       }
       if (ses.u.estado) return err(403, "Sin acceso", "sin_perfil");

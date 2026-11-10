@@ -15,7 +15,7 @@ do $$ declare lectoras text[]; begin
   select coalesce(array_agg(p.proname::text order by p.proname), '{}') into lectoras
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.prosrc ~* 'request\.jwt|jwt_claims|auth\.jwt\(';
-  assert lectoras = array['fel_es_admin_plataforma'], 'funciones que leen claims del JWT: ' || lectoras::text;
+  assert lectoras = array['fel__sesion_vigente', 'fel_es_admin_plataforma'], 'funciones que leen claims del JWT: ' || lectoras::text;
   -- ninguna política RLS lee claims por su cuenta: todas pasan por auth.uid() o por las funciones fel_*
   assert not exists (select 1 from pg_policies where schemaname = 'public' and coalesce(qual, '') || coalesce(with_check, '') ~* 'request\.jwt|jwt_claims|auth\.jwt\('),
     'una política RLS lee claims directamente';
