@@ -1,8 +1,13 @@
 // === NEXA FEL · observación de solo lectura (consola de Chrome) ===
 // No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Solo describe qué controles existen.
+// Lo único que "escribe" es el portapapeles de tu equipo (copy) con el inventario. Textos con números largos o correos salen como [REDACTADO].
 (() => {
   const recoger = function recoger({ incluirOpciones }) {
-  const txt = (s, n = 80) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+  let redactados = 0;   // textos sustituidos por [REDACTADO]: números largos (NIT/DPI/teléfono), correos
+  const redactar = (t) => (/\d{6,}|@|\d{4}[\s-]?\d{5}[\s-]?\d{4}|\d{3,4}[\s-]\d{4}/.test(t) ? (redactados++, "[REDACTADO]") : t);
+  const txt = (s, n = 80) => redactar(String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n));
+  // ruta sin ?consulta, #hash, parámetros de ruta (;jsessionid=…) ni segmentos con aspecto de token/identificador
+  const limpiaRuta = (p) => { let r = ""; try { r = new URL(p, location.href).pathname; } catch { return ""; } return r.split("/").map((seg) => { const b = seg.split(";")[0]; return /^[A-Za-z0-9_-]{20,}$/.test(b) || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(b) || /^\d{6,}$/.test(b) || b.includes("=") ? ":id" : b; }).join("/").slice(0, 120); };
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   const etiquetaDe = (el) => {
     let t = "";
@@ -27,11 +32,11 @@
   const datos = els.map((el) => {
     const tag = el.tagName.toLowerCase(), type = (el.getAttribute("type") || "").toLowerCase();
     const esBoton = tag === "button" || (tag === "input" && ["submit", "button", "reset", "image"].includes(type)) || ["button", "tab"].includes(el.getAttribute("role") || "");
-    const texto = esBoton ? txt(el.innerText || el.value || el.getAttribute("aria-label")) : "";
+    const texto = esBoton ? txt(el.innerText || (tag === "input" ? el.value : "") || el.getAttribute("aria-label")) : "";
     const o = {
       tag, type, rol: rolDe(el), visible: visible(el), deshabilitado: !!el.disabled, soloLectura: !!el.readOnly, requerido: !!(el.required || el.getAttribute("aria-required") === "true"),
       enFormulario: !!el.closest("form"), etiqueta: etiquetaDe(el), texto, titulo: txt(el.getAttribute("title")), nombre: txt(el.getAttribute("name")), id: idGenerado(el.id) ? "" : txt(el.id),
-      id_generado: !!el.id && idGenerado(el.id), marcador: txt(el.getAttribute("placeholder")), href: el.tagName === "A" ? txt(el.getAttribute("href"), 120) : "",
+      id_generado: !!el.id && idGenerado(el.id), marcador: txt(el.getAttribute("placeholder")), href: el.tagName === "A" ? limpiaRuta(el.getAttribute("href") || "") : "",
       autocompletar: txt(el.getAttribute("autocomplete"), 30),
       dom: domDe(el), clases: [...el.classList].filter((c) => /^(ui-|p-|mat-|ng-)/.test(c)).slice(0, 4),
       ajax: /(PrimeFaces\.ab|mojarra\.ab|jsf\.ajax|PrimeFaces\.cw)/.test((el.getAttribute("onclick") || "") + (el.getAttribute("onchange") || "") + (el.getAttribute("onblur") || "")),   // solo se comprueba la presencia; el texto no se guarda
@@ -57,21 +62,17 @@
   if (document.querySelector("[data-reactroot]") || window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers?.size) frameworks.push("react");
   if (window.Vue || document.querySelector("[data-v-app]")) frameworks.push("vue");
   if (window.jQuery) frameworks.push("jquery");
-  const pathDe = (a) => { try { return new URL(a, location.href).pathname; } catch { return ""; } };
+  const pathDe = (a) => limpiaRuta(a);
   const formularios = [...document.forms].map((f) => ({ id: f.id && !idGenerado(f.id) ? txt(f.id, 40) : "", id_generado: !!f.id && idGenerado(f.id), metodo: (f.method || "get").toLowerCase(), accion_ruta: pathDe(f.getAttribute("action") || ""), controles: f.elements.length }));
   const cuentaSel = (q) => document.querySelectorAll(q).length;
   const componentes = { selectonemenu: cuentaSel(".ui-selectonemenu"), autocomplete: cuentaSel(".ui-autocomplete"), calendario: cuentaSel(".ui-datepicker,.hasDatepicker,.ui-calendar"), tabla: cuentaSel(".ui-datatable"), dialogo: cuentaSel(".ui-dialog"), pestanas: cuentaSel(".ui-tabview"), asistente: cuentaSel(".ui-wizard"), subida_archivo: cuentaSel(".ui-fileupload"), spinner: cuentaSel(".ui-spinner"), ocultos_accesibles: cuentaSel(".ui-helper-hidden-accessible input,.ui-helper-hidden-accessible select,.ui-helper-hidden-accessible textarea") };
   if (document.querySelector('input[name$="ViewState"]') || window.jsf || window.mojarra) frameworks.push("jsf");   // solo presencia: el valor del ViewState NUNCA se lee
   if (window.PrimeFaces) frameworks.push("primefaces");
-  return { formularios, componentes, controles: datos, shadow_abierto: todos.filter((e) => e.shadowRoot).length, contenteditable: document.querySelectorAll("[contenteditable=true]").length, captcha, frameworks };
+  const marcos = [...document.querySelectorAll("iframe")].map((f) => { try { const u = new URL(f.src || "about:blank", location.href); return { host: u.hostname, ruta: limpiaRuta(u.pathname) }; } catch { return { host: "", ruta: "" }; } });
+  return { ruta_pagina: limpiaRuta(location.pathname), titulo_pagina: txt(document.title), marcos, redactados, formularios, componentes, controles: datos, shadow_abierto: todos.filter((e) => e.shadowRoot).length, contenteditable: document.querySelectorAll("[contenteditable=true]").length, captcha, frameworks };
 };
-  const limpiar = (p) => String(p || "").split("?")[0].split("#")[0];
-  const top = { host: location.hostname, ruta: limpiar(location.pathname) };
-  const salida = {
-    version: 1, origen: "consola", pagina: { ...top, titulo: String(document.title || "").slice(0, 80) },
-    frames: [{ indice: 0, principal: true, ...top, r: recoger({ incluirOpciones: false }) }],
-    marcos_sin_inspeccionar: [...document.querySelectorAll("iframe")].map((f) => { try { const u = new URL(f.src || "about:blank", location.href); return { host: u.hostname, ruta: limpiar(u.pathname) }; } catch { return { host: "", ruta: "" }; } }),
-  };
+  const r = recoger({ incluirOpciones: false }), top = { host: location.hostname, ruta: r.ruta_pagina };
+  const salida = { version: 1, origen: "consola", pagina: { ...top, titulo: r.titulo_pagina }, frames: [{ indice: 0, principal: true, ...top, r }], marcos_sin_inspeccionar: r.marcos };
   const json = JSON.stringify(salida);
   try { copy(json); console.log("Copiado al portapapeles (" + json.length + " caracteres). Pégalo en un archivo .json y pásaselo a bin/importar-observacion.mjs"); } catch (e) { console.log(json); }
   return { controles: salida.frames[0].r.controles.length, marcos_sin_inspeccionar: salida.marcos_sin_inspeccionar.length };

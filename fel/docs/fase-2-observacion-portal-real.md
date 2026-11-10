@@ -27,10 +27,15 @@ node --test tests\guardia.test.mjs             # debe decir: pass 20, fail 0 (no
 (`npm test` completo necesita el Chromium de Playwright y está pensado para la CI; no hace falta aquí.)
 
 ## 3. Vía B — consola de Chrome (sin Playwright, sin nueva sesión)
-1. Abre `consola\observar-consola.js` en el Bloc de notas y **léelo** (unas 100 líneas, solo lee; no hace peticiones, no escribe, no hace clic; hay una prueba automática que lo exige).
+0. Asegúrate de tener la **versión corregida** (`git pull` dentro de `V209`) y verifica la huella del archivo:
+   ```powershell
+   Get-FileHash consola\observar-consola.js -Algorithm SHA256     # debe ser exactamente: 368a6a5dc32760fe1b85be87cdcc9c051c7c28966f4c32e3c61971eacea483a1
+   ```
+   Si no coincide, **no lo pegues** (el archivo no es el revisado).
+1. Abre `consola\observar-consola.js` en el Bloc de notas y **léelo** (79 líneas, solo lee; no hace peticiones, no escribe, no hace clic; hay una prueba automática que lo exige).
 2. En la pestaña del formulario real: `F12` → pestaña **Console**. Chrome pedirá escribir `allow pasting` (protección normal): escríbelo y Enter.
 3. Pega **todo** el contenido del archivo y Enter. Verás «Copiado al portapapeles…».
-4. Abre el Bloc de notas, pega y guarda como `consola.json` (dentro de `fel\poc-sat`).
+4. Abre el Bloc de notas, pega y guarda como `consola.json` (dentro de `fel\poc-sat`). **Revísalo antes de seguir** (es una sola línea larga; si quieres verlo ordenado: `Get-Content consola.json | ConvertFrom-Json | ConvertTo-Json -Depth 20 | more`). Busca nombres de personas o de tu empresa en etiquetas y títulos: los números largos y correos ya salen como `[REDACTADO]`, pero los **nombres no se pueden detectar por patrón**. Si algo no debe salir, edítalo antes de compartirlo. Ten en cuenta que `copy()` sustituyó lo que tuvieras en el portapapeles.
 5. Procesa:
    ```powershell
    node bin\importar-observacion.mjs --entrada=consola.json --alias=empresa-a

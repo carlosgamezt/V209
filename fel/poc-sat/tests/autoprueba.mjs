@@ -302,12 +302,17 @@ await caso("OBSERVAR JSF (simulado): ids autogenerados, componentes personalizad
   assert.equal(validarMapeo(b).ok, false); assert.deepEqual(posts, []); await context.close();
 });
 await caso("OBSERVAR por consola: el fragmento pegado en Chrome produce el mismo inventario, es de solo lectura y está sincronizado con el código", async () => {
-  const { context, page } = await nuevaPagina(); await page.goto(URL_BASE + "jsf"); const fuente = fuenteConsola();
+  const { context, page } = await nuevaPagina(); await page.goto(URL_BASE + "jsf;jsessionid=QQQQQQQQQQQQQQQQQQQQQQ?x=SECRETO-QUERY"); const fuente = fuenteConsola();
   assert.equal(fs.readFileSync(path.join(AQUI, "../consola/observar-consola.js"), "utf8"), fuente, "consola/observar-consola.js desactualizado: ejecuta node bin/generar-consola.mjs");
+  const huella = (await import("node:crypto")).createHash("sha256").update(fuente).digest("hex");
+  assert.ok(fs.readFileSync(path.join(AQUI, "../../docs/fase-2-observacion-portal-real.md"), "utf8").includes(huella), `la guía debe citar la huella vigente del fragmento: ${huella}`);
   assert.equal(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|\.click\s*\(|\.submit\s*\(|\.value\s*=|setAttribute|dispatchEvent|\.focus\s*\(|localStorage|sessionStorage|document\.cookie|WebSocket|eval\s*\(|new Function/.test(fuente), false, "el fragmento debe ser de solo lectura");
   let json = null; page.on("console", (m) => { if (m.text().startsWith("{")) json = m.text(); });
   const antes = await page.evaluate(() => document.documentElement.outerHTML.length), r = await page.evaluate(fuente);
-  assert.ok(r.controles >= 8 && r.marcos_sin_inspeccionar === 1); assert.equal(await page.evaluate(() => document.documentElement.outerHTML.length), antes, "la página no cambió");
+  assert.ok(r.controles >= 8 && r.marcos_sin_inspeccionar === 1);
+  const ayuda = JSON.parse(json).frames[0].r.controles.find((c) => c.texto === "Ayuda"); assert.equal(ayuda.href, "/ayuda/inicio", "el href sale sin ;jsessionid ni ?token"); assert.equal(await page.evaluate(() => document.documentElement.outerHTML.length), antes, "la página no cambió");
+  for (const x of ["jsessionid", "QQQQ", "ZZZZ", "SECRETO", "juan.prueba", "1234567890", "ejemplo.test"]) assert.ok(!json.includes(x), `el JSON crudo de la consola no debe contener «${x}»`);
+  assert.ok(json.includes("[REDACTADO]"), "se redactan los textos con correo o número largo");
   const raw = JSON.parse(json), viaConsola = construirInventario({ pagina: raw.pagina, frames: raw.frames, origen: "consola" }), directo = await inventariar(page);
   assert.equal(viaConsola.controles.length, directo.controles.filter((c) => c.marco === 0).length, "mismos controles del documento superior");
   assert.deepEqual(viaConsola.obstaculos.map((o) => o.codigo).filter((c) => c !== "marcos"), directo.obstaculos.map((o) => o.codigo).filter((c) => !["marcos"].includes(c)).filter((c) => viaConsola.obstaculos.some((o) => o.codigo === c)));
