@@ -12,6 +12,7 @@ q "insert into auth.users (id,email) values ('$A','m-conc@fel.test'),('$U','p-co
    update public.regimenes_fiscales set estado='verificado', verificado_por='$A', verificado_en=now() where codigo='conc_reg';
    insert into public.empresas (id,nombre_comercial,razon_social,nit,regimen_id,estado) select '$E','Conc','Conc S.A.','9999999-9',id,'habilitada' from public.regimenes_fiscales where codigo='conc_reg';
    insert into public.miembros (empresa_id,user_id,rol) values ('$E','$U','propietario');
+   update public.plataforma_config set valor = true where clave = 'emision_real_disponible';
    select public.fel_admin_emision('$A','$E',true,'Prueba concurrencia');" >/dev/null
 nuevo_doc() { # crea un documento revisado y devuelve su id
   q "select public.fel_op_cliente_guardar('$U','$E',null,'NIT','$RANDOM$RANDOM-1','Cli',null,null,null,null) is not null" >/dev/null 2>&1 || true
@@ -23,6 +24,7 @@ correr() { # $1=sql de la sesión; imprime OK o el error
   $P -v ON_ERROR_STOP=1 -q -X -t -A -c "begin; $1; select pg_sleep(1); commit;" >/tmp/conc_$2.out 2>&1 && echo OK > /tmp/conc_$2.res || echo ERR > /tmp/conc_$2.res
 }
 fallar() { echo "FALLO: $1"; exit 1; }
+trap "q \"update public.plataforma_config set valor = false where clave = 'emision_real_disponible'\" >/dev/null 2>&1 || true" EXIT
 
 # 1. dos certificaciones simultáneas con claves DISTINTAS: solo una puede existir
 D1=$(nuevo_doc)
@@ -57,4 +59,14 @@ echo "OK concurrencia: ediciones simultáneas → conflicto de versión"
 q "insert into public.perfiles (user_id, activo) values ('$U', false) on conflict (user_id) do update set activo=false" >/dev/null
 $P -q -X -t -A -c "select public.fel_op_cliente_guardar('$U','$E',null,'NIT','1234567-1','Tarde',null,null,null,null)" >/tmp/conc_4.out 2>&1 && fallar "escribió con el acceso revocado" || grep -q FEL_NO_AUTORIZADO /tmp/conc_4.out || fallar "error inesperado"
 echo "OK concurrencia: acceso revocado"
+# 5. limitador: 12 llamadas simultáneas con máximo 5 → exactamente 5 permitidas (el contador es atómico)
+K="conc:$RANDOM$RANDOM"
+for i in $(seq 1 12); do
+  ( $P -q -X -t -A -c "select permitido from public.fel_limite_consumir('$K', 3600, 5)" > /tmp/conc_lim_$i.out 2>&1 ) &
+done
+wait
+permitidas=$(cat /tmp/conc_lim_*.out | grep -c '^t$' || true)
+[ "$permitidas" = 5 ] || fallar "el limitador permitió $permitidas de 12 (debían ser 5)"
+[ "$(q "select contador from public.limites_peticiones where clave='$K'")" = 5 ] || fallar "el contador superó el máximo"
+echo "OK concurrencia: limitador atómico"
 echo "CONCURRENCIA OK"

@@ -1,6 +1,6 @@
 // Errores de la API de NEXA FEL. Nunca se devuelve texto interno de la base de datos al cliente.
 export class ErrorFel extends Error {
-  constructor(public status: number, message: string, public codigo = "error") {
+  constructor(public status: number, message: string, public codigo = "error", public reintentarEn?: number) {
     super(message);
   }
 }

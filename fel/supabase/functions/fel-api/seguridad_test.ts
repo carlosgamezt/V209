@@ -1,0 +1,266 @@
+// Pruebas de seguridad de la API: cuenta bloqueada con JWT vigente, administrador maestro desactivado, límites de peticiones
+// y candados de la emisión real. Usan clientes falsos: sin red, sin credenciales, sin base de datos.
+import { assertEquals } from "jsr:@std/assert@1";
+import { manejar, type Deps } from "./nucleo.ts";
+import { acciones as reales, EMISION_REAL_DISPONIBLE } from "./acciones.ts";
+import { construirDeps } from "./lib/deps.ts";
+import { LIMITES } from "./lib/limites.ts";
+import { fabricarToken } from "./lib/jwt_test.ts";
+
+const EMPRESA = "10000000-0000-0000-0000-00000000000a";
+const OTRA = "10000000-0000-0000-0000-00000000000b";
+const MAESTRO = "00000000-0000-0000-0000-0000000000a1";
+const CONFIG = { origenesPermitidos: [], emisionRealPermitida: false, appUrl: "https://app.test" };
+
+// ---- base de datos falsa que imita las reglas de las funciones SQL
+interface Estado { bloqueados: Set<string>; maestros: Set<string>; permisos: Record<string, string[]>; fallar?: Set<string> }
+function adminFalso(e: Estado, llamadas: string[]) {
+  return {
+    auth: { getUser: (t: string) => Promise.resolve(t === "token-maestro"
+      ? { data: { user: { id: MAESTRO, email: "m@test.com" } }, error: null }
+      : t === "token-u1" ? { data: { user: { id: "u1", email: "u1@test.com" } }, error: null }
+      : { data: { user: null }, error: { message: "invalid" } }) },
+    rpc(nombre: string, args: Record<string, unknown>) {
+      llamadas.push(nombre);
+      if (e.fallar?.has(nombre)) return Promise.resolve({ data: null, error: { message: "boom" } });
+      switch (nombre) {
+        case "fel_usuario_activo": return Promise.resolve({ data: !e.bloqueados.has(args.p_user as string), error: null });
+        case "fel_es_plataforma": return Promise.resolve({ data: !e.bloqueados.has(args.p_user as string) && e.maestros.has(args.p_user as string), error: null });
+        case "fel_permisos_efectivos": return Promise.resolve({ data: e.bloqueados.has(args.p_user as string) ? [] : (e.permisos[`${args.p_empresa}:${args.p_user}`] ?? []), error: null });
+        case "fel_limite_consumir": return Promise.resolve({ data: [{ permitido: true, reintentar_en: 1 }], error: null });
+        default: return Promise.resolve({ data: { id: "x" }, error: null });
+      }
+    },
+    from: () => { throw new Error("no debía consultarse una tabla"); },
+  };
+}
+const estado = (): Estado => ({ bloqueados: new Set(), maestros: new Set([MAESTRO]), permisos: {} });
+const pedir = (cuerpo: unknown, d: Deps, token = "token-maestro", extra: Record<string, string> = {}) =>
+  manejar(new Request("https://fel.test/fel-api", { method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-forwarded-for": `ip-de-${token}`, ...extra }, body: JSON.stringify(cuerpo) }), d, reales);
+const leer = async (r: Response) => ({ status: r.status, retry: r.headers.get("retry-after"), ...(await r.json().catch(() => ({}))) });
+const mutaciones = (ll: string[]) => ll.filter((n) => /^fel_(admin|op)_/.test(n));
+
+// ================================================================ PRIORIDAD 1: cuenta bloqueada / maestro desactivado
+Deno.test("construirDeps.esPlataforma: maestro activo sí; maestro con perfil bloqueado, usuario común o error de base de datos, no", async () => {
+  const e = estado(); e.maestros.add("u2");
+  const d = construirDeps(adminFalso(e, []), CONFIG);
+  assertEquals(await d.esPlataforma(MAESTRO), true);
+  e.bloqueados.add(MAESTRO);
+  assertEquals(await d.esPlataforma(MAESTRO), false);       // el hueco corregido
+  assertEquals(await d.esPlataforma("u1"), false);
+  const roto = estado(); roto.fallar = new Set(["fel_es_plataforma"]);
+  assertEquals(await construirDeps(adminFalso(roto, []), CONFIG).esPlataforma(MAESTRO), false); // ante la duda, no
+});
+
+Deno.test("construirDeps.usuarioActivo: bloqueado = false; error = 503 (no se asume permiso)", async () => {
+  const e = estado(); e.bloqueados.add("u1");
+  const d = construirDeps(adminFalso(e, []), CONFIG);
+  assertEquals(await d.usuarioActivo("u1"), false);
+  assertEquals(await d.usuarioActivo("u2"), true);
+  const roto = estado(); roto.fallar = new Set(["fel_usuario_activo"]);
+  const r = await leer(await pedir({ accion: "yo" }, construirDeps(adminFalso(roto, []), CONFIG), "token-u1"));
+  assertEquals([r.status, r.codigo], [503, "verificacion"]);
+});
+
+Deno.test("administrador maestro desactivado con JWT vigente: NINGUNA acción administrativa se ejecuta", async () => {
+  const e = estado(); e.bloqueados.add(MAESTRO);
+  for (const [nombre, a] of Object.entries(reales)) {
+    if (!a.requisito.plataforma) continue;
+    const ll: string[] = [];
+    const d = construirDeps(adminFalso(e, ll), CONFIG);
+    const r = await leer(await pedir({ accion: nombre, empresa_id: EMPRESA, motivo: "Motivo válido" }, d, "token-maestro"));
+    assertEquals([nombre, r.status, r.codigo], [nombre, 403, "cuenta_desactivada"]);
+    assertEquals(mutaciones(ll), [], `${nombre} llegó a ejecutar una función de escritura`);
+  }
+});
+
+Deno.test("cuenta bloqueada: ninguna acción real (administrativa, de empresa o de sesión) llega a la base de datos", async () => {
+  const e = estado(); e.bloqueados.add("u1"); e.permisos[`${EMPRESA}:u1`] = ["clientes.escribir", "usuarios.gestionar", "borradores.ver"];
+  for (const nombre of Object.keys(reales)) {
+    const ll: string[] = [];
+    const r = await leer(await pedir({ accion: nombre, empresa_id: EMPRESA }, construirDeps(adminFalso(e, ll), CONFIG), "token-u1"));
+    assertEquals([nombre, r.status, r.codigo], [nombre, 403, "cuenta_desactivada"]);
+    assertEquals(ll.filter((n) => n !== "fel_usuario_activo" && n !== "fel_limite_consumir"), [], `${nombre} hizo consultas con la cuenta bloqueada`);
+  }
+});
+
+Deno.test("maestro retirado de plataforma_admins (cuenta activa): las acciones administrativas dan 403 y no escriben", async () => {
+  const e = estado(); e.maestros.delete(MAESTRO);
+  for (const [nombre, a] of Object.entries(reales)) {
+    if (!a.requisito.plataforma) continue;
+    const ll: string[] = [];
+    const cuerpo = { accion: nombre, empresa_id: EMPRESA, motivo: "Motivo válido", regimen_id: OTRA, codigo: "general" };
+    const r = await leer(await pedir(cuerpo, construirDeps(adminFalso(e, ll), CONFIG), "token-maestro"));
+    assertEquals([400, 403].includes(r.status), true, `${nombre}: ${r.status}`);
+    assertEquals(mutaciones(ll), [], nombre);
+  }
+  const ll: string[] = [];
+  const r = await leer(await pedir({ accion: "empresa_suspender", empresa_id: EMPRESA, motivo: "Motivo válido" }, construirDeps(adminFalso(e, ll), CONFIG), "token-maestro"));
+  assertEquals(r.status, 403);
+});
+
+// ================================================================ PRIORIDAD 2: límites de peticiones
+function limitadorFalso() {
+  const reloj = { t: 0 };
+  const cubetas = new Map<string, number>(); const claves: string[] = [];
+  const limitar: Deps["limitar"] = (clave, vent, max) => {
+    claves.push(clave);
+    const ini = Math.floor(reloj.t / vent) * vent, k = `${clave}@${ini}`, c = cubetas.get(k) ?? 0;
+    if (c >= max) return Promise.resolve({ permitido: false, reintentarEn: ini + vent - reloj.t });
+    cubetas.set(k, c + 1);
+    return Promise.resolve({ permitido: true, reintentarEn: ini + vent - reloj.t });
+  };
+  return { reloj, claves, limitar };
+}
+function depsLim(o: { limitar: Deps["limitar"]; permisos?: string[]; getUser?: Deps["getUser"]; maestro?: boolean; llamadasRpc?: string[] }): Deps {
+  return {
+    admin: { rpc: (n: string) => { o.llamadasRpc?.push(n); return Promise.resolve({ data: { id: "x" }, error: null }); } },
+    config: CONFIG, limitar: o.limitar, usuarioActivo: () => Promise.resolve(true),
+    getUser: o.getUser ?? ((t) => Promise.resolve(t ? { id: t, email: `${t}@test.com` } : null)),
+    esPlataforma: () => Promise.resolve(o.maestro ?? false), permisos: () => Promise.resolve(o.permisos ?? []),
+  };
+}
+const cli = (emp = EMPRESA) => ({ accion: "cliente_estado", empresa_id: emp, id: "10000000-0000-0000-0000-000000000001", activo: true });
+const PERM = ["clientes.escribir"];
+
+Deno.test("límite por usuario: al agotarse da 429 con Retry-After y la acción no se ejecuta", async () => {
+  const L = limitadorFalso(); const ll: string[] = [];
+  const d = depsLim({ limitar: L.limitar, permisos: PERM, llamadasRpc: ll });
+  const max = LIMITES.escritura.cubetas.find((c) => c.ambito === "usuario")!.max;
+  for (let i = 0; i < max; i++) assertEquals((await pedir(cli(), d, "userA")).status, 200);
+  const antes = ll.length;
+  const r = await leer(await pedir(cli(), d, "userA"));
+  assertEquals([r.status, r.codigo], [429, "limite_excedido"]);
+  assertEquals(Number(r.retry) >= 1, true);
+  assertEquals(ll.length, antes, "la acción se ejecutó pese al límite");
+});
+
+Deno.test("los límites son independientes por usuario", async () => {
+  const L = limitadorFalso();
+  const d = depsLim({ limitar: L.limitar, permisos: PERM });
+  const max = LIMITES.escritura.cubetas.find((c) => c.ambito === "usuario")!.max;
+  for (let i = 0; i < max; i++) await pedir(cli(), d, "userA");
+  assertEquals((await pedir(cli(), d, "userA")).status, 429);
+  assertEquals((await pedir(cli(), d, "userB")).status, 200);
+});
+
+Deno.test("límite por empresa: se comparte entre usuarios de la misma empresa y no afecta a otra", async () => {
+  const L = limitadorFalso();
+  const d = depsLim({ limitar: L.limitar, permisos: PERM });
+  const maxE = LIMITES.escritura.cubetas.find((c) => c.ambito === "empresa")!.max;
+  const maxU = LIMITES.escritura.cubetas.find((c) => c.ambito === "usuario")!.max;
+  let n = 0;
+  for (let u = 0; n < maxE; u++) for (let i = 0; i < maxU && n < maxE; i++, n++) assertEquals((await pedir(cli(), d, `usuario${u}`)).status, 200);
+  assertEquals((await leer(await pedir(cli(), d, "usuarioNuevo"))).codigo, "limite_excedido");
+  assertEquals((await pedir(cli(OTRA), d, "usuarioNuevo")).status, 200);
+});
+
+Deno.test("el cupo de una empresa NO se consume sin autorización (nadie puede agotar una empresa ajena enviando su id)", async () => {
+  const L = limitadorFalso();
+  const d = depsLim({ limitar: L.limitar, permisos: [] }); // sin permisos en la empresa
+  for (let i = 0; i < 20; i++) assertEquals((await pedir(cli(), d, "intruso")).status, 403);
+  assertEquals(L.claves.filter((k) => k.startsWith("empresa:")), [], "se consumió el cupo de la empresa sin autorización");
+});
+
+Deno.test("límite previo a la autenticación por origen: se aplica antes de validar el token y la IP se guarda solo como hash", async () => {
+  const L = limitadorFalso(); let getUserLlamado = 0;
+  const d = depsLim({ limitar: L.limitar, permisos: PERM, getUser: () => { getUserLlamado++; return Promise.resolve(null); } });
+  const h = { "x-forwarded-for": "203.0.113.7, 10.0.0.1" };
+  for (let i = 0; i < 600; i++) await pedir({ accion: "yo" }, d, "falso", h);
+  assertEquals(getUserLlamado, 600);
+  const r = await leer(await pedir({ accion: "yo" }, d, "falso", h));
+  assertEquals([r.status, r.codigo], [429, "limite_excedido"]);
+  assertEquals(getUserLlamado, 600, "se consultó Auth pese al límite por origen");
+  assertEquals(L.claves.some((k) => k.includes("203.0.113.7")), false, "la IP quedó en claro");
+  // otro origen no se ve afectado
+  assertEquals((await pedir({ accion: "yo" }, d, "falso", { "x-forwarded-for": "198.51.100.9" })).status, 401);
+});
+
+Deno.test("limitador caído: acciones sensibles se rechazan con 503; la lectura de sesión sigue disponible", async () => {
+  const roto: Deps["limitar"] = () => Promise.reject(new Error("db caída"));
+  const ll: string[] = [];
+  const d = depsLim({ limitar: roto, permisos: PERM, llamadasRpc: ll });
+  // el límite por origen es "cerrado": con el limitador caído nada pasa (ni la sesión)
+  const r0 = await leer(await pedir({ accion: "yo" }, d, "userA"));
+  assertEquals(r0.status, 503);
+  assertEquals(ll.length, 0);
+  // solo el límite de la categoría "sesion" es abierto: se prueba con el límite por origen funcionando
+  const L = limitadorFalso();
+  const parcial: Deps["limitar"] = (k, v, m) => k.startsWith("ip:") ? L.limitar(k, v, m) : Promise.reject(new Error("db caída"));
+  const dyo = depsLim({ limitar: parcial, permisos: PERM, getUser: (t) => Promise.resolve({ id: t, email: `${t}@t.com` }) });
+  dyo.admin = { rpc: () => Promise.resolve({ data: [], error: null }), from: () => ({ select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: [], error: null }),
+    gt: () => Promise.resolve({ data: [], error: null }) }) }) }) };
+  const ok = await leer(await pedir({ accion: "yo" }, dyo, "userA"));
+  assertEquals(ok.status === 503, false); // la categoría "sesion" falla en abierto
+  assertEquals(ok.status === 503, false);
+  const bloqueada = await leer(await pedir(cli(), depsLim({ limitar: parcial, permisos: PERM }), "userA"));
+  assertEquals([bloqueada.status, bloqueada.codigo], [503, "limitador"]);
+});
+
+Deno.test("expiración: al terminar la ventana el cupo se renueva", async () => {
+  const L = limitadorFalso();
+  const d = depsLim({ limitar: L.limitar, permisos: PERM, maestro: true });
+  const tok = "maestroA";
+  const adm = (n: number) => ({ accion: "emision_real_deshabilitar", empresa_id: EMPRESA, motivo: `Motivo ${n} válido` });
+  const maxA = LIMITES.admin.cubetas[0].max, vent = LIMITES.admin.cubetas[0].ventanaSeg;
+  // aal2 es obligatorio en estas acciones: el token lleva aal2 y la identidad se fija en getUser
+  const dUser: Deps = { ...d, getUser: () => Promise.resolve({ id: tok, email: "m@test.com" }) };
+  const tk = fabricarToken({ aal: "aal2" });
+  const llamar = (i: number) => manejar(new Request("https://fel.test/fel-api", { method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${tk}` }, body: JSON.stringify(adm(i)) }), dUser, reales);
+  for (let i = 0; i < maxA; i++) assertEquals((await llamar(i)).status, 200);
+  const r = await llamar(99);
+  assertEquals(r.status, 429);
+  assertEquals(Number(r.headers.get("retry-after")) > 0, true);
+  L.reloj.t += vent;                    // pasa la ventana
+  assertEquals((await llamar(100)).status, 200);
+});
+
+Deno.test("concurrencia: 300 peticiones simultáneas de un usuario no superan el máximo permitido", async () => {
+  const L = limitadorFalso();
+  const d = depsLim({ limitar: L.limitar, permisos: PERM });
+  const max = LIMITES.escritura.cubetas.find((c) => c.ambito === "usuario")!.max;
+  const rs = await Promise.all(Array.from({ length: 300 }, () => pedir(cli(), d, "userA")));
+  const ok = rs.filter((r) => r.status === 200).length;
+  assertEquals(ok, max);
+  assertEquals(rs.filter((r) => r.status === 429).length, 300 - max);
+});
+
+Deno.test("todas las acciones declaran una categoría de límite existente y las sensibles usan la categoría estricta", () => {
+  for (const [nombre, a] of Object.entries(reales)) {
+    assertEquals(Object.prototype.hasOwnProperty.call(LIMITES, a.limite), true, `${nombre} sin categoría válida (${a.limite})`);
+    if (a.requisito.plataforma) assertEquals(a.limite, "admin", nombre);
+    assertEquals(a.limite === "fiscal", false, `${nombre}: la categoría fiscal está reservada`);
+  }
+  assertEquals(reales.miembro_invitar.limite, "invitacion_envio");
+  assertEquals(reales.documento_guardar.limite, "escritura");
+  assertEquals(reales.yo.limite, "sesion");
+});
+
+// ================================================================ PRIORIDAD 3: la emisión real no se puede habilitar por accidente
+Deno.test("candado de código: EMISION_REAL_DISPONIBLE es false (cambiarlo obliga a tocar esta prueba)", () => {
+  assertEquals(EMISION_REAL_DISPONIBLE, false);
+});
+
+Deno.test("aunque FEL_EMISION_REAL_PERMITIDA sea true, emision_real_habilitar da 403 y no toca la base de datos", async () => {
+  const e = estado(); const ll: string[] = [];
+  const d = construirDeps(adminFalso(e, ll), { ...CONFIG, emisionRealPermitida: true });
+  const tk = fabricarToken({ aal: "aal2" });
+  const r = await leer(await manejar(new Request("https://fel.test/fel-api", { method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${tk}` },
+    body: JSON.stringify({ accion: "emision_real_habilitar", empresa_id: EMPRESA, motivo: "Intento con configuración abierta" }) }), { ...d,
+    getUser: () => Promise.resolve({ id: MAESTRO, email: "m@test.com" }) }, reales));
+  assertEquals([r.status, r.codigo], [403, "no_disponible"]);
+  assertEquals(ll.filter((n) => n === "fel_admin_emision"), []);
+});
+
+Deno.test("ninguna acción de la API puede certificar, anular, conciliar ni tocar SAT; ninguna llama a funciones fiscales", () => {
+  const fuente = Object.values(reales).map((a) => a.ejecutar.toString()).join("\n");
+  for (const prohibida of ["fel_op_certificacion", "fel_op_anulacion", "fel_op_operacion", "certificador", "sat.gob"]) {
+    assertEquals(fuente.includes(prohibida), false, `una acción referencia ${prohibida}`);
+  }
+  // la única forma de tocar el indicador de emisión es fel_admin_emision, y solo desde las dos acciones de emisión
+  const conEmision = Object.entries(reales).filter(([, a]) => a.ejecutar.toString().includes("fel_admin_emision")).map(([n]) => n).sort();
+  assertEquals(conEmision, ["emision_real_deshabilitar", "emision_real_habilitar"]);
+});

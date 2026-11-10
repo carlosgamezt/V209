@@ -4,6 +4,7 @@ import { ErrorFel } from "./lib/errores.ts";
 import { evaluar, type Requisito } from "./lib/autorizacion.ts";
 import { decodificarClaims } from "./lib/jwt.ts";
 import type { Cuerpo } from "./lib/validacion.ts";
+import { claveLimite, hashCorto, LIMITE_IP, LIMITES, type Cubeta, type ReglaLimite } from "./lib/limites.ts";
 
 export interface Config {
   origenesPermitidos: string[];
@@ -16,6 +17,8 @@ export interface Usuario { id: string; email: string }
 export interface Deps {
   config: Config;
   getUser(token: string): Promise<Usuario | null>;              // valida el JWT con Supabase Auth
+  usuarioActivo(userId: string): Promise<boolean>;               // perfil no bloqueado; un JWT vigente NO basta
+  limitar(clave: string, ventanaSeg: number, max: number): Promise<{ permitido: boolean; reintentarEn: number }>; // contador compartido en la base de datos
   esPlataforma(userId: string): Promise<boolean>;                // consulta plataforma_admins
   permisos(empresaId: string, userId: string): Promise<string[]>; // fel_permisos_efectivos (única fuente de verdad)
   // deno-lint-ignore no-explicit-any
@@ -28,6 +31,7 @@ export interface Contexto extends Deps {
 }
 
 export interface Accion<P = unknown> {
+  limite: string;           // categoría de límite de peticiones (ver lib/limites.ts)
   requisito: Requisito;
   validar(b: Cuerpo): P;
   empresaDe?(p: P): string;
@@ -49,12 +53,27 @@ function cabeceras(req: Request, cfg: Config): Record<string, string> {
     h["Access-Control-Allow-Origin"] = origen;
     h["Access-Control-Allow-Headers"] = "authorization, content-type";
     h["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+    h["Access-Control-Expose-Headers"] = "Retry-After";
   }
   return h;
 }
 
-const respuesta = (req: Request, d: Deps, status: number, cuerpo: unknown) =>
-  new Response(JSON.stringify(cuerpo), { status, headers: cabeceras(req, d.config) });
+const respuesta = (req: Request, d: Deps, status: number, cuerpo: unknown, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(cuerpo), { status, headers: { ...cabeceras(req, d.config), ...extra } });
+
+// Consume una cubeta del limitador. 429 si se agotó; si el limitador falla, "cerrado" rechaza (503) y "abierto" deja pasar.
+async function consumir(d: Deps, regla: Pick<ReglaLimite, "falla">, c: Cubeta, id: string, categoria: string): Promise<void> {
+  let r: { permitido: boolean; reintentarEn: number };
+  try {
+    r = await d.limitar(claveLimite(c.ambito, id, categoria, c.ventanaSeg), c.ventanaSeg, c.max);
+  } catch (e) {
+    if (regla.falla === "abierto") return;
+    throw e instanceof ErrorFel ? e : new ErrorFel(503, "Servicio no disponible temporalmente", "limitador");
+  }
+  if (!r.permitido) {
+    throw new ErrorFel(429, "Demasiadas solicitudes; espera un momento e intenta de nuevo", "limite_excedido", r.reintentarEn);
+  }
+}
 
 export async function manejar(req: Request, deps: Deps, acciones: Acciones): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cabeceras(req, deps.config) });
@@ -73,11 +92,24 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
     const accion = Object.prototype.hasOwnProperty.call(acciones, nombre) ? acciones[nombre] : undefined;
     if (!accion) throw new ErrorFel(404, "Acción desconocida", "accion");
 
+    const regla = Object.prototype.hasOwnProperty.call(LIMITES, accion.limite) ? LIMITES[accion.limite] : undefined;
+    if (!regla) throw new Error(`La acción ${nombre} no declara una categoría de límite válida`);
+
+    // Límite previo a la autenticación (por origen, solo hash de la IP): frena el abuso de peticiones con tokens falsos.
+    const origen = (req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for") ?? "desconocido").split(",")[0].trim();
+    await consumir(deps, { falla: "cerrado" }, LIMITE_IP, await hashCorto(origen), "ip");
+
     const usuario = await deps.getUser(token);
     if (!usuario) throw new ErrorFel(401, "La sesión no es válida o venció", "sin_sesion");
     const aal = decodificarClaims(token).aal; // el token ya fue validado por Supabase Auth
 
+    // Un JWT vigente NO basta: la cuenta bloqueada no ejecuta NINGUNA acción (ni siquiera de lectura de sesión).
+    if (!(await deps.usuarioActivo(usuario.id))) throw new ErrorFel(403, "La cuenta está desactivada", "cuenta_desactivada");
+
     const params = accion.validar(cuerpo);
+
+    // Límites por usuario (antes de autorizar, para limitar también el sondeo de permisos).
+    for (const c of regla.cubetas.filter((c) => c.ambito === "usuario")) await consumir(deps, regla, c, usuario.id, accion.limite);
 
     // Autorización explícita en cada operación (aunque la acción use service_role después).
     const req_ = accion.requisito;
@@ -90,10 +122,19 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
     }
     evaluar(req_, { esPlataforma, permisos, aal });
 
+    // Límites por empresa: SOLO después de autorizar, para que nadie agote el cupo de una empresa ajena enviando su id.
+    const empresaLimite = accion.empresaDe?.(params);
+    if (empresaLimite) {
+      for (const c of regla.cubetas.filter((c) => c.ambito === "empresa")) await consumir(deps, regla, c, empresaLimite, accion.limite);
+    }
+
     const datos = await accion.ejecutar({ ...deps, usuario, aal }, params);
     return respuesta(req, deps, 200, { ok: true, datos });
   } catch (e) {
-    if (e instanceof ErrorFel) return respuesta(req, deps, e.status, { ok: false, error: e.message, codigo: e.codigo });
+    if (e instanceof ErrorFel) {
+      const extra: Record<string, string> = e.reintentarEn ? { "Retry-After": String(e.reintentarEn) } : {};
+      return respuesta(req, deps, e.status, { ok: false, error: e.message, codigo: e.codigo }, extra);
+    }
     console.error("fel-api error no controlado:", e instanceof Error ? e.message : "desconocido");
     return respuesta(req, deps, 500, { ok: false, error: "Error interno", codigo: "interno" });
   }

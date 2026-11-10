@@ -29,6 +29,7 @@ insert into public.miembros (empresa_id, user_id, rol) values
   ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000b1', 'propietario'),
   ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000b3', 'emisor'),
   ('10000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000b9', 'propietario');
+update public.plataforma_config set valor = true where clave = 'emision_real_disponible';  -- interruptor global abierto solo en la prueba
 -- emisión real SOLO en la empresa A (en B queda bloqueada)
 select public.fel_admin_emision('00000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a', true, 'Prueba de emisión');
 

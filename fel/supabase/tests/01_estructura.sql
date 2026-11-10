@@ -79,6 +79,8 @@ select pg_temp.espera_error($$delete from public.regimenes_fiscales where codigo
 insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id)
 select '10000000-0000-0000-0000-000000000001', 'Empresa Uno', 'Empresa Uno S.A.', '1234567-8', id from public.regimenes_fiscales where codigo = 'general';
 update public.empresas set estado = 'habilitada' where id = '10000000-0000-0000-0000-000000000001';
+-- (el interruptor global de emisión se abre aquí solo para probar las demás reglas; ver 06_seguridad.sql para su bloqueo)
+update public.plataforma_config set valor = true where clave = 'emision_real_disponible';
 select pg_temp.espera_error($$update public.empresas set emision_real_habilitada = true, emision_autorizada_por = '00000000-0000-0000-0000-0000000000a1', emision_autorizada_en = now() where id = '10000000-0000-0000-0000-000000000001'$$, 'FEL_REGLA');
 -- con régimen verificado pero sin autorización: también falla
 update public.empresas set regimen_id = (select id from public.regimenes_fiscales where codigo = 'prueba_reg')

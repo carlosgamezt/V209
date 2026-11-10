@@ -5,6 +5,10 @@ import * as v from "./lib/validacion.ts";
 import { calcular, type LineaEntrada } from "./lib/calculo.ts";
 import type { Acciones, Contexto } from "./nucleo.ts";
 
+// Candado de código: mientras sea false, la API jamás pide habilitar la emisión real, sin importar la configuración.
+// Cambiarlo exige modificar el código Y la prueba que lo vigila, y además se necesita abrir el interruptor de la base de datos.
+export const EMISION_REAL_DISPONIBLE = false as boolean;
+
 const ROLES = ["propietario", "administrador", "emisor", "lector"] as const;
 
 async function rpc(ctx: Contexto, nombre: string, args: Record<string, unknown>) {
@@ -26,6 +30,7 @@ async function enviarInvitacion(ctx: Contexto, correo: string): Promise<{ enviad
 export const acciones: Acciones = {
   // ------------------------------------------------------------ cualquier usuario con sesión
   yo: {
+    limite: "sesion",
     requisito: {},
     validar: (b) => { v.soloCampos(b, []); return {}; },
     async ejecutar(ctx) {
@@ -46,6 +51,7 @@ export const acciones: Acciones = {
   },
 
   aceptar_invitacion: {
+    limite: "gestion_usuarios",
     requisito: {},
     validar: (b) => { v.soloCampos(b, []); return {}; },
     async ejecutar(ctx) {
@@ -56,6 +62,7 @@ export const acciones: Acciones = {
 
   // ------------------------------------------------------------ administrador maestro (MFA obligatorio)
   empresa_crear: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => {
       v.soloCampos(b, ["nombre_comercial", "razon_social", "nit", "regimen_codigo", "propietario_email"]);
@@ -77,6 +84,7 @@ export const acciones: Acciones = {
   },
 
   empresa_habilitar: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "motivo"]); return { empresa_id: v.uuid(b, "empresa_id"), motivo: v.texto(b, "motivo", 5, 500) }; },
     async ejecutar(ctx, p) {
@@ -86,6 +94,7 @@ export const acciones: Acciones = {
   },
 
   empresa_suspender: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "motivo"]); return { empresa_id: v.uuid(b, "empresa_id"), motivo: v.texto(b, "motivo", 5, 500) }; },
     async ejecutar(ctx, p) {
@@ -96,6 +105,7 @@ export const acciones: Acciones = {
 
   // Cambios fiscales críticos: administrador maestro + MFA + motivo obligatorio + auditoría.
   empresa_asignar_regimen: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "regimen_id", "motivo"]);
@@ -108,6 +118,7 @@ export const acciones: Acciones = {
   },
 
   regimen_crear_version: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => {
       v.soloCampos(b, ["codigo", "nombre", "reglas", "fuente", "vigente_desde"]);
@@ -123,6 +134,7 @@ export const acciones: Acciones = {
   },
 
   regimen_verificar: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => {
       v.soloCampos(b, ["regimen_id", "referencia", "motivo"]);
@@ -135,10 +147,11 @@ export const acciones: Acciones = {
   },
 
   emision_real_habilitar: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "motivo"]); return { empresa_id: v.uuid(b, "empresa_id"), motivo: v.texto(b, "motivo", 5, 500) }; },
     async ejecutar(ctx, p) {
-      if (!ctx.config.emisionRealPermitida) {
+      if (!EMISION_REAL_DISPONIBLE || !ctx.config.emisionRealPermitida) {
         throw new ErrorFel(403, "La emisión real no está disponible en esta versión de NEXA FEL", "no_disponible");
       }
       await rpc(ctx, "fel_admin_emision", { p_actor: ctx.usuario.id, p_empresa: p.empresa_id, p_habilitar: true, p_motivo: p.motivo });
@@ -147,6 +160,7 @@ export const acciones: Acciones = {
   },
 
   emision_real_deshabilitar: {
+    limite: "admin",
     requisito: { plataforma: true, aal2: true },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "motivo"]); return { empresa_id: v.uuid(b, "empresa_id"), motivo: v.texto(b, "motivo", 5, 500) }; },
     async ejecutar(ctx, p) {
@@ -157,6 +171,7 @@ export const acciones: Acciones = {
 
   // ------------------------------------------------------------ usuarios de la empresa
   miembro_invitar: {
+    limite: "invitacion_envio",
     requisito: { permiso: "usuarios.gestionar", aal2: true },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "email", "rol", "permisos_extra"]);
@@ -177,6 +192,7 @@ export const acciones: Acciones = {
   },
 
   invitacion_revocar: {
+    limite: "gestion_usuarios",
     requisito: { permiso: "usuarios.gestionar", aal2: true },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "invitacion_id"]); return { empresa_id: v.uuid(b, "empresa_id"), invitacion_id: v.uuid(b, "invitacion_id") }; },
     empresaDe: (p) => p.empresa_id,
@@ -187,6 +203,7 @@ export const acciones: Acciones = {
   },
 
   miembro_actualizar: {
+    limite: "gestion_usuarios",
     requisito: { permiso: "usuarios.gestionar", aal2: true },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "user_id", "rol", "permisos_extra", "permisos_revocados", "activo"]);
@@ -207,6 +224,7 @@ export const acciones: Acciones = {
 
   // ------------------------------------------------------------ clientes y conceptos
   cliente_guardar: {
+    limite: "escritura",
     requisito: { permiso: "clientes.escribir" },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "id", "tipo_identificacion", "numero_identificacion", "nombre", "direccion", "email", "telefono", "version"]);
@@ -227,6 +245,7 @@ export const acciones: Acciones = {
   },
 
   cliente_estado: {
+    limite: "escritura",
     requisito: { permiso: "clientes.escribir" },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "id", "activo"]); return { empresa_id: v.uuid(b, "empresa_id"), id: v.uuid(b, "id"), activo: v.booleano(b, "activo") }; },
     empresaDe: (p) => p.empresa_id,
@@ -237,6 +256,7 @@ export const acciones: Acciones = {
   },
 
   concepto_guardar: {
+    limite: "escritura",
     requisito: { permiso: "conceptos.escribir" },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "id", "codigo", "descripcion", "tipo", "unidad_medida", "precio_unitario", "categoria_fiscal", "version"]);
@@ -258,6 +278,7 @@ export const acciones: Acciones = {
   },
 
   concepto_estado: {
+    limite: "escritura",
     requisito: { permiso: "conceptos.escribir" },
     validar: (b) => { v.soloCampos(b, ["empresa_id", "id", "activo"]); return { empresa_id: v.uuid(b, "empresa_id"), id: v.uuid(b, "id"), activo: v.booleano(b, "activo") }; },
     empresaDe: (p) => p.empresa_id,
@@ -269,6 +290,7 @@ export const acciones: Acciones = {
   // ------------------------------------------------------------ borradores (NO certifican nada)
   // La API solo gatea con "borradores.ver"; el permiso exacto (crear/editar/revisar/archivar) lo exige la base de datos.
   documento_guardar: {
+    limite: "escritura",
     requisito: { permiso: "borradores.ver" },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "id", "cliente_id", "fecha_emision_prevista", "observaciones", "lineas", "version"]);
@@ -308,6 +330,7 @@ export const acciones: Acciones = {
   },
 
   documento_preparacion: {
+    limite: "escritura",
     requisito: { permiso: "borradores.ver" },
     validar: (b) => {
       v.soloCampos(b, ["empresa_id", "id", "estado", "motivo", "version"]);

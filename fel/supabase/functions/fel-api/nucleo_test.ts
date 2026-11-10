@@ -6,12 +6,14 @@ import * as v from "./lib/validacion.ts";
 
 const EMPRESA = "10000000-0000-0000-0000-00000000000a";
 
-interface Opc { admin?: unknown; config?: Deps["config"]; getUser?: Deps["getUser"]; maestro?: boolean; conPermisos?: string[] }
+interface Opc { limitar?: Deps["limitar"]; activo?: boolean; admin?: unknown; config?: Deps["config"]; getUser?: Deps["getUser"]; maestro?: boolean; conPermisos?: string[] }
 function deps(o: Opc = {}): Deps {
   return {
     admin: (o.admin as Deps["admin"]) ?? { rpc: () => { throw new Error("no debía llamarse a la base de datos"); } },
     config: o.config ?? { origenesPermitidos: ["https://app.test"], emisionRealPermitida: false, appUrl: "https://app.test" },
     getUser: o.getUser ?? ((t) => Promise.resolve(t ? { id: "u1", email: "u1@test.com" } : null)),
+    usuarioActivo: () => Promise.resolve(o.activo ?? true),
+    limitar: o.limitar ?? (() => Promise.resolve({ permitido: true, reintentarEn: 1 })),
     esPlataforma: () => Promise.resolve(o.maestro ?? false),
     permisos: () => Promise.resolve(o.conPermisos ?? []),
   };
@@ -19,14 +21,15 @@ function deps(o: Opc = {}): Deps {
 
 let llamadas = 0;
 const falsas: Acciones = {
-  libre: { requisito: {}, validar: (b) => { v.soloCampos(b, ["x"]); return { x: b.x }; }, ejecutar: () => { llamadas++; return Promise.resolve({ ok: 1 }); } },
-  soloMaestro: { requisito: { plataforma: true }, validar: () => ({}), ejecutar: () => { llamadas++; return Promise.resolve({}); } },
+  libre: { limite: "escritura", requisito: {}, validar: (b) => { v.soloCampos(b, ["x"]); return { x: b.x }; }, ejecutar: () => { llamadas++; return Promise.resolve({ ok: 1 }); } },
+  soloMaestro: { limite: "escritura", requisito: { plataforma: true }, validar: () => ({}), ejecutar: () => { llamadas++; return Promise.resolve({}); } },
   conPermiso: {
+    limite: "escritura",
     requisito: { permiso: "clientes.escribir" }, validar: (b) => ({ empresa_id: b.empresa_id }),
     empresaDe: (p: { empresa_id?: string }) => p.empresa_id ?? "", ejecutar: () => { llamadas++; return Promise.resolve({}); },
   },
-  conMfa: { requisito: { aal2: true }, validar: () => ({}), ejecutar: () => { llamadas++; return Promise.resolve({}); } },
-  explota: { requisito: {}, validar: () => ({}), ejecutar: () => { throw new Error("SECRETO: select * from tabla_interna"); } },
+  conMfa: { limite: "escritura", requisito: { aal2: true }, validar: () => ({}), ejecutar: () => { llamadas++; return Promise.resolve({}); } },
+  explota: { limite: "escritura", requisito: {}, validar: () => ({}), ejecutar: () => { throw new Error("SECRETO: select * from tabla_interna"); } },
 };
 
 const pedir = (cuerpo: unknown, d: Deps, acc: Acciones = falsas, opts: { token?: string | null; metodo?: string; origen?: string; crudo?: string } = {}) => {

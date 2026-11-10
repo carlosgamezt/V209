@@ -21,8 +21,8 @@ jobs:
       - name: Tipos y pruebas
         working-directory: fel/supabase/functions/fel-api
         run: |
-          deno check index.ts nucleo.ts acciones.ts lib/*.ts
-          deno test lib/ nucleo_test.ts
+          deno check index.ts nucleo.ts acciones.ts lib/*.ts seguridad_test.ts
+          deno test lib/ nucleo_test.ts seguridad_test.ts
 
   base-de-datos:
     name: Migraciones y RLS (Supabase local)
