@@ -1,0 +1,8 @@
+{
+  "ficticio": true,
+  "aviso": "Datos inventados. Nombres y descripciones llevan la palabra PRUEBA; el NIT es CF (consumidor final). Nunca uses NIT ni nombres de terceros reales.",
+  "nits_de_prueba_declarados": [],
+  "cliente": { "nit": "CF", "nombre": "CLIENTE DE PRUEBA FEL", "direccion_nombre": "CIUDAD DE PRUEBA" },
+  "detalle": { "tipo": "Servicio", "descripcion": "SERVICIO DE PRUEBA - NO EMITIR", "cantidad": "2", "precio": "125.50" },
+  "exencion": false
+}

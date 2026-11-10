@@ -1,0 +1,7 @@
+# Nada de esto va al repositorio: contiene rastros de sesiones, observaciones del portal y registros de ejecución
+node_modules/
+observaciones/
+registros/
+perfiles/
+mapeo.local*.json
+*.local.json

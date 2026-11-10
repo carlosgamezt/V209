@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "comentario": "Mapeo SOLO para la página de ejemplo local (tests/fixture). No sirve para el portal real.",
+  "dominios_permitidos": ["127.0.0.1"],
+  "permitir_post": [],
+  "pasos": [
+    { "id": "p000-sesion", "tipo": "manual", "instruccion": "(simulado) abrir el formulario y pulsar Enter" },
+    { "id": "p010-nit", "tipo": "llenar", "localizador": { "estrategia": "etiqueta", "valor": "NIT del receptor" }, "dato": "cliente.nit", "verificado": true },
+    { "id": "p020-nombre", "tipo": "llenar", "localizador": { "estrategia": "etiqueta", "valor": "Nombre del receptor" }, "dato": "cliente.nombre", "verificado": true },
+    { "id": "p030-abrir-detalle", "tipo": "clic_seguro", "motivo": "abrir la pestaña Detalle", "localizador": { "estrategia": "rol", "rol": "tab", "valor": "Detalle" }, "verificado": true },
+    { "id": "p040-tipo", "tipo": "seleccionar", "localizador": { "estrategia": "etiqueta", "valor": "Tipo" }, "dato": "detalle.tipo", "verificado": true },
+    { "id": "p050-desc", "tipo": "llenar", "localizador": { "estrategia": "etiqueta", "valor": "Descripción" }, "dato": "detalle.descripcion", "verificado": true },
+    { "id": "p060-cant", "tipo": "llenar", "localizador": { "estrategia": "etiqueta", "valor": "Cantidad" }, "dato": "detalle.cantidad", "verificado": true },
+    { "id": "p070-precio", "tipo": "llenar", "localizador": { "estrategia": "etiqueta", "valor": "Precio unitario" }, "dato": "detalle.precio", "verificado": true },
+    { "id": "p080-leer-precio", "tipo": "leer", "localizador": { "estrategia": "etiqueta", "valor": "Precio unitario" }, "dato": "detalle.precio", "verificado": true },
+    { "id": "p999-detener", "tipo": "detener" }
+  ]
+}

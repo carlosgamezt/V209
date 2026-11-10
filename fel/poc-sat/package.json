@@ -1,0 +1,13 @@
+{
+  "name": "fel-poc-sat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Prueba de viabilidad (NO es producción): automatizar el llenado del formulario FEL gratuito con Playwright, con sesión iniciada a mano, datos ficticios y parada obligatoria antes de emitir.",
+  "scripts": {
+    "test": "node --test tests/guardia.test.mjs && node tests/autoprueba.mjs",
+    "observar": "node bin/observar.mjs",
+    "ejecutar": "node bin/ejecutar.mjs"
+  },
+  "dependencies": { "playwright": "1.49.1" }
+}

@@ -1,0 +1,8 @@
+{
+  "alias": "empresa-a",
+  "modo": "cdp",
+  "cdp": "http://127.0.0.1:9222",
+  "perfil_dir": null,
+  "identidad": { "confirmacion_manual": true },
+  "comentario": "Copia este archivo como config/empresa.local.json (ignorado por git). En modo «perfil» usa perfil_dir FUERA del repositorio y pon cdp en null. Una empresa = un alias, un puerto y un perfil distintos."
+}

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "comentario": "PLANTILLA SIN SELECTORES A PROPÓSITO: no conocemos la estructura del portal. Genera un borrador con bin/observar.mjs, cópialo a mapeo.local.json, completa «dato», confirma cada localizador a mano y pon verificado=true. dominios_permitidos debe llevar los dominios REALES observados.",
+  "dominios_permitidos": [],
+  "permitir_post": [],
+  "ejemplo_de_paso_llenar": {
+    "id": "p010-nombre-receptor", "tipo": "llenar", "comentario": "EJEMPLO DE FORMA, no un selector real",
+    "localizador": { "estrategia": "etiqueta", "valor": "<texto exacto de la etiqueta observada>", "exacto": true },
+    "dato": "cliente.nombre", "verificado": false
+  },
+  "ejemplo_de_paso_clic_seguro": {
+    "id": "p020-abrir-detalle", "tipo": "clic_seguro", "motivo": "abrir la pestaña Detalle",
+    "localizador": { "estrategia": "rol", "rol": "tab", "valor": "<nombre observado>" }, "verificado": false
+  },
+  "pasos": [
+    { "id": "p000-sesion", "tipo": "manual", "instruccion": "Abre tú mismo el formulario FEL de PRUEBA en la sesión ya iniciada, sin emitir, y pulsa Enter." },
+    { "id": "p999-detener", "tipo": "detener" }
+  ]
+}

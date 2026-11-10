@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Formulario genérico de PRUEBA (no es el portal SAT)</title>
+<style>body{font:15px sans-serif;margin:24px}label{display:block;margin:10px 0 2px}fieldset{margin:12px 0}[hidden]{display:none}</style></head>
+<body>
+<h1>Formulario genérico de PRUEBA</h1>
+<p><b>Esto NO es el portal de la SAT ni imita su estructura.</b> Solo sirve para probar el mecanismo (llenar, registrar, parar) sin tocar ningún sistema real.</p>
+<div role="tablist">
+  <button type="button" role="tab" id="tab-rec" onclick="mostrar('rec')">Datos del receptor</button>
+  <button type="button" role="tab" id="tab-det" onclick="mostrar('det')">Detalle</button>
+</div>
+<form id="f" method="post" action="/emitir">
+  <section id="rec">
+    <label for="nitr">NIT del receptor</label><input id="nitr" name="nit" autocomplete="off">
+    <label for="nomr">Nombre del receptor</label><input id="nomr" name="nombre">
+    <label for="x1">Clave de usuario</label><input id="x1" type="password" name="clave">
+    <label for="obs">Observación</label><input id="input-48213" aria-label="Observación">
+  </section>
+  <section id="det" hidden>
+    <label for="tipo">Tipo</label><select id="tipo" name="tipo"><option>Bien</option><option>Servicio</option></select>
+    <label for="desc">Descripción</label><textarea id="desc" name="descripcion"></textarea>
+    <label for="cant">Cantidad</label><input id="cant" name="cantidad">
+    <label for="prec">Precio unitario</label><input id="prec" name="precio">
+    <label><input type="checkbox" id="exe" name="exencion"> Aplica exención</label>
+  </section>
+  <fieldset><legend>Acciones</legend>
+    <button type="button" id="sig">Siguiente</button>
+    <button type="button" id="bor" onclick="fetch('/guardar',{method:'POST',body:'x'})">Guardar borrador</button>
+    <button type="button" id="env" onclick="fetch('/api/enviar',{method:'POST',body:'x'})">Enviar</button>
+    <button type="submit" id="emi">Emitir documento</button>
+  </fieldset>
+</form>
+<script>function mostrar(i){document.getElementById('rec').hidden=i!=='rec';document.getElementById('det').hidden=i!=='det'}</script>
+</body></html>
