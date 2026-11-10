@@ -10,7 +10,16 @@ const ANON = process.env.ANON_KEY ?? process.env.PUBLISHABLE_KEY;
 const SERVICE = process.env.SERVICE_ROLE_KEY ?? process.env.SECRET_KEY;
 const FELAPI = process.env.FEL_API_URL ?? "http://127.0.0.1:8000";
 const DB = process.env.DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(API) || !/(127\.0\.0\.1|localhost)/.test(DB)) { console.error("Se niega a correr: la URL de Supabase o de la base de datos no es local."); process.exit(2); }
+// Salvaguarda: por defecto SOLO pila local. Un proyecto de desarrollo real exige autorización expresa y que su referencia esté en la lista permitida.
+const esLocal = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(API) && /(127\.0\.0\.1|localhost)/.test(DB);
+if (!esLocal) {
+  const ref = (API.match(/^https:\/\/([a-z0-9]{20})\.supabase\.co$/) ?? [])[1];
+  const permitidos = (process.env.FEL_PROYECTOS_DEV_PERMITIDOS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (process.env.FEL_AUTORIZACION_PRUEBAS_REALES !== "si" || !ref || !permitidos.includes(ref)) {
+    console.error("Se niega a correr: no es la pila local y no hay autorización expresa (FEL_AUTORIZACION_PRUEBAS_REALES=si y la referencia del proyecto en FEL_PROYECTOS_DEV_PERMITIDOS)."); process.exit(2);
+  }
+  console.warn(`ATENCIÓN: ejecutando contra el proyecto de DESARROLLO ${ref} con autorización expresa.`);
+}
 if (!ANON || !SERVICE) { console.error("Faltan ANON_KEY / SERVICE_ROLE_KEY (supabase status -o env)."); process.exit(2); }
 
 const resultados = [];

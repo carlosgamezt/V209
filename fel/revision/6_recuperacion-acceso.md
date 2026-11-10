@@ -27,6 +27,18 @@ persona ──► inicia sesión con su contraseña (aal1) ──► activa un d
 
 **Emergencia (único maestro que perdió el dispositivo):** actúa el propietario de la base de datos en el panel de Supabase (Authentication → Users → eliminar el factor) y deja constancia con `select public.fel_registrar_recuperacion_manual('correo', 'descripción de la verificación realizada…');` (solo registra en la auditoría; no cambia ninguna cuenta). Debe haber verificación presencial o equivalente documentada.
 
+## Invalidación de las sesiones existentes (Fase 1.3)
+Eliminar el factor **no basta** (y un token de renovación robado produce JWT nuevos con el mismo nivel). Al **aprobar** (antes de tocar los factores) se hace, en este orden:
+1. **Marca de revocación** (`revocaciones_sesion`): desde ese instante, un token solo vale si contiene una **autenticación posterior** (`amr[].timestamp`). Renovar no crea autenticaciones nuevas, así que ninguna sesión anterior se salva renovándose. Se aplica en la API y en la RLS. *Comparación estricta* (un evento en el mismo segundo no vale).
+2. **Borrado de las sesiones en Auth** (`auth.sessions`; mejor esfuerzo). Verificado en la pila local real: `2 → 0` sesiones, el token viejo recibe 403 en Auth, la renovación falla (`refresh_token_not_found`).
+3. **Eliminación de los factores** con la API de administración de Auth (`auth.admin.mfa.deleteFactor`), repetible.
+Después: un inicio de sesión nuevo funciona en **aal1**; todo lo sensible exige configurar y **verificar de nuevo un TOTP** (aal2 con código reciente).
+
+**Limitaciones documentadas:** (a) el borrado de `auth.sessions` es una operación sobre un esquema interno de Supabase, no una API pública: por eso la marca propia es la garantía principal; (b) Supabase no ofrece una API pública para cerrar las sesiones de **otra** persona por id (`admin.signOut` exige el JWT de esa persona); (c) un proyecto alojado puede restringir los permisos de `postgres` sobre `auth.sessions` **[REAL, pendiente]**; (d) PostgREST no consulta la sesión: por eso la revocación también vive en la RLS.
+
+## Fallos parciales y reintentos
+Si falla el borrado de un factor, la solicitud queda **aprobada** (las sesiones viejas ya no valen) y se puede reintentar sin repetir nada: el reintento solo recibe los factores que **faltan**, el total registrado se conserva, quien aprobó no cambia, la auditoría no se duplica y un factor ya borrado por otra ejecución (404) no cuenta como error. Se cierra una sola vez. Probado en `fel-api` (unitarias), en SQL (`13_revocacion_sesiones.sql`) y con Auth real (`X01`).
+
 ## Riesgos que quedan
 - Quien tenga **contraseña + correo** puede solicitar la recuperación; el control es la verificación humana. Mantener el límite de 3 solicitudes/24 h y revisar la auditoría.
 - Tras eliminar el factor, **una sesión aal2 vieja** (de un dispositivo robado) sigue siendo aal2 hasta que vence el JWT. Mitigación: `jwt_expiry` corto y cerrar sesiones de la persona (panel de Supabase) al aprobar **[REAL]**.

@@ -18,6 +18,7 @@ Vive en `fel/app/` (ningún flujo de despliegue lo toca). Moverla a `nexa/fel/` 
     esa sesión solo sirve para fijar la contraseña (con TOTP, primero se pide el código). Ver `../docs/recuperacion-acceso.md`.
   - **Perdí mi dispositivo:** crea una solicitud; nada del MFA cambia hasta que otra persona verifica la identidad y la aprueba.
   - **Duración máxima (8 h) e inactividad (30 min)** configurables en `config.js` (`duracionMaximaMs`, `inactividadMs`). Ver `../docs/seguridad-sesion.md`.
+  - **Paso intermedio de TOTP:** las acciones sensibles piden un código de menos de 15 minutos; si es más antiguo, se abre «Confirma tu código» y la operación se reintenta una vez.
   - Los permisos se revalidan al cambiar de pantalla y al volver a la pestaña: una revocación o un cambio de rol se nota de inmediato.
   - Nunca se escribe directo en las tablas: toda escritura va por `fel-api`.
 - **Usuarios** (con `usuarios.ver`): personas de la empresa activa, invitaciones **a la empresa** (distintas del correo de cuenta de Supabase,

@@ -23,5 +23,11 @@
 4. **Cierre de sesión** revoca en el servidor (`logout?scope=local`) y borra el almacenamiento.
 5. Acceso revocado en el servidor (cuenta bloqueada o sin perfil): se cierra la sesión local y se borra todo.
 
+## Pasos intermedios (Fase 1.3)
+Las acciones sensibles exigen un código TOTP de **menos de 15 minutos**. Si el último es más antiguo, la API responde `mfa_reciente` y la interfaz abre «Confirma tu código»: verifica con la sesión actual, obtiene tokens con un evento `totp` nuevo y reintenta **una sola vez**. Un token robado con aal2 antiguo no sirve para esas acciones.
+
+## Qué NO hace el cierre de sesión (hallazgo con Auth/PostgREST reales)
+Cerrar sesión revoca la sesión en Auth (el token viejo recibe 403 en `/auth/v1/user` y 401 en `fel-api`), pero **PostgREST no consulta la sesión**: con ese mismo token las lecturas directas siguen funcionando hasta `jwt_expiry` (observado). Mitigación: `jwt_expiry` de 900–1800 s. Un **bloqueo de cuenta** o una **recuperación de MFA** sí cortan al instante (RLS y API).
+
 ## Límites que son del cliente (no confiar solo en ellos)
 La duración máxima y la inactividad **del lado del navegador** las puede saltar quien robe el token. El límite real debe fijarse en Supabase **[REAL]**: refresh-token rotation activa y reutilización detectada (`refresh_token_reuse_interval` bajo), `jwt_expiry` de 900–1800 s, y —en planes que lo permiten— `sessions.timebox` e `inactivity_timeout`. Ninguno se pudo validar aquí.
