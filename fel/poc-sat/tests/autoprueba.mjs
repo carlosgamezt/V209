@@ -18,9 +18,11 @@ import { validarMapeo } from "../src/guardia.mjs";
 import { crearMonitorSesion } from "../src/sesion.mjs";
 import { crearProgreso } from "../src/progreso.mjs";
 import { crearLibro, claveIdempotencia } from "../src/libro.mjs";
+import { analizar } from "../src/analisis.mjs";
+import { resolver } from "../src/localizar.mjs";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
-const html = fs.readFileSync(path.join(AQUI, "fixture/formulario-generico.html")), htmlJsf = fs.readFileSync(path.join(AQUI, "fixture/jsf-simulado.html"));
+const html = fs.readFileSync(path.join(AQUI, "fixture/formulario-generico.html")), htmlJsf = fs.readFileSync(path.join(AQUI, "fixture/jsf-simulado.html")), htmlAng = fs.readFileSync(path.join(AQUI, "fixture/angular-simulado.html"));
 const mapeo = () => JSON.parse(fs.readFileSync(path.join(AQUI, "fixture/mapeo-fixture.json"), "utf8"));
 const datos = () => JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios.json"), "utf8"));
 const base = (extra = {}) => ({ ...mapeo(), ...extra });
@@ -28,7 +30,7 @@ const base = (extra = {}) => ({ ...mapeo(), ...extra });
 const posts = [];                       // todo POST que LLEGA al servidor (debe quedar vacío cuando la guardia está activa)
 const servidor = http.createServer((req, res) => {
   if (req.method === "POST") { posts.push(`${req.method} ${req.url}`); req.resume(); res.writeHead(200, { "content-type": "text/plain" }); return res.end("EMITIDO"); }
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "set-cookie": "sesion_demo=a; Path=/" }); res.end(req.url.startsWith("/jsf") ? htmlJsf : html);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "set-cookie": "sesion_demo=a; Path=/" }); res.end(req.url.startsWith("/jsf") ? htmlJsf : req.url.startsWith("/ang") ? htmlAng : html);
 });
 await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
 const URL_BASE = `http://127.0.0.1:${servidor.address().port}/`;
@@ -327,6 +329,38 @@ await caso("COMPARAR: detecta los campos que aparecen al abrir una sección a ma
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cmp-")); fs.writeFileSync(path.join(tmp, "a.json"), JSON.stringify(a)); fs.writeFileSync(path.join(tmp, "b.json"), JSON.stringify(b));
   const c = spawnSync(process.execPath, [path.join(AQUI, "../bin/comparar.mjs"), path.join(tmp, "a.json"), path.join(tmp, "b.json")], { encoding: "utf8" });
   assert.equal(c.status, 0, c.stderr); assert.match(c.stdout, /~ Descripción: oculto → visible/); assert.match(c.stdout, /~ Nombre del receptor: visible → oculto/); fs.rmSync(tmp, { recursive: true, force: true }); await context.close();
+});
+
+// ======================================================================= SEGUNDA OBSERVACIÓN (AngularJS simulado)
+await caso("SEGUNDA OBSERVACIÓN (Angular simulado): ng-model, ayuda adyacente, comprobación de selectores CSS; solo lectura y sin datos personales", async () => {
+  const { context, page } = await nuevaPagina(); await page.goto(URL_BASE + "ang");
+  const cfgMapeo = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-preliminar.json"), "utf8")), css = [...cfgMapeo.comprobar_css, "input[name=\"Cantidad0\"]"];
+  const fuente = fuenteConsola({ extendido: true, css });
+  assert.equal(fs.readFileSync(path.join(AQUI, "../consola/observar-consola-2.js"), "utf8"), fuenteConsola({ extendido: true, css: cfgMapeo.comprobar_css }), "consola/observar-consola-2.js desactualizado: ejecuta node bin/generar-consola.mjs");
+  const huella2 = (await import("node:crypto")).createHash("sha256").update(fs.readFileSync(path.join(AQUI, "../consola/observar-consola-2.js"), "utf8")).digest("hex");
+  assert.ok(fs.readFileSync(path.join(AQUI, "../../docs/fase-2-analisis-observacion-1.md"), "utf8").includes(huella2), `la guía debe citar la huella del fragmento 2: ${huella2}`);
+  assert.equal(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|\.click\s*\(|\.submit\s*\(|\.value\s*=|setAttribute|dispatchEvent|\.focus\s*\(|localStorage|sessionStorage|document\.cookie|WebSocket|eval\s*\(|new Function|createElement|innerHTML\s*=/.test(fuente), false, "el fragmento 2 debe ser de solo lectura");
+  assert.throws(() => fuenteConsola({ extendido: true, css: ["a; fetch('/x')"] }), /no permitido/); assert.throws(() => fuenteConsola({ extendido: true, css: ["div > eval(1)"] }), /no permitido/);
+  let json = null; page.on("console", (m) => { if (m.text().startsWith("{")) json = m.text(); });
+  const antes = await page.evaluate(() => document.documentElement.outerHTML.length), r = await page.evaluate(fuente);
+  assert.equal(await page.evaluate(() => document.documentElement.outerHTML.length), antes, "la página no cambió"); assert.ok(r.comprobaciones >= 20);
+  for (const x of ["juan.prueba", "ejemplo.test"]) assert.ok(!json.includes(x), `el JSON no debe contener «${x}»`);
+  const raw = JSON.parse(json), inv = construirInventario({ pagina: raw.pagina, frames: raw.frames, origen: "consola" });
+  assert.equal(raw.frames[0].r.extra.extras.length, raw.frames[0].r.controles.length, "extras alineados con los controles"); assert.equal(inv.angular, "1.8.2");
+  const nit = inv.controles.find((c) => c.ng?.model === "doc.receptor.nit"); assert.ok(nit); assert.equal(nit.ayuda, "NIT del Receptor"); assert.ok(nit.candidatos.some((k) => k.estrategia === "ng_model" && k.unico), "candidato ng_model único"); assert.equal(nit.mejor.estrategia, "ng_model");
+  assert.equal(nit.leyenda, "Receptor"); assert.ok(inv.controles.find((c) => c.ng?.click === "eliminar($index)")); assert.equal(inv.controles.find((c) => c.ng?.repeat).ng.repeat, "item in doc.items");
+  const radios = inv.controles.filter((c) => c.type === "radio"); assert.ok(radios.every((c) => c.candidatos.find((k) => k.estrategia === "nombre").estable === false), "name numérico = inestable"); assert.equal(radios[0].mejor.estrategia, "etiqueta");
+  assert.deepEqual(inv.controles.find((c) => c.nombre === "BienOServicio0").opciones, ["Seleccione", "Bien", "Servicio"]);
+  const desc = inv.controles.filter((c) => c.nombre === "Descripcion0"); assert.equal(desc.length, 2); assert.ok(desc.every((c) => c.mejor?.estrategia === "nombre" && c.mejor.unico), "nombre + tag desambigua input/select");
+  const cmp = (q) => inv.comprobaciones.find((c) => c.css === q); assert.deepEqual([cmp('input[name="Cantidad0"]').total, cmp('input[name^="Cantidad"]').total, cmp('button[title="NIT del Receptor"]').total, cmp('select[name="Descripcion0"]').visibles, cmp('input[type="radio"]').total], [1, 1, 1, 0, 2]);
+  assert.ok(inv.secciones.some((x) => x.tag === "legend" && x.texto === "Receptor"));
+  // los localizadores nombre+tag y ng_model resuelven a UN elemento en la página
+  for (const l of [{ estrategia: "nombre", valor: "Descripcion0", tag: "input" }, { estrategia: "nombre", valor: "Descripcion0", tag: "select" }, { estrategia: "ng_model", valor: "doc.receptor.nit", tag: "input" }]) await resolver(page, l, { timeout: 500 });
+  await assert.rejects(() => resolver(page, { estrategia: "nombre", valor: "Descripcion0" }, { timeout: 300 }), /ambiguo/);
+  const a = analizar(inv, { subsecciones_datos_generales: [], stems_linea: { BienOServicio: ["articulos", "tipo"], Cantidad: ["cantidades", "cantidad"], Descripcion: ["descripciones", "descripción"], PrecioUnitario: ["precios", "precio"], Total: ["totales", "total"] } });
+  assert.ok(a.filas.some((f) => f.funcion === "cantidad" && f.estabilidad === "estable_ng_model"), JSON.stringify(a.por_estabilidad)); assert.ok(a.filas.some((f) => /Vista Previa/.test(f.funcion) && /BLOQUEADA/.test(f.accion)), "Vista Previa bloqueada");
+  assert.ok(a.filas.some((f) => /Eliminar item/.test(f.funcion) && /BLOQUEADA/.test(f.accion)) && a.filas.some((f) => /Editar impuestos/.test(f.funcion) && /BLOQUEADA/.test(f.accion)));
+  await context.close();
 });
 
 await caso("COMANDOS REALES: bin/observar.mjs y bin/ejecutar.mjs contra un Chrome con puerto de depuración (sesión «ya iniciada»)", async () => {

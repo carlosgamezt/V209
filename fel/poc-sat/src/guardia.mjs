@@ -12,10 +12,10 @@ export const PALABRAS_PROHIBIDAS = [
   "registrar", "guardar", "pagar", "anular", "declarar", "presentar", "aprobar", "autorizar", "submit", "send", "issue", "sign", "certify", "save",
   "pay", "cancel", "void", "post", "publish",
   // acciones que destruyen la sesión o el borrador: nunca se pulsan
-  "cerrar", "salir", "logout", "logoff", "desconectar", "eliminar", "borrar", "descartar", "delete", "remove",
+  "previa", "preview", "cerrar", "salir", "logout", "logoff", "desconectar", "eliminar", "borrar", "descartar", "delete", "remove",
 ];
 /** Palabras ambiguas: pueden ser navegación o pueden cometer algo. Solo se permiten si una persona las aprobó en el paso (ambiguo_aprobado). */
-export const PALABRAS_AMBIGUAS = ["continuar", "siguiente", "terminar", "listo", "aceptar", "ok", "si", "yes", "next", "continue", "done", "finalizado", "finish", "crear", "nuevo", "agregar", "adicionar"];
+export const PALABRAS_AMBIGUAS = ["continuar", "siguiente", "terminar", "listo", "aceptar", "ok", "si", "yes", "next", "continue", "done", "finalizado", "finish", "crear", "nuevo", "agregar", "adicionar", "item", "editar", "edit", "impuestos"];
 
 const PROH = new Set(PALABRAS_PROHIBIDAS.map(normalizar)), AMBI = new Set(PALABRAS_AMBIGUAS.map(normalizar));
 const palabras = (t) => normalizar(t).split(" ").filter(Boolean);
@@ -102,7 +102,8 @@ export function evaluarSolicitud({ metodo, url }, politica = {}) {
 
 // ---------------------------------------------------------------- validación del mapeo (plan)
 export const TIPOS_PASO = ["manual", "esperar_visible", "llenar", "seleccionar", "marcar", "clic_seguro", "leer", "detener"];
-export const ESTRATEGIAS = ["etiqueta", "rol", "id", "nombre", "marcador", "texto"];
+export const ESTRATEGIAS = ["etiqueta", "rol", "id", "nombre", "ng_model", "marcador", "texto"];
+export const TAGS_LOCALIZADOR = ["input", "select", "textarea", "button"];
 const necesitaLocalizador = new Set(["esperar_visible", "llenar", "seleccionar", "marcar", "clic_seguro", "leer"]);
 const necesitaDato = new Set(["llenar", "seleccionar", "marcar", "leer"]);
 
@@ -131,6 +132,7 @@ export function validarMapeo(m, { local = false } = {}) {
       const l = p.localizador;
       if (!l || !ESTRATEGIAS.includes(l.estrategia) || !String(l.valor ?? "").trim()) e(`${ctx}: localizador incompleto (estrategia: ${ESTRATEGIAS.join("|")} y valor)`);
       else if (l.estrategia === "rol" && !l.rol) e(`${ctx}: la estrategia «rol» necesita el campo rol`);
+      if (l?.tag != null && !TAGS_LOCALIZADOR.includes(l.tag)) e(`${ctx}: tag no permitido «${l.tag}» (${TAGS_LOCALIZADOR.join("|")})`);
       if (!local && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);
       if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro o esperar_visible`);
     }
@@ -184,7 +186,7 @@ export function validarDatos(d) {
   const visitar = (o, ruta) => {
     if (o && typeof o === "object") return Object.entries(o).forEach(([k, v]) => visitar(v, ruta ? `${ruta}.${k}` : k));
     const clave = ruta.split(".").pop().toLowerCase();
-    if (/(^|_)nit($|_)/.test(clave) && !nits.has(String(o))) e(`${ruta}: NIT no permitido (usa «CF» o decláralo en nits_de_prueba_declarados, siendo tuyo o de prueba)`);
+    if (typeof o === "string" && /(^|_)nit($|_)/.test(clave) && !nits.has(String(o))) e(`${ruta}: NIT no permitido (usa «CF» o decláralo en nits_de_prueba_declarados, siendo tuyo o de prueba)`);
     if (/(nombre|descripcion|razon)/.test(clave) && !/PRUEBA/.test(String(o))) e(`${ruta}: debe contener la palabra PRUEBA`);
   };
   visitar(d, "");

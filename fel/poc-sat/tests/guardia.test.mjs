@@ -209,3 +209,25 @@ test("no hay ningún clic, tecla ni envío fuera del ejecutor (que pasa por la g
   const ej = fuentes.find(([f]) => f.endsWith("src/ejecutor.mjs"))[1];
   assert.equal((ej.match(/\.click\s*\(/g) ?? []).length, 1, "un único punto de clic, precedido de clasificarControl"); assert.equal(/\.press\s*\(|keyboard|requestSubmit|\.submit\s*\(/.test(ej), false);
 });
+
+// ======================================================================= observación 1 del formulario real (solo estructura)
+test("acciones sensibles del formulario real: vista previa, eliminar y editar impuestos nunca se pulsan solos", () => {
+  assert.equal(clasificarControl({ tag: "button", type: "button", texto: "Vista Previa" }).nivel, "prohibido");
+  assert.equal(clasificarControl({ tag: "button", type: "", titulo: "Eliminar item" }).nivel, "prohibido");
+  assert.equal(clasificarControl({ tag: "button", type: "", titulo: "Eliminar item espectáculo" }).nivel, "prohibido");
+  assert.notEqual(clasificarControl({ tag: "button", type: "", titulo: "Editar impuestos" }).nivel, "ok");
+  assert.notEqual(clasificarControl({ tag: "button", type: "button", texto: "Agregar item" }).nivel, "ok");
+  assert.notEqual(clasificarControl({ tag: "button", type: "button", texto: "Agregar ítem" }).nivel, "ok");
+});
+test("mapeo preliminar de SAT: no es ejecutable (solo falla por verificado=false), no contiene acciones bloqueadas y es coherente con la clasificación", () => {
+  const mp = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-preliminar.json", import.meta.url), "utf8")), v = validarMapeo(mp);
+  assert.equal(v.ok, false); assert.ok(v.errores.every((e) => /verificado no es true/.test(e)), v.errores.join("\n"));
+  assert.ok(!mp.pasos.some((p) => p.tipo === "clic_seguro"), "ningún clic en el mapeo preliminar");
+  assert.deepEqual(mp.dominios_permitidos, ["felav.c.sat.gob.gt"]); assert.deepEqual(mp.permitir_post, []);
+  for (const p of mp.pasos.filter((x) => x.localizador)) assert.ok(p.verificado === false && p.dato);
+  const cl = JSON.parse(fs.readFileSync(new URL("../analisis/obs1/clasificacion.json", import.meta.url), "utf8")), conocidos = new Set(cl.filas.map((f) => f.mejor_localizador));
+  for (const p of mp.pasos.filter((x) => x.localizador && x.localizador.estrategia !== "rol")) { const l = p.localizador, k = `${l.estrategia}${l.tag ? `[${l.tag}]` : ""}: ${l.valor}`; assert.ok(conocidos.has(k), `el localizador «${k}» no sale de la observación 1`); }
+  assert.equal(cl.total, 211); assert.equal(cl.visibles, 31);
+  for (const f of cl.filas.filter((x) => /Vista Previa|Eliminar item/.test(x.funcion))) assert.match(f.accion, /BLOQUEADA/);
+  const dl = JSON.parse(fs.readFileSync(new URL("../config/datos-ficticios-lineas.json", import.meta.url), "utf8")); assert.ok(validarDatos(dl).ok);
+});

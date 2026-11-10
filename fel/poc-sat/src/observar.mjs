@@ -75,6 +75,38 @@ function recoger({ incluirOpciones }) {
 
 /** Mismo criterio que dentro de la página: números largos (NIT/DPI/teléfono) o correos → [REDACTADO]. */
 export const redactar = (t) => (/\d{6,}|@|\d{4}[\s-]?\d{5}[\s-]?\d{4}|\d{3,4}[\s-]\d{4}/.test(t) ? "[REDACTADO]" : t);
+/* Segunda observación (se ejecuta DENTRO de la página, SOLO LECTURA). Devuelve datos alineados con los controles de recoger():
+   atributos ng-* (son nombres de variables/acciones del código de la página, no datos de personas), ayuda adyacente, sección, opciones de listas
+   pequeñas y cuántos elementos coinciden con cada selector CSS de la lista cerrada que se le pasa. Nunca lee valores de campos. */
+function recogerExtra({ css }) {
+  let redactados = 0;
+  const redactar = (t) => (/\d{6,}|@|\d{4}[\s-]?\d{5}[\s-]?\d{4}|\d{3,4}[\s-]\d{4}/.test(t) ? (redactados++, "[REDACTADO]") : t);
+  const txt = (s, n = 80) => redactar(String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n));
+  const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const SEL = "input,select,textarea,button,[role=button],[role=tab],[role=combobox],[role=checkbox],[role=radio],[role=switch],[role=textbox]";
+  const els = [...document.querySelectorAll(SEL)].filter((el) => !(el.tagName === "INPUT" && (el.getAttribute("type") || "").toLowerCase() === "hidden"));
+  const attr = (el, n) => txt(el.getAttribute(n) ?? el.getAttribute("data-" + n) ?? "", 80);
+  const fieldsets = [...document.querySelectorAll("fieldset")];
+  const extras = els.map((el) => {
+    let ayuda = "", ayuda_nivel = 0, a = el.parentElement;
+    for (let i = 1; i <= 3 && a && !ayuda; i++, a = a.parentElement) {
+      const b = [...a.querySelectorAll("button[title]")].find((x) => x !== el && (el.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
+      if (b) { ayuda = txt(b.getAttribute("title")); ayuda_nivel = i; }
+    }
+    const fs = el.closest("fieldset"), rep = el.closest("[ng-repeat],[data-ng-repeat]"), tr = el.closest("tr"), p = el.parentElement;
+    const o = {
+      ng: { model: attr(el, "ng-model"), show: attr(el, "ng-show"), hide: attr(el, "ng-hide"), if: attr(el, "ng-if"), disabled: attr(el, "ng-disabled"), click: attr(el, "ng-click"), change: attr(el, "ng-change"), required: attr(el, "ng-required"), repeat: rep ? attr(rep, rep.hasAttribute("ng-repeat") ? "ng-repeat" : "data-ng-repeat") : "" },
+      ayuda, ayuda_nivel, fieldset: fs ? fieldsets.indexOf(fs) : -1, leyenda: fs ? txt(fs.querySelector("legend")?.innerText, 50) : "",
+      fila: tr ? tr.rowIndex : -1, hermano: p ? Array.prototype.indexOf.call(p.children, el) : -1,
+    };
+    if (el.tagName === "SELECT" && el.options.length <= 30) o.opciones = [...el.options].map((x) => txt(x.textContent, 40));
+    return o;
+  });
+  const secciones = [...document.querySelectorAll("legend,h1,h2,h3,h4,h5,th")].map((h) => ({ tag: h.tagName.toLowerCase(), texto: txt(h.innerText, 50), visible: visible(h) })).filter((h) => h.texto);
+  const comprobaciones = (css || []).map((q) => { let total = 0, visibles = 0; try { const n = [...document.querySelectorAll(q)]; total = n.length; visibles = n.filter(visible).length; } catch (e) { total = -1; } return { css: q, total, visibles }; });
+  return { extras, secciones, comprobaciones, angular: (window.angular && window.angular.version && window.angular.version.full) || "", redactados };
+}
+
 const sinQuery = (u) => { try { const x = new URL(u); return { host: x.hostname, ruta: sanearRuta(x.pathname) }; } catch { return { host: "", ruta: "" }; } };
 
 /** Recolecta cada marco de la página (solo lectura) y construye el inventario. */
@@ -100,8 +132,14 @@ export function construirInventario({ pagina, frames, origen = "playwright" }) {
     for (const fo of r.formularios ?? []) formularios.push({ marco: f.indice, ...fo, accion_ruta: sanearRuta(fo.accion_ruta) });
     for (const c of r.controles) {
       const cl = clasificarControl(c);
-      const cand = c.candidatos.map((k) => (f.principal ? k : { ...k, marco: { url_contiene: u.host + u.ruta } }));
-      controles.push({ n: `c${String(++n).padStart(3, "0")}`, marco: f.indice, ...c, candidatos: cand, mejor: cand.find((k) => k.unico) ?? null, clasificacion: cl.nivel, envia_formulario: cl.envia_formulario, razones: cl.razones });
+      const ex = r.extra?.extras?.[r.controles.indexOf(c)] ?? {};
+      const cta = { ...c, ...ex };
+      const mismo = (x, tag) => r.controles.filter((y) => y.nombre === x && (!tag || y.tag === tag)).length;
+      let cand = c.candidatos.filter((k) => k.estrategia !== "nombre").map((k) => k);
+      if (c.nombre && !c.nombre.includes("[REDACTADO]")) cand.push({ estrategia: "nombre", valor: c.nombre, tag: c.tag, unico: mismo(c.nombre, c.tag) === 1, estable: !/^\d+$/.test(c.nombre) });   // nombre solo numérico = id interno de Angular: inestable
+      if (ex.ng?.model) cand.push({ estrategia: "ng_model", valor: ex.ng.model, tag: c.tag, unico: r.extra.extras.filter((y, j) => y.ng.model === ex.ng.model && r.controles[j].tag === c.tag).length === 1, estable: true });
+      cand = cand.map((k) => (f.principal ? k : { ...k, marco: { url_contiene: u.host + u.ruta } }));
+      controles.push({ n: `c${String(++n).padStart(3, "0")}`, marco: f.indice, ...cta, candidatos: cand, mejor: cand.find((k) => k.unico && k.estable !== false) ?? null, clasificacion: cl.nivel, envia_formulario: cl.envia_formulario, razones: cl.razones });
     }
   }
   const inv = {
@@ -109,6 +147,7 @@ export function construirInventario({ pagina, frames, origen = "playwright" }) {
     marcos: informe, total_controles: controles.length, formularios, componentes: comp,
     senales_sesion: { campo_clave_visible: controles.some((c) => c.type === "password" && c.visible), nota: "Si esta página es la de inicio de sesión, campo_clave_visible será true. Observa también la página ya con sesión iniciada para elegir un indicador de «sesión activa»." },
     sin_candidato_unico: controles.filter((c) => !c.mejor && c.tag !== "button").length,
+    angular: frames.map((f) => f.r?.extra?.angular).find(Boolean) ?? "", secciones: frames.flatMap((f) => f.r?.extra?.secciones ?? []), comprobaciones: frames.flatMap((f) => f.r?.extra?.comprobaciones ?? []),
     con_riesgo_de_emision: controles.filter((c) => c.clasificacion !== "ok").length,
     controles,
     advertencia: "Esta observación no contiene valores de campos, cookies, tokens ni el ViewState. Revísala antes de compartirla: puede contener etiquetas con nombres de tu empresa. No incluye controles dentro de shadow DOM cerrado ni de marcos que Chrome no deje inspeccionar.",
@@ -143,7 +182,26 @@ export function obstaculos(inv, nMarcos = inv.marcos.length) {
 }
 
 /** Fragmento de JavaScript para pegar en la consola de Chrome (DevTools) de la pestaña con el formulario. SOLO LECTURA: no hace peticiones, no escribe, no hace clic; copia el resultado al portapapeles. */
-export function fuenteConsola() {
+export function fuenteConsola({ extendido = false, css = [] } = {}) {
+  if (extendido) {
+    for (const q of css) if (!/^[\p{L}\p{N}_\-\[\]="'.:>#*^$~| ,]+$/u.test(q) || /(eval|function|=>|javascript)/i.test(q)) throw new Error(`selector CSS no permitido en la lista cerrada: ${q}`);
+    return `// === NEXA FEL · SEGUNDA observación de solo lectura (consola de Chrome) ===
+// No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Describe controles y cuenta cuántos elementos
+// coinciden con una lista CERRADA de selectores CSS (abajo, en CSS_A_COMPROBAR). Lee atributos ng-* (nombres de variables/acciones del código de la página).
+// Lo único que "escribe" es el portapapeles de tu equipo (copy). Textos con números largos o correos salen como [REDACTADO].
+(() => {
+  const CSS_A_COMPROBAR = ${JSON.stringify(css, null, 2)};
+  const recoger = ${recoger.toString()};
+  const extra = ${recogerExtra.toString()};
+  const r = recoger({ incluirOpciones: false }), top = { host: location.hostname, ruta: r.ruta_pagina };
+  r.extra = extra({ css: CSS_A_COMPROBAR });
+  const salida = { version: 2, origen: "consola", pagina: { ...top, titulo: r.titulo_pagina }, frames: [{ indice: 0, principal: true, ...top, r }], marcos_sin_inspeccionar: r.marcos };
+  const json = JSON.stringify(salida);
+  try { copy(json); console.log("Copiado al portapapeles (" + json.length + " caracteres). Pégalo en un archivo .json y pásaselo a bin/importar-observacion.mjs"); } catch (e) { console.log(json); }
+  return { controles: r.controles.length, comprobaciones: r.extra.comprobaciones.length, marcos_sin_inspeccionar: r.marcos.length };
+})();
+`;
+  }
   return `// === NEXA FEL · observación de solo lectura (consola de Chrome) ===
 // No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Solo describe qué controles existen.
 // Lo único que "escribe" es el portapapeles de tu equipo (copy) con el inventario. Textos con números largos o correos salen como [REDACTADO].

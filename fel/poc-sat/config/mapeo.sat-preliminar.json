@@ -1,0 +1,241 @@
+{
+  "version": 1,
+  "estado": "PRELIMINAR a partir de la observación 1 (211 controles, 31 visibles). NO es ejecutable: todos los pasos tienen verificado=false y varios campos no tienen localizador. Se completa con la observación 2.",
+  "dominios_permitidos": [
+    "felav.c.sat.gob.gt"
+  ],
+  "permitir_post": [],
+  "sesion": {
+    "campo_clave_visible": true,
+    "indicadores_sesion_activa": [
+      {
+        "localizador": {
+          "estrategia": "rol",
+          "rol": "tab",
+          "valor": "Datos Generales"
+        },
+        "verificado": false
+      }
+    ],
+    "indicadores_login": [],
+    "intervalo_ms": 5000,
+    "espera_max_ms": 1800000
+  },
+  "pasos": [
+    {
+      "id": "p000-sesion",
+      "tipo": "manual",
+      "instruccion": "Abre tú mismo el formulario FEL de PRUEBA en la sesión ya iniciada, en la pestaña «Datos Generales», sin emitir ni usar la vista previa, y pulsa Enter."
+    },
+    {
+      "id": "p010-receptor-usa-nit",
+      "tipo": "marcar",
+      "comentario": "Radio «NIT». Único por etiqueta en la observación 1. El name (14) es un id interno de Angular: NO usar.",
+      "localizador": {
+        "estrategia": "etiqueta",
+        "valor": "NIT",
+        "exacto": true
+      },
+      "dato": "receptor.usa_nit",
+      "verificado": false
+    },
+    {
+      "id": "p100-linea0-tipo",
+      "tipo": "seleccionar",
+      "comentario": "Lista de 3 opciones (Seleccione/Bien/Servicio, por confirmar en la observación 2).",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "BienOServicio0",
+        "tag": "select"
+      },
+      "dato": "lineas.0.tipo",
+      "verificado": false
+    },
+    {
+      "id": "p110-linea0-cantidad",
+      "tipo": "llenar",
+      "comentario": "Único con tag en la observación 1.",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Cantidad0",
+        "tag": "input"
+      },
+      "dato": "lineas.0.cantidad",
+      "verificado": false
+    },
+    {
+      "id": "p120-linea0-descripcion",
+      "tipo": "llenar",
+      "comentario": "Hay también un <select name=Descripcion0> oculto (modo catálogo): por eso se exige tag=input. Comprobar cuál se muestra.",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Descripcion0",
+        "tag": "input"
+      },
+      "dato": "lineas.0.descripcion",
+      "verificado": false
+    },
+    {
+      "id": "p130-linea0-precio",
+      "tipo": "llenar",
+      "comentario": "Único con tag en la observación 1.",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "PrecioUnitario0",
+        "tag": "input"
+      },
+      "dato": "lineas.0.precio",
+      "verificado": false
+    },
+    {
+      "id": "p140-linea0-descuento",
+      "tipo": "llenar",
+      "comentario": "Único con tag en la observación 1.",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Descuento0",
+        "tag": "input"
+      },
+      "dato": "lineas.0.descuento",
+      "verificado": false
+    },
+    {
+      "id": "p999-detener",
+      "tipo": "detener"
+    }
+  ],
+  "lectura_solo": [
+    {
+      "id": "l-linea0-total",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Total0",
+        "tag": "input"
+      },
+      "nota": "Deshabilitado: valor calculado por la página. Solo se lee, nunca se escribe."
+    }
+  ],
+  "pendientes_localizador": [
+    {
+      "campo": "Fecha de emisión (c1 input readonly + c2 botón calendario)",
+      "motivo": "sin name ni etiqueta; el campo es de solo lectura y se llena con un calendario (requiere diseño aparte)",
+      "necesita": "ng-model, comportamiento del calendario"
+    },
+    {
+      "campo": "NIT del receptor (c21, visible, requerido)",
+      "motivo": "sin name ni etiqueta; solo se infiere por la ayuda «NIT del Receptor» que lo sigue",
+      "necesita": "ng-model; comportamiento al escribir un NIT (¿consulta de red?)"
+    },
+    {
+      "campo": "Dirección del receptor (c30)",
+      "motivo": "sin name ni etiqueta (ayuda «Dirección del Receptor»)",
+      "necesita": "ng-model"
+    },
+    {
+      "campo": "Nombre/CUI/ID extranjero del receptor (c23, c24, c26, c27, c29: ocultos)",
+      "motivo": "ocultos; dos con name=nombre repetido; c23 deshabilitado",
+      "necesita": "observarlos tras elegir el tipo de identificación a mano"
+    },
+    {
+      "campo": "Listas de encabezado c4–c8 y c11–c14, c17",
+      "motivo": "selects sin name, etiqueta ni ayuda propia (c6: 6 opciones, c8: 28 opciones visibles)",
+      "necesita": "ng-model y etiquetas de opciones"
+    },
+    {
+      "campo": "Impuestos por línea",
+      "motivo": "no hay campos de impuestos en el DOM observado; solo el botón «Editar impuestos» (abre algo)",
+      "necesita": "observar a mano tras abrir ese diálogo (observación 2C)"
+    },
+    {
+      "campo": "Casillas c9, c15, c49, c56–c60",
+      "motivo": "sin identificador; c9/c15 se infieren por ayuda (ubicación temporal / exportación)",
+      "necesita": "ng-model"
+    },
+    {
+      "campo": "Líneas 2..n",
+      "motivo": "solo existe el índice 0; no se sabe cómo crece el sufijo ni qué pasa al borrar",
+      "necesita": "observación 2B tras agregar un ítem a mano"
+    }
+  ],
+  "bloqueados": [
+    {
+      "control": "c210 «Vista Previa»",
+      "motivo": "PROHIBIDO: no se usa la vista previa (la emisión suele estar detrás de ella; no existe botón Emitir en el DOM observado)"
+    },
+    {
+      "control": "c54 «Eliminar item» (title)",
+      "motivo": "PROHIBIDO: destruye datos"
+    },
+    {
+      "control": "c128 «Eliminar item espectáculo» (title)",
+      "motivo": "PROHIBIDO: destruye datos"
+    },
+    {
+      "control": "c53 «Editar impuestos» (title, sin texto)",
+      "motivo": "BLOQUEADO: abre un diálogo no observado; se decide tras la observación 2C"
+    },
+    {
+      "control": "c55, c72, c120, c129, c201, c204 «Agregar …»",
+      "motivo": "BLOQUEADOS: acción no repetible; solo con aprobación humana y comprobación de conteo (ver plantilla_lineas)"
+    },
+    {
+      "control": "c2, c85, c113, c144, c155, c166, c209 (calendarios)",
+      "motivo": "BLOQUEADOS: requieren diseño aparte"
+    },
+    {
+      "control": "c61–c67 «--- Seleccione Frase … ---»",
+      "motivo": "BLOQUEADOS: desplegables personalizados"
+    },
+    {
+      "control": "botones ( ? ) de ayuda",
+      "motivo": "no se pulsan"
+    }
+  ],
+  "plantilla_lineas": {
+    "estado": "DISEÑO, no implementado ni ejecutable",
+    "idea": "Cada línea i usa los mismos campos con sufijo i: Cantidad{i}, Descripcion{i}, PrecioUnitario{i}, Descuento{i}, BienOServicio{i}, Total{i} (calculado).",
+    "algoritmo": [
+      "1) contar líneas existentes con input[name^=\"Cantidad\"] (solo lectura)",
+      "2) para i en 0..n-1: si i == existentes: UN clic (con aprobación humana) en «Agregar item»; esperar a que el conteo sea existentes+1; si no cambia en el tiempo límite, DETENER (nunca reintentar el clic)",
+      "3) llenar y verificar los campos de la línea i con localizadores nombre+tag",
+      "4) tras un cierre de sesión, reconciliar por conteo y por valores: nunca volver a pulsar «Agregar item» si el conteo ya es suficiente"
+    ],
+    "por_confirmar": [
+      "¿el sufijo es 0,1,2… consecutivo?",
+      "¿al eliminar una línea se reindexa o queda un hueco?",
+      "¿«Agregar item» agrega al final siempre?",
+      "¿el índice coincide con la fila (tr) de la tabla?"
+    ]
+  },
+  "comprobar_css": [
+    "input[name=\"Cantidad0\"]",
+    "select[name=\"BienOServicio0\"]",
+    "input[name=\"Descripcion0\"]",
+    "select[name=\"Descripcion0\"]",
+    "input[name=\"PrecioUnitario0\"]",
+    "input[name=\"Descuento0\"]",
+    "input[name=\"OtrosDescuento0\"]",
+    "input[name=\"Total0\"]",
+    "select[name=\"CodigoProducto0\"]",
+    "input[name=\"Observaciones0\"]",
+    "input[name^=\"Cantidad\"]",
+    "tbody tr.ng-scope",
+    "table",
+    "button[title=\"NIT del Receptor\"]",
+    "button[title=\"Dirección del Receptor\"]",
+    "button[title=\"Fecha Emisión\"]",
+    "button[title=\"Editar impuestos\"]",
+    "button[title=\"Eliminar item\"]",
+    "input[type=\"radio\"]",
+    "[role=\"tab\"]",
+    "[ng-model]",
+    "input[ng-model]",
+    "select[ng-model]",
+    "[ng-repeat]",
+    "[ng-click]",
+    "fieldset",
+    "legend",
+    "[ng-show]",
+    "[ng-hide]"
+  ]
+}

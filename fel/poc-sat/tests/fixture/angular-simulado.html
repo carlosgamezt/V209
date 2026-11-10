@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Simulación genérica de un formulario AngularJS (NO es el portal SAT)</title></head>
+<body>
+<p><b>Simulación escrita a partir de patrones generales de AngularJS. NO es el portal de la SAT.</b></p>
+<script>window.angular = { version: { full: "1.8.2" } };</script>
+<div role="tab">Datos Generales</div>
+<fieldset><legend>Receptor</legend>
+  <div><label><input type="radio" name="14" ng-model="doc.tipoId" class="ng-pristine"> NIT</label><label><input type="radio" name="15" ng-model="doc.tipoId"> CUI</label></div>
+  <div><input type="text" ng-model="doc.receptor.nit" autocomplete="off" class="ng-pristine"><button type="button" title="NIT del Receptor" class="ng-scope">( ? )</button></div>
+  <div><input type="text" ng-model="doc.receptor.direccion"><button type="button" title="Dirección del Receptor">( ? )</button></div>
+  <div class="ng-hide" style="display:none"><input type="text" name="nombre" ng-model="doc.receptor.nombre" ng-disabled="bloqueado"></div>
+  <div><label>Contacto: juan.prueba@ejemplo.test</label><input type="text" ng-model="doc.contacto"></div>
+</fieldset>
+<table><thead><tr><th>Precio Unitario <button type="button" title="Precio Unitario">(?)</button></th></tr></thead>
+<tbody><tr ng-repeat="item in doc.items">
+  <td><select name="BienOServicio0" ng-model="item.tipo"><option>Seleccione</option><option>Bien</option><option>Servicio</option></select></td>
+  <td><input type="text" name="Cantidad0" ng-model="item.cantidad" ng-change="calcular(item)"></td>
+  <td><input type="text" name="Descripcion0" ng-model="item.descripcion"><select name="Descripcion0" style="display:none"><option>x</option></select></td>
+  <td><input type="text" name="PrecioUnitario0" ng-model="item.precio"></td>
+  <td><input type="text" name="Total0" disabled ng-model="item.total"></td>
+  <td><button type="button" title="Editar impuestos"></button><button type="button" title="Eliminar item" ng-click="eliminar($index)"></button></td>
+</tr></tbody></table>
+<button type="button" ng-click="agregar()">Agregar item</button>
+<button type="button" ng-click="vistaPrevia()">Vista Previa</button>
+</body></html>

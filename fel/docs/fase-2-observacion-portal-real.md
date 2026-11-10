@@ -1,5 +1,7 @@
 # Fase 2 — Observación del formulario real (solo lectura)
 
+> **Actualización tras la observación 1:** el formulario real usa **AngularJS y jQuery**, no PrimeFaces/JSF (0 componentes `ui-*`, 0 `<form>`). Las menciones a JSF/PrimeFaces de esta guía eran hipótesis previas a observar. Análisis, mapeo preliminar y segunda observación: **`docs/fase-2-analisis-observacion-1.md`**.
+
 > **Estado honesto:** esta sesión de Claude **no tiene ningún equipo tuyo conectado**, así que Claude **no puede ver tu Chrome ni ejecutar nada en él**. Las herramientas están listas y probadas contra **páginas simuladas** (una genérica y una que imita patrones generales de JSF/PrimeFaces, ninguna es el portal real). **La observación del portal real la ejecutas tú en tu Windows** y compartes el resultado (revisado). Nada de lo de abajo emite, llena campos ni envía peticiones.
 > Reglas: no se extraen contraseñas, cookies, tokens, `ViewState` ni valores de campos · no se hacen clics ni se llena nada · no se emite · sin Supabase.
 

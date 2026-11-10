@@ -18,4 +18,5 @@ node bin/medir-sesion.mjs --empresa=config/empresa.local.json     # sin tocar la
 node bin/ejecutar.mjs … --reanudar | --reiniciar                  # tras una interrupción
 ```
 Fase 2 (observación del formulario real, solo lectura): **`fel/docs/fase-2-observacion-portal-real.md`** (vía B: fragmento en la consola `consola/observar-consola.js` + `bin/importar-observacion.mjs`; vía A: `bin/observar.mjs`; `bin/comparar.mjs` para campos dinámicos).
+Análisis de la observación 1 del formulario real (AngularJS), mapeo preliminar y segunda observación (`consola/observar-consola-2.js`, `bin/analizar-observacion.mjs`): **`fel/docs/fase-2-analisis-observacion-1.md`**.
 Garantías: no se teclean credenciales · datos ficticios · la red es de solo lectura (todo POST se bloquea) · ningún paso emite, certifica ni envía · parada obligatoria (`detener`) · sin Supabase · sin selectores del portal en el código (se generan a partir de lo observado y los confirma una persona).
