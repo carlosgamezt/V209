@@ -2,6 +2,7 @@
 <html lang="es"><head><meta charset="utf-8"><title>Formulario genérico de PRUEBA (no es el portal SAT)</title>
 <style>body{font:15px sans-serif;margin:24px}label{display:block;margin:10px 0 2px}fieldset{margin:12px 0}[hidden]{display:none}</style></head>
 <body>
+<div id="app">
 <h1>Formulario genérico de PRUEBA</h1>
 <p><b>Esto NO es el portal de la SAT ni imita su estructura.</b> Solo sirve para probar el mecanismo (llenar, registrar, parar) sin tocar ningún sistema real.</p>
 <div role="tablist">
@@ -12,7 +13,6 @@
   <section id="rec">
     <label for="nitr">NIT del receptor</label><input id="nitr" name="nit" autocomplete="off">
     <label for="nomr">Nombre del receptor</label><input id="nomr" name="nombre">
-    <label for="x1">Clave de usuario</label><input id="x1" type="password" name="clave">
     <label for="obs">Observación</label><input id="input-48213" aria-label="Observación">
   </section>
   <section id="det" hidden>
@@ -23,11 +23,28 @@
     <label><input type="checkbox" id="exe" name="exencion"> Aplica exención</label>
   </section>
   <fieldset><legend>Acciones</legend>
+    <button type="button" id="agr" onclick="agregarLinea()">Agregar línea</button>
     <button type="button" id="sig">Siguiente</button>
     <button type="button" id="bor" onclick="fetch('/guardar',{method:'POST',body:'x'})">Guardar borrador</button>
     <button type="button" id="env" onclick="fetch('/api/enviar',{method:'POST',body:'x'})">Enviar</button>
     <button type="submit" id="emi">Emitir documento</button>
   </fieldset>
 </form>
-<script>function mostrar(i){document.getElementById('rec').hidden=i!=='rec';document.getElementById('det').hidden=i!=='det'}</script>
+<div id="lineas" aria-label="Líneas agregadas"></div>
+</div>
+<!-- Simulación de sesión caducada (NO imita al portal SAT): se activa con window.__expirar(modo) y se «inicia sesión» con window.__iniciarSesion() -->
+<div id="login" hidden>
+  <h2>Sesión expirada (SIMULADA)</h2>
+  <label for="clave">Clave de acceso</label><input id="clave" type="password" name="clave">
+  <button type="button" id="ing" onclick="__iniciarSesion()">Ingresar</button>
+</div>
+<script>
+function mostrar(i){document.getElementById('rec').hidden=i!=='rec';document.getElementById('det').hidden=i!=='det'}
+function agregarLinea(){const d=document.createElement('div');d.className='linea';d.textContent='Línea';document.getElementById('lineas').appendChild(d)}
+window.__expirar=(modo)=>{document.getElementById('app').hidden=true;document.getElementById('login').hidden=false;if(modo==='reset'){document.getElementById('f').reset();document.getElementById('lineas').innerHTML='';mostrar('rec')}};
+window.__iniciarSesion=()=>{document.getElementById('login').hidden=true;document.getElementById('app').hidden=false};
+window.__resetDetalle=()=>{['tipo','desc','cant','prec'].forEach(i=>{const e=document.getElementById(i);e.value=e.tagName==='SELECT'?e.options[0].value:''})};
+// cuenta toda interacción (clic, teclado, entrada, movimiento) para probar que durante la espera NO se hace nada
+['click','keydown','input','mousemove','focus'].forEach(t=>document.addEventListener(t,()=>{window.__ev=(window.__ev||0)+1},true));
+</script>
 </body></html>

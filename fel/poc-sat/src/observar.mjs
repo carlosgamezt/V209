@@ -80,6 +80,7 @@ export async function inventariar(page, { incluirOpciones = false } = {}) {
   return {
     version: 1, generado: new Date().toISOString(), pagina: { ...u, titulo: String((await page.title().catch(() => "")) ?? "").slice(0, 80) },
     marcos: informe, total_controles: controles.length,
+    senales_sesion: { campo_clave_visible: controles.some((c) => c.type === "password" && c.visible), nota: "Si esta página es la de inicio de sesión, campo_clave_visible será true. Observa también la página ya con sesión iniciada para elegir un indicador de «sesión activa»." },
     sin_candidato_unico: controles.filter((c) => !c.mejor && c.tag !== "button").length,
     con_riesgo_de_emision: controles.filter((c) => c.clasificacion !== "ok").length,
     controles,
@@ -100,7 +101,7 @@ export function borradorMapeo(inv) {
   }
   pasos.push({ id: "p999-detener", tipo: "detener" });
   const dominios = [...new Set(inv.marcos.filter((m) => m.principal && m.host).map((m) => m.host))];
-  return { version: 1, comentario: "BORRADOR generado a partir de una observación. Rellena «dato» con rutas del archivo de datos ficticios, confirma cada localizador contra el portal real y cambia verificado a true. Confirma también dominios_permitidos.", dominios_permitidos: dominios, permitir_post: [], pasos, omitidos_por_riesgo: omitidos };
+  return { version: 1, comentario: "BORRADOR generado a partir de una observación. Rellena «dato» con rutas del archivo de datos ficticios, confirma cada localizador contra el portal real y cambia verificado a true. Confirma también dominios_permitidos y completa «sesion» con lo que observes (páginas de inicio de sesión e indicadores de sesión activa; ninguno se inventa).", dominios_permitidos: dominios, permitir_post: [], sesion: { hosts_login: [], rutas_login: [], indicadores_sesion_activa: [], indicadores_login: [], campo_clave_visible: true }, pasos, omitidos_por_riesgo: omitidos };
 }
 export const controlesDeRiesgo = (inv) => inv.controles.filter((c) => c.clasificacion !== "ok").map((c) => ({ n: c.n, texto: c.texto || c.etiqueta, nivel: c.clasificacion, razones: c.razones }));
 export { textoProhibido };

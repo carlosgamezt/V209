@@ -11,6 +11,8 @@ export const PALABRAS_PROHIBIDAS = [
   "enviar", "envio", "enviado", "envia", "transmitir", "transmision", "generar", "genere", "confirmar", "confirmacion", "finalizar", "procesar",
   "registrar", "guardar", "pagar", "anular", "declarar", "presentar", "aprobar", "autorizar", "submit", "send", "issue", "sign", "certify", "save",
   "pay", "cancel", "void", "post", "publish",
+  // acciones que destruyen la sesión o el borrador: nunca se pulsan
+  "cerrar", "salir", "logout", "logoff", "desconectar", "eliminar", "borrar", "descartar", "delete", "remove",
 ];
 /** Palabras ambiguas: pueden ser navegación o pueden cometer algo. Solo se permiten si una persona las aprobó en el paso (ambiguo_aprobado). */
 export const PALABRAS_AMBIGUAS = ["continuar", "siguiente", "terminar", "listo", "aceptar", "ok", "si", "yes", "next", "continue", "done", "finalizado", "finish", "crear", "nuevo", "agregar", "adicionar"];
@@ -40,6 +42,17 @@ export function clasificarControl(c) {
   if (envia) { if (nivel === "ok") nivel = "ambiguo"; razones.push("puede enviar un formulario"); }
   if (nivel === "ok") for (const t of textos) { const r = textoAmbiguo(t); if (r.ambiguo) { nivel = "ambiguo"; razones.push(`texto ambiguo «${r.palabra}»`); break; } }
   return { nivel, envia_formulario: envia, razones };
+}
+
+// ---------------------------------------------------------------- saneado para registros
+/** Ruta apta para registrar: sin parámetros de ruta (;jsessionid=…), sin segmentos que parezcan tokens, ids largos o UUID. Nunca incluye query ni hash. */
+export function sanearRuta(ruta) {
+  const limpio = String(ruta ?? "").split("?")[0].split("#")[0].split("/").map((seg) => {
+    const base = seg.split(";")[0];
+    if (/^[A-Za-z0-9_-]{20,}$/.test(base) || /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(base) || /^\d{6,}$/.test(base) || base.includes("=")) return ":id";
+    return base;
+  }).join("/");
+  return limpio.slice(0, 120);
 }
 
 // ---------------------------------------------------------------- hosts y rutas
@@ -106,6 +119,7 @@ export function validarMapeo(m, { local = false } = {}) {
     else if (textoProhibido(String(r.ruta_prefijo).replace(/[/_-]+/g, " ")).prohibido || /(emit|certific|firm|envi|dte|factura|anul)/i.test(r.ruta_prefijo)) e(`permitir_post: la ruta «${r.ruta_prefijo}» parece de emisión`);
   }
   if (!Array.isArray(m.pasos) || !m.pasos.length) { e("no hay pasos"); return { ok: false, errores, avisos }; }
+  validarSesion(m.sesion, { local, e, avisos });
   const ids = new Set();
   m.pasos.forEach((p, i) => {
     const ctx = `paso ${i + 1}${p?.id ? ` (${p.id})` : ""}`;
@@ -120,6 +134,7 @@ export function validarMapeo(m, { local = false } = {}) {
       if (!local && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);
       if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro o esperar_visible`);
     }
+    if (p.idempotente != null && typeof p.idempotente !== "boolean") e(`${ctx}: idempotente debe ser true o false`);
     if (necesitaDato.has(p.tipo) && !(typeof p.dato === "string" && p.dato.trim())) e(`${ctx}: falta «dato» (ruta en el archivo de datos ficticios, p. ej. cliente.nombre)`);
     if (p.tipo === "clic_seguro") {
       const r = textoProhibido([p.localizador?.valor, p.localizador?.nombre, p.motivo].join(" "));
@@ -132,6 +147,26 @@ export function validarMapeo(m, { local = false } = {}) {
   if (m.pasos.filter((p) => p?.tipo === "detener").length !== 1) e("debe haber exactamente un paso «detener», y al final");
   if (m.pasos.some((p) => p?.verificado === false)) avisos.push("hay pasos con verificado=false");
   return { ok: errores.length === 0, errores, avisos };
+}
+
+/** Claves permitidas de «sesion». Todo lo demás se rechaza (en particular cualquier cosa tipo keepalive/ping/refrescar). */
+export const CLAVES_SESION = ["hosts_login", "rutas_login", "indicadores_sesion_activa", "indicadores_login", "campo_clave_visible", "intervalo_ms", "espera_max_ms", "reanudar_instruccion"];
+function validarSesion(se, { local, e, avisos }) {
+  if (se == null) { avisos.push("sin «sesion»: no se detectará el cierre de sesión por indicadores (solo señales genéricas)"); return; }
+  if (typeof se !== "object" || Array.isArray(se)) return e("sesion debe ser un objeto");
+  for (const k of Object.keys(se)) if (!CLAVES_SESION.includes(k)) e(`sesion.${k}: clave no permitida (permitidas: ${CLAVES_SESION.join(", ")}). No se admiten mecanismos para mantener viva la sesión.`);
+  for (const h of se.hosts_login ?? []) if (!patronHostValido(h)) e(`sesion.hosts_login: dominio no válido «${h}»`);
+  for (const r of se.rutas_login ?? []) if (typeof r !== "string" || !r.startsWith("/")) e(`sesion.rutas_login: la ruta debe empezar con «/»`);
+  for (const lista of ["indicadores_sesion_activa", "indicadores_login"]) for (const [i, ind] of (se[lista] ?? []).entries()) {
+    const l = ind?.localizador;
+    if (!l || !ESTRATEGIAS.includes(l.estrategia) || !String(l.valor ?? "").trim()) e(`sesion.${lista}[${i}]: localizador incompleto`);
+    else if (l.estrategia === "rol" && !l.rol) e(`sesion.${lista}[${i}]: la estrategia «rol» necesita rol`);
+    if (!local && ind?.verificado !== true) e(`sesion.${lista}[${i}]: verificado no es true (un indicador no confirmado contra el portal real no se usa)`);
+  }
+  for (const k of ["intervalo_ms", "espera_max_ms"]) if (se[k] != null && !(Number.isInteger(se[k]) && se[k] > 0)) e(`sesion.${k} debe ser un entero positivo`);
+  if (se.intervalo_ms != null && se.intervalo_ms < 1000) e("sesion.intervalo_ms: mínimo 1000 (solo lecturas pasivas, sin sondeos agresivos)");
+  if (se.espera_max_ms != null && se.espera_max_ms > 4 * 3600 * 1000) e("sesion.espera_max_ms: máximo 4 horas");
+  if (se.reanudar_instruccion != null && typeof se.reanudar_instruccion !== "string") e("sesion.reanudar_instruccion debe ser texto");
 }
 
 // ---------------------------------------------------------------- datos ficticios

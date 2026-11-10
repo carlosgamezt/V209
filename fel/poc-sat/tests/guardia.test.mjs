@@ -7,6 +7,13 @@ import {
 } from "../src/guardia.mjs";
 import { crearRegistro } from "../src/registro.mjs";
 import { borradorMapeo } from "../src/observar.mjs";
+import { sanearRuta, CLAVES_SESION } from "../src/guardia.mjs";
+import { evaluarSenales } from "../src/sesion.mjs";
+import { planificarReanudacion, esIdempotente, crearProgreso } from "../src/progreso.mjs";
+import { crearLibro, claveIdempotencia, ESTADOS_BLOQUEANTES } from "../src/libro.mjs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const mapeoOk = () => ({ version: 1, dominios_permitidos: ["portal.ejemplo.gt"], permitir_post: [], pasos: [
   { id: "a", tipo: "manual", instruccion: "abre el formulario" },
@@ -123,4 +130,82 @@ test("borrador: omite riesgo y contraseñas, deja verificado=false y dato=null",
   assert.ok(b.pasos.filter((p) => p.localizador).every((p) => p.verificado === false && p.dato === null));
   assert.equal(b.omitidos_por_riesgo.length, 2); assert.deepEqual(b.dominios_permitidos, ["h.gt"]);
   assert.equal(validarMapeo(b).ok, false, "un borrador no es ejecutable sin revisión");
+});
+
+// ======================================================================= sesión SAT
+test("sesión: evaluarSenales — solo hay «activa» con un indicador confirmado y sin señales de login", () => {
+  const cfg = { hosts_login: ["acceso.ejemplo.gt"], rutas_login: ["/login"], indicadores_sesion_activa: [{}], campo_clave_visible: true };
+  const obs = (o = {}) => ({ host: "portal.ejemplo.gt", ruta: "/factura", claveVisible: false, activos: [{ id: "a0", presente: true }], login: [], respuestas401: 0, ...o });
+  assert.deepEqual(evaluarSenales(obs(), cfg), { estado: "activa", razones: ["indicador_de_sesion_activa"] });
+  assert.equal(evaluarSenales(obs({ host: "acceso.ejemplo.gt" }), cfg).estado, "requiere_login");
+  assert.equal(evaluarSenales(obs({ ruta: "/login/entrar" }), cfg).estado, "requiere_login");
+  assert.equal(evaluarSenales(obs({ claveVisible: true }), cfg).estado, "requiere_login");
+  assert.equal(evaluarSenales(obs({ respuestas401: 1 }), cfg).estado, "requiere_login");
+  assert.equal(evaluarSenales(obs({ login: [{ id: "l0", presente: true }] }), cfg).estado, "requiere_login");
+  assert.equal(evaluarSenales(obs({ claveVisible: true, activos: [{ presente: true }] }), cfg).estado, "requiere_login", "una señal de login gana al indicador activo");
+  assert.equal(evaluarSenales(obs({ activos: [{ id: "a0", presente: false }] }), cfg).estado, "desconocida", "sin indicador ni login: no se asume nada");
+  assert.equal(evaluarSenales(obs({ activos: [] }), {}).estado, "desconocida");
+  assert.equal(evaluarSenales(obs({ claveVisible: true, activos: [] }), { campo_clave_visible: false }).estado, "desconocida", "heurística desactivable");
+  assert.equal(evaluarSenales(obs({ host: "otro.gt", activos: [] }), { hosts_login: ["*.ejemplo.gt"] }).estado, "desconocida");
+});
+test("sesión: el esquema es estricto y no admite mecanismos para mantener viva la sesión", () => {
+  const con = (se) => validarMapeo({ ...mapeoOk(), sesion: se });
+  assert.ok(con({ hosts_login: ["acceso.ejemplo.gt"], rutas_login: ["/login"], indicadores_sesion_activa: [{ localizador: { estrategia: "texto", valor: "Mi cuenta" }, verificado: true }], intervalo_ms: 5000, espera_max_ms: 1800000 }).ok);
+  for (const k of ["keepalive", "ping", "mantener_activa", "refrescar", "clic_periodico", "heartbeat", "recargar_cada_ms"]) assert.equal(con({ [k]: true }).ok, false, k);
+  assert.ok(!con({ indicadores_sesion_activa: [{ localizador: { estrategia: "texto", valor: "x" }, verificado: false }] }).ok, "indicador sin confirmar");
+  assert.ok(!con({ indicadores_login: [{ localizador: { estrategia: "xpath", valor: "//x" }, verificado: true }] }).ok);
+  assert.ok(!con({ intervalo_ms: 100 }).ok, "sondeo demasiado agresivo"); assert.ok(!con({ espera_max_ms: 99 * 3600 * 1000 }).ok); assert.ok(!con({ hosts_login: ["*"] }).ok); assert.ok(!con({ rutas_login: ["login"] }).ok);
+  assert.ok(!validarMapeo({ ...mapeoOk(), sesion: [] }).ok);
+  assert.equal(CLAVES_SESION.some((k) => /keep|ping|alive|refresc|recarg|click|clic|heart/i.test(k)), false);
+});
+test("reanudación: solo se reaplican campos posteriores al último paso NO idempotente; nunca se repiten clics", () => {
+  const pasos = [{ id: "m", tipo: "manual" }, { id: "n", tipo: "llenar" }, { id: "c1", tipo: "clic_seguro" }, { id: "c2", tipo: "clic_seguro" }, { id: "t", tipo: "seleccionar" }, { id: "d", tipo: "llenar" }, { id: "z", tipo: "detener" }];
+  const hechos = ["m", "n", "c1", "c2", "t", "d"];
+  assert.deepEqual(planificarReanudacion(pasos, hechos, { n: "ok", t: "ok", d: "ok" }), { accion: "continuar", reaplicar: [] });
+  assert.deepEqual(planificarReanudacion(pasos, hechos, { n: "ok", t: "distinto", d: "ausente" }), { accion: "reaplicar", reaplicar: ["t", "d"] });
+  assert.equal(planificarReanudacion(pasos, hechos, { n: "distinto", t: "ok", d: "ok" }).accion, "reinicio_manual", "un campo anterior a un clic se perdió: repetir el clic podría duplicar");
+  assert.equal(planificarReanudacion(pasos, hechos, { n: "ausente", t: "ausente", d: "ausente" }).accion, "reinicio_manual");
+  assert.equal(planificarReanudacion(pasos, ["m", "n"], { n: "distinto" }).accion, "reaplicar", "sin clics hechos, se puede reaplicar desde el principio");
+  assert.ok(esIdempotente({ tipo: "llenar" }) && !esIdempotente({ tipo: "clic_seguro" }) && esIdempotente({ tipo: "clic_seguro", idempotente: true }) && !esIdempotente({ tipo: "llenar", idempotente: false }));
+});
+test("saneado de rutas: sin query, hash, parámetros de ruta ni identificadores/tokens", () => {
+  assert.equal(sanearRuta("/login;jsessionid=ABCDEF1234567890?token=SECRETO#x"), "/login");
+  assert.equal(sanearRuta("/factura/12345678/detalle"), "/factura/:id/detalle");
+  assert.equal(sanearRuta("/s/AbCdEfGhIjKlMnOpQrStUvWx"), "/s/:id");
+  assert.equal(sanearRuta("/a/3f2b8c1e-aaaa-bbbb-cccc-1234567890ab"), "/a/:id");
+  assert.equal(sanearRuta("/x/token=abc"), "/x/:id"); assert.equal(sanearRuta("/factura/nueva"), "/factura/nueva"); assert.ok(sanearRuta("/" + "a/".repeat(200)).length <= 120);
+  const r = crearRegistro({ empresa: "x", salida: () => {} }); r.navegacion({ host: "h.gt", ruta: "/login;jsessionid=ZZZZZZZZZZZZZZZZZZZZZZ?t=SECRETO" }); r.solicitudBloqueada({ metodo: "POST", host: "h.gt", ruta: "/api/12345678901/x", razon: "r" });
+  const txt = JSON.stringify(r.eventos()); assert.ok(!/jsessionid|SECRETO|ZZZZ|12345678901/.test(txt), txt);
+});
+test("progreso y libro: escritura atómica, sin valores; el libro bloquea y exige conciliación", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fel-u-")), plan = mapeoOk(), datos = datosOk();
+  const pr = crearProgreso({ dir, plan, datos }); pr.iniciar(); pr.marcarPaso(plan.pasos[1]); pr.marcarPaso(plan.pasos[1]);
+  assert.deepEqual(pr.completados(), ["b"]); assert.ok(!fs.readdirSync(dir).some((f) => f.endsWith(".tmp")), "sin temporales");
+  assert.ok(!fs.readFileSync(pr.archivo, "utf8").includes("CLIENTE DE PRUEBA")); assert.equal(pr.cargar().estado, "en_curso");
+  assert.notEqual(crearProgreso({ dir, plan, datos: { ...datos, extra: 1 } }).archivo, pr.archivo, "otro dato = otro progreso");
+  const l = crearLibro({ dir }), k = claveIdempotencia("a", datos);
+  assert.equal(l.puedeEjecutar(k).permitir, true); l.registrar(k, "preparado"); assert.equal(l.puedeEjecutar(k).permitir, true);
+  for (const e of ESTADOS_BLOQUEANTES) { l.registrar(k, e); assert.equal(l.puedeEjecutar(k).permitir, false, e); }
+  l.registrar(k, "descartado"); assert.equal(l.puedeEjecutar(k).permitir, true); assert.throws(() => l.registrar(k, "inventado"));
+  assert.notEqual(k, claveIdempotencia("b", datos)); assert.notEqual(k, claveIdempotencia("a", { ...datos, cliente: { ...datos.cliente, nombre: "OTRO DE PRUEBA" } }));
+});
+
+// ======================================================================= escaneos estáticos del código
+const AQUI = path.dirname(fileURLToPath(import.meta.url));
+const fuentes = ["../src", "../bin"].flatMap((d) => fs.readdirSync(path.join(AQUI, d)).filter((f) => f.endsWith(".mjs")).map((f) => [`${d}/${f}`, fs.readFileSync(path.join(AQUI, d, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1")]));
+test("independencia: el PoC no usa Supabase ni código de NEXA, ni lee cookies/almacenamiento/estado de sesión del navegador", () => {
+  const prohibido = /supabase|storageState|\.cookies\s*\(|addCookies|localStorage|sessionStorage|document\.cookie|from\s+["'][^"']*(\/app\/|\/supabase\/)/i;
+  for (const [f, c] of fuentes) assert.equal(prohibido.test(c), false, `${f} toca algo que no debe`);
+  assert.ok(fuentes.length >= 10);
+});
+test("sin «mantener viva» la sesión: el módulo de sesión solo hace lecturas pasivas (ni clics, ni teclas, ni recargas, ni peticiones, ni temporizadores de acción)", () => {
+  const c = fuentes.find(([f]) => f.endsWith("src/sesion.mjs"))[1];
+  assert.equal(/\.(click|dblclick|tap|hover|press|type|fill|check|uncheck|selectOption|setChecked|dispatchEvent|focus|reload|goto|goBack|goForward|evaluate|evaluateHandle|route|waitForTimeout)\s*\(|\bmouse\b|\bkeyboard\b|\btouchscreen\b|\bfetch\s*\(|XMLHttpRequest|setInterval|sendBeacon/.test(c), false);
+  for (const [f, cc] of fuentes.filter(([f]) => /src\/(progreso|libro|registro)\.mjs$/.test(f))) assert.equal(/\.(click|fill|press|goto|reload|evaluate)\s*\(|\bfetch\s*\(|page\./.test(cc), false, `${f} no debe tocar la página`);
+  const bins = fuentes.find(([f]) => f.endsWith("bin/medir-sesion.mjs"))[1]; assert.equal(/\.(click|fill|press|goto|reload|evaluate)\s*\(/.test(bins), false, "medir-sesion es solo lectura");
+});
+test("no hay ningún clic, tecla ni envío fuera del ejecutor (que pasa por la guardia)", () => {
+  for (const [f, c] of fuentes) if (!/src\/ejecutor\.mjs$/.test(f)) assert.equal(/\.(click|dblclick|press|type|check|setChecked|selectOption|fill)\s*\(|requestSubmit|\.submit\s*\(/.test(c), false, `${f}`);
+  const ej = fuentes.find(([f]) => f.endsWith("src/ejecutor.mjs"))[1];
+  assert.equal((ej.match(/\.click\s*\(/g) ?? []).length, 1, "un único punto de clic, precedido de clasificarControl"); assert.equal(/\.press\s*\(|keyboard|requestSubmit|\.submit\s*\(/.test(ej), false);
 });

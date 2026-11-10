@@ -22,6 +22,7 @@ try {
   fs.writeFileSync(`${base}.json`, JSON.stringify(inv, null, 2)); fs.writeFileSync(`${base}.mapeo-borrador.json`, JSON.stringify(borradorMapeo(inv), null, 2));
   console.log(`\nPágina: ${inv.pagina.host}${inv.pagina.ruta}  ·  controles: ${inv.total_controles}  ·  sin localizador único: ${inv.sin_candidato_unico}  ·  con riesgo de emisión: ${inv.con_riesgo_de_emision}`);
   for (const m of inv.marcos) console.log(`  marco ${m.indice}${m.principal ? " (principal)" : ""}: ${m.host}${m.ruta} · controles ${m.controles ?? "?"}${m.captcha ? " · CAPTCHA" : ""}${m.shadow_abierto ? ` · shadow DOM abierto: ${m.shadow_abierto}` : ""}${m.frameworks?.length ? ` · ${m.frameworks.join(",")}` : ""}${m.error ? ` · error: ${m.error}` : ""}`);
+  console.log(`  campo de contraseña visible: ${inv.senales_sesion.campo_clave_visible ? "SÍ (esta pantalla parece de inicio de sesión)" : "no"}`);
   console.log("\nControles que NUNCA se tocarán (emitir/enviar/etc.):"); for (const r of controlesDeRiesgo(inv)) console.log(`  ${r.n}  «${r.texto}»  ${r.nivel}: ${r.razones.join("; ")}`);
   console.log(`\nGuardado en:\n  ${base}.json\n  ${base}.mapeo-borrador.json   (borrador: verificado=false y dato=null; hay que completarlo a mano)\nNo compartas estos archivos sin revisarlos.`);
 } finally { await c.cerrar(); liberar(); }

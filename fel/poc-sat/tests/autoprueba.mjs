@@ -6,13 +6,18 @@ import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFile } from "node:child_process";
+import { promisify } from "node:util";
+const ejecutarAsync = (cmd, args, o) => promisify(execFile)(cmd, args, o).then((r) => ({ status: 0, stdout: r.stdout, stderr: r.stderr }), (e) => ({ status: e.code ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(e) }));
 import { chromium } from "../src/playwright.mjs";
 import { crearRegistro } from "../src/registro.mjs";
 import { ejecutarPlan } from "../src/ejecutor.mjs";
 import { bloquearEscrituras, conectar, tomarBloqueo } from "../src/conexion.mjs";
 import { inventariar, borradorMapeo } from "../src/observar.mjs";
 import { validarMapeo } from "../src/guardia.mjs";
+import { crearMonitorSesion } from "../src/sesion.mjs";
+import { crearProgreso } from "../src/progreso.mjs";
+import { crearLibro, claveIdempotencia } from "../src/libro.mjs";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(AQUI, "fixture/formulario-generico.html"));
@@ -63,9 +68,15 @@ await caso("OBSERVAR: inventario real de la página, sin valores, marcando lo pe
   const obs = por((c) => c.etiqueta === "Observación"); assert.equal(obs.id_generado, true); assert.equal(obs.id, ""); assert.ok(obs.mejor);   // id autogenerado: no se usa
   assert.ok(!JSON.stringify(inv).includes("DATO-SECRETO-NO-DEBE-SALIR"), "el inventario no debe contener valores");
   const b = borradorMapeo(inv);
-  assert.ok(b.omitidos_por_riesgo.some((o) => /contraseña/.test(o.motivo)), "la contraseña se omite");
+  assert.equal(inv.senales_sesion.campo_clave_visible, false, "con la sesión activa no hay campo de clave visible");
   assert.ok(b.pasos.filter((p) => p.localizador).every((p) => p.verificado === false && p.dato === null));
-  assert.equal(validarMapeo(b).ok, false); assert.equal(posts.length, 0); await context.close();
+  assert.equal(validarMapeo(b).ok, false); assert.equal(posts.length, 0);
+  await page.evaluate(() => window.__expirar("overlay"));   // pantalla de inicio de sesión: se detecta y la contraseña se omite del borrador
+  const inv2 = await inventariar(page), b2 = borradorMapeo(inv2);
+  assert.equal(inv2.senales_sesion.campo_clave_visible, true); assert.ok(b2.omitidos_por_riesgo.some((o) => /contraseña/.test(o.motivo)), "la contraseña se omite");
+  assert.ok(!b2.pasos.some((p) => p.localizador?.valor === "Clave de acceso"), "nunca hay un paso que llene la clave");
+  assert.ok(b2.sesion && b2.sesion.indicadores_sesion_activa.length === 0, "el borrador trae «sesion» vacío: nada inventado");
+  await context.close();
 });
 
 await caso("EJECUTAR: llena con datos ficticios, registra pasos/tiempos y SE DETIENE sin enviar nada", async () => {
@@ -140,6 +151,135 @@ await caso("MULTIEMPRESA: dos perfiles son sesiones separadas (la cookie de A no
   } finally { await A.close(); await B.close(); }
   const liberar = tomarBloqueo(path.join(tmp, "lock")); assert.ok(typeof liberar === "function"); liberar();
   const l2 = tomarBloqueo(path.join(tmp, "lock")); l2(); fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+// ======================================================================= SESIÓN SAT
+const planSes = (sesionExtra = {}) => {
+  const m = mapeo(); m.sesion = { campo_clave_visible: true, indicadores_sesion_activa: [{ localizador: { estrategia: "rol", rol: "tab", valor: "Datos del receptor" }, verificado: true }], intervalo_ms: 1000, espera_max_ms: 20000, ...sesionExtra };
+  const i = m.pasos.findIndex((p) => p.id === "p030-abrir-detalle");
+  m.pasos.splice(i + 1, 0, { id: "p035-agregar-linea", tipo: "clic_seguro", motivo: "agregar una línea al detalle", localizador: { estrategia: "id", valor: "agr" }, ambiguo_aprobado: true, verificado: true });
+  return m;
+};
+const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "fel-ses-"));
+const lineas = (page) => page.locator("#lineas .linea").count();
+/** Ejecuta con monitor de sesión, checkpoint y libro. «pagina» permite reutilizar la misma pestaña (reanudación). sleepHook simula a la persona. */
+async function correrSesion({ plan = planSes(), pagina = null, hooks = {}, sleepHook = null, responder = null, reanudar = false, dir = tmpDir(), timeout = 1500, reloj = null, conIndicadores = true } = {}) {
+  const base = pagina ?? await nuevaPagina(), registro = pagina ? crearRegistro({ empresa: "empresa-prueba", salida: silencio }) : base.registro;
+  let t = 0; const rl = reloj ?? (() => (t += 5)), adv = (ms) => { t += ms; };
+  const sesion = crearMonitorSesion({ config: plan.sesion, dominios: plan.dominios_permitidos, reloj: rl, sleep: async (ms) => { adv(ms); await sleepHook?.(base.page, ms); }, salida: silencio });
+  const progreso = crearProgreso({ dir, plan, datos: datos() }), libro = crearLibro({ dir });
+  const preguntas = [];
+  const r = await ejecutarPlan({ page: base.page, plan, datos: datos(), registro, empresa: { alias: "empresa-prueba" }, local: true, reloj: rl, timeout, sesion, progreso, libro, reanudar, hooks, salida: silencio,
+    esperarUsuario: async (q) => { preguntas.push(q); return responder ? responder(q, base.page) : /empresa/.test(q) ? "si" : ""; } });
+  return { ...r, ...base, registro, progreso, libro, dir, preguntas };
+}
+const ev = (page) => page.evaluate(() => window.__ev || 0);
+
+await caso("SESIÓN 1: SAT cierra la sesión a mitad → se pausa SIN tocar nada, la persona entra, se verifica, se reconcilia y se reanuda sin duplicar", async () => {
+  posts.length = 0; const pagina = await nuevaPagina(), violaciones = []; let expirado = false, ev0 = null, esperas = 0;
+  const r = await correrSesion({ pagina,
+    hooks: { antesDeEjecutar: async (p) => { if (p.id === "p050-desc" && !expirado) { expirado = true; ev0 = await ev(pagina.page); await pagina.page.evaluate(() => window.__expirar("overlay")); } } },
+    sleepHook: async (page) => { esperas++; if ((await ev(page)) !== ev0) violaciones.push(`interacción durante la espera #${esperas}`); if (esperas === 3) await page.evaluate(() => window.__iniciarSesion()); } });
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); assert.deepEqual(violaciones, [], "durante la espera no hubo clics, teclas ni escritura"); assert.ok(esperas >= 3, "se esperó consultando de forma pasiva");
+  const s = r.resumen; assert.equal(s.interrupciones_de_sesion, 1); assert.equal(s.errores.length, 0); assert.ok(s.fases.autenticacion.ms > 0 && s.fases.llenado.ms > 0 && s.fases.espera.ms >= 0, JSON.stringify(s.fases));
+  const est = r.registro.eventos().filter((e) => e.evento === "sesion_sat").map((e) => e.estado); assert.deepEqual(est.slice(-2), ["requiere_login", "activa"]);
+  assert.ok(r.registro.eventos().some((e) => e.id === "p050-desc" && e.resultado === "sesion"), "el intento fallido quedó marcado como pérdida de sesión, no como error");
+  assert.match(r.registro.eventos().find((e) => e.id === "p-reconciliar").detalle, /sin cambios/);
+  assert.equal(await lineas(r.page), 1, "el clic «Agregar línea» NO se repitió"); assert.equal(await r.page.getByLabel("Descripción").inputValue(), "SERVICIO DE PRUEBA - NO EMITIR");
+  assert.deepEqual(posts, []); const todo = JSON.stringify(r.registro.eventos()) + fs.readFileSync(r.progreso.archivo, "utf8");
+  for (const prohibido of ["SERVICIO DE PRUEBA", "CLIENTE DE PRUEBA", "sesion_demo", "Clave", "125.50"]) assert.ok(!todo.includes(prohibido), `el registro/progreso no debe contener «${prohibido}»`);
+  assert.equal(r.progreso.snapshot().estado, "detenido"); assert.equal(r.progreso.snapshot().pausas_por_sesion, 1); await r.context.close();
+});
+
+await caso("SESIÓN 2: si el portal pierde TODO al reiniciar la sesión, no se repiten clics: se exige reinicio manual", async () => {
+  const pagina = await nuevaPagina(); let hecho = false;
+  const r = await correrSesion({ pagina, hooks: { antesDeEjecutar: async (p) => { if (p.id === "p050-desc" && !hecho) { hecho = true; await pagina.page.evaluate(() => window.__expirar("reset")); } } },
+    sleepHook: async (page) => { await page.evaluate(() => window.__iniciarSesion()); } });
+  assert.equal(r.ok, false); assert.equal(r.estado, "requiere_reinicio_manual"); assert.match(r.resumen.bloqueos_de_guardia.at(-1).detalle, /REINICIO MANUAL/);
+  assert.equal(await lineas(r.page), 0, "no se volvió a pulsar «Agregar línea»"); assert.equal(await r.page.getByLabel("NIT del receptor").inputValue(), "", "no se re-llenó sobre un formulario a medias");
+  assert.equal(r.progreso.snapshot().estado, "requiere_reinicio_manual"); assert.equal(r.libro.estado(claveIdempotencia("empresa-prueba", datos())), "preparado", "no figura como detenido ni emitido"); await r.context.close();
+});
+
+await caso("SESIÓN 3: si el portal pierde solo campos posteriores al último clic, se vuelven a llenar (solo campos) y no se duplica nada", async () => {
+  const pagina = await nuevaPagina(); let hecho = false;
+  const r = await correrSesion({ pagina, hooks: { antesDeEjecutar: async (p) => { if (p.id === "p080-leer-precio" && !hecho) { hecho = true; await pagina.page.evaluate(() => { window.__expirar("overlay"); window.__resetDetalle(); }); } } },
+    sleepHook: async (page) => { await page.evaluate(() => window.__iniciarSesion()); } });
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); assert.match(r.registro.eventos().find((e) => e.id === "p-reconciliar").detalle, /se volverán a llenar/);
+  assert.equal(await lineas(r.page), 1); assert.equal(await r.page.getByLabel("Precio unitario").inputValue(), "125.50"); assert.equal(await r.page.getByLabel("Tipo").inputValue(), "Servicio"); await r.context.close();
+});
+
+await caso("SESIÓN 4: un paso NO repetible (clic) interrumpido por el cierre de sesión no se reintenta: decisión manual", async () => {
+  posts.length = 0; const pagina = await nuevaPagina(); let hecho = false;
+  const r = await correrSesion({ pagina, hooks: { antesDeEjecutar: async (p) => { if (p.id === "p035-agregar-linea" && !hecho) { hecho = true; await pagina.page.evaluate(() => window.__expirar("overlay")); } } },
+    sleepHook: async (page) => { await page.evaluate(() => window.__iniciarSesion()); } });
+  assert.equal(r.ok, false); assert.equal(r.estado, "requiere_decision_manual"); assert.equal(await lineas(r.page), 0, "no se reintentó el clic"); assert.deepEqual(posts, []); await r.context.close();
+});
+
+await caso("SESIÓN 5: sin indicadores confirmados, solo se reanuda tras confirmación humana Y sin señales de login (un «si» con el login aún visible no basta)", async () => {
+  const pagina = await nuevaPagina(); let hecho = false, llamadas = 0;
+  const plan = planSes(); plan.sesion.indicadores_sesion_activa = [];
+  const r = await correrSesion({ pagina, plan, hooks: { antesDeEjecutar: async (p) => { if (p.id === "p050-desc" && !hecho) { hecho = true; await pagina.page.evaluate(() => window.__expirar("overlay")); } } },
+    responder: async (q, page) => { if (/empresa/.test(q)) return "si"; if (/Inicia sesión|iniciaste sesión/.test(q)) { llamadas++; if (llamadas === 2) await page.evaluate(() => window.__iniciarSesion()); return "si"; } return ""; } });
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); assert.ok(llamadas >= 2, `la primera confirmación con el login visible no reanudó (llamadas: ${llamadas})`);
+  assert.ok(r.registro.eventos().some((e) => e.evento === "sesion_sat" && e.estado === "activa" && e.via === "manual")); await r.context.close();
+});
+
+await caso("SESIÓN 6: si nadie inicia sesión, se agota la espera: no se reanuda, no se emite, el progreso queda guardado", async () => {
+  const pagina = await nuevaPagina(); let hecho = false, t = 0;
+  const r = await correrSesion({ pagina, plan: planSes({ espera_max_ms: 5000 }), reloj: () => (t += 5), hooks: { antesDeEjecutar: async (p) => { if (p.id === "p050-desc" && !hecho) { hecho = true; await pagina.page.evaluate(() => window.__expirar("overlay")); } } } });
+  assert.equal(r.ok, false); assert.equal(r.estado, "interrumpido"); assert.equal(await pagina.page.getByLabel("Cantidad").inputValue().catch(() => ""), ""); assert.deepEqual(posts, []);
+  assert.deepEqual(r.progreso.snapshot().completados.map((x) => x.id).slice(0, 2), ["p000-sesion", "p010-nit"]); await r.context.close();
+});
+
+await caso("SESIÓN 7: reanudar tras una interrupción continúa donde quedó (sin repetir clics) y solo con la sesión verificada", async () => {
+  const pagina = await nuevaPagina(), dir = tmpDir(); let cortado = false;
+  const r1 = await correrSesion({ pagina, dir, hooks: { antesDePaso: async (p) => { if (p.id === "p060-cant" && !cortado) { cortado = true; throw new Error("INTERRUPCIÓN SIMULADA (cierre del proceso)"); } } } });
+  assert.equal(r1.ok, false); assert.equal(r1.progreso.snapshot().estado, "interrumpido"); assert.equal(await lineas(pagina.page), 1);
+  const r2 = await correrSesion({ pagina, dir, reanudar: true });
+  assert.equal(r2.ok, true, JSON.stringify(r2.resumen.errores) + JSON.stringify(r2.resumen.bloqueos_de_guardia)); assert.equal(await lineas(pagina.page), 1, "al reanudar no se repitió el clic");
+  assert.equal(await pagina.page.getByLabel("Precio unitario").inputValue(), "125.50"); assert.ok(r2.registro.eventos().some((e) => e.id === "p-reconciliar" && /sin cambios/.test(e.detalle)));
+  assert.equal(r2.registro.eventos().filter((e) => e.evento === "paso" && e.id === "p035-agregar-linea").length, 0, "el paso del clic no se volvió a ejecutar");
+  assert.equal(r2.progreso.snapshot().reanudaciones, 1); await pagina.context.close();
+});
+await caso("SESIÓN 8: reanudar con la sesión ya cerrada espera el inicio de sesión ANTES de tocar nada", async () => {
+  const pagina = await nuevaPagina(), dir = tmpDir(); let cortado = false, esperas = 0, ev0 = null;
+  await correrSesion({ pagina, dir, hooks: { antesDePaso: async (p) => { if (p.id === "p060-cant" && !cortado) { cortado = true; throw new Error("INTERRUPCIÓN"); } } } });
+  await pagina.page.evaluate(() => window.__expirar("overlay")); ev0 = await ev(pagina.page); const violaciones = [];
+  const r = await correrSesion({ pagina, dir, reanudar: true, sleepHook: async (page) => { esperas++; if ((await ev(page)) !== ev0) violaciones.push(esperas); if (esperas === 2) await page.evaluate(() => window.__iniciarSesion()); } });
+  assert.equal(r.ok, true); assert.deepEqual(violaciones, []); assert.ok(esperas >= 2); assert.equal(await lineas(pagina.page), 1); await pagina.context.close();
+});
+
+await caso("ANTI-DUPLICADOS: el libro bloquea una nueva ejecución si el documento figura como emisión solicitada/desconocida/emitida, hasta conciliar a mano", async () => {
+  const dir = tmpDir(), clave = claveIdempotencia("empresa-prueba", datos()), libro = crearLibro({ dir });
+  assert.equal(clave, claveIdempotencia("empresa-prueba", datos()), "la clave es estable"); assert.notEqual(clave, claveIdempotencia("empresa-b", datos()));
+  for (const estado of ["emision_solicitada", "emision_desconocida", "emitido", "emitido_manual"]) {
+    libro.registrar(clave, estado); const { context, page, registro } = await nuevaPagina();
+    const r = await ejecutarPlan({ page, plan: base(), datos: datos(), registro, local: true, libro, esperarUsuario: async () => "si", empresa: { alias: "empresa-prueba" } });
+    assert.equal(r.ok, false, estado); assert.match(r.errores_validacion[0], /concilia/); assert.equal(await page.getByLabel("Nombre del receptor").inputValue(), "", "no se tocó nada"); await context.close();
+  }
+  libro.registrar(clave, "descartado", "comprobado en el portal: no existe");
+  const { context, page, registro } = await nuevaPagina(); const r = await ejecutarPlan({ page, plan: base(), datos: datos(), registro, local: true, libro, esperarUsuario: async () => "si", empresa: { alias: "empresa-prueba" } });
+  assert.equal(r.ok, true); assert.equal(libro.estado(clave), "detenido_antes_de_emitir"); assert.throws(() => libro.registrar(clave, "emitir"), /no válido`?|estado/); await context.close();
+});
+
+await caso("CREDENCIALES: un paso que intente llenar un campo de contraseña se rechaza (la persona se autentica en el portal oficial)", async () => {
+  const pagina = await nuevaPagina(); await pagina.page.evaluate(() => window.__expirar("overlay"));
+  const plan = base({ pasos: [{ id: "p0", tipo: "manual", instruccion: "x" }, { id: "x", tipo: "llenar", dato: "cliente.nombre", localizador: { estrategia: "etiqueta", valor: "Clave de acceso" }, verificado: true }, { id: "z", tipo: "detener" }] });
+  const r = await ejecutarPlan({ page: pagina.page, plan, datos: datos(), registro: pagina.registro, local: true, esperarUsuario: async () => "si", empresa: { alias: "empresa-prueba" } });
+  assert.equal(r.ok, false); assert.match(r.resumen.bloqueos_de_guardia[0].detalle, /credenciales/); assert.equal(await pagina.page.getByLabel("Clave de acceso").inputValue(), ""); await pagina.context.close();
+});
+
+await caso("MEDIR-SESIÓN (comando real): detecta el momento en que el portal pide iniciar sesión, sin interactuar", async () => {
+  const puerto = 9950 + Math.floor(Math.random() * 40), b4 = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${puerto}`] }), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-med-"));
+  const empresa = path.join(tmp, "e.json"), mapa = path.join(tmp, "m.json"); fs.writeFileSync(empresa, JSON.stringify({ alias: "empresa-med", modo: "cdp", cdp: `http://127.0.0.1:${puerto}` })); fs.writeFileSync(mapa, JSON.stringify(planSes()));
+  try {
+    const pg = await (await b4.newContext()).newPage(); await pg.goto(URL_BASE); const antes = await ev(pg);
+    setTimeout(() => pg.evaluate(() => window.__expirar("overlay")).catch(() => {}), 2500);
+    const m = await ejecutarAsync(process.execPath, [path.join(AQUI, "../bin/medir-sesion.mjs"), `--empresa=${empresa}`, `--mapeo=${mapa}`, "--solo-local", "--intervalo=1", "--max-min=0.4"], { encoding: "utf8", timeout: 60000 });
+    assert.equal(m.status, 0, m.stderr + m.stdout); assert.match(m.stdout, /pidió iniciar sesión a los/); assert.equal(await ev(pg), antes, "la medición no produjo ninguna interacción en la página");
+    const f = fs.readdirSync(path.join(AQUI, "../registros/empresa-med")).find((x) => x.startsWith("medicion-sesion")); const j = JSON.parse(fs.readFileSync(path.join(AQUI, "../registros/empresa-med", f), "utf8"));
+    assert.ok(j.primer_login_detectado_ms >= 2000 && j.primer_login_detectado_ms < 12000, String(j.primer_login_detectado_ms)); assert.match(j.nota, /NO confirmada/);
+  } finally { await b4.close(); fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(path.join(AQUI, "../registros"), { recursive: true, force: true }); }
 });
 
 await caso("COMANDOS REALES: bin/observar.mjs y bin/ejecutar.mjs contra un Chrome con puerto de depuración (sesión «ya iniciada»)", async () => {

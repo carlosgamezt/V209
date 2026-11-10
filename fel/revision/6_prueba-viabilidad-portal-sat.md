@@ -14,7 +14,9 @@ fel/poc-sat/
   src/guardia.mjs      Reglas puras: palabras prohibidas, validación del plan y de los datos, política de red, aislamiento
   src/ejecutor.mjs     Intérprete del plan (falla cerrado) · src/observar.mjs · src/localizar.mjs · src/conexion.mjs · src/registro.mjs
   config/              empresa.ejemplo.json · mapeo.plantilla.json (SIN selectores) · datos-ficticios.json
-  tests/               guardia.test.mjs (12) · autoprueba.mjs (15, Chrome real contra la página de ejemplo)
+  tests/               guardia.test.mjs (20) · autoprueba.mjs (26, Chrome real contra la página de ejemplo)
+  src/sesion.mjs · src/progreso.mjs · src/libro.mjs   Gestión de sesión SAT, progreso y anti-duplicados → ver docs/gestion-sesion-sat.md
+  bin/medir-sesion.mjs Mide pasivamente cuánto tarda el portal en pedir iniciar sesión (hipótesis 20–30 min, NO confirmada)
 ```
 **Flujo:** (1) la persona abre Chrome e inicia sesión a mano → (2) `observar` lista lo que existe en la página → (3) la persona completa y **confirma** el mapeo → (4) `ejecutar` llena y se detiene → (5) la persona revisa y cierra **sin emitir**.
 
@@ -48,7 +50,7 @@ Cada fase termina con un criterio de paso/parada. No se avanza si falla.
 
 **Fase 0 — Autoprueba sin SAT (se puede hacer ya)**
 ```
-cd fel/poc-sat && npm install && npm test        # esperado: 12 tests de guardia + 15/15 casos con Chrome
+cd fel/poc-sat && npm install && npm test        # esperado: 20 tests + 26/26 casos con Chrome
 ```
 Criterio: todo OK. (Se ejecuta también en la CI.)
 
@@ -73,7 +75,7 @@ Criterio: `node bin/ejecutar.mjs …` no se niega a correr (la validación pasa)
 Responde `si` a la confirmación de identidad, sigue las instrucciones manuales. Al final verás «DETENIDO». **Revisa visualmente el formulario, no pulses Emitir, descarta el borrador y cierra.**
 Criterio de éxito: campos llenados y verificados, `emitió: NO`, sin errores. Anota las **solicitudes bloqueadas** que imprime: si el portal necesitaba un POST legítimo (p. ej. consulta de NIT) para llenar, aparecerá ahí; se decide caso por caso si permitirlo en `permitir_post` (nunca rutas de emisión).
 
-**Fase 5 — Estabilidad:** repetir 3 veces; esperar el vencimiento de la sesión y comprobar el comportamiento; recargar la página a mitad; observar si cambian ids/etiquetas entre ejecuciones. Medir con el resumen (`registros/<alias>/*.resumen.json`).
+**Fase 5 — Sesión y estabilidad** (detalle en `docs/gestion-sesion-sat.md`): (a) `node bin/medir-sesion.mjs …` sin tocar la ventana, varias veces, para medir el cierre por inactividad (hipótesis 20–30 min, no confirmada) y ver **cómo se manifiesta** (alimenta el bloque `sesion` del mapeo); (b) provocar un cierre a mitad de una ejecución, iniciar sesión tú en el portal oficial y comprobar pausa → verificación → reconciliación → reanudación; (c) repetir 3 veces y observar si cambian ids/etiquetas. Medir con el resumen (`registros/<alias>/*.resumen.json`: fases autenticación/llenado/espera).
 
 **Fase 6 — Varias empresas:** dos perfiles/puertos distintos (`empresa-a` 9222, `empresa-b` 9223), cada uno con **su** sesión iniciada a mano; ejecutar la misma prueba en cada uno, por separado. Verificar que ninguna ejecución toca la sesión de la otra.
 
@@ -102,7 +104,7 @@ Criterio de éxito: campos llenados y verificados, `emitió: NO`, sin errores. A
 - [ ] **Service workers y WebSockets** del portal (la red de solo lectura no los intercepta).
 - [ ] **Ventanas emergentes / nuevas pestañas**, descargas, diálogos del portal.
 - [ ] **Qué ocurre al pulsar «Guardar borrador»** (no lo pulsa la prueba; solo saber si existe y si genera algo en SAT).
-- [ ] **Expiración de sesión** y reanudación; **recarga** a mitad del llenado.
+- [ ] **Expiración de sesión** y reanudación; **recarga** a mitad del llenado; ver la lista completa en `docs/gestion-sesion-sat.md` §9 (tiempo real, manifestación del cierre, ¿conserva SAT el borrador?, volver al formulario tras el login).
 - [ ] **Estabilidad** de etiquetas/ids entre días y tras cambios del portal.
 - [ ] **Varias empresas:** acceso, perfil/puerto por empresa, y lectura del contribuyente activo.
 - [ ] **Términos de uso de SAT / autorización** para automatizar (persona responsable).
