@@ -17,4 +17,6 @@ PSQL=("$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -v ON_ERROR_ST
 "${PSQL[@]}" -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do echo "migración: $(basename "$f")"; "${PSQL[@]}" -f "$f"; done
 for f in supabase/tests/*.sql; do echo "prueba:    $(basename "$f")"; "${PSQL[@]}" -f "$f"; done
+echo "prueba:    concurrencia.sh"
+PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/concurrencia.sh
 echo "TODO OK"

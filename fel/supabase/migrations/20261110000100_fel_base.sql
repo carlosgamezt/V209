@@ -55,7 +55,7 @@ create table public.empresas (
   id                      uuid primary key default gen_random_uuid(),
   nombre_comercial        text not null,
   razon_social            text not null,
-  nit                     text not null check (nit ~ '^[0-9]{2,12}-?[0-9K]$'),
+  nit                     text not null check (nit ~ '^[0-9A-Z-]{2,20}$'),   -- solo juego de caracteres; el formato oficial se valida con reglas verificadas
   regimen_id              uuid references public.regimenes_fiscales (id),
   estado                  text not null default 'pendiente' check (estado in ('pendiente','habilitada','suspendida')),
   moneda                  char(3) not null default 'GTQ' check (moneda = 'GTQ'),
@@ -101,24 +101,62 @@ create table public.invitaciones (
 );
 create unique index invitaciones_pendiente_uq on public.invitaciones (empresa_id, email) where estado = 'pendiente';
 
+-- ============================================================ catálogo de identificaciones del comprador (global, configurable)
+-- Los formatos NO se fijan en el código: cada tipo trae un patrón opcional y un indicador "verificado".
+-- Hasta que el administrador maestro verifique un tipo contra la normativa vigente de SAT, no se puede usar para emisión real.
+create table public.identificaciones_tipos (
+  codigo         text primary key check (codigo ~ '^[A-Z][A-Z0-9_]{1,11}$'),
+  nombre         text not null,
+  patron         text,                        -- expresión regular (opcional); solo se aplica si verificado = true
+  verificado     boolean not null default false,
+  fuente         text,
+  verificado_por uuid references auth.users (id),
+  verificado_en  timestamptz,
+  activo         boolean not null default true,
+  notas          text,
+  check (not verificado or (fuente is not null and verificado_por is not null and verificado_en is not null))
+);
+
+-- ============================================================ reglas normativas versionadas (global): anulación de DTE y otras
+create table public.reglas_normativas (
+  id             uuid primary key default gen_random_uuid(),
+  codigo         text not null check (codigo ~ '^[a-z][a-z0-9_]{2,40}$'),
+  version        integer not null check (version >= 1),
+  nombre         text not null,
+  estado         text not null default 'sin_verificar' check (estado in ('sin_verificar','verificado','obsoleto')),
+  reglas         jsonb not null default '{}'::jsonb,
+  fuente         text,
+  vigente_desde  date,
+  vigente_hasta  date,
+  verificado_por uuid references auth.users (id),
+  verificado_en  timestamptz,
+  creado_por     uuid references auth.users (id),
+  creado_en      timestamptz not null default now(),
+  unique (codigo, version),
+  check (vigente_hasta is null or vigente_desde is null or vigente_hasta >= vigente_desde)
+);
+
 -- ============================================================ clientes y conceptos (por empresa)
 create table public.clientes (
-  id              uuid primary key default gen_random_uuid(),
-  empresa_id      uuid not null references public.empresas (id),
-  nit             text not null check (nit = 'CF' or nit ~ '^[0-9]{2,12}-?[0-9K]$'),
-  nombre          text not null check (length(btrim(nombre)) between 1 and 200),
-  direccion       text,
-  email           text,
-  telefono        text,
-  activo          boolean not null default true,
-  version         integer not null default 1,
-  creado_por      uuid references auth.users (id),
-  creado_en       timestamptz not null default now(),
-  actualizado_por uuid references auth.users (id),
-  actualizado_en  timestamptz not null default now(),
-  unique (id, empresa_id)
+  id                    uuid primary key default gen_random_uuid(),
+  empresa_id            uuid not null references public.empresas (id),
+  tipo_identificacion   text not null references public.identificaciones_tipos (codigo),
+  numero_identificacion text not null check (length(numero_identificacion) between 1 and 30 and numero_identificacion ~ '^[0-9A-Za-z-]+$'),
+  nombre                text not null check (length(btrim(nombre)) between 1 and 200),
+  direccion             text,
+  email                 text,
+  telefono              text,
+  activo                boolean not null default true,
+  version               integer not null default 1,
+  creado_por            uuid references auth.users (id),
+  creado_en             timestamptz not null default now(),
+  actualizado_por       uuid references auth.users (id),
+  actualizado_en        timestamptz not null default now(),
+  unique (id, empresa_id),
+  check (tipo_identificacion <> 'CF' or numero_identificacion = 'CF')
 );
-create unique index clientes_nit_uq on public.clientes (empresa_id, nit) where nit <> 'CF';
+create unique index clientes_identificacion_uq on public.clientes (empresa_id, tipo_identificacion, numero_identificacion)
+  where tipo_identificacion <> 'CF';
 
 create table public.conceptos (
   id               uuid primary key default gen_random_uuid(),
@@ -127,7 +165,7 @@ create table public.conceptos (
   descripcion      text not null check (length(btrim(descripcion)) between 1 and 300),
   tipo             text not null check (tipo in ('bien','servicio')),
   unidad_medida    text not null default 'UND',
-  precio_unitario  numeric(18,6) not null default 0 check (precio_unitario >= 0),
+  precio_unitario  numeric not null default 0 check (precio_unitario >= 0 and scale(precio_unitario) <= 6),
   categoria_fiscal text,                       -- clave definida por las reglas del régimen (pendiente de validación)
   activo           boolean not null default true,
   version          integer not null default 1,
@@ -139,47 +177,66 @@ create table public.conceptos (
   unique (empresa_id, codigo)
 );
 
--- ============================================================ documentos (estructura; el motor de estados y cálculo va en la siguiente etapa)
+-- ============================================================ documentos
+-- DOS ejes de estado, para no confundir preparación interna con estado fiscal oficial:
+--   estado_preparacion (interno de NEXA):   borrador | revisado | archivado
+--   estado_fiscal (refleja lo oficial):     ninguno | pendiente_certificacion | por_verificar | certificado | rechazado
+--                                           | anulacion_solicitada | anulado
+-- "archivado" es solo interno y solo existe si el documento nunca tuvo vida fiscal; "anulado" es un hecho fiscal.
 create table public.documentos (
-  id                        uuid primary key default gen_random_uuid(),
-  empresa_id                uuid not null references public.empresas (id),
-  tipo_documento            text not null default 'factura' check (tipo_documento in ('factura')),
-  estado                    text not null default 'borrador' check (estado in
-                              ('borrador','revisado','pendiente_certificacion','por_verificar','certificada','rechazada','archivada')),
-  numero_borrador           integer not null,             -- número INTERNO del borrador; no es un número fiscal
-  cliente_id                uuid,
-  cliente_snapshot          jsonb,
-  regimen_id                uuid references public.regimenes_fiscales (id),
-  regimen_snapshot          jsonb,                        -- copia de las reglas usadas, para reproducir el cálculo
-  moneda                    char(3) not null default 'GTQ' check (moneda = 'GTQ'),
-  fecha_emision_prevista    date,
-  subtotal                  numeric(18,6) not null default 0,
-  descuento_total           numeric(18,6) not null default 0,
-  base_imponible            numeric(18,6) not null default 0,
-  impuestos                 jsonb not null default '[]'::jsonb,
-  total                     numeric(18,6) not null default 0,
-  observaciones             text,
-  version                   integer not null default 1,
-  -- Datos fiscales: SIEMPRE vacíos hasta una confirmación verificable (ver restricción abajo).
-  serie                     text,
-  numero_fiscal             text,
-  autorizacion_sat          text,
+  id                          uuid primary key default gen_random_uuid(),
+  empresa_id                  uuid not null references public.empresas (id),
+  tipo_documento              text not null default 'factura' check (tipo_documento in ('factura')),
+  estado_preparacion          text not null default 'borrador' check (estado_preparacion in ('borrador','revisado','archivado')),
+  estado_fiscal               text not null default 'ninguno' check (estado_fiscal in
+                                ('ninguno','pendiente_certificacion','por_verificar','certificado','rechazado','anulacion_solicitada','anulado')),
+  numero_borrador             integer not null,         -- número INTERNO del borrador; no es un número fiscal
+  cliente_id                  uuid,
+  cliente_snapshot            jsonb,
+  regimen_id                  uuid references public.regimenes_fiscales (id),
+  regimen_snapshot            jsonb,                    -- copia de las reglas vigentes al guardar, para reproducir el cálculo
+  moneda                      char(3) not null default 'GTQ' check (moneda = 'GTQ'),
+  fecha_emision_prevista      date,
+  -- Importes en numeric SIN precisión fija: ningún redondeo implícito. Impuestos y total quedan nulos hasta tener reglas verificadas.
+  subtotal                    numeric,
+  descuento_total             numeric,
+  base_imponible              numeric,
+  impuestos                   jsonb,
+  total                       numeric,
+  calculo                     jsonb,                    -- metadatos: versión del motor, si es oficial y qué está pendiente
+  observaciones               text,
+  version                     integer not null default 1,
+  -- Datos fiscales: vacíos salvo confirmación verificable (ver restricciones).
+  serie                       text,
+  numero_fiscal               text,
+  autorizacion_sat            text,
   certificacion_verificada_en timestamptz,
-  creado_por                uuid references auth.users (id),
-  creado_en                 timestamptz not null default now(),
-  actualizado_por           uuid references auth.users (id),
-  actualizado_en            timestamptz not null default now(),
+  anulacion_solicitada_en     timestamptz,
+  anulado_en                  timestamptz,
+  anulacion_motivo            text,
+  creado_por                  uuid references auth.users (id),
+  creado_en                   timestamptz not null default now(),
+  actualizado_por             uuid references auth.users (id),
+  actualizado_en              timestamptz not null default now(),
   unique (id, empresa_id),
   unique (empresa_id, numero_borrador),
   foreign key (cliente_id, empresa_id) references public.clientes (id, empresa_id),
+  -- Cualquier avance fiscal exige que el documento esté revisado; archivado solo sin vida fiscal.
+  constraint documentos_ejes_chk check (
+    (estado_fiscal = 'ninguno' or estado_preparacion = 'revisado')
+    and (estado_preparacion <> 'archivado' or estado_fiscal = 'ninguno')
+  ),
+  -- Serie, número y autorización SOLO con DTE certificado (o su anulación) y verificación registrada.
   constraint documentos_datos_fiscales_chk check (
-    (estado = 'certificada'
-       and serie is not null and numero_fiscal is not null and autorizacion_sat is not null
-       and certificacion_verificada_en is not null)
+    (estado_fiscal in ('certificado','anulacion_solicitada','anulado')
+       and serie is not null and numero_fiscal is not null and autorizacion_sat is not null and certificacion_verificada_en is not null)
     or
-    (estado <> 'certificada'
-       and serie is null and numero_fiscal is null and autorizacion_sat is null
-       and certificacion_verificada_en is null)
+    (estado_fiscal not in ('certificado','anulacion_solicitada','anulado')
+       and serie is null and numero_fiscal is null and autorizacion_sat is null and certificacion_verificada_en is null)
+  ),
+  constraint documentos_anulacion_chk check (
+    ((estado_fiscal in ('anulacion_solicitada','anulado')) = (anulacion_solicitada_en is not null))
+    and ((estado_fiscal = 'anulado') = (anulado_en is not null))
   )
 );
 
@@ -189,11 +246,12 @@ create table public.documento_lineas (
   empresa_id      uuid not null,
   orden           integer not null check (orden >= 1),
   concepto_id     uuid,
-  descripcion     text not null,
-  cantidad        numeric(18,6) not null check (cantidad > 0),
-  precio_unitario numeric(18,6) not null check (precio_unitario >= 0),
+  descripcion     text not null check (length(btrim(descripcion)) between 1 and 300),
+  cantidad        numeric not null check (cantidad > 0 and scale(cantidad) <= 6),
+  precio_unitario numeric not null check (precio_unitario >= 0 and scale(precio_unitario) <= 6),
   descuento_tipo  text not null default 'ninguno' check (descuento_tipo in ('ninguno','monto','porcentaje')),
-  descuento_valor numeric(18,6) not null default 0 check (descuento_valor >= 0),
+  descuento_valor numeric not null default 0 check (descuento_valor >= 0 and scale(descuento_valor) <= 6
+                    and (descuento_tipo <> 'porcentaje' or descuento_valor <= 100)),
   importes        jsonb not null default '{}'::jsonb,
   unique (documento_id, orden),
   foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id) on delete cascade,
@@ -201,16 +259,45 @@ create table public.documento_lineas (
 );
 
 create table public.documento_estados (
-  id              bigint generated always as identity primary key,
-  documento_id    uuid not null,
-  empresa_id      uuid not null,
-  estado_anterior text,
-  estado_nuevo    text not null,
-  motivo          text,
-  user_id         uuid references auth.users (id),
-  creado_en       timestamptz not null default now(),
+  id           bigint generated always as identity primary key,
+  documento_id uuid not null,
+  empresa_id   uuid not null,
+  eje          text not null check (eje in ('preparacion','fiscal')),
+  anterior     text,
+  nuevo        text not null,
+  motivo       text,
+  user_id      uuid references auth.users (id),
+  operacion_id uuid,
+  creado_en    timestamptz not null default now(),
   foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id)
 );
+
+-- ============================================================ operaciones fiscales: idempotencia y conciliación
+-- Una fila por intento de certificación o anulación. Solo puede haber UNA operación abierta por documento
+-- (iniciada o desconocida): así no hay dos intentos simultáneos ni reintentos mientras no se concilie el resultado.
+create table public.operaciones_fiscales (
+  id                 uuid primary key default gen_random_uuid(),
+  empresa_id         uuid not null,
+  documento_id       uuid not null,
+  tipo               text not null check (tipo in ('certificacion','anulacion')),
+  clave_idempotencia text not null check (length(clave_idempotencia) between 16 and 80),
+  hash_contenido     text not null check (hash_contenido ~ '^[0-9a-f]{64}$'),  -- SHA-256 del contenido enviado
+  estado             text not null default 'iniciada' check (estado in ('iniciada','confirmada_exitosa','confirmada_fallida','desconocida')),
+  proveedor          text,
+  referencia_externa text,
+  regla_id           uuid references public.reglas_normativas (id),
+  motivo             text,
+  iniciada_por       uuid references auth.users (id),
+  iniciada_en        timestamptz not null default now(),
+  resuelta_por       uuid references auth.users (id),
+  resuelta_en        timestamptz,
+  resolucion         text check (resolucion in ('proveedor','conciliacion_manual')),
+  evidencia          jsonb,
+  foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id),
+  unique (documento_id, clave_idempotencia),
+  check ((estado in ('confirmada_exitosa','confirmada_fallida')) = (resuelta_en is not null and resolucion is not null))
+);
+create unique index operaciones_abierta_uq on public.operaciones_fiscales (documento_id) where estado in ('iniciada','desconocida');
 
 create table public.contadores_borrador (
   empresa_id uuid primary key references public.empresas (id),

@@ -18,6 +18,9 @@ alter table public.documento_lineas    enable row level security;
 alter table public.documento_estados   enable row level security;
 alter table public.contadores_borrador enable row level security;
 alter table public.auditoria           enable row level security;
+alter table public.identificaciones_tipos enable row level security;
+alter table public.reglas_normativas   enable row level security;
+alter table public.operaciones_fiscales enable row level security;
 
 -- ============================================================ permisos de tabla: nada para anon; lectura puntual para authenticated
 revoke all on all tables    in schema public from public, anon, authenticated;
@@ -27,7 +30,8 @@ revoke all on all functions in schema public from public, anon, authenticated;
 grant select on public.permisos_catalogo, public.rol_permisos, public.plataforma_admins, public.perfiles,
                 public.regimenes_fiscales, public.empresas, public.miembros, public.invitaciones,
                 public.clientes, public.conceptos, public.documentos, public.documento_lineas,
-                public.documento_estados, public.auditoria
+                public.documento_estados, public.auditoria, public.identificaciones_tipos, public.reglas_normativas,
+                public.operaciones_fiscales
   to authenticated;
 -- contadores_borrador: sin acceso para authenticated (solo la función de servicio).
 
@@ -48,6 +52,8 @@ revoke execute on function public.fel_es_admin_plataforma(), public.fel_es_miemb
 -- La auditoría no se puede modificar ni borrar ni con la clave de servicio.
 revoke update, delete, truncate on public.auditoria from service_role;
 revoke update, delete, truncate on public.documento_estados from service_role;
+-- Documentos y operaciones fiscales: nunca se borran (ni con la clave de servicio). Se modifican solo con las funciones.
+revoke delete, truncate on public.documentos, public.documento_lineas, public.operaciones_fiscales from service_role;
 
 -- ============================================================ políticas (solo SELECT; sin políticas de escritura)
 create policy permisos_catalogo_leer on public.permisos_catalogo for select to authenticated using (true);
@@ -92,6 +98,12 @@ create policy documentos_leer on public.documentos for select to authenticated u
 create policy doc_lineas_leer on public.documento_lineas for select to authenticated using (public.fel_tiene_permiso(empresa_id, 'borradores.ver'));
 create policy doc_estados_leer on public.documento_estados for select to authenticated using (public.fel_tiene_permiso(empresa_id, 'historial.ver'));
 
+create policy identificaciones_leer on public.identificaciones_tipos for select to authenticated using (true);
+create policy reglas_normativas_leer on public.reglas_normativas for select to authenticated
+  using (estado = 'verificado' or public.fel_es_admin_plataforma());
+create policy operaciones_leer on public.operaciones_fiscales for select to authenticated
+  using (public.fel_tiene_permiso(empresa_id, 'historial.ver'));
+
 -- Auditoría: la empresa ve la suya con 'auditoria.ver'; el maestro ve solo eventos administrativos, no datos de negocio.
 create policy auditoria_leer on public.auditoria for select to authenticated
   using (
@@ -116,7 +128,10 @@ insert into public.permisos_catalogo (codigo, descripcion) values
   ('borradores.archivar',  'Archivar borradores'),
   ('historial.ver',        'Ver el historial de estados de un documento'),
   ('auditoria.ver',        'Ver la auditoría de la empresa'),
-  ('fiscal.ver',           'Ver la configuración fiscal de la empresa');
+  ('fiscal.ver',           'Ver la configuración fiscal de la empresa'),
+  ('fiscal.certificar',    'Iniciar la certificación de un documento (bloqueado hasta autorizar la emisión real)'),
+  ('fiscal.anular',        'Solicitar la anulación de un DTE certificado (bloqueado hasta autorizar la emisión real)'),
+  ('fiscal.conciliar',     'Conciliar manualmente una operación fiscal de resultado desconocido');
 
 insert into public.rol_permisos (rol, permiso)
 select 'propietario', codigo from public.permisos_catalogo;
@@ -138,3 +153,15 @@ insert into public.regimenes_fiscales (codigo, version, nombre, estado, reglas, 
    '{"esquema":1,"pendiente_de_validacion":true,"nota":"Sin tasas ni reglas. Completar y verificar antes de usar."}'::jsonb, null),
   ('pequeno_contribuyente', 1, 'Pequeño Contribuyente', 'sin_verificar',
    '{"esquema":1,"pendiente_de_validacion":true,"nota":"Sin tasas ni reglas. Completar y verificar antes de usar."}'::jsonb, null);
+
+-- Identificaciones del comprador: SIN patrón y SIN verificar. El formato oficial lo fija el administrador maestro con respaldo normativo.
+insert into public.identificaciones_tipos (codigo, nombre, notas) values
+  ('NIT', 'Número de Identificación Tributaria', 'Pendiente de validar el formato y la regla vigente de SAT.'),
+  ('CUI', 'Código Único de Identificación (DPI)', 'Pendiente de validar si SAT lo admite como identificador del comprador y su formato vigente.'),
+  ('CF',  'Consumidor final', 'Se registra siempre como CF. Pendiente de validar topes y condiciones vigentes de SAT.'),
+  ('EXT', 'Identificación de extranjero / otro', 'Pendiente de validar los identificadores admitidos por SAT (pasaporte u otros).');
+
+-- Reglas de anulación de DTE: estructura y versión, SIN plazos ni condiciones hasta que se validen documentalmente.
+insert into public.reglas_normativas (codigo, version, nombre, estado, reglas, fuente) values
+  ('anulacion_dte', 1, 'Anulación de DTE', 'sin_verificar',
+   '{"esquema":1,"pendiente_de_validacion":true,"nota":"Sin plazo ni condiciones. Completar y verificar antes de permitir anulaciones."}'::jsonb, null);

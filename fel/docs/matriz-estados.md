@@ -1,53 +1,60 @@
-# NEXA FEL · Matriz de estados de documentos (PROPUESTA — pendiente de aprobación)
+# NEXA FEL · Matriz de estados (versión 2 · dos ejes)
 
-Estados: `borrador`, `revisado`, `pendiente_certificacion`, `por_verificar`, `certificada`, `rechazada`, `archivada`.
+> Estado: **propuesta para revisión**. Implementada y probada en la rama de desarrollo; nada publicado ni migrado a producción.
 
-**Reglas generales**
-- Solo se edita un documento en `borrador`. Para cambiar un `revisado` hay que reabrirlo a `borrador` (con motivo).
-- Toda transición se hace en una función de base de datos que, en la misma transacción: valida el permiso, verifica la versión
-  (edición concurrente), cambia el estado, escribe `documento_estados` y `auditoria`.
-- `serie`, `numero_fiscal` y `autorizacion_sat` solo pueden tener valor en `certificada` y con `certificacion_verificada_en`
-  (restricción de la base de datos). Ninguna acción de la Fase 1 los escribe.
-- Las transiciones marcadas **Reservada** existen en la tabla de reglas pero están **deshabilitadas** hasta que haya un
-  certificador autorizado y la empresa tenga `emision_real_habilitada` con régimen verificado.
+## Principio
+Un documento tiene **dos estados independientes**, para no confundir lo que NEXA hace internamente con lo que es oficial ante SAT:
 
-## Transiciones permitidas
+| Eje | Columna | Valores | Quién lo cambia |
+|---|---|---|---|
+| Preparación (interno) | `estado_preparacion` | `borrador`, `revisado`, `archivado` | Usuarios con permiso (`borradores.*`) |
+| Fiscal (oficial) | `estado_fiscal` | `ninguno`, `pendiente_certificacion`, `por_verificar`, `certificado`, `rechazado`, `anulacion_solicitada`, `anulado` | **Solo** las funciones fiscales, a partir del resultado de una operación fiscal |
 
-| De | A | Permiso | Motivo | Estado de la regla | Condiciones |
-|---|---|---|---|---|---|
-| borrador | revisado | `borradores.revisar` | no | **Fase 1** | Cliente asignado, al menos 1 línea, totales calculados, régimen asignado |
-| revisado | borrador | `borradores.editar` | **sí** | **Fase 1** | Reabrir para corregir |
-| borrador | archivada | `borradores.archivar` | **sí** | **Fase 1** | |
-| revisado | archivada | `borradores.archivar` | **sí** | **Fase 1** | |
-| archivada | borrador | `borradores.archivar` | **sí** | **Fase 1** | Restaurar |
-| revisado | pendiente_certificacion | `borradores.revisar` | no | Reservada | Empresa con emisión real habilitada y régimen verificado |
-| pendiente_certificacion | certificada | solo el sistema | no | Reservada | **Solo** con confirmación verificable del certificador (serie, número y autorización) |
-| pendiente_certificacion | rechazada | solo el sistema | **sí** | Reservada | Respuesta del certificador |
-| pendiente_certificacion | por_verificar | solo el sistema | **sí** | Reservada | Respuesta ambigua, caída o tiempo agotado |
-| por_verificar | certificada | solo el sistema | no | Reservada | Tras consulta que confirme verificablemente |
-| por_verificar | rechazada | solo el sistema | **sí** | Reservada | Tras consulta que confirme el rechazo |
-| por_verificar | pendiente_certificacion | `borradores.revisar` | **sí** | Reservada | Reintento autorizado |
-| rechazada | borrador | `borradores.editar` | **sí** | Reservada | Corregir y volver a empezar |
-| rechazada | archivada | `borradores.archivar` | **sí** | Reservada | |
+**Archivado ≠ anulado.** *Archivado* es una decisión interna y solo existe si el documento nunca tuvo vida fiscal (`estado_fiscal = ninguno`). *Anulado* es un hecho fiscal posterior a una certificación. Son columnas distintas y la base impide mezclarlas.
 
-## Transiciones prohibidas (la función las rechaza siempre)
+## Eje de preparación
+| De → A | Permiso | Condiciones |
+|---|---|---|
+| borrador → revisado | `borradores.revisar` | Tiene cliente y ≥ 1 línea |
+| revisado → borrador | `borradores.editar` | Solo si `estado_fiscal = ninguno` |
+| borrador / revisado → archivado | `borradores.archivar` | Motivo obligatorio; solo si `estado_fiscal = ninguno` |
+| archivado → borrador | `borradores.editar` | Solo si `estado_fiscal = ninguno` |
+| rechazado (fiscal) → borrador | — | Únicamente cuando la operación se confirmó como fallida (se resetea el eje fiscal a `ninguno`) |
 
-- `borrador` → `pendiente_certificacion`, `por_verificar`, `certificada`, `rechazada` (debe pasar por `revisado`).
-- `revisado` → `certificada`, `rechazada`, `por_verificar` (debe pasar por `pendiente_certificacion`).
-- Cualquier estado → `certificada` salvo desde `pendiente_certificacion` o `por_verificar` con confirmación verificable.
-- `certificada` → cualquier otro estado (es final; anulaciones o notas de crédito serán documentos nuevos en otra fase).
-- `pendiente_certificacion` → `borrador`, `revisado`, `archivada` (hay una gestión en curso).
-- `por_verificar` → `borrador`, `revisado`, `archivada` (no se puede perder el rastro de un documento que pudo certificarse).
-- `archivada` → `revisado` o cualquier estado distinto de `borrador`.
-- Transiciones al mismo estado.
+Con cualquier estado fiscal distinto de `ninguno`, el estado de preparación **no cambia**.
 
-## Quién puede hacer qué (roles por defecto)
+## Eje fiscal
+| De → A | Disparador |
+|---|---|
+| ninguno → pendiente_certificacion | Se inicia una operación de certificación (requiere emisión real habilitada) |
+| pendiente_certificacion → certificado | Confirmación verificable del proveedor/SAT con serie, número y autorización |
+| pendiente_certificacion → rechazado | Fallo **confirmado** |
+| pendiente_certificacion → por_verificar | Resultado **desconocido** (tiempo agotado, corte, respuesta ilegible) |
+| por_verificar → certificado / rechazado | Solo por conciliación (proveedor o manual con evidencia) |
+| rechazado → pendiente_certificacion | Nuevo intento con **otra** clave de idempotencia, ya confirmado que el anterior no generó DTE |
+| rechazado → ninguno | Corrección del documento (vuelve a borrador) |
+| certificado → anulacion_solicitada | Se inicia una operación de anulación (requiere reglas de anulación verificadas y vigentes) |
+| anulacion_solicitada → anulado | Anulación confirmada |
+| anulacion_solicitada → certificado | Solicitud rechazada/fallida confirmada |
 
-| Acción | propietario | administrador | emisor | lector |
-|---|---|---|---|---|
-| Crear y editar borradores | sí | sí | sí | no |
-| Marcar como revisado (`borradores.revisar`) | sí | sí | no (se puede conceder como permiso extra) | no |
-| Archivar / restaurar (`borradores.archivar`) | sí | sí | no | no |
-| Ver documentos e historial | sí | sí | sí | sí |
+Todo lo demás está prohibido por un trigger de la base (no solo por la API). `anulado` es definitivo.
 
-Separación de funciones: quien crea el borrador no necesita poder revisarlo; el permiso extra permite flexibilizarlo por usuario.
+## Un DTE certificado
+- No vuelve a borrador, no se archiva y **no se modifica**: contenido, líneas, serie, número y autorización son inmutables (triggers + restricciones).
+- Serie, número, autorización y fecha de verificación están **vacíos** salvo `certificado`, `anulacion_solicitada` y `anulado`, y entonces son obligatorios (restricción `documentos_datos_fiscales_chk`).
+- Los documentos no se borran.
+
+## Idempotencia y conciliación (tabla `operaciones_fiscales`)
+- Cada intento de certificar/anular es una fila con **clave de idempotencia** y **hash SHA-256** del contenido enviado. Misma clave + mismo hash → devuelve la misma operación (no duplica). Misma clave + otro contenido → conflicto.
+- **Una sola operación abierta por documento** (`iniciada` o `desconocida`), garantizado por índice único parcial y por bloqueo de la fila del documento: no hay intentos simultáneos.
+- **Sin reintentos automáticos.** Si el resultado es desconocido, el documento queda `por_verificar` y la operación `desconocida`; no se permite ninguna operación nueva hasta resolverla. Resolver exige: confirmación del proveedor, o **conciliación manual** con evidencia, permiso aparte (`fiscal.conciliar`) y registro de quién y cuándo.
+- Una operación confirmada no se reabre ni se modifica; no se borra.
+- Una anulación de resultado desconocido deja el documento en `anulacion_solicitada` (no se asume éxito ni fallo).
+
+## Anulación y reglas versionadas (`reglas_normativas`)
+- Las reglas (código `anulacion_dte`) son versionadas e inmutables una vez verificadas. Se siembra la versión 1 **vacía y sin verificar**: mientras no haya una regla verificada y vigente, **no se puede anular nada**.
+- Estructura soportada hoy: `plazo_tipo` = `sin_plazo` | `dias_calendario` (+ `dias`) y `requiere_confirmacion_receptor` (booleano). Cualquier otro tipo de plazo se rechaza al verificar: requiere validación y desarrollo manual.
+- Hallazgos de la investigación (**NO verificados para 2026; no están implementados como reglas**): según fuentes secundarias (Deloitte Tax Alert 23-14; columna de Prensa Libre), desde 2023-09-01 el plazo de anulación se vincula a la fecha de vencimiento de la declaración mensual del IVA y existiría una confirmación del receptor (~72 h). Debe validarlo tu contador contra la normativa vigente de SAT antes de crear la regla verificada.
+
+## Qué sigue bloqueado
+Certificar, anular y conciliar **no están expuestos por la API**. Las funciones SQL existen y están probadas, pero exigen además `emision_real_habilitada` (que a su vez exige empresa habilitada, régimen verificado y autorización específica del administrador maestro), y la Edge Function mantiene bloqueada esa habilitación. No hay automatización del portal SAT ni credenciales SAT.

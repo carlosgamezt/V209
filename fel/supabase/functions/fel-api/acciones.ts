@@ -2,6 +2,7 @@
 // en la misma transacción (funciones fel_admin_* y fel_op_*).
 import { ErrorFel, traducirErrorPg } from "./lib/errores.ts";
 import * as v from "./lib/validacion.ts";
+import { calcular, type LineaEntrada } from "./lib/calculo.ts";
 import type { Acciones, Contexto } from "./nucleo.ts";
 
 const ROLES = ["propietario", "administrador", "emisor", "lector"] as const;
@@ -60,7 +61,7 @@ export const acciones: Acciones = {
       v.soloCampos(b, ["nombre_comercial", "razon_social", "nit", "regimen_codigo", "propietario_email"]);
       return {
         nombre_comercial: v.texto(b, "nombre_comercial", 2, 150), razon_social: v.texto(b, "razon_social", 2, 200),
-        nit: v.nit(b, "nit"), regimen_codigo: v.texto(b, "regimen_codigo", 3, 41), propietario_email: v.email(b, "propietario_email"),
+        nit: v.numeroIdentificacion(b, "nit"), regimen_codigo: v.texto(b, "regimen_codigo", 3, 41), propietario_email: v.email(b, "propietario_email"),
       };
     },
     async ejecutar(ctx, p) {
@@ -208,10 +209,10 @@ export const acciones: Acciones = {
   cliente_guardar: {
     requisito: { permiso: "clientes.escribir" },
     validar: (b) => {
-      v.soloCampos(b, ["empresa_id", "id", "nit", "nombre", "direccion", "email", "telefono", "version"]);
+      v.soloCampos(b, ["empresa_id", "id", "tipo_identificacion", "numero_identificacion", "nombre", "direccion", "email", "telefono", "version"]);
       const id = v.uuidOpt(b, "id");
       return {
-        empresa_id: v.uuid(b, "empresa_id"), id, nit: v.nit(b, "nit", true), nombre: v.texto(b, "nombre", 1, 200),
+        empresa_id: v.uuid(b, "empresa_id"), id, tipo_identificacion: v.tipoIdentificacion(b, "tipo_identificacion"), numero_identificacion: v.numeroIdentificacion(b, "numero_identificacion"), nombre: v.texto(b, "nombre", 1, 200),
         direccion: v.textoOpt(b, "direccion", 300), email: v.emailOpt(b, "email"), telefono: v.textoOpt(b, "telefono", 30),
         version: id ? v.entero(b, "version") : null,
       };
@@ -219,7 +220,7 @@ export const acciones: Acciones = {
     empresaDe: (p) => p.empresa_id,
     async ejecutar(ctx, p) {
       const c = await rpc(ctx, "fel_op_cliente_guardar", {
-        p_actor: ctx.usuario.id, p_empresa: p.empresa_id, p_id: p.id, p_nit: p.nit, p_nombre: p.nombre,
+        p_actor: ctx.usuario.id, p_empresa: p.empresa_id, p_id: p.id, p_tipo_identificacion: p.tipo_identificacion, p_numero_identificacion: p.numero_identificacion, p_nombre: p.nombre,
         p_direccion: p.direccion, p_email: p.email, p_telefono: p.telefono, p_version: p.version });
       return { cliente: c };
     },
@@ -263,6 +264,62 @@ export const acciones: Acciones = {
     async ejecutar(ctx, p) {
       await rpc(ctx, "fel_op_concepto_estado", { p_actor: ctx.usuario.id, p_empresa: p.empresa_id, p_id: p.id, p_activo: p.activo });
       return { id: p.id, activo: p.activo };
+    },
+  },
+  // ------------------------------------------------------------ borradores (NO certifican nada)
+  // La API solo gatea con "borradores.ver"; el permiso exacto (crear/editar/revisar/archivar) lo exige la base de datos.
+  documento_guardar: {
+    requisito: { permiso: "borradores.ver" },
+    validar: (b) => {
+      v.soloCampos(b, ["empresa_id", "id", "cliente_id", "fecha_emision_prevista", "observaciones", "lineas", "version"]);
+      const id = v.uuidOpt(b, "id");
+      const crudas = b.lineas;
+      if (!Array.isArray(crudas) || crudas.length > 200) throw new ErrorFel(400, "lineas: debe ser una lista de hasta 200", "entrada_invalida");
+      const lineas = crudas.map((l: unknown, i: number) => {
+        if (typeof l !== "object" || l === null || Array.isArray(l)) throw new ErrorFel(400, `lineas[${i}]: debe ser un objeto`, "entrada_invalida");
+        const o = l as Record<string, unknown>;
+        v.soloCampos(o, ["concepto_id", "descripcion", "cantidad", "precio_unitario", "descuento_tipo", "descuento_valor"]);
+        const tipo = o.descuento_tipo === undefined ? "ninguno" : v.enumerado(o, "descuento_tipo", ["ninguno", "monto", "porcentaje"] as const);
+        return {
+          concepto_id: v.uuidOpt(o, "concepto_id"), descripcion: v.texto(o, "descripcion", 1, 300),
+          cantidad: v.montoNoNegativo(o, "cantidad"), precio_unitario: v.montoNoNegativo(o, "precio_unitario"),
+          descuento_tipo: tipo, descuento_valor: o.descuento_valor === undefined ? "0" : v.montoNoNegativo(o, "descuento_valor"),
+        };
+      });
+      return {
+        empresa_id: v.uuid(b, "empresa_id"), id, cliente_id: v.uuidOpt(b, "cliente_id"),
+        fecha: v.fechaOpt(b, "fecha_emision_prevista"), observaciones: v.textoOpt(b, "observaciones", 500), lineas,
+        version: id ? v.entero(b, "version") : null,
+      };
+    },
+    empresaDe: (p) => p.empresa_id,
+    async ejecutar(ctx, p) {
+      const c = calcular(p.lineas as LineaEntrada[]);
+      const lineas = (p.lineas as Array<Record<string, unknown>>).map((l, i) => ({
+        orden: i + 1, ...l, importes: c.lineas[i],
+      }));
+      const doc = await rpc(ctx, "fel_op_documento_guardar", {
+        p_actor: ctx.usuario.id, p_empresa: p.empresa_id, p_id: p.id, p_cliente: p.cliente_id, p_fecha: p.fecha,
+        p_observaciones: p.observaciones, p_lineas: lineas, p_subtotal: c.subtotal, p_descuento_total: c.descuento_total,
+        p_base: c.base_imponible, p_calculo: c.meta, p_version: p.version });
+      return { documento: doc, vista_previa: { oficial: false, lineas: c.lineas, subtotal: c.subtotal, descuento_total: c.descuento_total,
+        base_imponible: c.base_imponible, impuestos: null, total: null, nota: c.meta.nota } };
+    },
+  },
+
+  documento_preparacion: {
+    requisito: { permiso: "borradores.ver" },
+    validar: (b) => {
+      v.soloCampos(b, ["empresa_id", "id", "estado", "motivo", "version"]);
+      return { empresa_id: v.uuid(b, "empresa_id"), id: v.uuid(b, "id"),
+        estado: v.enumerado(b, "estado", ["borrador", "revisado", "archivado"] as const),
+        motivo: v.textoOpt(b, "motivo", 300), version: v.entero(b, "version") };
+    },
+    empresaDe: (p) => p.empresa_id,
+    async ejecutar(ctx, p) {
+      await rpc(ctx, "fel_op_documento_preparacion", { p_actor: ctx.usuario.id, p_empresa: p.empresa_id, p_id: p.id,
+        p_nuevo: p.estado, p_motivo: p.motivo, p_version: p.version });
+      return { id: p.id, estado_preparacion: p.estado };
     },
   },
 };

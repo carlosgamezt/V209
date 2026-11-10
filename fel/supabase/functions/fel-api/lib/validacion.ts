@@ -47,14 +47,23 @@ export function emailOpt(b: Cuerpo, campo: string): string | null {
   return textoOpt(b, campo, 254) === null ? null : email(b, campo);
 }
 
-// NIT de Guatemala: solo formato (2 a 12 dígitos, guion opcional y dígito verificador 0-9 o K).
-// TODO (decisión pendiente): validar el dígito verificador con el algoritmo oficial.
-const RE_NIT = /^[0-9]{2,12}-?[0-9K]$/;
-export function nit(b: Cuerpo, campo: string, permitirCF = false): string {
-  const t = texto(b, campo, 2, 16).toUpperCase().replace(/\s+/g, "");
-  if (permitirCF && t === "CF") return "CF";
-  if (!RE_NIT.test(t)) throw bad(campo, "no es un NIT válido");
+// Identificación del comprador: solo se valida el JUEGO DE CARACTERES. El formato oficial de cada tipo (NIT, CUI, etc.)
+// lo aplica la base de datos únicamente cuando el tipo fue verificado contra normativa vigente (catálogo identificaciones_tipos).
+export function tipoIdentificacion(b: Cuerpo, campo: string): string {
+  const t = texto(b, campo, 2, 12).toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{1,11}$/.test(t)) throw bad(campo, "tipo de identificación no válido");
   return t;
+}
+export function numeroIdentificacion(b: Cuerpo, campo: string): string {
+  const t = texto(b, campo, 1, 30).toUpperCase().replace(/\s+/g, "");
+  if (!/^[0-9A-Z-]+$/.test(t)) throw bad(campo, "solo letras, números y guion");
+  return t;
+}
+export function fechaOpt(b: Cuerpo, campo: string): string | null {
+  const v = b[campo];
+  if (v === undefined || v === null || v === "") return null;
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) throw bad(campo, "fecha no válida (AAAA-MM-DD)");
+  return v;
 }
 
 export function enumerado<T extends string>(b: Cuerpo, campo: string, valores: readonly T[]): T {

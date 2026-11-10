@@ -44,14 +44,16 @@ Deno.test("email", () => {
   assertEquals(v.emailOpt({}, "a"), null);
 });
 
-Deno.test("nit: formato, K mayúscula y CF solo si se permite", () => {
-  assertEquals(v.nit({ a: "1234567-8" }, "a"), "1234567-8");
-  assertEquals(v.nit({ a: "7654321-k" }, "a"), "7654321-K");
-  assertEquals(v.nit({ a: "12345678" }, "a"), "12345678");
-  falla(() => v.nit({ a: "CF" }, "a"));
-  assertEquals(v.nit({ a: "cf" }, "a", true), "CF");
-  falla(() => v.nit({ a: "ABC" }, "a", true));
-  falla(() => v.nit({ a: "1-2-3" }, "a"));
+Deno.test("identificación: solo juego de caracteres; el formato oficial lo decide la base de datos", () => {
+  assertEquals(v.tipoIdentificacion({ a: "nit" }, "a"), "NIT");
+  assertEquals(v.numeroIdentificacion({ a: "7654321-k" }, "a"), "7654321-K");
+  assertEquals(v.numeroIdentificacion({ a: "ABC123" }, "a"), "ABC123");
+  falla(() => v.tipoIdentificacion({ a: "1NIT" }, "a"));
+  falla(() => v.numeroIdentificacion({ a: "12 3;" }, "a"));
+  falla(() => v.numeroIdentificacion({ a: "" }, "a"));
+  assertEquals(v.fechaOpt({}, "f"), null);
+  assertEquals(v.fechaOpt({ f: "2026-11-10" }, "f"), "2026-11-10");
+  falla(() => v.fechaOpt({ f: "10/11/2026" }, "f"));
 });
 
 Deno.test("montoNoNegativo conserva el texto exacto y rechaza lo peligroso", () => {

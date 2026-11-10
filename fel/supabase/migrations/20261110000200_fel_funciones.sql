@@ -10,7 +10,8 @@ $$;
 
 create or replace function public.fel_es_admin_plataforma() returns boolean
 language sql stable security definer set search_path = '' as $$
-  select exists (select 1 from public.plataforma_admins where user_id = auth.uid())
+  select exists (select 1 from public.plataforma_admins pa where pa.user_id = auth.uid())
+     and not exists (select 1 from public.perfiles pf where pf.user_id = auth.uid() and not pf.activo)
 $$;
 
 -- Permisos efectivos = permisos del rol + extras - revocados. Solo si la membresía y la empresa están activas/habilitadas.
@@ -28,6 +29,7 @@ language sql stable security definer set search_path = '' as $$
     from public.miembros m
     join public.empresas e on e.id = m.empresa_id and e.estado = 'habilitada'
     where m.empresa_id = p_empresa and m.user_id = p_user and m.activo
+      and not exists (select 1 from public.perfiles pf where pf.user_id = m.user_id and not pf.activo)
   ), '{}'::text[])
 $$;
 
@@ -41,7 +43,8 @@ language sql stable security definer set search_path = '' as $$
   select exists (
     select 1 from public.miembros m
     join public.empresas e on e.id = m.empresa_id and e.estado = 'habilitada'
-    where m.empresa_id = p_empresa and m.user_id = auth.uid() and m.activo)
+    where m.empresa_id = p_empresa and m.user_id = auth.uid() and m.activo
+      and not exists (select 1 from public.perfiles pf where pf.user_id = m.user_id and not pf.activo))
 $$;
 
 -- Auditoría: única vía de escritura. Registra usuario, empresa, acción, fecha y hora (servidor) y datos relevantes.
@@ -71,7 +74,8 @@ end $$;
 create or replace function public.fel__exigir_plataforma(p_actor uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 begin
-  if p_actor is null or not exists (select 1 from public.plataforma_admins where user_id = p_actor) then
+  if p_actor is null or not exists (select 1 from public.plataforma_admins where user_id = p_actor)
+     or exists (select 1 from public.perfiles where user_id = p_actor and not activo) then
     raise exception 'FEL_NO_AUTORIZADO: solo el administrador maestro puede hacer esto';
   end if;
 end $$;
@@ -91,6 +95,16 @@ create trigger doc_estados_solo_agregar before update or delete on public.docume
   for each row execute function public.fel_bloquear_modificacion();
 create trigger doc_estados_sin_truncate before truncate on public.documento_estados
   for each statement execute function public.fel_bloquear_modificacion();
+
+-- Tablas con historia fiscal: nunca se vacían (ni con la clave de servicio).
+create trigger documentos_sin_truncate before truncate on public.documentos
+  for each statement execute function public.fel_bloquear_modificacion();
+create trigger doc_lineas_sin_truncate before truncate on public.documento_lineas
+  for each statement execute function public.fel_bloquear_modificacion();
+create trigger operaciones_sin_truncate before truncate on public.operaciones_fiscales
+  for each statement execute function public.fel_bloquear_modificacion();
+create trigger operaciones_sin_borrar before delete on public.operaciones_fiscales
+  for each row execute function public.fel_bloquear_modificacion();
 
 -- Régimen fiscal: una versión verificada no se puede cambiar; para verificar hay que tener las reglas completas.
 create or replace function public.fel_regimen_guard() returns trigger
@@ -195,6 +209,208 @@ language plpgsql set search_path = '' as $$
 begin
   new.actualizado_en := now();
   return new;
+end $$;
+
+-- ============================================================ documentos: matriz de estados y contenido inmutable
+-- Ejes: estado_preparacion (borrador|revisado|archivado) y estado_fiscal (ninguno|pendiente_certificacion|por_verificar|
+-- certificado|rechazado|anulacion_solicitada|anulado). Los cambios del eje fiscal solo los hacen las funciones fiscales
+-- (marcan la sesión con fel.op_fiscal); un UPDATE directo, aunque sea con service_role, es rechazado.
+create or replace function public.fel__transicion_fiscal_valida(p_de text, p_a text) returns boolean
+language sql immutable set search_path = '' as $$
+  select (p_de, p_a) in (
+    ('ninguno','pendiente_certificacion'),
+    ('pendiente_certificacion','certificado'), ('pendiente_certificacion','rechazado'), ('pendiente_certificacion','por_verificar'),
+    ('por_verificar','certificado'), ('por_verificar','rechazado'),
+    ('rechazado','pendiente_certificacion'), ('rechazado','ninguno'),
+    ('certificado','anulacion_solicitada'),
+    ('anulacion_solicitada','anulado'), ('anulacion_solicitada','certificado'))
+$$;
+
+create or replace function public.fel_documento_guard() returns trigger
+language plpgsql set search_path = '' as $$
+declare v_fiscal_cambia boolean; v_prep_cambia boolean; v_contenido_cambia boolean;
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'FEL_REGLA: los documentos no se borran; un borrador se archiva';
+  end if;
+  if tg_op = 'INSERT' then
+    if new.estado_preparacion <> 'borrador' or new.estado_fiscal <> 'ninguno' then
+      raise exception 'FEL_REGLA: un documento nuevo nace como borrador sin estado fiscal';
+    end if;
+    return new;
+  end if;
+  -- identidad inmutable
+  if new.id <> old.id or new.empresa_id <> old.empresa_id or new.numero_borrador <> old.numero_borrador
+     or new.tipo_documento <> old.tipo_documento or new.creado_en <> old.creado_en then
+    raise exception 'FEL_REGLA: la identidad del documento no se puede modificar';
+  end if;
+  v_fiscal_cambia := new.estado_fiscal <> old.estado_fiscal;
+  v_prep_cambia   := new.estado_preparacion <> old.estado_preparacion;
+  v_contenido_cambia :=
+       new.cliente_id is distinct from old.cliente_id or new.cliente_snapshot is distinct from old.cliente_snapshot
+    or new.regimen_id is distinct from old.regimen_id or new.regimen_snapshot is distinct from old.regimen_snapshot
+    or new.moneda <> old.moneda or new.fecha_emision_prevista is distinct from old.fecha_emision_prevista
+    or new.subtotal is distinct from old.subtotal or new.descuento_total is distinct from old.descuento_total
+    or new.base_imponible is distinct from old.base_imponible or new.impuestos is distinct from old.impuestos
+    or new.total is distinct from old.total or new.calculo is distinct from old.calculo
+    or new.observaciones is distinct from old.observaciones;
+  -- contenido: solo editable como borrador sin vida fiscal. Un DTE certificado jamás se modifica.
+  if v_contenido_cambia and not (old.estado_preparacion = 'borrador' and old.estado_fiscal = 'ninguno') then
+    raise exception 'FEL_REGLA: el contenido solo se edita en un borrador sin estado fiscal; un documento certificado es inmutable';
+  end if;
+  -- preparación
+  if v_prep_cambia then
+    if old.estado_fiscal <> 'ninguno' and not (old.estado_fiscal = 'rechazado' and new.estado_fiscal = 'ninguno') then
+      raise exception 'FEL_REGLA: un documento con vida fiscal no cambia su estado de preparación';
+    end if;
+    if (old.estado_preparacion, new.estado_preparacion) not in
+       (('borrador','revisado'), ('revisado','borrador'), ('borrador','archivado'), ('revisado','archivado'), ('archivado','borrador')) then
+      raise exception 'FEL_REGLA: transición de preparación no permitida (% → %)', old.estado_preparacion, new.estado_preparacion;
+    end if;
+  end if;
+  -- fiscal
+  if v_fiscal_cambia then
+    if coalesce(current_setting('fel.op_fiscal', true), '') <> 'on' then
+      raise exception 'FEL_REGLA: el estado fiscal solo cambia mediante las operaciones fiscales';
+    end if;
+    if not public.fel__transicion_fiscal_valida(old.estado_fiscal, new.estado_fiscal) then
+      raise exception 'FEL_REGLA: transición fiscal no permitida (% → %)', old.estado_fiscal, new.estado_fiscal;
+    end if;
+  end if;
+  -- datos fiscales: se fijan solo al certificar y luego no cambian jamás
+  if old.estado_fiscal in ('certificado','anulacion_solicitada','anulado') and
+     (new.serie is distinct from old.serie or new.numero_fiscal is distinct from old.numero_fiscal
+      or new.autorizacion_sat is distinct from old.autorizacion_sat
+      or new.certificacion_verificada_en is distinct from old.certificacion_verificada_en) then
+    raise exception 'FEL_REGLA: serie, número y autorización de un DTE certificado son inmutables';
+  end if;
+  if old.estado_fiscal in ('anulado') then
+    raise exception 'FEL_REGLA: un documento anulado es definitivo';
+  end if;
+  return new;
+end $$;
+
+create trigger documentos_guard before insert or update or delete on public.documentos
+  for each row execute function public.fel_documento_guard();
+
+-- Líneas: solo se tocan mientras el documento es un borrador sin estado fiscal.
+create or replace function public.fel_documento_linea_guard() returns trigger
+language plpgsql set search_path = '' as $$
+declare v_doc uuid := case when tg_op = 'DELETE' then old.documento_id else new.documento_id end;
+        v_prep text; v_fiscal text;
+begin
+  select estado_preparacion, estado_fiscal into v_prep, v_fiscal from public.documentos where id = v_doc;
+  if v_prep is distinct from 'borrador' or v_fiscal is distinct from 'ninguno' then
+    raise exception 'FEL_REGLA: las líneas solo se modifican en un borrador sin estado fiscal';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+
+create trigger doc_lineas_guard before insert or update or delete on public.documento_lineas
+  for each row execute function public.fel_documento_linea_guard();
+
+-- Operaciones fiscales: inmutables salvo su resolución; una operación confirmada no se reabre.
+create or replace function public.fel_operacion_guard() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.estado <> 'iniciada' then raise exception 'FEL_REGLA: una operación nace en estado iniciada'; end if;
+    return new;
+  end if;
+  if new.id <> old.id or new.empresa_id <> old.empresa_id or new.documento_id <> old.documento_id or new.tipo <> old.tipo
+     or new.clave_idempotencia <> old.clave_idempotencia or new.hash_contenido <> old.hash_contenido
+     or new.iniciada_en <> old.iniciada_en or new.iniciada_por is distinct from old.iniciada_por then
+    raise exception 'FEL_REGLA: los datos de la operación fiscal son inmutables';
+  end if;
+  if new.estado <> old.estado and (old.estado, new.estado) not in
+     (('iniciada','confirmada_exitosa'), ('iniciada','confirmada_fallida'), ('iniciada','desconocida'),
+      ('desconocida','confirmada_exitosa'), ('desconocida','confirmada_fallida')) then
+    raise exception 'FEL_REGLA: transición de operación no permitida (% → %)', old.estado, new.estado;
+  end if;
+  if old.estado in ('confirmada_exitosa','confirmada_fallida') and new is distinct from old then
+    raise exception 'FEL_REGLA: una operación confirmada no se modifica';
+  end if;
+  if new.resolucion = 'conciliacion_manual' and (new.evidencia is null or new.resuelta_por is null) then
+    raise exception 'FEL_REGLA: la conciliación manual exige evidencia y responsable';
+  end if;
+  return new;
+end $$;
+
+create trigger operaciones_guard before insert or update on public.operaciones_fiscales
+  for each row execute function public.fel_operacion_guard();
+
+-- Reglas normativas versionadas (anulación, etc.): verificada = inmutable. Solo se verifica con estructura completa y plazo soportado.
+create or replace function public.fel_regla_guard() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'DELETE' then
+    if old.estado <> 'sin_verificar' then raise exception 'FEL_REGLA: una regla verificada u obsoleta no se borra'; end if;
+    return old;
+  end if;
+  if tg_op = 'UPDATE' then
+    if old.estado = 'obsoleto' then raise exception 'FEL_REGLA: una regla obsoleta no se modifica'; end if;
+    if old.estado = 'verificado' and (new.estado not in ('verificado','obsoleto') or new.codigo <> old.codigo
+       or new.version <> old.version or new.reglas is distinct from old.reglas or new.fuente is distinct from old.fuente
+       or new.vigente_desde is distinct from old.vigente_desde or new.verificado_por is distinct from old.verificado_por
+       or new.verificado_en is distinct from old.verificado_en) then
+      raise exception 'FEL_REGLA: una regla verificada es inmutable; crea una versión nueva';
+    end if;
+  end if;
+  if new.estado = 'verificado' and (tg_op = 'INSERT' or old.estado <> 'verificado') then
+    if new.verificado_por is null or new.verificado_en is null or new.vigente_desde is null
+       or new.fuente is null or length(btrim(new.fuente)) < 5 then
+      raise exception 'FEL_REGLA: falta responsable, fecha, vigencia o referencia normativa de la regla';
+    end if;
+    if new.codigo = 'anulacion_dte' then
+      if coalesce(new.reglas ->> 'esquema', '') <> '1'
+         or jsonb_typeof(new.reglas -> 'requiere_confirmacion_receptor') is distinct from 'boolean'
+         or coalesce(new.reglas ->> 'plazo_tipo', '') not in ('sin_plazo', 'dias_calendario')
+         or (new.reglas ->> 'plazo_tipo' = 'dias_calendario'
+             and (jsonb_typeof(new.reglas -> 'dias') is distinct from 'number' or (new.reglas ->> 'dias')::numeric < 0)) then
+        raise exception 'FEL_REGLA: reglas de anulación incompletas o con un plazo aún no soportado (requiere validación manual)';
+      end if;
+    end if;
+  end if;
+  return new;
+end $$;
+
+create trigger reglas_normativas_guard before insert or update or delete on public.reglas_normativas
+  for each row execute function public.fel_regla_guard();
+
+-- Tipos de identificación: un tipo verificado no cambia su patrón ni su código.
+create or replace function public.fel_identificacion_guard() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if tg_op = 'DELETE' then raise exception 'FEL_REGLA: los tipos de identificación no se borran; se desactivan'; end if;
+  if tg_op = 'UPDATE' and old.verificado and
+     (new.patron is distinct from old.patron or new.codigo <> old.codigo or not new.verificado
+      or new.fuente is distinct from old.fuente) then
+    raise exception 'FEL_REGLA: un tipo de identificación verificado es inmutable';
+  end if;
+  if new.patron is not null then
+    begin
+      perform '' ~ new.patron;
+    exception when others then
+      raise exception 'FEL_REGLA: el patrón de identificación no es una expresión regular válida';
+    end;
+  end if;
+  return new;
+end $$;
+
+create trigger identificaciones_guard before insert or update or delete on public.identificaciones_tipos
+  for each row execute function public.fel_identificacion_guard();
+
+-- Valida tipo y número de identificación. El patrón SOLO se aplica si el tipo fue verificado contra normativa vigente.
+create or replace function public.fel_identificacion_validar(p_tipo text, p_numero text) returns void
+language plpgsql stable security definer set search_path = '' as $$
+declare v public.identificaciones_tipos;
+begin
+  select * into v from public.identificaciones_tipos where codigo = p_tipo and activo;
+  if not found then raise exception 'FEL_REGLA: tipo de identificación no permitido'; end if;
+  if p_tipo = 'CF' and p_numero <> 'CF' then raise exception 'FEL_REGLA: el consumidor final se registra como CF'; end if;
+  if v.verificado and v.patron is not null and p_numero !~ v.patron then
+    raise exception 'FEL_REGLA: el número no cumple el formato del tipo de identificación %', p_tipo;
+  end if;
 end $$;
 
 create trigger clientes_tocar before update on public.clientes for each row execute function public.fel_tocar_actualizado();

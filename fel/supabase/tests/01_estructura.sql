@@ -150,18 +150,21 @@ do $$ declare n int; begin
   assert (select estado from public.invitaciones where email = 'tarde@fel.test') = 'vencida', 'no se marcó vencida';
 end $$;
 
--- 10. documentos: datos fiscales vacíos salvo certificada verificada; borrador interno por empresa
+-- 10. documentos: datos fiscales vacíos salvo certificado verificado; borrador interno por empresa
 insert into public.documentos (id, empresa_id, numero_borrador) values ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 1);
 select pg_temp.espera_error($$update public.documentos set serie = 'A' where id = '20000000-0000-0000-0000-000000000001'$$, '23514|documentos_datos_fiscales_chk');
 select pg_temp.espera_error($$update public.documentos set numero_fiscal = '1' where id = '20000000-0000-0000-0000-000000000001'$$, '23514|documentos_datos_fiscales_chk');
 select pg_temp.espera_error($$update public.documentos set autorizacion_sat = 'X' where id = '20000000-0000-0000-0000-000000000001'$$, '23514|documentos_datos_fiscales_chk');
-select pg_temp.espera_error($$update public.documentos set estado = 'certificada' where id = '20000000-0000-0000-0000-000000000001'$$, '23514|documentos_datos_fiscales_chk');
-select pg_temp.espera_error($$update public.documentos set estado = 'invalido' where id = '20000000-0000-0000-0000-000000000001'$$, '23514');
+-- el estado fiscal no se cambia con un UPDATE directo, ni siquiera con la clave de servicio
+select pg_temp.espera_error($$update public.documentos set estado_fiscal = 'certificado' where id = '20000000-0000-0000-0000-000000000001'$$, 'FEL_REGLA|23514');
+select pg_temp.espera_error($$update public.documentos set estado_fiscal = 'invalido' where id = '20000000-0000-0000-0000-000000000001'$$, 'FEL_REGLA|23514');
+select pg_temp.espera_error($$update public.documentos set estado_preparacion = 'anulado' where id = '20000000-0000-0000-0000-000000000001'$$, 'FEL_REGLA|23514');
 select pg_temp.espera_error($$insert into public.documentos (empresa_id, numero_borrador) values ('10000000-0000-0000-0000-000000000001', 1)$$, '23505');
+select pg_temp.espera_error($$delete from public.documentos$$, 'FEL_REGLA');
 -- el historial de estados también es append-only
-insert into public.documento_estados (documento_id, empresa_id, estado_anterior, estado_nuevo)
-values ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', null, 'borrador');
-select pg_temp.espera_error($$update public.documento_estados set estado_nuevo = 'revisado'$$, 'FEL_APPEND_ONLY');
+insert into public.documento_estados (documento_id, empresa_id, eje, anterior, nuevo)
+values ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'preparacion', null, 'borrador');
+select pg_temp.espera_error($$update public.documento_estados set nuevo = 'revisado'$$, 'FEL_APPEND_ONLY');
 select pg_temp.espera_error($$delete from public.documento_estados$$, 'FEL_APPEND_ONLY');
 -- integridad entre empresas: una línea no puede apuntar a un documento de otra empresa
 insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id)
@@ -176,11 +179,15 @@ do $$ begin
 end $$;
 
 -- 12. un cliente con el mismo NIT en dos empresas es válido; en la misma empresa no
-insert into public.clientes (empresa_id, nit, nombre) values ('10000000-0000-0000-0000-000000000001', '5555555-5', 'Cliente');
-insert into public.clientes (empresa_id, nit, nombre) values ('10000000-0000-0000-0000-000000000002', '5555555-5', 'Cliente');
-select pg_temp.espera_error($$insert into public.clientes (empresa_id, nit, nombre) values ('10000000-0000-0000-0000-000000000001', '5555555-5', 'Repetido')$$, '23505');
-insert into public.clientes (empresa_id, nit, nombre) values ('10000000-0000-0000-0000-000000000001', 'CF', 'Consumidor final');
-insert into public.clientes (empresa_id, nit, nombre) values ('10000000-0000-0000-0000-000000000001', 'CF', 'Consumidor final 2');
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'NIT', '5555555-5', 'Cliente');
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000002', 'NIT', '5555555-5', 'Cliente');
+select pg_temp.espera_error($$insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'NIT', '5555555-5', 'Repetido')$$, '23505');
+-- el mismo número con otro tipo de identificación no choca
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'CUI', '5555555-5', 'Otro tipo');
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'CF', 'CF', 'Consumidor final');
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'CF', 'CF', 'Consumidor final 2');
+select pg_temp.espera_error($$insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'CF', '123', 'CF falso')$$, '23514');
+select pg_temp.espera_error($$insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-000000000001', 'XXX', '1', 'Tipo inexistente')$$, '23503');
 
 rollback;
 \echo 'OK 01_estructura'

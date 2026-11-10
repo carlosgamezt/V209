@@ -11,18 +11,21 @@ end $$;
 
 -- ---------------------------------------------------------------- clientes
 create or replace function public.fel_op_cliente_guardar(
-  p_actor uuid, p_empresa uuid, p_id uuid, p_nit text, p_nombre text,
+  p_actor uuid, p_empresa uuid, p_id uuid, p_tipo_identificacion text, p_numero_identificacion text, p_nombre text,
   p_direccion text, p_email text, p_telefono text, p_version integer) returns public.clientes
 language plpgsql security definer set search_path = '' as $$
 declare v_old public.clientes; v_new public.clientes;
+        v_tipo text := upper(btrim(p_tipo_identificacion));
+        v_num  text := case when upper(btrim(p_tipo_identificacion)) = 'CF' then 'CF' else upper(btrim(p_numero_identificacion)) end;
 begin
   perform public.fel__exigir_permiso(p_actor, p_empresa, 'clientes.escribir');
+  perform public.fel_identificacion_validar(v_tipo, v_num);
   if p_id is null then
-    insert into public.clientes (empresa_id, nit, nombre, direccion, email, telefono, creado_por, actualizado_por)
-    values (p_empresa, upper(btrim(p_nit)), btrim(p_nombre), nullif(btrim(p_direccion), ''), nullif(btrim(p_email), ''), nullif(btrim(p_telefono), ''), p_actor, p_actor)
+    insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, creado_por, actualizado_por)
+    values (p_empresa, v_tipo, v_num, btrim(p_nombre), nullif(btrim(p_direccion), ''), nullif(btrim(p_email), ''), nullif(btrim(p_telefono), ''), p_actor, p_actor)
     returning * into v_new;
     perform public.fel_auditar(p_empresa, p_actor, 'cliente.crear', 'cliente', v_new.id::text,
-      jsonb_build_object('nit', v_new.nit, 'nombre', v_new.nombre));
+      jsonb_build_object('tipo_identificacion', v_new.tipo_identificacion, 'numero_identificacion', v_new.numero_identificacion, 'nombre', v_new.nombre));
   else
     select * into v_old from public.clientes where id = p_id and empresa_id = p_empresa for update;
     if not found then raise exception 'FEL_NO_ENCONTRADO: cliente no encontrado'; end if;
@@ -30,13 +33,13 @@ begin
       raise exception 'FEL_CONFLICTO: el cliente cambió mientras lo editabas; recarga e intenta de nuevo';
     end if;
     update public.clientes
-       set nit = upper(btrim(p_nit)), nombre = btrim(p_nombre), direccion = nullif(btrim(p_direccion), ''),
+       set tipo_identificacion = v_tipo, numero_identificacion = v_num, nombre = btrim(p_nombre), direccion = nullif(btrim(p_direccion), ''),
            email = nullif(btrim(p_email), ''), telefono = nullif(btrim(p_telefono), ''),
            version = version + 1, actualizado_por = p_actor
      where id = p_id and empresa_id = p_empresa returning * into v_new;
     perform public.fel_auditar(p_empresa, p_actor, 'cliente.editar', 'cliente', p_id::text,
-      jsonb_build_object('antes', jsonb_build_object('nit', v_old.nit, 'nombre', v_old.nombre, 'direccion', v_old.direccion, 'email', v_old.email, 'telefono', v_old.telefono),
-                         'despues', jsonb_build_object('nit', v_new.nit, 'nombre', v_new.nombre, 'direccion', v_new.direccion, 'email', v_new.email, 'telefono', v_new.telefono)));
+      jsonb_build_object('antes', jsonb_build_object('tipo_identificacion', v_old.tipo_identificacion, 'numero_identificacion', v_old.numero_identificacion, 'nombre', v_old.nombre, 'direccion', v_old.direccion, 'email', v_old.email, 'telefono', v_old.telefono),
+                         'despues', jsonb_build_object('tipo_identificacion', v_new.tipo_identificacion, 'numero_identificacion', v_new.numero_identificacion, 'nombre', v_new.nombre, 'direccion', v_new.direccion, 'email', v_new.email, 'telefono', v_new.telefono)));
   end if;
   return v_new;
 end $$;
@@ -50,7 +53,7 @@ begin
   if not found then raise exception 'FEL_NO_ENCONTRADO: cliente no encontrado'; end if;
   update public.clientes set activo = p_activo, version = version + 1, actualizado_por = p_actor where id = p_id and empresa_id = p_empresa;
   perform public.fel_auditar(p_empresa, p_actor, case when p_activo then 'cliente.reactivar' else 'cliente.baja' end, 'cliente', p_id::text,
-    jsonb_build_object('nit', v_old.nit, 'nombre', v_old.nombre));
+    jsonb_build_object('tipo_identificacion', v_old.tipo_identificacion, 'numero_identificacion', v_old.numero_identificacion, 'nombre', v_old.nombre));
 end $$;
 
 -- ---------------------------------------------------------------- conceptos
@@ -100,12 +103,12 @@ end $$;
 
 -- Estas funciones nuevas heredan el cierre por defecto (solo service_role las ejecuta).
 revoke all on function public.fel__exigir_permiso(uuid, uuid, text) from public, anon, authenticated;
-revoke all on function public.fel_op_cliente_guardar(uuid, uuid, uuid, text, text, text, text, text, integer) from public, anon, authenticated;
+revoke all on function public.fel_op_cliente_guardar(uuid, uuid, uuid, text, text, text, text, text, text, integer) from public, anon, authenticated;
 revoke all on function public.fel_op_cliente_estado(uuid, uuid, uuid, boolean) from public, anon, authenticated;
 revoke all on function public.fel_op_concepto_guardar(uuid, uuid, uuid, text, text, text, text, numeric, text, integer) from public, anon, authenticated;
 revoke all on function public.fel_op_concepto_estado(uuid, uuid, uuid, boolean) from public, anon, authenticated;
 grant execute on function public.fel__exigir_permiso(uuid, uuid, text) to service_role;
-grant execute on function public.fel_op_cliente_guardar(uuid, uuid, uuid, text, text, text, text, text, integer) to service_role;
+grant execute on function public.fel_op_cliente_guardar(uuid, uuid, uuid, text, text, text, text, text, text, integer) to service_role;
 grant execute on function public.fel_op_cliente_estado(uuid, uuid, uuid, boolean) to service_role;
 grant execute on function public.fel_op_concepto_guardar(uuid, uuid, uuid, text, text, text, text, numeric, text, integer) to service_role;
 grant execute on function public.fel_op_concepto_estado(uuid, uuid, uuid, boolean) to service_role;

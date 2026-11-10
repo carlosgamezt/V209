@@ -23,10 +23,10 @@ insert into public.miembros (empresa_id, user_id, rol) values
   ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000c3', 'emisor'),
   ('10000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000d1', 'propietario');
 
-insert into public.clientes (empresa_id, nit, nombre) values
-  ('10000000-0000-0000-0000-00000000000a', '3333333-3', 'Cliente A1'),
-  ('10000000-0000-0000-0000-00000000000a', '4444444-4', 'Cliente A2'),
-  ('10000000-0000-0000-0000-00000000000b', '5555555-5', 'Cliente B1');
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values
+  ('10000000-0000-0000-0000-00000000000a', 'NIT', '3333333-3', 'Cliente A1'),
+  ('10000000-0000-0000-0000-00000000000a', 'NIT', '4444444-4', 'Cliente A2'),
+  ('10000000-0000-0000-0000-00000000000b', 'NIT', '5555555-5', 'Cliente B1');
 insert into public.conceptos (empresa_id, codigo, descripcion, tipo) values
   ('10000000-0000-0000-0000-00000000000a', 'C1', 'Concepto A', 'servicio'),
   ('10000000-0000-0000-0000-00000000000b', 'C1', 'Concepto B', 'servicio');
@@ -54,7 +54,7 @@ do $$ begin
 end $$;
 -- no puede escribir directamente en ninguna tabla (todo pasa por la función)
 do $$ begin
-  begin insert into public.clientes (empresa_id, nit, nombre) values ('10000000-0000-0000-0000-00000000000a', '9999999-9', 'Directo'); raise exception 'NO DEBIÓ PERMITIR insert'; exception when insufficient_privilege then null; end;
+  begin insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('10000000-0000-0000-0000-00000000000a', 'NIT', '9999999-9', 'Directo'); raise exception 'NO DEBIÓ PERMITIR insert'; exception when insufficient_privilege then null; end;
   begin update public.clientes set nombre = 'x'; raise exception 'NO DEBIÓ PERMITIR update'; exception when insufficient_privilege then null; end;
   begin delete from public.clientes; raise exception 'NO DEBIÓ PERMITIR delete'; exception when insufficient_privilege then null; end;
   begin update public.miembros set rol = 'propietario'; raise exception 'NO DEBIÓ PERMITIR cambiar rol'; exception when insufficient_privilege then null; end;

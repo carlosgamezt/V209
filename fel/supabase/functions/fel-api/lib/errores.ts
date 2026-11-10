@@ -15,6 +15,8 @@ export function traducirErrorPg(e: { message?: string; code?: string } | null | 
       case "NO_AUTORIZADO": return new ErrorFel(403, texto, "no_autorizado");
       case "NO_ENCONTRADO": return new ErrorFel(404, texto, "no_encontrado");
       case "CONFLICTO": return new ErrorFel(409, texto, "conflicto");
+      case "OPERACION_ABIERTA": return new ErrorFel(409, texto, "operacion_abierta");
+      case "EMISION_BLOQUEADA": return new ErrorFel(403, texto, "emision_bloqueada");
       case "REGLA": return new ErrorFel(422, texto, "regla");
       default: return new ErrorFel(500, "Error interno", "interno");
     }

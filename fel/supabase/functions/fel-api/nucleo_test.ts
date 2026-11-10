@@ -113,6 +113,7 @@ Deno.test("integridad del registro: toda acción (salvo yo y aceptar_invitacion)
     if (/^(miembro_|invitacion_)/.test(nombre)) {
       assertEquals([a.requisito.permiso, a.requisito.aal2], ["usuarios.gestionar", true], `${nombre}`);
     }
+    if (/^documento_/.test(nombre)) assertEquals(a.requisito.permiso, "borradores.ver", nombre);
     if (/^cliente_/.test(nombre)) assertEquals(a.requisito.permiso, "clientes.escribir", nombre);
     if (/^concepto_/.test(nombre)) assertEquals(a.requisito.permiso, "conceptos.escribir", nombre);
     if (a.requisito.permiso) assertEquals(typeof a.empresaDe, "function", `${nombre} necesita empresaDe`);
@@ -128,13 +129,76 @@ Deno.test("la emisión real está bloqueada por configuración y no toca la base
 Deno.test("entradas de acciones reales: campos prohibidos, NIT, montos y versión", async () => {
   const tok = fabricarToken({ aal: "aal2" });
   const d = deps({ conPermisos: ["clientes.escribir", "conceptos.escribir"] });
-  const base = { accion: "cliente_guardar", empresa_id: EMPRESA, nit: "1234567-8", nombre: "Cliente" };
+  const base = { accion: "cliente_guardar", empresa_id: EMPRESA, tipo_identificacion: "NIT", numero_identificacion: "1234567-8", nombre: "Cliente" };
   assertEquals((await leer(await pedir({ ...base, serie: "A" }, d, reales, { token: tok }))).status, 400);
   assertEquals((await leer(await pedir({ ...base, estado: "certificada" }, d, reales, { token: tok }))).status, 400);
-  assertEquals((await leer(await pedir({ ...base, nit: "ABC" }, d, reales, { token: tok }))).status, 400);
+  assertEquals((await leer(await pedir({ ...base, numero_identificacion: "AB C;" }, d, reales, { token: tok }))).status, 400);
   assertEquals((await leer(await pedir({ ...base, id: "10000000-0000-0000-0000-000000000099" }, d, reales, { token: tok }))).status, 400); // editar sin versión
   const c = { accion: "concepto_guardar", empresa_id: EMPRESA, codigo: "C1", descripcion: "x", tipo: "bien" };
   assertEquals((await leer(await pedir({ ...c, precio_unitario: "-5" }, d, reales, { token: tok }))).status, 400);
   assertEquals((await leer(await pedir({ ...c, precio_unitario: "1e3" }, d, reales, { token: tok }))).status, 400);
   assertEquals((await leer(await pedir({ ...c, precio_unitario: "10", tipo: "otro" }, d, reales, { token: tok }))).status, 400);
+});
+
+// ---------------------------------------------------------------- la API nunca confía en identidad/rol/permisos enviados por el cliente
+Deno.test("campos de identidad, rol o permisos enviados por el cliente se rechazan en TODAS las acciones", async () => {
+  const tok = fabricarToken({ aal: "aal2" });
+  const d = deps({ maestro: true, conPermisos: ["clientes.escribir", "conceptos.escribir", "borradores.ver", "usuarios.gestionar"] });
+  for (const nombre of Object.keys(reales)) {
+    for (const falso of ["actor", "p_actor", "user_id", "usuario_id", "rol", "permisos", "es_admin", "service_role", "actor_user_id", "creado_por"]) {
+      if (nombre === "miembro_actualizar" && falso === "user_id") continue; // es el usuario OBJETIVO, no el actor
+      const r = await leer(await pedir({ accion: nombre, empresa_id: EMPRESA, [falso]: "00000000-0000-0000-0000-0000000000a1" }, d, reales, { token: tok }));
+      assertEquals(r.status === 400 || r.status === 403, true, `${nombre} aceptó el campo ${falso} (status ${r.status})`);
+    }
+  }
+});
+
+Deno.test("el actor enviado a la base de datos es SIEMPRE el del token, ignorando cabeceras falsas", async () => {
+  const vistos: Array<Record<string, unknown>> = [];
+  const admin = { rpc: (_n: string, args: Record<string, unknown>) => { vistos.push(args); return Promise.resolve({ data: { id: "x" }, error: null }); } };
+  const d = deps({ admin, conPermisos: ["clientes.escribir"] });
+  const h = new Request("https://fel.test/fel-api", { method: "POST", headers: {
+    "content-type": "application/json", authorization: "Bearer token-valido",
+    "x-user-id": "00000000-0000-0000-0000-0000000000a1", "x-actor": "00000000-0000-0000-0000-0000000000a1", "x-role": "propietario" },
+    body: JSON.stringify({ accion: "cliente_guardar", empresa_id: EMPRESA, tipo_identificacion: "NIT", numero_identificacion: "1234567-8", nombre: "C" }) });
+  const r = await manejar(h, d, reales);
+  assertEquals(r.status, 200);
+  assertEquals(vistos.length, 1);
+  assertEquals(vistos[0].p_actor, "u1");
+});
+
+Deno.test("los permisos se consultan para la empresa pedida: ser miembro de otra empresa no sirve", async () => {
+  const consultas: string[] = [];
+  const d = { ...deps(), permisos: (emp: string) => { consultas.push(emp); return Promise.resolve(emp === EMPRESA ? ["clientes.escribir"] : []); } };
+  const cuerpo = (emp: string) => ({ accion: "cliente_guardar", empresa_id: emp, tipo_identificacion: "NIT", numero_identificacion: "1", nombre: "C" });
+  const admin = { rpc: () => Promise.resolve({ data: {}, error: null }) };
+  const ajena = "10000000-0000-0000-0000-00000000000b";
+  assertEquals((await leer(await pedir(cuerpo(ajena), { ...d, admin }, reales))).status, 403);
+  assertEquals((await leer(await pedir(cuerpo(EMPRESA), { ...d, admin }, reales))).status, 200);
+  assertEquals(consultas, [ajena, EMPRESA]);
+});
+
+Deno.test("la API NO expone certificar, anular ni conciliar (la emisión real sigue bloqueada)", () => {
+  for (const nombre of Object.keys(reales)) {
+    assertEquals(/certific|anul|concili|operacion_fiscal|sat/i.test(nombre.replace("emision_real_", "")), false, `${nombre} no debe existir en la Fase 1`);
+  }
+});
+
+Deno.test("documento_guardar: calcula en servidor, ignora importes del cliente y devuelve vista previa NO oficial", async () => {
+  const tok = fabricarToken({ aal: "aal2" });
+  const vistos: Array<Record<string, unknown>> = [];
+  const admin = { rpc: (_n: string, a: Record<string, unknown>) => { vistos.push(a); return Promise.resolve({ data: { id: "d" }, error: null }); } };
+  const d = deps({ admin, conPermisos: ["borradores.ver"] });
+  const linea = { descripcion: "Servicio", cantidad: "3", precio_unitario: "0.1" };
+  // el cliente NO puede mandar subtotal/total/impuestos/estado
+  for (const campo of ["subtotal", "total", "impuestos", "estado_fiscal", "serie", "numero_fiscal", "autorizacion_sat"]) {
+    const r = await leer(await pedir({ accion: "documento_guardar", empresa_id: EMPRESA, lineas: [linea], [campo]: "1" }, d, reales, { token: tok }));
+    assertEquals(r.status, 400, campo);
+  }
+  const r = await leer(await pedir({ accion: "documento_guardar", empresa_id: EMPRESA, lineas: [linea] }, d, reales, { token: tok }));
+  assertEquals(r.status, 200);
+  assertEquals(r.datos.vista_previa.oficial, false);
+  assertEquals([r.datos.vista_previa.subtotal, r.datos.vista_previa.total, r.datos.vista_previa.impuestos], ["0.3", null, null]);
+  assertEquals(vistos[0].p_subtotal, "0.3");
+  assertEquals(vistos[0].p_actor, "u1");
 });
