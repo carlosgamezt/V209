@@ -112,7 +112,7 @@ async function verificar() {   // SOLO LECTURA: no crea ni modifica nada
   afirmar("V04", "no hay autoconfirmación de correos", st.mailer_autoconfirm !== true, JSON.stringify({ mailer_autoconfirm: st.mailer_autoconfirm }));
   const filas = sql("select comprobacion || '|' || ok || '|' || detalle from public.fel_verificar_dependencias_auth()").split("\n").filter(Boolean);
   afirmar("V05", "la función de compatibilidad con Auth existe y devuelve comprobaciones", filas.length >= 14, `${filas.length} filas`);
-  for (const f of filas) { const [c, ok, det] = f.split("|"); afirmar(`V05-${c.slice(0, 48)}`, c, ok === "t", det); }
+  for (const f of filas) { const [c, ok, det] = f.split("|"); afirmar(`V05-${c.slice(0, 48)}`, c, ok === "true", det); }
   afirmar("V06", "el interruptor de emisión real está APAGADO", sql("select valor from public.plataforma_config where clave='emision_real_disponible'") === "f");
   afirmar("V07", "ninguna empresa tiene emisión real habilitada", sql("select count(*) from public.empresas where emision_real_habilitada") === "0");
   afirmar("V08", "todas las tablas de public tienen RLS", sql("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity") === "0");
