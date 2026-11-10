@@ -3,7 +3,7 @@
 // Sesión SAT: si el portal pide iniciar sesión, se PAUSA (sin tocar nada), la persona se autentica en el portal oficial, se VERIFICA la sesión,
 // se RECONCILIA lo ya llenado (solo lectura) y solo entonces se reanuda. No se hace ninguna acción para evitar la expiración por inactividad.
 import { validarMapeo, validarDatos, valorDe, clasificarControl, hostPermitido } from "./guardia.mjs";
-import { resolver } from "./localizar.mjs";
+import { resolver, construir } from "./localizar.mjs";
 import { planificarReanudacion, esIdempotente } from "./progreso.mjs";
 import { claveIdempotencia } from "./libro.mjs";
 
@@ -124,6 +124,12 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
 
   async function ejecutarUno(p) {
     comprobarHost();
+    if (p.tipo === "verificar_ausente") {   // detección de errores de validación: no debe haber ningún elemento VISIBLE que coincida (p. ej. clase ng-invalid o un mensaje de error)
+      const l = construir(page, p.localizador), fin = reloj() + (p.espera_ms ?? 400); let n = 0;
+      for (;;) { n = await l.evaluateAll((els) => els.filter((el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)).length); if (n === 0 || reloj() >= fin) break; await new Promise((r) => setTimeout(r, 80)); }   // sin .catch: un fallo de lectura es un error, nunca un «sin errores»
+      if (n > 0) throw new Error(`hay ${n} elemento(s) visible(s) de error de validación (${p.localizador.estrategia}: ${p.localizador.valor})`);
+      return "sin errores de validación visibles";
+    }
     const loc = await resolver(page, p.localizador, { timeout });
     switch (p.tipo) {
       case "esperar_visible": await loc.waitFor({ state: "visible", timeout }); return "";
@@ -141,14 +147,17 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
         if ((await loc.evaluate((el) => el.tagName)) !== "SELECT") throw new Error("no es un <select> nativo (los desplegables personalizados necesitan observación aparte)");
         await loc.selectOption({ label: String(v) }); return `opción elegida (${p.dato})`;
       }
+      case "salir_del_campo": await loc.blur(); return "se salió del campo (evento blur)";
       case "marcar": { const v = valorDe(datos, p.dato); await loc.setChecked(v === true || v === "true"); return `casilla (${p.dato})`; }
       case "leer": {
-        const v = valorDe(datos, p.dato), real = await loc.evaluate((el) => ("value" in el && el.value !== "" ? el.value : el.textContent) ?? "");
+        const v = valorDe(datos, p.dato), leerValor = () => loc.evaluate((el) => ("value" in el && el.value !== "" ? el.value : el.textContent) ?? "");
+        let real = await leerValor(); const fin = reloj() + (p.espera_ms ?? 1500);   // valores calculados de forma asíncrona (AngularJS/debounce): se reintenta la LECTURA hasta el límite
+        while (String(real).trim() !== String(v) && reloj() < fin) { await new Promise((r) => setTimeout(r, 80)); real = await leerValor(); }
         if (String(real).trim() !== String(v)) throw new Error(`lo leído no coincide con lo esperado (longitudes ${String(real).trim().length} vs ${String(v).length})`);
         return "lectura coincide";
       }
       case "clic_seguro": {
-        const info = await loc.evaluate((el) => ({ tag: el.tagName.toLowerCase(), type: (el.getAttribute("type") || "").toLowerCase(), texto: (el.innerText || el.value || "").replace(/\s+/g, " ").trim().slice(0, 80), etiqueta: el.getAttribute("aria-label") || "", titulo: el.getAttribute("title") || "", id: el.id, nombre: el.getAttribute("name") || "", enFormulario: !!el.closest("form"), href: el.tagName === "A" ? (el.getAttribute("href") || "") : "" }));
+        const info = await loc.evaluate((el) => ({ tag: el.tagName.toLowerCase(), type: (el.getAttribute("type") || "").toLowerCase(), texto: (el.innerText || el.value || "").replace(/\s+/g, " ").trim().slice(0, 80), etiqueta: el.getAttribute("aria-label") || "", titulo: el.getAttribute("title") || "", id: el.id, nombre: el.getAttribute("name") || "", enFormulario: !!el.closest("form"), href: el.tagName === "A" ? (el.getAttribute("href") || "") : "", ngclick: el.getAttribute("ng-click") || el.getAttribute("data-ng-click") || "" }));
         const c = clasificarControl(info);
         if (c.nivel === "prohibido") throw new ErrorGuardia(`clic RECHAZADO: el control ${c.razones.join("; ")}`);
         if (c.envia_formulario && p.permitir_envia_formulario !== true) throw new ErrorGuardia("clic RECHAZADO: el control puede enviar un formulario");

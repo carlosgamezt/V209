@@ -234,3 +234,17 @@ test("mapeo preliminar de SAT: no es ejecutable (solo falla por verificado=false
   for (const f of cl.filas.filter((x) => /Vista Previa|Eliminar item/.test(x.funcion))) assert.match(f.accion, /BLOQUEADA/);
   const dl = JSON.parse(fs.readFileSync(new URL("../config/datos-ficticios-lineas.json", import.meta.url), "utf8")); assert.ok(validarDatos(dl).ok);
 });
+
+test("pasos nuevos (salir_del_campo, verificar_ausente, estrategia clase): válidos, idempotentes y sin permitir nada de emisión", () => {
+  const con = (extra) => { const m = mapeoOk(); m.pasos.splice(2, 0, { id: "n1", verificado: true, ...extra }); return validarMapeo(m); };
+  assert.ok(con({ tipo: "salir_del_campo", localizador: { estrategia: "ng_model", valor: "datosGenerales.nitReceptor", tag: "input", visible: true } }).ok);
+  assert.ok(con({ tipo: "verificar_ausente", localizador: { estrategia: "clase", valor: "ng-invalid", visible: true } }).ok);
+  assert.ok(con({ tipo: "verificar_ausente", localizador: { estrategia: "texto", valor: "Cantidad no válida" } }).ok);
+  assert.ok(!con({ tipo: "verificar_ausente", localizador: { estrategia: "clase", valor: "a b; x" } }).ok, "clase con caracteres no permitidos");
+  assert.ok(!con({ tipo: "salir_del_campo", localizador: { estrategia: "ng_model", valor: "x", tag: "form" } }).ok, "tag no permitido");
+  assert.ok(esIdempotente({ tipo: "salir_del_campo" }) && esIdempotente({ tipo: "verificar_ausente" }) && !esIdempotente({ tipo: "clic_seguro" }));
+  assert.equal(TIPOS_PASO.some((t) => /emit|certific|envi|submit|press|firm|clic|click|enter/.test(t) && t !== "clic_seguro"), false);
+  assert.equal(clasificarControl({ tag: "button", type: "button", texto: "Aceptar", ngclick: "validarInformacion()" }).nivel, "prohibido", "ng-click validar… = vista previa");
+  assert.equal(clasificarControl({ tag: "button", type: "button", titulo: "x", ngclick: "eliminarItem($index,1)" }).nivel, "prohibido");
+  assert.equal(clasificarControl({ tag: "button", type: "button", texto: "Siguiente", ngclick: "guardarBorrador()" }).nivel, "prohibido");
+});

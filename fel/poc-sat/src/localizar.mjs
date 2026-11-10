@@ -9,6 +9,7 @@ export function construir(page, l) {
     case "nombre": case "ng_model": { const attr = l.estrategia === "nombre" ? "name" : "ng-model", q = String(l.valor).replace(/"/g, '\\"'); return ambito.locator(`${l.tag ?? ""}[${attr}="${q}"]${l.visible === true ? ":visible" : ""}`); }
     case "id": return ambito.locator(`[id="${String(l.valor).replace(/"/g, '\\"')}"]`);
     case "marcador": return ambito.getByPlaceholder(l.valor, { exact: exacto });
+    case "clase": return ambito.locator(`${l.tag ?? ""}.${l.valor}${l.visible === true ? ":visible" : ""}`);
     case "texto": return ambito.getByText(l.valor, { exact: exacto });
     default: throw new Error(`estrategia desconocida: ${l.estrategia}`);
   }

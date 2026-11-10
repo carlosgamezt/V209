@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es" ng-app="sim"><head><meta charset="utf-8"><title>SIMULACIÓN de un formulario AngularJS (NO es el portal SAT)</title>
+<style>.msg-error{color:#b00}[ng-cloak]{display:none}fieldset{margin:8px 0}.modal{border:2px solid #333;padding:8px}</style></head>
+<body ng-controller="Ctrl" ng-cloak>
+<p><b>SIMULACIÓN construida con AngularJS 1.5.8 a partir de los atributos observados (ng-model, ng-repeat, name con índice, botones con ng-click). NO es el portal de la SAT, no se conecta a nada y no emite nada.</b></p>
+<h2>Factura Electrónica (simulada)</h2>
+<div role="tab">Datos Generales</div>
+<fieldset>
+  <input type="text" ng-model="datosGenerales.fechaEmision" readonly><button type="button" ng-click="noop()"></button>
+  <select ng-model="datosGenerales.tipoDte" ng-options="t as t.nombre for t in tipos" ng-required="true"><option value="">Seleccione</option></select>
+  <select ng-model="datosGenerales.moneda" ng-options="m for m in monedas" ng-required="true"><option value="">Seleccione</option></select>
+  <label><input type="radio" name="14" ng-model="datosGenerales.tipoIdentificacion" value="NIT"> NIT</label>
+  <label><input type="radio" name="15" ng-model="datosGenerales.tipoIdentificacion" value="CUI"> CUI</label>
+  <label><input type="radio" name="16" ng-model="datosGenerales.tipoIdentificacion" value="EXT"> ID EXTRANJERO</label>
+  <input type="text" ng-model="datosGenerales.nitReceptor" autocomplete="off" ng-blur="consultarNit()" ng-required="datosGenerales.tipoIdentificacion === 'NIT'">
+  <input type="text" ng-model="resultadoNIT.nombre" disabled ng-show="resultadoNIT.nombre">
+  <input type="text" name="nombre" ng-model="resultadoNIT.nombre" ng-show="false">
+  <input type="text" name="nombre" ng-model="resultadoNIT.nombre" ng-show="false">
+  <input type="text" ng-model="datosGenerales.direccionReceptor" ng-required="true">
+</fieldset>
+<fieldset>
+  <table><tbody>
+    <tr ng-repeat="det in detalleFactura">
+      <td><select name="BienOServicio{{$index}}" ng-model="det.BienOServicio" ng-options="b for b in bienes" ng-required="true"><option value="">Seleccione</option></select></td>
+      <td><input type="text" name="Cantidad{{$index}}" ng-model="det.Cantidad" ng-model-options="{debounce: 150}" ng-pattern="/^[0-9]+(\.[0-9]+)?$/" ng-required="true" ng-change="calc(det)" autocomplete="off"></td>
+      <td><select name="CodigoProducto{{$index}}" ng-model="det.CodigoProducto" ng-show="false"><option value="">Seleccione</option></select></td>
+      <td><input type="text" name="Descripcion{{$index}}" ng-model="det.Descripcion" ng-required="true"><select name="Descripcion{{$index}}" ng-model="det.DescripcionIdp" ng-show="false"><option value="">Seleccione</option></select></td>
+      <td><input type="text" name="PrecioUnitario{{$index}}" ng-model="det.PrecioUnitario" ng-pattern="/^[0-9]+(\.[0-9]+)?$/" ng-required="true" ng-change="calc(det)" autocomplete="off"></td>
+      <td><input type="text" name="Observaciones{{$index}}" ng-model="det.observaciones" ng-show="false"></td>
+      <td><input type="text" name="Descuento{{$index}}" ng-model="det.Descuento" ng-pattern="/^[0-9]*(\.[0-9]+)?$/" ng-change="calc(det)" autocomplete="off"></td>
+      <td><input type="text" name="OtrosDescuento{{$index}}" ng-model="det.OtrosDescuento" ng-pattern="/^[0-9]*(\.[0-9]+)?$/" ng-change="calc(det)" autocomplete="off"></td>
+      <td><input type="text" name="Total{{$index}}" ng-model="det.Total" disabled></td>
+      <td><button type="button" id="imp{{$index}}" title="Editar impuestos" ng-click="mostrarModalImpuestos($index)"></button><button type="button" id="el{{$index}}" title="Eliminar item" ng-click="eliminarItem($index)"></button></td>
+      <td><span class="msg-error" ng-show="det.errorCantidad">{{det.errorCantidad}}</span><span class="msg-error" ng-show="det.errorDescuento">{{det.errorDescuento}}</span></td>
+    </tr>
+  </tbody></table>
+  <button type="button" id="agr" ng-click="agregarItem()">Agregar item</button>
+</fieldset>
+<button type="button" id="gb" ng-click="guardarBorrador()">Guardar borrador</button>
+<button type="button" id="vp" ng-click="validarInformacion()">Vista Previa</button>
+<div class="modal" ng-show="vistaPrevia"><p>Vista previa (simulada)</p><button type="button" id="emi" ng-click="emitir()">Emitir</button></div>
+<div class="modal" ng-show="modalImpuestos"><p>Impuestos (simulado)</p></div>
+<script src="/angular.js"></script>
+<script>
+angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) {
+  const nuevo = () => ({ BienOServicio: "", Cantidad: "", CodigoProducto: "", Descripcion: "", PrecioUnitario: "", observaciones: "", Descuento: "", OtrosDescuento: "", Total: "" });
+  $scope.tipos = [{ nombre: "Factura de prueba A", dte: "FA" }, { nombre: "Factura de prueba B", dte: "FB" }];
+  $scope.monedas = ["GTQ-Quetzal", "USD-Dólar estadounidense"]; $scope.bienes = ["Bien", "Servicio"];
+  $scope.datosGenerales = { fechaEmision: "01/01/2026", tipoDte: null, moneda: null, tipoIdentificacion: null, nitReceptor: "", direccionReceptor: "" };
+  $scope.resultadoNIT = { nombre: "" }; $scope.detalleFactura = [nuevo()]; $scope.vistaPrevia = false; $scope.modalImpuestos = false;
+  $scope.noop = () => {};
+  $scope.consultarNit = () => { const n = $scope.datosGenerales.nitReceptor; if (n) $timeout(() => { $scope.resultadoNIT.nombre = n === "CF" ? "CONSUMIDOR FINAL DE PRUEBA" : "RECEPTOR DE PRUEBA SIMULADO"; }, 120); };   // consulta SIMULADA local (sin red)
+  const num = (v) => (v === "" || v == null ? 0 : Number(v));
+  $scope.calc = (d) => {
+    d.errorCantidad = d.errorDescuento = "";
+    if (d.Cantidad !== "" && !(Number(d.Cantidad) > 0)) d.errorCantidad = "Cantidad no válida";
+    if (isNaN(Number(d.Cantidad)) || isNaN(Number(d.PrecioUnitario)) || d.Cantidad === "" || d.PrecioUnitario === "") { d.Total = ""; return; }
+    const sub = num(d.Cantidad) * num(d.PrecioUnitario), desc = num(d.Descuento) + num(d.OtrosDescuento);
+    if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; d.Total = ""; return; }
+    d.Total = (sub - desc).toFixed(2);
+  };
+  $scope.agregarItem = () => { $scope.detalleFactura.push(nuevo()); };
+  $scope.eliminarItem = (i) => { $scope.detalleFactura.splice(i, 1); };
+  $scope.mostrarModalImpuestos = () => { $scope.modalImpuestos = true; };
+  $scope.guardarBorrador = () => $http.post("/api/guardar", $scope.detalleFactura);                                  // escritura: la guardia debe impedirla
+  $scope.validarInformacion = () => $http.post("/api/vista-previa", $scope.detalleFactura).then(() => { $scope.vistaPrevia = true; }); // la vista previa pasa por el servidor
+  $scope.emitir = () => $http.post("/api/emitir", {});
+});
+</script>
+</body></html>

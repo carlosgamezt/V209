@@ -101,10 +101,10 @@ export function evaluarSolicitud({ metodo, url }, politica = {}) {
 }
 
 // ---------------------------------------------------------------- validación del mapeo (plan)
-export const TIPOS_PASO = ["manual", "esperar_visible", "llenar", "seleccionar", "marcar", "clic_seguro", "leer", "detener"];
-export const ESTRATEGIAS = ["etiqueta", "rol", "id", "nombre", "ng_model", "marcador", "texto"];
+export const TIPOS_PASO = ["manual", "esperar_visible", "llenar", "seleccionar", "marcar", "salir_del_campo", "verificar_ausente", "clic_seguro", "leer", "detener"];
+export const ESTRATEGIAS = ["etiqueta", "rol", "id", "nombre", "ng_model", "marcador", "texto", "clase"];
 export const TAGS_LOCALIZADOR = ["input", "select", "textarea", "button"];
-const necesitaLocalizador = new Set(["esperar_visible", "llenar", "seleccionar", "marcar", "clic_seguro", "leer"]);
+const necesitaLocalizador = new Set(["esperar_visible", "llenar", "seleccionar", "marcar", "salir_del_campo", "verificar_ausente", "clic_seguro", "leer"]);
 const necesitaDato = new Set(["llenar", "seleccionar", "marcar", "leer"]);
 
 /** opciones.local = true solo para la autoprueba con la página de ejemplo (permite no verificado y host local). */
@@ -132,10 +132,11 @@ export function validarMapeo(m, { local = false } = {}) {
       const l = p.localizador;
       if (!l || !ESTRATEGIAS.includes(l.estrategia) || !String(l.valor ?? "").trim()) e(`${ctx}: localizador incompleto (estrategia: ${ESTRATEGIAS.join("|")} y valor)`);
       else if (l.estrategia === "rol" && !l.rol) e(`${ctx}: la estrategia «rol» necesita el campo rol`);
+      if (l?.estrategia === "clase" && !/^[A-Za-z0-9_-]+$/.test(String(l.valor))) e(`${ctx}: la estrategia «clase» solo admite un nombre de clase (letras, números, - y _)`);
       if (l?.visible != null && typeof l.visible !== "boolean") e(`${ctx}: visible debe ser true o false`);
       if (l?.tag != null && !TAGS_LOCALIZADOR.includes(l.tag)) e(`${ctx}: tag no permitido «${l.tag}» (${TAGS_LOCALIZADOR.join("|")})`);
       if (!local && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);
-      if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro o esperar_visible`);
+      if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible" && p.tipo !== "verificar_ausente") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro, esperar_visible o verificar_ausente`);
     }
     if (p.idempotente != null && typeof p.idempotente !== "boolean") e(`${ctx}: idempotente debe ser true o false`);
     if (necesitaDato.has(p.tipo) && !(typeof p.dato === "string" && p.dato.trim())) e(`${ctx}: falta «dato» (ruta en el archivo de datos ficticios, p. ej. cliente.nombre)`);
