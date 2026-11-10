@@ -5,3 +5,5 @@ registros/
 perfiles/
 mapeo.local*.json
 *.local.json
+consola.json
+consola-*.json

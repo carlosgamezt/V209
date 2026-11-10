@@ -26,3 +26,22 @@ export function elegirPestana(context, dominios = null) {
   cand.forEach((p, i) => console.error(`  ${i + 1}. ${sinQuery(p.url())}`));
   process.exit(2);
 }
+
+/** Resumen legible del inventario (lo usan observar, importar-observacion y comparar). */
+export function imprimirResumen(inv, base) {
+  console.log(`\nPágina: ${inv.pagina.host}${inv.pagina.ruta}  ·  controles: ${inv.total_controles}  ·  sin localizador único: ${inv.sin_candidato_unico}  ·  con riesgo de emisión: ${inv.con_riesgo_de_emision}`);
+  for (const m of inv.marcos) console.log(`  marco ${m.indice}${m.principal ? " (principal)" : ""}: ${m.host}${m.ruta} · controles ${m.controles ?? "?"}${m.captcha ? " · CAPTCHA" : ""}${m.shadow_abierto ? ` · shadow DOM abierto: ${m.shadow_abierto}` : ""}${m.frameworks?.length ? ` · ${m.frameworks.join(",")}` : ""}${m.error ? ` · error: ${m.error}` : ""}`);
+  console.log(`  formularios: ${inv.formularios.length}${inv.formularios.map((f) => ` [${f.metodo.toUpperCase()} ${f.accion_ruta || "(misma página)"} · ${f.controles} elementos${f.id_generado ? " · id autogenerado" : ""}]`).join("")}`);
+  console.log(`  campo de contraseña visible: ${inv.senales_sesion.campo_clave_visible ? "SÍ (esta pantalla parece de inicio de sesión)" : "no"}`);
+  console.log("\nPosibles obstáculos para automatizar:"); for (const o of inv.obstaculos) console.log(`  [${o.severidad.toUpperCase().padEnd(5)}] ${o.codigo} (${o.n}): ${o.detalle}`);
+  console.log("\nControles que NUNCA se tocarán (emitir/enviar/cerrar sesión/etc.):");
+  for (const c of inv.controles.filter((x) => x.clasificacion !== "ok")) console.log(`  ${c.n}  «${c.texto || c.etiqueta}»  ${c.clasificacion}: ${c.razones.join("; ")}${c.ajax ? " · AJAX JSF" : ""}`);
+  if (base) console.log(`\nGuardado en:\n  ${base}.json\n  ${base}.mapeo-borrador.json   (borrador: verificado=false y dato=null; hay que completarlo a mano)\nNo compartas estos archivos sin revisarlos.`);
+}
+/** Guarda inventario y borrador en observaciones/ (ignorada por git). */
+export function guardarObservacion(inv, borrador, alias) {
+  const dir = path.join(RAIZ, "observaciones"); fs.mkdirSync(dir, { recursive: true });
+  const base = path.join(dir, `${alias}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+  fs.writeFileSync(`${base}.json`, JSON.stringify(inv, null, 2)); fs.writeFileSync(`${base}.mapeo-borrador.json`, JSON.stringify(borrador, null, 2));
+  return base;
+}

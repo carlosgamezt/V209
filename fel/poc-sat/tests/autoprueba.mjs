@@ -13,14 +13,14 @@ import { chromium } from "../src/playwright.mjs";
 import { crearRegistro } from "../src/registro.mjs";
 import { ejecutarPlan } from "../src/ejecutor.mjs";
 import { bloquearEscrituras, conectar, tomarBloqueo } from "../src/conexion.mjs";
-import { inventariar, borradorMapeo } from "../src/observar.mjs";
+import { inventariar, borradorMapeo, construirInventario, fuenteConsola } from "../src/observar.mjs";
 import { validarMapeo } from "../src/guardia.mjs";
 import { crearMonitorSesion } from "../src/sesion.mjs";
 import { crearProgreso } from "../src/progreso.mjs";
 import { crearLibro, claveIdempotencia } from "../src/libro.mjs";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
-const html = fs.readFileSync(path.join(AQUI, "fixture/formulario-generico.html"));
+const html = fs.readFileSync(path.join(AQUI, "fixture/formulario-generico.html")), htmlJsf = fs.readFileSync(path.join(AQUI, "fixture/jsf-simulado.html"));
 const mapeo = () => JSON.parse(fs.readFileSync(path.join(AQUI, "fixture/mapeo-fixture.json"), "utf8"));
 const datos = () => JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios.json"), "utf8"));
 const base = (extra = {}) => ({ ...mapeo(), ...extra });
@@ -28,7 +28,7 @@ const base = (extra = {}) => ({ ...mapeo(), ...extra });
 const posts = [];                       // todo POST que LLEGA al servidor (debe quedar vacío cuando la guardia está activa)
 const servidor = http.createServer((req, res) => {
   if (req.method === "POST") { posts.push(`${req.method} ${req.url}`); req.resume(); res.writeHead(200, { "content-type": "text/plain" }); return res.end("EMITIDO"); }
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "set-cookie": "sesion_demo=a; Path=/" }); res.end(html);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "set-cookie": "sesion_demo=a; Path=/" }); res.end(req.url.startsWith("/jsf") ? htmlJsf : html);
 });
 await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
 const URL_BASE = `http://127.0.0.1:${servidor.address().port}/`;
@@ -280,6 +280,48 @@ await caso("MEDIR-SESIÓN (comando real): detecta el momento en que el portal pi
     const f = fs.readdirSync(path.join(AQUI, "../registros/empresa-med")).find((x) => x.startsWith("medicion-sesion")); const j = JSON.parse(fs.readFileSync(path.join(AQUI, "../registros/empresa-med", f), "utf8"));
     assert.ok(j.primer_login_detectado_ms >= 2000 && j.primer_login_detectado_ms < 12000, String(j.primer_login_detectado_ms)); assert.match(j.nota, /NO confirmada/);
   } finally { await b4.close(); fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(path.join(AQUI, "../registros"), { recursive: true, force: true }); }
+});
+
+// ======================================================================= FASE 2: observación de un formulario JSF (simulado)
+await caso("OBSERVAR JSF (simulado): ids autogenerados, componentes personalizados, AJAX y marcos se detectan; no se extrae ningún valor ni el ViewState", async () => {
+  posts.length = 0; const { context, page } = await nuevaPagina(); await page.goto(URL_BASE + "jsf");
+  await page.getByLabel("Nombre del receptor").fill("DATO-SECRETO-NO-DEBE-SALIR");
+  const inv = await inventariar(page), cod = (c) => inv.obstaculos.find((o) => o.codigo === c);
+  for (const c of ["ids_autogenerados", "componentes_personalizados", "envio_ajax", "jsf_detectado", "marcos", "campos_ocultos_accesibles", "botones_que_envian"]) assert.ok(cod(c), `falta el obstáculo ${c}: ${inv.obstaculos.map((o) => o.codigo)}`);
+  assert.equal(cod("componentes_personalizados").severidad, "alta"); assert.ok(inv.marcos.some((m) => m.frameworks?.includes("jsf") && m.frameworks.includes("primefaces")));
+  const nit = inv.controles.find((c) => c.etiqueta === "NIT del receptor"); assert.equal(nit.id_generado, true); assert.equal(nit.id, ""); assert.equal(nit.mejor.estrategia, "etiqueta", "no se usa el id j_idt…");
+  assert.ok(/span#formulario:nit\.ui-autocomplete/.test(nit.dom) && nit.clases.includes("ui-autocomplete-input"), nit.dom);
+  const calc = inv.controles.find((c) => c.texto === "Calcular"), emi = inv.controles.find((c) => c.texto === "Emitir factura"), cer = inv.controles.find((c) => c.texto === "Cerrar sesión");
+  assert.equal(calc.ajax, true); assert.equal(emi.clasificacion, "prohibido"); assert.equal(cer.clasificacion, "prohibido", "cerrar sesión nunca se pulsa"); assert.equal(calc.envia_formulario, true);
+  assert.equal(inv.controles.find((c) => c.etiqueta === "Precio unitario").ajax, true, "el campo que dispara AJAX al cambiar se marca");
+  assert.equal(inv.formularios[0].accion_ruta, "/menu/portada.jsf", "la acción del formulario sale sin ;jsessionid ni parámetros"); assert.equal(inv.formularios[0].metodo, "post");
+  assert.ok(inv.controles.some((c) => c.marco > 0 && c.etiqueta === "Campo en marco" && c.candidatos[0].marco), "controles del iframe con su marco");
+  const txt = JSON.stringify(inv); for (const x of ["DATO-SECRETO-NO-DEBE-SALIR", "SECRETO-VIEWSTATE", "jsessionid", "ABCDEF0123456789", "sesion_demo"]) assert.ok(!txt.includes(x), `la observación no debe contener «${x}»`);
+  const b = borradorMapeo(inv); assert.ok(!b.pasos.some((p) => p.localizador?.estrategia === "id" && /j_idt/.test(p.localizador.valor)), "el borrador no usa ids j_idt");
+  assert.ok(!b.pasos.some((p) => ["Emitir factura", "Cerrar sesión", "Calcular"].includes(p.localizador?.valor)), "el borrador no incluye botones");
+  assert.equal(validarMapeo(b).ok, false); assert.deepEqual(posts, []); await context.close();
+});
+await caso("OBSERVAR por consola: el fragmento pegado en Chrome produce el mismo inventario, es de solo lectura y está sincronizado con el código", async () => {
+  const { context, page } = await nuevaPagina(); await page.goto(URL_BASE + "jsf"); const fuente = fuenteConsola();
+  assert.equal(fs.readFileSync(path.join(AQUI, "../consola/observar-consola.js"), "utf8"), fuente, "consola/observar-consola.js desactualizado: ejecuta node bin/generar-consola.mjs");
+  assert.equal(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|\.click\s*\(|\.submit\s*\(|\.value\s*=|setAttribute|dispatchEvent|\.focus\s*\(|localStorage|sessionStorage|document\.cookie|WebSocket|eval\s*\(|new Function/.test(fuente), false, "el fragmento debe ser de solo lectura");
+  let json = null; page.on("console", (m) => { if (m.text().startsWith("{")) json = m.text(); });
+  const antes = await page.evaluate(() => document.documentElement.outerHTML.length), r = await page.evaluate(fuente);
+  assert.ok(r.controles >= 8 && r.marcos_sin_inspeccionar === 1); assert.equal(await page.evaluate(() => document.documentElement.outerHTML.length), antes, "la página no cambió");
+  const raw = JSON.parse(json), viaConsola = construirInventario({ pagina: raw.pagina, frames: raw.frames, origen: "consola" }), directo = await inventariar(page);
+  assert.equal(viaConsola.controles.length, directo.controles.filter((c) => c.marco === 0).length, "mismos controles del documento superior");
+  assert.deepEqual(viaConsola.obstaculos.map((o) => o.codigo).filter((c) => c !== "marcos"), directo.obstaculos.map((o) => o.codigo).filter((c) => !["marcos"].includes(c)).filter((c) => viaConsola.obstaculos.some((o) => o.codigo === c)));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-imp-")), ent = path.join(tmp, "consola.json"); fs.writeFileSync(ent, json);
+  const cli = spawnSync(process.execPath, [path.join(AQUI, "../bin/importar-observacion.mjs"), `--entrada=${ent}`, "--alias=empresa-imp"], { encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr + cli.stdout); assert.match(cli.stdout, /Posibles obstáculos/); assert.match(cli.stdout, /componentes_personalizados/); assert.match(cli.stdout, /marcos_sin_inspeccionar_en_consola/);
+  const mal = spawnSync(process.execPath, [path.join(AQUI, "../bin/importar-observacion.mjs"), `--entrada=${path.join(tmp, "no-existe.json")}`], { encoding: "utf8" }); assert.notEqual(mal.status, 0);
+  fs.rmSync(path.join(AQUI, "../observaciones"), { recursive: true, force: true }); fs.rmSync(tmp, { recursive: true, force: true }); await context.close();
+});
+await caso("COMPARAR: detecta los campos que aparecen al abrir una sección a mano (campos dinámicos)", async () => {
+  const { context, page } = await nuevaPagina(); const a = await inventariar(page); await page.getByRole("tab", { name: "Detalle" }).click(); const b = await inventariar(page);
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cmp-")); fs.writeFileSync(path.join(tmp, "a.json"), JSON.stringify(a)); fs.writeFileSync(path.join(tmp, "b.json"), JSON.stringify(b));
+  const c = spawnSync(process.execPath, [path.join(AQUI, "../bin/comparar.mjs"), path.join(tmp, "a.json"), path.join(tmp, "b.json")], { encoding: "utf8" });
+  assert.equal(c.status, 0, c.stderr); assert.match(c.stdout, /~ Descripción: oculto → visible/); assert.match(c.stdout, /~ Nombre del receptor: visible → oculto/); fs.rmSync(tmp, { recursive: true, force: true }); await context.close();
 });
 
 await caso("COMANDOS REALES: bin/observar.mjs y bin/ejecutar.mjs contra un Chrome con puerto de depuración (sesión «ya iniciada»)", async () => {

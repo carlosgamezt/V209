@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Simulación genérica de un formulario JSF/PrimeFaces (NO es el portal SAT)</title></head>
+<body>
+<p><b>Simulación escrita a partir de patrones generales de JSF/PrimeFaces. NO es el portal de la SAT ni representa su estructura real.</b> Sirve para probar que el observador detecta ids autogenerados, componentes personalizados, AJAX y marcos.</p>
+<script>window.PrimeFaces = { ab() {} };</script>
+<form id="formulario" name="formulario" method="post" action="/menu/portada.jsf;jsessionid=ABCDEF0123456789ABCDEF?x=1" enctype="application/x-www-form-urlencoded">
+  <input type="hidden" name="javax.faces.ViewState" value="SECRETO-VIEWSTATE-NO-DEBE-SALIR">
+  <label for="formulario:j_idt45">NIT del receptor</label>
+  <span class="ui-autocomplete" id="formulario:nit"><input id="formulario:j_idt45" name="formulario:j_idt45" type="text" role="combobox" class="ui-autocomplete-input ui-inputfield" autocomplete="off"></span>
+  <label for="formulario:nombre">Nombre del receptor</label>
+  <input id="formulario:nombre" name="formulario:nombre" type="text" class="ui-inputfield">
+  <label id="lbl-tipo">Tipo de documento</label>
+  <div class="ui-selectonemenu" id="formulario:tipo" aria-labelledby="lbl-tipo">
+    <div class="ui-helper-hidden-accessible"><select id="formulario:tipo_input" name="formulario:tipo_input" tabindex="-1"><option value="1">Factura</option><option value="2">Factura de pequeño contribuyente</option></select></div>
+    <label class="ui-selectonemenu-label">Seleccione</label>
+  </div>
+  <label for="formulario:precio">Precio unitario</label>
+  <input id="formulario:precio" name="formulario:precio" type="text" class="ui-inputfield ui-spinner-input" onchange="PrimeFaces.ab({s:'formulario:precio',e:'change',p:'@this',u:'formulario:total'})">
+  <label for="formulario:total">Total</label>
+  <input id="formulario:total" name="formulario:total" type="text" readonly class="ui-inputfield">
+  <button id="formulario:j_idt99" name="formulario:j_idt99" class="ui-button" type="submit" onclick="PrimeFaces.ab({s:'formulario:j_idt99',p:'@form',u:'formulario'});return false;"><span class="ui-button-text">Calcular</span></button>
+  <button id="formulario:j_idt100" name="formulario:j_idt100" class="ui-button" type="submit" onclick="PrimeFaces.ab({s:'formulario:j_idt100',p:'@form'});return false;"><span class="ui-button-text">Emitir factura</span></button>
+  <button id="formulario:j_idt101" name="formulario:j_idt101" class="ui-button" type="submit" onclick="PrimeFaces.ab({s:'formulario:j_idt101'});return false;"><span class="ui-button-text">Cerrar sesión</span></button>
+</form>
+<iframe title="marco" srcdoc='<label for="m">Campo en marco</label><input id="m" name="m">'></iframe>
+</body></html>

@@ -1,6 +1,6 @@
 // Observación (solo lectura): inventario de los controles de la página activa para que una persona construya el mapeo con
 // lo que REALMENTE existe. No hace clic, no escribe, no lee valores de campos, no toca cookies ni almacenamiento.
-import { clasificarControl, textoProhibido } from "./guardia.mjs";
+import { clasificarControl, textoProhibido, sanearRuta } from "./guardia.mjs";
 
 /* Se ejecuta DENTRO de la página. Devuelve solo estructura: etiquetas, tipos y atributos; NUNCA el valor de un campo. */
 function recoger({ incluirOpciones }) {
@@ -22,7 +22,8 @@ function recoger({ incluirOpciones }) {
     if (tag === "input") return ["button", "submit", "reset", "image"].includes(ty) ? "button" : ty === "checkbox" ? "checkbox" : ty === "radio" ? "radio" : ["hidden", "file", "range", "color"].includes(ty) ? "" : "textbox";
     return "";
   };
-  const idGenerado = (id) => !id || /^(:r|ember|ng-|mat-|react|rc-|radix|headlessui|[0-9a-f]{8}-[0-9a-f]{4})/i.test(id) || /\d{4,}/.test(id);
+  const idGenerado = (id) => !id || /^(:r|ember|ng-|mat-|react|rc-|radix|headlessui|[0-9a-f]{8}-[0-9a-f]{4})/i.test(id) || /\d{4,}/.test(id) || /(^|:)j_(idt|id_)\w*/i.test(id);   // incluye los ids autogenerados de JSF (j_idt123)
+  const domDe = (el) => { const partes = []; let x = el; for (let i = 0; i < 5 && x && x.nodeType === 1 && x !== document.body; i++) { const cls = [...x.classList].filter((c) => /^(ui-|p-|mat-|ng-)/.test(c)).slice(0, 2).map((c) => "." + c).join(""); partes.unshift(x.tagName.toLowerCase() + (x.id && !idGenerado(x.id) ? "#" + x.id.slice(0, 30) : "") + cls); x = x.parentElement; } return partes.join(" > "); };
   const els = [...document.querySelectorAll("input,select,textarea,button,[role=button],[role=tab],[role=combobox],[role=checkbox],[role=radio],[role=switch],[role=textbox]")]
     .filter((el) => !(el.tagName === "INPUT" && (el.getAttribute("type") || "").toLowerCase() === "hidden"));
   const datos = els.map((el) => {
@@ -34,6 +35,8 @@ function recoger({ incluirOpciones }) {
       enFormulario: !!el.closest("form"), etiqueta: etiquetaDe(el), texto, titulo: txt(el.getAttribute("title")), nombre: txt(el.getAttribute("name")), id: idGenerado(el.id) ? "" : txt(el.id),
       id_generado: !!el.id && idGenerado(el.id), marcador: txt(el.getAttribute("placeholder")), href: el.tagName === "A" ? txt(el.getAttribute("href"), 120) : "",
       autocompletar: txt(el.getAttribute("autocomplete"), 30),
+      dom: domDe(el), clases: [...el.classList].filter((c) => /^(ui-|p-|mat-|ng-)/.test(c)).slice(0, 4),
+      ajax: /(PrimeFaces\.ab|mojarra\.ab|jsf\.ajax|PrimeFaces\.cw)/.test((el.getAttribute("onclick") || "") + (el.getAttribute("onchange") || "") + (el.getAttribute("onblur") || "")),   // solo se comprueba la presencia; el texto no se guarda
     };
     if (tag === "select") { o.opciones_n = el.options.length; if (incluirOpciones) o.opciones = [...el.options].slice(0, 30).map((x) => txt(x.textContent, 40)); }
     return o;
@@ -56,36 +59,98 @@ function recoger({ incluirOpciones }) {
   if (document.querySelector("[data-reactroot]") || window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers?.size) frameworks.push("react");
   if (window.Vue || document.querySelector("[data-v-app]")) frameworks.push("vue");
   if (window.jQuery) frameworks.push("jquery");
-  return { controles: datos, shadow_abierto: todos.filter((e) => e.shadowRoot).length, contenteditable: document.querySelectorAll("[contenteditable=true]").length, captcha, frameworks };
+  const pathDe = (a) => { try { return new URL(a, location.href).pathname; } catch { return ""; } };
+  const formularios = [...document.forms].map((f) => ({ id: f.id && !idGenerado(f.id) ? txt(f.id, 40) : "", id_generado: !!f.id && idGenerado(f.id), metodo: (f.method || "get").toLowerCase(), accion_ruta: pathDe(f.getAttribute("action") || ""), controles: f.elements.length }));
+  const cuentaSel = (q) => document.querySelectorAll(q).length;
+  const componentes = { selectonemenu: cuentaSel(".ui-selectonemenu"), autocomplete: cuentaSel(".ui-autocomplete"), calendario: cuentaSel(".ui-datepicker,.hasDatepicker,.ui-calendar"), tabla: cuentaSel(".ui-datatable"), dialogo: cuentaSel(".ui-dialog"), pestanas: cuentaSel(".ui-tabview"), asistente: cuentaSel(".ui-wizard"), subida_archivo: cuentaSel(".ui-fileupload"), spinner: cuentaSel(".ui-spinner"), ocultos_accesibles: cuentaSel(".ui-helper-hidden-accessible input,.ui-helper-hidden-accessible select,.ui-helper-hidden-accessible textarea") };
+  if (document.querySelector('input[name$="ViewState"]') || window.jsf || window.mojarra) frameworks.push("jsf");   // solo presencia: el valor del ViewState NUNCA se lee
+  if (window.PrimeFaces) frameworks.push("primefaces");
+  return { formularios, componentes, controles: datos, shadow_abierto: todos.filter((e) => e.shadowRoot).length, contenteditable: document.querySelectorAll("[contenteditable=true]").length, captcha, frameworks };
 }
 
-const sinQuery = (u) => { try { const x = new URL(u); return { host: x.hostname, ruta: x.pathname }; } catch { return { host: "", ruta: "" }; } };
+const sinQuery = (u) => { try { const x = new URL(u); return { host: x.hostname, ruta: sanearRuta(x.pathname) }; } catch { return { host: "", ruta: "" }; } };
 
+/** Recolecta cada marco de la página (solo lectura) y construye el inventario. */
 export async function inventariar(page, { incluirOpciones = false } = {}) {
-  const marcos = page.frames(), controles = [], informe = [];
-  let n = 0;
-  for (const [i, f] of marcos.entries()) {
-    const u = sinQuery(f.url());
-    try {
-      const r = await f.evaluate(recoger, { incluirOpciones });
-      informe.push({ indice: i, principal: f === page.mainFrame(), ...u, controles: r.controles.length, shadow_abierto: r.shadow_abierto, contenteditable: r.contenteditable, captcha: r.captcha, frameworks: r.frameworks });
-      for (const c of r.controles) {
-        const cl = clasificarControl(c);
-        const cand = c.candidatos.map((k) => (f === page.mainFrame() ? k : { ...k, marco: { url_contiene: u.host + u.ruta } }));
-        controles.push({ n: `c${String(++n).padStart(3, "0")}`, marco: i, ...c, candidatos: cand, mejor: cand.find((k) => k.unico) ?? null, clasificacion: cl.nivel, envia_formulario: cl.envia_formulario, razones: cl.razones });
-      }
-    } catch (e) { informe.push({ indice: i, ...u, error: String(e.message ?? e).slice(0, 120) }); }
+  const frames = [];
+  for (const [i, f] of page.frames().entries()) {
+    const u = sinQuery(f.url()), base = { indice: i, principal: f === page.mainFrame(), ...u };
+    try { frames.push({ ...base, r: await f.evaluate(recoger, { incluirOpciones }) }); } catch (e) { frames.push({ ...base, error: String(e.message ?? e).slice(0, 120) }); }
   }
-  const u = sinQuery(page.url());
-  return {
-    version: 1, generado: new Date().toISOString(), pagina: { ...u, titulo: String((await page.title().catch(() => "")) ?? "").slice(0, 80) },
-    marcos: informe, total_controles: controles.length,
+  return construirInventario({ pagina: { ...sinQuery(page.url()), titulo: String((await page.title().catch(() => "")) ?? "").slice(0, 80) }, frames });
+}
+
+/** PURA: arma el inventario a partir de lo recolectado (por Playwright o por el fragmento pegado en la consola de Chrome). */
+export function construirInventario({ pagina, frames, origen = "playwright" }) {
+  const controles = [], informe = [], formularios = []; let n = 0;
+  const comp = {}, marcosMismo = frames.length;
+  for (const f of frames) {
+    const u = { host: f.host, ruta: f.ruta };
+    if (!f.r) { informe.push({ indice: f.indice, principal: !!f.principal, ...u, error: f.error ?? "sin datos" }); continue; }
+    const r = f.r;
+    informe.push({ indice: f.indice, principal: !!f.principal, ...u, controles: r.controles.length, shadow_abierto: r.shadow_abierto, contenteditable: r.contenteditable, captcha: r.captcha, frameworks: r.frameworks, componentes: r.componentes });
+    for (const [k, v] of Object.entries(r.componentes ?? {})) comp[k] = (comp[k] ?? 0) + v;
+    for (const fo of r.formularios ?? []) formularios.push({ marco: f.indice, ...fo, accion_ruta: sanearRuta(fo.accion_ruta) });
+    for (const c of r.controles) {
+      const cl = clasificarControl(c);
+      const cand = c.candidatos.map((k) => (f.principal ? k : { ...k, marco: { url_contiene: u.host + u.ruta } }));
+      controles.push({ n: `c${String(++n).padStart(3, "0")}`, marco: f.indice, ...c, candidatos: cand, mejor: cand.find((k) => k.unico) ?? null, clasificacion: cl.nivel, envia_formulario: cl.envia_formulario, razones: cl.razones });
+    }
+  }
+  const inv = {
+    version: 2, origen, generado: new Date().toISOString(), pagina,
+    marcos: informe, total_controles: controles.length, formularios, componentes: comp,
     senales_sesion: { campo_clave_visible: controles.some((c) => c.type === "password" && c.visible), nota: "Si esta página es la de inicio de sesión, campo_clave_visible será true. Observa también la página ya con sesión iniciada para elegir un indicador de «sesión activa»." },
     sin_candidato_unico: controles.filter((c) => !c.mejor && c.tag !== "button").length,
     con_riesgo_de_emision: controles.filter((c) => c.clasificacion !== "ok").length,
     controles,
-    advertencia: "Esta observación no contiene valores de campos. Revísala antes de compartirla: puede contener etiquetas con nombres de tu empresa. No incluye controles dentro de shadow DOM cerrado ni de marcos que Chrome no deje inspeccionar.",
+    advertencia: "Esta observación no contiene valores de campos, cookies, tokens ni el ViewState. Revísala antes de compartirla: puede contener etiquetas con nombres de tu empresa. No incluye controles dentro de shadow DOM cerrado ni de marcos que Chrome no deje inspeccionar.",
   };
+  inv.obstaculos = obstaculos(inv, marcosMismo);
+  return inv;
+}
+
+/** PURA: posibles obstáculos para automatizar el llenado, deducidos de lo observado (nada se asume del portal). */
+export function obstaculos(inv, nMarcos = inv.marcos.length) {
+  const o = [], C = inv.controles, cuenta = (f) => C.filter(f).length, add = (codigo, severidad, n, detalle) => { if (n) o.push({ codigo, severidad, n, detalle }); };
+  const campos = C.filter((c) => ["input", "select", "textarea"].includes(c.tag) && c.visible && !["hidden", "submit", "button", "reset", "image"].includes(c.type));
+  add("ids_autogenerados", "media", cuenta((c) => c.id_generado), "Controles con id autogenerado (p. ej. j_idt…, números largos): NO se usan como localizador; hay que apoyarse en etiqueta, rol o nombre, y pueden cambiar entre cargas.");
+  add("sin_localizador_unico", "alta", campos.filter((c) => !c.mejor).length, "Campos visibles sin ningún localizador único (etiqueta/rol/id/nombre/marcador repetidos o ausentes): hay que decidirlos a mano.");
+  add("sin_etiqueta", "media", campos.filter((c) => !c.etiqueta && !c.marcador).length, "Campos visibles sin etiqueta accesible ni marcador: difíciles de identificar de forma estable.");
+  const pers = (inv.componentes.selectonemenu ?? 0) + (inv.componentes.autocomplete ?? 0) + (inv.componentes.calendario ?? 0) + (inv.componentes.spinner ?? 0);
+  add("componentes_personalizados", "alta", pers, "Componentes JSF/PrimeFaces (desplegables personalizados, autocompletar, calendario, spinner): el paso «seleccionar» solo soporta <select> nativo; probablemente haga falta un tipo de paso nuevo, diseñado tras observar su comportamiento.");
+  add("campos_ocultos_accesibles", "info", inv.componentes.ocultos_accesibles ?? 0, "Controles nativos ocultos que respaldan componentes personalizados (no son los que ve la persona).");
+  add("envio_ajax", "alta", cuenta((c) => c.ajax), "Controles que disparan peticiones AJAX de JSF/PrimeFaces: la red de solo lectura las bloquea; si un campo hace AJAX al cambiar o al salir de él, el llenado puede romperse. Se verá en «solicitudes bloqueadas».");
+  add("botones_que_envian", "info", cuenta((c) => c.envia_formulario), "Botones que pueden enviar un formulario: nunca se pulsan.");
+  add("jsf_detectado", "info", inv.marcos.some((m) => (m.frameworks ?? []).some((x) => ["jsf", "primefaces"].includes(x))) ? 1 : 0, "Se detectó JSF/PrimeFaces. El estado de la vista está ligado a la pestaña: no recargar ni abrir el formulario en otra pestaña durante la ejecución.");
+  add("tablas_o_asistentes", "media", (inv.componentes.tabla ?? 0) + (inv.componentes.asistente ?? 0) + (inv.componentes.pestanas ?? 0) + (inv.componentes.dialogo ?? 0), "Tablas, asistentes por pasos, pestañas o diálogos: pueden cargar campos de forma dinámica; observa de nuevo tras abrirlos a mano y compara con bin/comparar.mjs.");
+  add("subida_de_archivos", "info", inv.componentes.subida_archivo ?? 0, "Hay carga de archivos: la PoC no la automatiza.");
+  add("marcos", "media", Math.max(0, nMarcos - 1), "La página tiene marcos (iframes): cada uno se inspecciona por separado; los de otro origen pueden no ser inspeccionables desde la consola.");
+  add("marcos_con_error", "alta", inv.marcos.filter((m) => m.error).length, "Marcos que no se pudieron inspeccionar.");
+  add("shadow_dom", "alta", inv.marcos.reduce((a, m) => a + (m.shadow_abierto ?? 0), 0), "Shadow DOM abierto: Playwright lo atraviesa, pero este inventario no lista sus controles.");
+  add("captcha", "alta", inv.marcos.some((m) => m.captcha) ? 1 : 0, "Se detectó un posible CAPTCHA en la página.");
+  add("contenteditable", "media", inv.marcos.reduce((a, m) => a + (m.contenteditable ?? 0), 0), "Editores contenteditable: no son campos de formulario estándar.");
+  return o;
+}
+
+/** Fragmento de JavaScript para pegar en la consola de Chrome (DevTools) de la pestaña con el formulario. SOLO LECTURA: no hace peticiones, no escribe, no hace clic; copia el resultado al portapapeles. */
+export function fuenteConsola() {
+  return `// === NEXA FEL · observación de solo lectura (consola de Chrome) ===
+// No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Solo describe qué controles existen.
+(() => {
+  const recoger = ${recoger.toString()};
+  const limpiar = (p) => String(p || "").split("?")[0].split("#")[0];
+  const top = { host: location.hostname, ruta: limpiar(location.pathname) };
+  const salida = {
+    version: 1, origen: "consola", pagina: { ...top, titulo: String(document.title || "").slice(0, 80) },
+    frames: [{ indice: 0, principal: true, ...top, r: recoger({ incluirOpciones: false }) }],
+    marcos_sin_inspeccionar: [...document.querySelectorAll("iframe")].map((f) => { try { const u = new URL(f.src || "about:blank", location.href); return { host: u.hostname, ruta: limpiar(u.pathname) }; } catch { return { host: "", ruta: "" }; } }),
+  };
+  const json = JSON.stringify(salida);
+  try { copy(json); console.log("Copiado al portapapeles (" + json.length + " caracteres). Pégalo en un archivo .json y pásaselo a bin/importar-observacion.mjs"); } catch (e) { console.log(json); }
+  return { controles: salida.frames[0].r.controles.length, marcos_sin_inspeccionar: salida.marcos_sin_inspeccionar.length };
+})();
+`;
 }
 
 /** Borrador de mapeo A PARTIR de lo observado. Todo sale con verificado=false y dato=null: una persona decide qué dato va en cada campo y lo confirma. */

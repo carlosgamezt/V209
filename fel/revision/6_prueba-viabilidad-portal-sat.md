@@ -57,7 +57,7 @@ Criterio: todo OK. (Se ejecuta también en la CI.)
 **Fase 1 — Preparación en tu computadora:** Node 20+, Chrome actualizado, `npm install`, carpeta de perfil fuera del repo, `config/empresa.ejemplo.json` → `config/empresa.local.json`. Abre Chrome (modo `cdp`) e **inicia sesión tú** en el portal. No abras el formulario de emisión todavía.
 Criterio: Chrome abierto con sesión, puerto 9222 activo (`http://127.0.0.1:9222/json/version` responde en tu equipo).
 
-**Fase 2 — Observación (solo lectura)**
+**Fase 2 — Observación (solo lectura)** — guía detallada para Windows con dos vías (consola de Chrome o Playwright con perfil separado): `docs/fase-2-observacion-portal-real.md`
 1. En esa sesión abre a mano el formulario de factura **sin emitir**.
 2. `node bin/observar.mjs --empresa=config/empresa.local.json`
 3. Revisa la salida: nº de controles, *sin localizador único*, *CAPTCHA*, *shadow DOM*, *marcos*, y la lista «NUNCA se tocarán».
