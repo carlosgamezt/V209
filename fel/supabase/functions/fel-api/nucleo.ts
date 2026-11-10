@@ -109,9 +109,11 @@ export async function manejar(req: Request, deps: Deps, acciones: Acciones): Pro
 
     // Sesión revocada (p. ej. tras una recuperación de MFA): el token debe contener una autenticación POSTERIOR a la marca.
     // Renovar un token viejo no crea autenticaciones nuevas, así que no sirve para saltarse la revocación.
-    // Comparación ESTRICTA: un evento en el mismo segundo que la marca es ambiguo y se rechaza.
+    // Comparación ESTRICTA y con margen de reloj: un evento en el mismo segundo que la marca es ambiguo y se rechaza.
+    // "desde" ya incluye el margen de reloj (la base de datos suma 5 s a la marca). TODOS los eventos deben ser posteriores: se mira el MÁS antiguo.
     const desde = await deps.sesionRevocadaDesde(usuario.id);
-    if (desde !== null && (eventos.inicio === null || eventos.inicio <= desde)) {
+    const ahoraS = Math.floor(Date.now() / 1000);
+    if (desde !== null && (eventos.primero === null || eventos.primero <= desde || (eventos.ultimo ?? 0) > ahoraS + 300)) {
       throw new ErrorFel(401, "Tu sesión fue revocada; inicia sesión de nuevo", "sesion_revocada");
     }
 

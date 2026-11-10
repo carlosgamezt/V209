@@ -41,7 +41,7 @@ create temp table t_ap1 as select public.fel_op_mfa_recuperacion_aprobar('000000
 do $$ declare r jsonb := (select r from t_ap1); begin
   assert jsonb_array_length(r -> 'factores') = 3 and (r ->> 'total')::int = 3, 'debía devolver los 3 factores y total 3';
   assert (select desde from public.revocaciones_sesion where user_id = '00000000-0000-0000-0000-0000000000b2') is not null, 'sin marca de revocación';
-  assert public.fel_sesion_revocada_desde('00000000-0000-0000-0000-0000000000b2') is not null, 'la API no ve la marca';
+  assert public.fel_sesion_revocada_desde('00000000-0000-0000-0000-0000000000b2') = (select floor(extract(epoch from desde))::bigint + 5 from public.revocaciones_sesion where user_id = '00000000-0000-0000-0000-0000000000b2'), 'la API debe recibir marca + margen de reloj';
   assert public.fel_sesion_revocada_desde('00000000-0000-0000-0000-0000000000b3') is null, 'la marca afectó a otra persona';
   assert (select count(*) from auth.sessions where user_id = '00000000-0000-0000-0000-0000000000b2') = 0, 'no se borraron las sesiones de Auth de la persona';
   assert (select count(*) from auth.sessions where user_id = '00000000-0000-0000-0000-0000000000b3') = 1, 'se borraron sesiones de otra persona';
@@ -52,28 +52,48 @@ end $$;
 create temp table t_marca as select floor(extract(epoch from desde))::bigint as ts from public.revocaciones_sesion where user_id = '00000000-0000-0000-0000-0000000000b2';
 select set_config('fel.test_ts', (select ts::text from t_marca), false) as _t \gset
 set local role authenticated;
-do $$ declare ts bigint := current_setting('fel.test_ts')::bigint; c text; begin
-  foreach c in array array[
-    format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', ts - 3600, ts - 3500),   -- sesión anterior (aal2)
-    format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s}]}', ts - 1),                                                   -- justo antes
-    '{"sub":"00000000-0000-0000-0000-0000000000b2"}',                                                                                                                  -- sin amr
-    '{"sub":"00000000-0000-0000-0000-0000000000b2","amr":"password"}',
-    '{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":"x"}]}',
-    '{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password"}]}',
-    '{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[1,2,3]}'] loop
+do $$ declare ts bigint := current_setting('fel.test_ts')::bigint; ahora bigint := floor(extract(epoch from clock_timestamp())); c text; u text := '00000000-0000-0000-0000-0000000000b2';
+  rechazados text[]; aceptados text[];
+begin
+  -- umbral = segundo de la marca + margen de reloj (5 s); un evento debe ser ESTRICTAMENTE posterior, y TODOS los eventos del token
+  rechazados := array[
+    -- sesiones anteriores (incluso aal2) y renovadas (iat/exp nuevos, amr igual)
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ts - 3600, ts - 3500),
+    format('{"sub":"%s","iat":%s,"exp":%s,"amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ahora, ahora + 3600, ts - 3600, ts - 3500),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ts - 1),
+    -- VARIOS eventos: un TOTP nuevo sobre una sesión antigua no la rescata (se mira el evento MÁS ANTIGUO)
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ts - 100, ts + 60),
+    format('{"sub":"%s","amr":[{"method":"totp","timestamp":%s},{"method":"password","timestamp":%s}]}', u, ts + 60, ts - 100),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"otp","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ts + 10, ts - 5, ts + 20),
+    -- diferencias de reloj: Auth adelantado hasta el margen NO convierte una sesión anterior en posterior; el borde exacto tampoco vale
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ts),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ts + 1),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ts + 3),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ts + 5),
+    -- instantes en el futuro lejano (más de 5 min) o sin eventos válidos
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ahora + 4000),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ts + 10, ahora + 4000),
+    format('{"sub":"%s"}', u), format('{"sub":"%s","amr":"password"}', u), format('{"sub":"%s","amr":[]}', u), format('{"sub":"%s","amr":[1,2,3]}', u),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":"x"}]}', u), format('{"sub":"%s","amr":[{"method":"password"}]}', u),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":-5}]}', u), format('{"sub":"%s","amr":[{"method":"password","timestamp":0}]}', u)];
+  foreach c in array rechazados loop
     perform set_config('request.jwt.claims', c, true);
-    assert not public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'se aceptó un token anterior a la revocación: ' || c;
+    assert not public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'se aceptó un token que debía estar revocado: ' || c;
     assert (select count(*) from public.clientes) = 0, 'una sesión revocada aún lee clientes: ' || c;
-    assert not public.fel_es_miembro('10000000-0000-0000-0000-00000000000a'), 'una sesión revocada sigue siendo miembro';
-    assert not public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'una sesión revocada conserva permisos';
+    assert not public.fel_es_miembro('10000000-0000-0000-0000-00000000000a'), 'una sesión revocada sigue siendo miembro: ' || c;
   end loop;
-  -- inicio de sesión NUEVO (evento de autenticación igual o posterior a la marca): vale
-  perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s}]}', ts), true);
-  assert not public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'un evento en el MISMO segundo que la marca es ambiguo y no debe valer';
-  perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s}]}', ts + 1), true);
-  assert public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver') and (select count(*) from public.clientes) = 1, 'un inicio de sesión posterior debe valer';
-  perform set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000b2","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', ts + 5, ts + 60), true);
-  assert public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver'), 'un token con autenticación reciente debe valer';
+  -- inicio de sesión inmediatamente posterior a la marca: vale desde marca + margen + 1; los eventos intermedios, no
+  aceptados := array[
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s}]}', u, ts + 6),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ts + 6, ts + 60),
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"otp","timestamp":%s},{"method":"totp","timestamp":%s}]}', u, ts + 6, ts + 7, ts + 8),
+    format('{"sub":"%s","amr":[{"method":"totp","timestamp":%s},{"method":"password","timestamp":%s}]}', u, ts + 90, ts + 30),   -- orden distinto
+    format('{"sub":"%s","amr":[{"method":"password","timestamp":%s},{"method":"x","timestamp":"basura"}]}', u, ts + 10),         -- un evento ilegible se ignora
+    format('{"sub":"%s","iat":%s,"exp":%s,"amr":[{"method":"password","timestamp":%s}]}', u, ahora, ahora + 3600, ts + 100)];     -- token RENOVADO de una sesión NUEVA
+  foreach c in array aceptados loop
+    perform set_config('request.jwt.claims', c, true);
+    assert public.fel_tiene_permiso('10000000-0000-0000-0000-00000000000a', 'clientes.ver') and (select count(*) from public.clientes) = 1, 'un inicio de sesión posterior debía valer: ' || c;
+  end loop;
   -- los demás no se ven afectados
   perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b3"}', true);
   assert (select count(*) from public.clientes) = 1, 'el lector no debía verse afectado';
@@ -85,7 +105,7 @@ insert into public.revocaciones_sesion (user_id, desde, motivo) values ('0000000
 set local role authenticated;
 select set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000a1","aal":"aal2","amr":[{"method":"totp","timestamp":%s}]}', floor(extract(epoch from now())) - 7200), true) as _cfg \gset
 do $$ begin assert not public.fel_es_admin_plataforma(), 'un maestro con aal2 anterior a la revocación sigue siéndolo'; end $$;
-select set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000a1","aal":"aal2","amr":[{"method":"totp","timestamp":%s}]}', floor(extract(epoch from now())) + 1), true) as _cfg \gset
+select set_config('request.jwt.claims', format('{"sub":"00000000-0000-0000-0000-0000000000a1","aal":"aal2","amr":[{"method":"totp","timestamp":%s}]}', floor(extract(epoch from now())) + 10), true) as _cfg \gset
 do $$ begin assert public.fel_es_admin_plataforma(), 'tras volver a autenticarse debe recuperarlo'; end $$;
 reset role;
 

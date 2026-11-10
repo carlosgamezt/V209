@@ -30,7 +30,7 @@ do $$ declare f record; publicas text[]; anon_ text[]; auth_ text[]; faltan text
   select coalesce(array_agg(p.proname::text order by p.proname), '{}') into faltan
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname like 'fel\_%' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype
-     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__borrar_sesiones_auth', 'fel__rango')
+     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__borrar_sesiones_auth', 'fel__margen_reloj_s', 'fel__rango')
      and not has_function_privilege('service_role', p.oid, 'EXECUTE');
   assert faltan = '{}', 'funciones que service_role no puede ejecutar: ' || faltan::text;
   assert not has_function_privilege('service_role', 'public.fel_bootstrap_primer_maestro(text)', 'EXECUTE'), 'service_role puede crear maestros';

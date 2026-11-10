@@ -35,3 +35,14 @@
 2. La revocación por marca **solo se activa en la recuperación de MFA**. Un robo de sesión sin recuperación no se detecta hasta que alguien bloquee la cuenta o apruebe una recuperación (el bloqueo de la cuenta sí corta al instante API y RLS).
 3. Las pruebas de integración usan la **pila local**: no cubren el gateway de Edge Functions alojado (`verify_jwt`), claves JWKS, SMTP real ni límites de Auth del proyecto real.
 4. `fel__borrar_sesiones_auth` borra filas de `auth.sessions` (esquema interno de Supabase); es de **mejor esfuerzo**: si un cambio de Supabase lo impidiera, la marca de revocación sigue protegiendo a la API y a la RLS.
+
+## Fase 1.4 — revocación por eventos de autenticación (revisión final)
+| ID | Hallazgo | Corrección | Prueba |
+|---|---|---|---|
+| H7 | Con la regla «el evento **más reciente** debe ser posterior a la marca», una sesión aal1 robada y vieja podía, tras una recuperación de MFA, enrolar un TOTP nuevo y pasar a aal2 (el token resultante tenía un evento `totp` nuevo) | Se exige que **todos** los eventos `amr` (el **más antiguo**) sean posteriores a la marca: una sesión que ya existía antes de la recuperación no se «lava» con un paso posterior | `unit` (AMR: evento más antiguo), `SQL 13` |
+| H8 | Igualdad de segundos entre la marca y un login inmediato | Comparación estricta con **margen de 5 s** (`fel__margen_reloj_s()`): un login válido debe ocurrir más de 5 s después de la marca | `unit`, `SQL 13`, `X01` (espera 6,5 s) |
+| H9 | Instantes en el futuro en `amr` (reloj desfasado o token manipulado) | Un evento a más de 300 s en el futuro invalida la sesión | `unit`, `SQL 13` |
+| H10 | Eventos `amr` malformados | Se ignoran; sin ningún evento válido la sesión no es vigente | `unit`, `SQL 13` |
+| H11 | Dependencia de `auth.sessions` / `auth.mfa_factors` sin comprobación de compatibilidad | `fel_verificar_dependencias_auth()` (columnas, privilegios, tipos); `V05` en el script; `docs/dependencias-auth-interno.md` | `SQL 14` |
+
+La renovación de tokens antiguos conserva `aal` y `amr` (verificado con Auth real, `M01c`), por lo que renovar no «rejuvenece» una sesión anterior a la marca.

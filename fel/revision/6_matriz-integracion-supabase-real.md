@@ -57,15 +57,16 @@
 | P-05 | Cambio de rol/permisos en caliente | ✅ `cuentas.cjs` (falso), `SQL 11` | Repetir con dos navegadores reales |
 
 ## Solicitud de autorización (NO se ejecuta nada sin tu respuesta)
-**Qué se haría:** correr `ejecutar.mjs` contra un **proyecto Supabase de DESARROLLO nuevo e independiente** (no el de NEXA ni producción), más los pasos manuales «Proyecto de desarrollo» de las tablas (correo real, esperar vencimientos, procedimiento del primer maestro).
-**Qué necesito de ti:**
-1. Crear el proyecto de desarrollo y darme (por el canal seguro de credenciales del entorno, nunca en el chat): URL, clave `anon`, clave `service_role` y la cadena de conexión de la base de datos **solo de ese proyecto**.
-2. Autorizar aplicar las migraciones `supabase db push` **a ese proyecto de desarrollo**.
-3. Una casilla de correo de prueba (o permiso para usar un alias tuyo) para los pasos con correo real.
-4. Confirmar que se puede ajustar en ese proyecto: `jwt_expiry` corto, rotación de tokens y las URL de retorno permitidas.
-**Salvaguardas del script:** se niega a correr si la URL no es local, salvo con `FEL_AUTORIZACION_PRUEBAS_REALES=si` **y** la referencia del proyecto en `FEL_PROYECTOS_DEV_PERMITIDOS`. Crea usuarios con el dominio `integracion.fel.test` y sufijo aleatorio; la limpieza es:
-```sql
-delete from auth.users where email like '%@integracion.fel.test';   -- arrastra perfiles, miembros y sesiones
-delete from public.empresas where nit in ('1000001-1','2000002-2');  -- tras borrar sus clientes, miembros e invitaciones
-```
+La guía paso a paso está en **`guia-proyecto-supabase-desarrollo.md`**. El trabajo se divide en **cuatro etapas independientes**; cada una se autoriza por separado, con texto propio (plantillas en la guía), y el script se niega si `FEL_ETAPA_AUTORIZADA` no coincide con la etapa pedida.
+
+| Etapa | Qué hace | Escribe en el proyecto | Comando |
+|---|---|---|---|
+| A. Preparación | Revisión del panel y consultas de solo lectura | No | manual (SQL Editor, solo `select`) |
+| B. Migraciones | `supabase db push --dry-run`, luego `db push` de las 10 migraciones; poscomprobaciones `V01–V11` | Sí (esquema `public`) | `supabase db push` + `ejecutar.mjs --etapa=verificar` |
+| C. Pruebas | Escenarios de esta matriz; crea datos con identificadores aleatorios y los anota en un **manifiesto** | Sí (datos de prueba) | `ejecutar.mjs --etapa=ejecutar --manifiesto=…` |
+| D. Limpieza | Borra **solo** lo del manifiesto (UUID); suspende las empresas (la auditoría de solo-anexar las referencia) | Sí (borrado acotado) | `ejecutar.mjs --etapa=limpiar --manifiesto=…` |
+
+**Qué necesito de ti** (por el canal seguro de credenciales, nunca en el chat): proyecto de desarrollo **nuevo e independiente** (URL, `anon`, `service_role`, cadena de BD solo de ese proyecto); confirmar los ajustes de Auth de la guía; un buzón de prueba para los pasos con correo real.
+**Salvaguardas del script** (`guardia.mjs`, 96 casos de prueba): rechaza todo lo que no sea local salvo con `FEL_AUTORIZACION_PRUEBAS_REALES=si`, `FEL_ETAPA_AUTORIZADA=<etapa>`, `FEL_PROYECTOS_DEV_PERMITIDOS=<ref>` (≤ 3 referencias exactas), `FEL_CONFIRMAR_REF=<ref>`, URL/BD/función/claves del **mismo** proyecto y `ref` distinto del NEXA principal (`FEL_PROYECTO_NEXA_PRINCIPAL`). Configuración incompleta o contradictoria ⇒ se niega.
+**Limpieza:** ya **no** hay limpieza por correo ni por NIT. Los usuarios usan el dominio `integracion.fel.test` con sufijo aleatorio, pero eso es solo una etiqueta para humanos: lo que se borra es la lista de identificadores del manifiesto de la ejecución.
 **Qué NO hará:** no toca producción ni el proyecto de NEXA, no habilita la emisión fiscal, no despliega, no modifica `main`.

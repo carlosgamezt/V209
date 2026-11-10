@@ -564,3 +564,63 @@ Deno.test("aprobación simultánea: el factor que otra ejecución ya borró (404
   assertEquals(f.st.cierres, 1, "la solicitud se cierra una sola vez");
   assertEquals([...f.st.borrados].sort(), ["f1", "f2", "f3"]); assertEquals(new Set(f.st.borrados).size, f.st.borrados.length, "ningún factor se borró dos veces");
 });
+
+// ================================================================ Fase 1.4: revocación por AMR — varios eventos, relojes, inmediatez y renovación
+Deno.test("AMR: se mira el evento MÁS ANTIGUO (un TOTP nuevo sobre una sesión vieja no la rescata) e importa el orden de eventos", async () => {
+  const umbral = ahoraS() - 600;
+  const e = estado(); e.revocadoDesde = { u1: umbral }; e.permisos[`${EMPRESA}:u1`] = ["usuarios.ver"];
+  const llamar = async (amr: unknown) => leer(await pedir({ accion: "miembros_listar", empresa_id: EMPRESA }, construir(e, [], undefined), tk("u1", { aal: "aal2", amr })));
+  const ev = (method: string, timestamp: unknown) => ({ method, timestamp });
+  const rechazados: Array<[string, unknown]> = [
+    ["contraseña vieja + TOTP nuevo", [ev("password", umbral - 100), ev("totp", umbral + 500)]],
+    ["TOTP nuevo antes en la lista que la contraseña vieja", [ev("totp", umbral + 500), ev("password", umbral - 100)]],
+    ["tres eventos, uno antiguo", [ev("password", umbral + 10), ev("otp", umbral - 5), ev("totp", umbral + 20)]],
+    ["solo eventos viejos", [ev("password", umbral - 3600), ev("totp", umbral - 3500)]],
+    ["en el umbral exacto", [ev("password", umbral)]],
+    ["un segundo después del umbral NO basta si otro evento es anterior", [ev("password", umbral + 1), ev("totp", umbral - 1)]],
+    ["sin amr", undefined], ["amr no es lista", "password"], ["amr vacío", []], ["eventos sin marca de tiempo", [{ method: "password" }]],
+    ["marca de tiempo no numérica", [ev("password", "1794284653")]], ["marca negativa", [ev("password", -5)]], ["marca cero", [ev("password", 0)]],
+    ["elementos que no son objetos", [1, "a", null]],
+  ];
+  for (const [nombre, amr] of rechazados) assertEquals([nombre, (await llamar(amr)).codigo], [nombre, "sesion_revocada"]);
+  const aceptados: Array<[string, unknown]> = [
+    ["un segundo después del umbral", [ev("password", umbral + 1)]],
+    ["contraseña y TOTP posteriores", [ev("password", umbral + 6), ev("totp", umbral + 60)]],
+    ["tres eventos posteriores", [ev("password", umbral + 6), ev("otp", umbral + 7), ev("totp", umbral + 8)]],
+    ["orden inverso", [ev("totp", umbral + 90), ev("password", umbral + 30)]],
+    ["un evento ilegible se ignora, los demás valen", [ev("password", umbral + 10), ev("x", "basura")]],
+  ];
+  for (const [nombre, amr] of aceptados) assertEquals([nombre, (await llamar(amr)).status], [nombre, 200]);
+});
+
+Deno.test("AMR: instantes imposibles (futuro lejano) no valen aunque superen el umbral; diferencias pequeñas de reloj sí se toleran", async () => {
+  const umbral = ahoraS() - 600;
+  const e = estado(); e.revocadoDesde = { u1: umbral }; e.permisos[`${EMPRESA}:u1`] = ["usuarios.ver"];
+  const llamar = async (amr: unknown) => leer(await pedir({ accion: "miembros_listar", empresa_id: EMPRESA }, construir(e, [], undefined), tk("u1", { aal: "aal2", amr })));
+  assertEquals((await llamar([{ method: "password", timestamp: ahoraS() + 3600 }])).codigo, "sesion_revocada");                              // una hora en el futuro
+  assertEquals((await llamar([{ method: "password", timestamp: umbral + 10 }, { method: "totp", timestamp: ahoraS() + 3600 }])).codigo, "sesion_revocada");
+  assertEquals((await llamar([{ method: "password", timestamp: ahoraS() + 120 }])).status, 200);                                            // reloj de Auth 2 min adelantado: se tolera (< 5 min)
+  assertEquals((await llamar([{ method: "password", timestamp: ahoraS() + 299 }])).status, 200);
+  assertEquals((await llamar([{ method: "password", timestamp: ahoraS() + 301 }])).codigo, "sesion_revocada");
+});
+
+Deno.test("AMR: renovar un token antiguo (iat/exp nuevos, amr igual) sigue revocado; renovar el de una sesión NUEVA vale; sin revocación no se exige nada", async () => {
+  const umbral = ahoraS() - 600;
+  const e = estado(); e.revocadoDesde = { u1: umbral }; e.permisos[`${EMPRESA}:u1`] = ["usuarios.ver"];
+  const llamar = async (extra: Record<string, unknown>, estadoUsado = e) => leer(await pedir({ accion: "miembros_listar", empresa_id: EMPRESA }, construir(estadoUsado, [], undefined), tk("u1", extra)));
+  const viejo = { aal: "aal2", amr: [{ method: "password", timestamp: umbral - 900 }, { method: "totp", timestamp: umbral - 800 }] };
+  for (let i = 0; i < 3; i++) assertEquals((await llamar({ ...viejo, iat: ahoraS() + i, exp: ahoraS() + 3600 + i })).codigo, "sesion_revocada", `renovación ${i}`);   // renovaciones sucesivas
+  const nuevo = { aal: "aal2", amr: [{ method: "password", timestamp: umbral + 30 }, { method: "totp", timestamp: umbral + 40 }] };
+  assertEquals((await llamar(nuevo)).status, 200);
+  assertEquals((await llamar({ ...nuevo, iat: ahoraS() + 1, exp: ahoraS() + 7200 })).status, 200);                                          // renovado: sigue valiendo
+  const sinMarca = estado(); sinMarca.permisos[`${EMPRESA}:u1`] = ["usuarios.ver"];
+  assertEquals((await llamar({ aal: "aal1", amr: undefined }, sinMarca)).status, 200);                                                      // sin revocación, ni siquiera hace falta amr
+});
+
+Deno.test("aprobar recuperación: si la base no pudo borrar las sesiones en Auth, la respuesta lo advierte (y la aprobación sigue)", async () => {
+  const m = adminMfa(); const base = m.admin.rpc.bind(m.admin);
+  m.admin.rpc = ((n: string, a: Record<string, unknown>) => n === "fel_op_mfa_recuperacion_aprobar" ? Promise.resolve({ data: { user_id: "objetivo", factores: ["f1"], total: 1, sesiones_auth_borradas: -1 }, error: null }) : base(n, a)) as never;
+  const r = await leer(await pedirConAdmin(m.admin));
+  assertEquals(r.status, 200); assertEquals(r.datos.advertencias.length, 1); assertEquals(String(r.datos.advertencias[0]).includes("marca de revocación"), true);
+  const m2 = adminMfa(); const r2 = await leer(await pedirConAdmin(m2.admin)); assertEquals(r2.datos.advertencias, []);
+});

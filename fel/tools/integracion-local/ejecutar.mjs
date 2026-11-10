@@ -1,25 +1,25 @@
 // Integración con Supabase LOCAL REAL (GoTrue + PostgREST + PostgreSQL con las migraciones) y la función fel-api ejecutada con Deno.
-// Corre SOLO en una base efímera (supabase start en GitHub Actions o en tu máquina). NUNCA contra un proyecto real: se niega si la URL no es local.
-// Cada comprobación termina en OK, FALLO (rompe la CI) u OBSERVADO (comportamiento de Supabase que se registra para el informe, sin romper).
-import { createHmac, randomBytes } from "node:crypto";
+// Tres ETAPAS independientes (cada una con su propia autorización cuando el destino no es local):
+//   --etapa=verificar   solo lectura: dependencias de Auth, configuración y privilegios.
+//   --etapa=ejecutar    crea datos de prueba, corre los escenarios y escribe un MANIFIESTO con los identificadores que creó (por defecto).
+//   --etapa=limpiar     elimina EXCLUSIVAMENTE lo registrado en un manifiesto (--manifiesto=ruta). Nunca busca por correo, NIT ni patrón.
+// La guardia (guardia.mjs) rechaza todo destino que no sea la pila local o un proyecto de desarrollo explícitamente autorizado.
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { evaluarGuardia } from "./guardia.mjs";
+
+const arg = (n) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=").slice(1).join("=");
+const ETAPA = arg("etapa") ?? "ejecutar";
+const guardia = evaluarGuardia({ env: process.env, etapa: ETAPA });
+if (!guardia.permitido) { console.error(`Se niega a correr (etapa «${ETAPA}»):\n - ${guardia.razones.join("\n - ")}`); process.exit(2); }
+if (!guardia.local) console.warn(`ATENCIÓN: etapa «${ETAPA}» contra el proyecto de DESARROLLO ${guardia.ref} con autorización expresa.`);
 
 const API = process.env.API_URL ?? "http://127.0.0.1:54321";
 const ANON = process.env.ANON_KEY ?? process.env.PUBLISHABLE_KEY;
 const SERVICE = process.env.SERVICE_ROLE_KEY ?? process.env.SECRET_KEY;
 const FELAPI = process.env.FEL_API_URL ?? "http://127.0.0.1:8000";
 const DB = process.env.DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-// Salvaguarda: por defecto SOLO pila local. Un proyecto de desarrollo real exige autorización expresa y que su referencia esté en la lista permitida.
-const esLocal = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(API) && /(127\.0\.0\.1|localhost)/.test(DB);
-if (!esLocal) {
-  const ref = (API.match(/^https:\/\/([a-z0-9]{20})\.supabase\.co$/) ?? [])[1];
-  const permitidos = (process.env.FEL_PROYECTOS_DEV_PERMITIDOS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-  if (process.env.FEL_AUTORIZACION_PRUEBAS_REALES !== "si" || !ref || !permitidos.includes(ref)) {
-    console.error("Se niega a correr: no es la pila local y no hay autorización expresa (FEL_AUTORIZACION_PRUEBAS_REALES=si y la referencia del proyecto en FEL_PROYECTOS_DEV_PERMITIDOS)."); process.exit(2);
-  }
-  console.warn(`ATENCIÓN: ejecutando contra el proyecto de DESARROLLO ${ref} con autorización expresa.`);
-}
 if (!ANON || !SERVICE) { console.error("Faltan ANON_KEY / SERVICE_ROLE_KEY (supabase status -o env)."); process.exit(2); }
 
 const resultados = [];
@@ -30,6 +30,13 @@ async function escenario(id, desc, fn) { try { await fn(); } catch (e) { registr
 
 const sql = (q) => execFileSync("psql", [DB, "-v", "ON_ERROR_STOP=1", "-q", "-X", "-t", "-A", "-c", q], { encoding: "utf8" }).trim();
 const sec = () => Math.floor(Date.now() / 1000);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const lista = (ids) => { for (const x of ids) if (!UUID.test(x)) throw new Error(`identificador no válido en el manifiesto: ${x}`); return `'{${ids.join(",")}}'::uuid[]`; };
+const runId = randomBytes(4).toString("hex");
+const RUTA_MANIFIESTO = arg("manifiesto") ?? process.env.FEL_MANIFIESTO ?? `integracion-manifiesto-${runId}.json`;
+const manifiesto = { runId, api: API, ref: guardia.ref, local: guardia.local, creado_en: new Date().toISOString(), usuarios: [], empresas: [], autorizaciones: [], solicitudes: [] };
+// Se anota ANTES de crear (o apenas se conoce el id) y se escribe a disco cada vez: si algo falla a mitad, la limpieza sabe exactamente qué existe.
+const anotar = (lista_, valor) => { manifiesto[lista_].push(valor); writeFileSync(RUTA_MANIFIESTO, JSON.stringify(manifiesto, null, 2)); };
 const j = async (r) => { const t = await r.text(); try { return JSON.parse(t); } catch { return t; } };
 const cab = (token, key = ANON) => ({ apikey: key, authorization: `Bearer ${token ?? key}`, "content-type": "application/json" });
 const claims = (jwt) => { try { return JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString()); } catch { return {}; } };
@@ -40,7 +47,7 @@ const adminAuth = async (ruta, metodo = "GET", cuerpo) => { const r = await fetc
 const auth = async (ruta, { metodo = "POST", token, cuerpo } = {}) => { const r = await fetch(`${API}/auth/v1/${ruta}`, { method: metodo, headers: cab(token), body: cuerpo ? JSON.stringify(cuerpo) : undefined }); return { status: r.status, datos: await j(r), r }; };
 const PASS = "Clave-Segura-123";
 let PASS_PROP = PASS;   // contraseña actual del propietario (cambia en la prueba de recuperación)
-const crearUsuario = async (email, password = PASS) => { const r = await adminAuth("users", "POST", { email, password, email_confirm: true }); if (!r.datos?.id) throw new Error(`no se pudo crear ${email}: ${JSON.stringify(r.datos)}`); return r.datos.id; };
+const crearUsuario = async (email, password = PASS, rol = "prueba") => { const r = await adminAuth("users", "POST", { email, password, email_confirm: true }); if (!r.datos?.id) throw new Error(`no se pudo crear ${email}: ${JSON.stringify(r.datos)}`); anotar("usuarios", { rol, email, id: r.datos.id }); return r.datos.id; };
 const login = async (email, password = PASS) => { const r = await auth("token?grant_type=password", { cuerpo: { email, password } }); return { ...r, sesion: r.datos?.access_token ? r.datos : null }; };
 const refrescar = (rt) => auth("token?grant_type=refresh_token", { cuerpo: { refresh_token: rt } });
 const rest = async (ruta, token) => { const r = await fetch(`${API}/rest/v1/${ruta}`, { headers: cab(token) }); return { status: r.status, datos: await j(r) }; };
@@ -76,16 +83,86 @@ async function verificarTotp(sesion, f) {
 // ================================================================ datos de prueba
 const sufijo = randomBytes(3).toString("hex");
 const E = (n) => `${n}-${sufijo}@integracion.fel.test`;
-const EMP_A = "10000000-0000-4000-8000-0000000000a1", EMP_B = "10000000-0000-4000-8000-0000000000b1";
+const EMP_A = randomUUID(), EMP_B = randomUUID();                 // únicos por ejecución (nada se reutiliza entre ejecuciones)
+const NIT = (x) => `T${sufijo.toUpperCase()}${x}`;                // NIT de prueba único por ejecución
 const U = {};
 async function preparar() {
-  for (const n of ["prop", "emi", "lec", "otro", "maestro", "sinperfil", "bloq"]) U[n] = { email: E(n), id: await crearUsuario(E(n)) };
+  anotar("empresas", EMP_A); anotar("empresas", EMP_B);
+  for (const n of ["prop", "emi", "lec", "otro", "maestro", "sinperfil", "bloq"]) U[n] = { email: E(n), id: await crearUsuario(E(n), PASS, n) };
   sql(`insert into public.perfiles (user_id) values ('${U.prop.id}'),('${U.emi.id}'),('${U.lec.id}'),('${U.otro.id}'),('${U.maestro.id}'),('${U.bloq.id}');
        insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado)
-         select e.id, e.n, e.n || ' S.A.', e.nit, r.id, 'habilitada' from (values ('${EMP_A}'::uuid,'Empresa A','1000001-1'),('${EMP_B}'::uuid,'Empresa B','2000002-2')) e(id,n,nit), public.regimenes_fiscales r where r.codigo='general';
+         select e.id, e.n, e.n || ' S.A.', e.nit, r.id, 'habilitada' from (values ('${EMP_A}'::uuid,'Empresa A','${NIT("A")}'),('${EMP_B}'::uuid,'Empresa B','${NIT("B")}')) e(id,n,nit), public.regimenes_fiscales r where r.codigo='general';
        insert into public.miembros (empresa_id, user_id, rol) values ('${EMP_A}','${U.prop.id}','propietario'),('${EMP_A}','${U.emi.id}','emisor'),('${EMP_A}','${U.lec.id}','lector'),('${EMP_B}','${U.otro.id}','propietario');
        insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre) values ('${EMP_A}','NIT','1111111-1','Cliente A1'),('${EMP_A}','NIT','1111112-2','Cliente A2'),('${EMP_B}','NIT','2222222-2','Cliente B1');`);
 }
+
+// ================================================================ etapas «verificar» y «limpiar»
+function terminar() {
+  writeFileSync(process.env.RESULTADOS ?? `integracion-${ETAPA}-resultados.json`, JSON.stringify({ etapa: ETAPA, fecha: new Date().toISOString(), destino: guardia.local ? "local" : guardia.ref, resultados }, null, 2));
+  const fallos = resultados.filter((r) => r.estado === "FALLO");
+  console.log(`\n${resultados.filter((r) => r.estado === "OK").length} OK · ${resultados.filter((r) => r.estado === "OBSERVADO").length} observados · ${fallos.length} fallos`);
+  process.exit(fallos.length ? 1 : 0);
+}
+
+async function verificar() {   // SOLO LECTURA: no crea ni modifica nada
+  const h = await fetch(`${API}/auth/v1/health`, { headers: cab(ANON) }); afirmar("V01", "Auth responde", h.status === 200, h.status);
+  const st = await fetch(`${API}/auth/v1/settings`, { headers: cab(ANON) }).then(j).catch(() => ({}));
+  afirmar("V02", "el registro abierto está desactivado (disable_signup)", st.disable_signup === true, JSON.stringify(st).slice(0, 160));
+  afirmar("V03", "el proveedor de correo está activo (si no, no hay login con contraseña)", st.external?.email === true, JSON.stringify(st.external ?? {}));
+  afirmar("V04", "no hay autoconfirmación de correos", st.mailer_autoconfirm !== true, JSON.stringify({ mailer_autoconfirm: st.mailer_autoconfirm }));
+  const filas = sql("select comprobacion || '|' || ok || '|' || detalle from public.fel_verificar_dependencias_auth()").split("\n").filter(Boolean);
+  afirmar("V05", "la función de compatibilidad con Auth existe y devuelve comprobaciones", filas.length >= 14, `${filas.length} filas`);
+  for (const f of filas) { const [c, ok, det] = f.split("|"); afirmar(`V05-${c.slice(0, 48)}`, c, ok === "t", det); }
+  afirmar("V06", "el interruptor de emisión real está APAGADO", sql("select valor from public.plataforma_config where clave='emision_real_disponible'") === "f");
+  afirmar("V07", "ninguna empresa tiene emisión real habilitada", sql("select count(*) from public.empresas where emision_real_habilitada") === "0");
+  afirmar("V08", "todas las tablas de public tienen RLS", sql("select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity") === "0");
+  const aut = sql("select coalesce(string_agg(p.proname, ',' order by p.proname), '') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('authenticated', p.oid, 'EXECUTE') and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e')");
+  afirmar("V09", "authenticated solo ejecuta las 3 funciones de la RLS", aut === "fel_es_admin_plataforma,fel_es_miembro,fel_tiene_permiso", aut);
+  afirmar("V10", "anon no ejecuta ninguna función de public", sql("select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege('anon', p.oid, 'EXECUTE') and not exists (select 1 from pg_depend d where d.objid=p.oid and d.deptype='e')") === "0");
+  afirmar("V11", "anon y authenticated no escriben en ninguna tabla de public", sql("select count(*) from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated') and privilege_type in ('INSERT','UPDATE','DELETE','TRUNCATE')") === "0");
+  terminar();
+}
+
+async function limpiar() {   // elimina SOLO lo que figura en el manifiesto indicado
+  if (!arg("manifiesto") && !process.env.FEL_MANIFIESTO) { console.error("La etapa limpiar exige --manifiesto=ruta."); process.exit(2); }
+  if (!existsSync(RUTA_MANIFIESTO)) { console.error(`No existe el manifiesto ${RUTA_MANIFIESTO}`); process.exit(2); }
+  const m = JSON.parse(readFileSync(RUTA_MANIFIESTO, "utf8"));
+  if (m.api !== API || (m.ref ?? null) !== (guardia.ref ?? null) || !m.runId) { console.error("El manifiesto corresponde a OTRO destino (api/ref): no se limpia nada."); process.exit(2); }
+  const us = (m.usuarios ?? []).map((x) => x.id), emp = m.empresas ?? [], aut = m.autorizaciones ?? [], sol = m.solicitudes ?? [];
+  console.log(`Limpieza de la ejecución ${m.runId}: ${us.length} usuarios, ${emp.length} empresas, ${aut.length} autorizaciones, ${sol.length} solicitudes (solo estos identificadores).`);
+  const U_ = us.length ? lista(us) : "'{}'::uuid[]", E_ = emp.length ? lista(emp) : "'{}'::uuid[]", A_ = aut.length ? lista(aut) : "'{}'::uuid[]", S_ = sol.length ? lista(sol) : "'{}'::uuid[]";
+  // El guardián de «último propietario» impide borrar membresías; se desactiva SOLO dentro de esta transacción. La auditoría es de solo agregar:
+  // sus filas NO se borran, así que las empresas de prueba se SUSPENDEN en lugar de borrarse (la auditoría las referencia).
+  try {
+    sql(`begin;
+      alter table public.miembros disable trigger miembros_guard;
+      delete from public.solicitudes_recuperacion_mfa where id = any(${S_}) or user_id = any(${U_}) or resuelta_por = any(${U_});
+      delete from public.revocaciones_sesion where user_id = any(${U_});
+      delete from public.autorizaciones_maestro where id = any(${A_}) or autorizado_por = any(${U_});
+      delete from public.invitaciones where empresa_id = any(${E_}) or invitado_por = any(${U_}) or user_id = any(${U_});
+      delete from public.clientes where empresa_id = any(${E_});
+      delete from public.miembros where empresa_id = any(${E_}) or user_id = any(${U_}) or invitado_por = any(${U_});
+      delete from public.plataforma_admins where user_id = any(${U_});
+      delete from public.perfiles where user_id = any(${U_});
+      alter table public.miembros enable trigger miembros_guard;
+      update public.empresas set estado = 'suspendida' where id = any(${E_});
+      commit;`);
+    registrar("L-sql", "OK", "datos de la ejecución eliminados en la base de datos (transacción única)");
+  } catch (e) { registrar("L-sql", "FALLO", "la transacción de limpieza falló (no se aplicó nada)", String(e.stderr ?? e)); }
+  for (const x of m.usuarios ?? []) {
+    const r = await adminAuth(`users/${x.id}`, "DELETE"); registrar(`L-auth-${x.rol}`, r.status === 200 ? "OK" : "FALLO", `usuario ${x.email} eliminado de Auth`, r.status === 200 ? "" : JSON.stringify(r.datos));
+  }
+  const cuenta = (q) => Number(sql(q));
+  afirmar("L-v1", "no queda ninguno de los usuarios en Auth", cuenta(`select count(*) from auth.users where id = any(${U_})`) === 0);
+  afirmar("L-v2", "no quedan perfiles, membresías, solicitudes ni marcas de esos usuarios", cuenta(`select (select count(*) from public.perfiles where user_id = any(${U_})) + (select count(*) from public.miembros where user_id = any(${U_}) or empresa_id = any(${E_})) + (select count(*) from public.solicitudes_recuperacion_mfa where user_id = any(${U_})) + (select count(*) from public.revocaciones_sesion where user_id = any(${U_}))`) === 0);
+  afirmar("L-v3", "no quedan clientes ni invitaciones de las empresas de la ejecución", cuenta(`select (select count(*) from public.clientes where empresa_id = any(${E_})) + (select count(*) from public.invitaciones where empresa_id = any(${E_}))`) === 0);
+  afirmar("L-v4", "las autorizaciones de maestro de la ejecución ya no existen", cuenta(`select count(*) from public.autorizaciones_maestro where id = any(${A_})`) === 0);
+  afirmar("L-v5", "las empresas de la ejecución quedaron SUSPENDIDAS (no se borran: la auditoría de solo agregar las referencia)", cuenta(`select count(*) from public.empresas where id = any(${E_}) and estado = 'suspendida'`) === emp.length);
+  observar("L-v6", "filas de auditoría conservadas por diseño (append-only) para esta ejecución", sql(`select count(*) from public.auditoria where empresa_id = any(${E_}) or actor_user_id = any(${U_})`));
+  terminar();
+}
+if (ETAPA === "verificar") await verificar();
+if (ETAPA === "limpiar") await limpiar();
 
 await preparar();
 const S = {};   // sesiones iniciales (aal1)
@@ -100,6 +177,7 @@ await escenario("A02", "forma de los claims del JWT (supuestos del diseño)", as
   const c = claims(S.prop.access_token);
   afirmar("A02a", "sub, role=authenticated, aal=aal1, exp futuro", c.sub === U.prop.id && c.role === "authenticated" && c.aal === "aal1" && c.exp > sec(), JSON.stringify(c));
   afirmar("A02b", "amr es una lista con {method:'password', timestamp:número}", Array.isArray(c.amr) && c.amr.some((x) => x.method === "password" && Number.isFinite(x.timestamp)), JSON.stringify(c.amr));
+  observar("A02d", "duración del JWT (exp − iat, segundos); recomendado ≤ 1800 en el proyecto real", c.exp - c.iat);
   afirmar("A02c", "el instante de autenticación es reciente (±60 s)", Math.abs(sec() - Math.max(...c.amr.map((x) => x.timestamp))) < 60, JSON.stringify(c.amr));
 });
 
@@ -164,6 +242,7 @@ await escenario("P01", "maestro con aal2", async () => {
   const r2 = await rest("empresas?select=id", m.sesion.access_token); afirmar("P01d", "maestro con aal2 ve las empresas", Array.isArray(r2.datos) && r2.datos.length >= 2, JSON.stringify(r2.datos));
   const f1 = await fel("maestro_autorizar", { email: E("candidato"), motivo: "Ampliar el equipo de administración" }, aal1.sesion.access_token); afirmar("P01e", "acción de maestro con aal1 → 403 mfa_requerido", f1.status === 403 && f1.datos.codigo === "mfa_requerido", JSON.stringify(f1));
   const f2 = await fel("maestro_autorizar", { email: E("candidato"), motivo: "Ampliar el equipo de administración" }, m.sesion.access_token); afirmar("P01f", "acción de maestro con aal2 reciente → 200", f2.status === 200, JSON.stringify(f2));
+  if (f2.datos?.datos?.autorizacion_id) anotar("autorizaciones", f2.datos.datos.autorizacion_id);
   const viejo = (() => { const c = claims(m.sesion.access_token); return c; })(); observar("P01g", "amr del maestro", viejo.amr);
 });
 
@@ -177,8 +256,9 @@ await escenario("I01", "invitaciones", async () => {
   const existe = sql(`select count(*) from auth.users where email='${nuevo}'`);
   observar("I01d", "la invitación de cuenta creó el usuario en Auth", existe);
   // la cuenta de Auth sola no da acceso; al aceptar, sí
-  const id = sql(`select id from auth.users where email='${nuevo}'`);
+  const id = sql(`select id from auth.users where email='${nuevo}'`);   // correo EXACTO creado en esta ejecución
   if (id) {
+    anotar("usuarios", { rol: "invitado", email: nuevo, id });
     await adminAuth(`users/${id}`, "PUT", { password: PASS, email_confirm: true });
     const l = await login(nuevo); const antes = await fel("yo", {}, l.sesion.access_token);
     afirmar("I01e", "invitado ANTES de aceptar: la cuenta existe pero yo → 403 sin_perfil", antes.status === 403 && antes.datos.codigo === "sin_perfil", JSON.stringify(antes));
@@ -221,6 +301,7 @@ await escenario("X01", "recuperación de MFA", async () => {
   const nuevoLogin = await login(U.emi.email);                                                    // desde otro dispositivo: solo contraseña (aal1)
   const sol = await fel("mfa_recuperacion_solicitar", { motivo: "Perdí mi teléfono con la aplicación autenticadora" }, nuevoLogin.sesion.access_token);
   afirmar("X01a", "la persona (aal1) solicita la recuperación → 200", sol.status === 200, JSON.stringify(sol));
+  if (sol.datos?.datos?.solicitud_id) anotar("solicitudes", sol.datos.datos.solicitud_id);
   afirmar("X01b", "solicitar NO elimina el factor", sql(`select count(*) from auth.mfa_factors where user_id='${U.emi.id}' and status='verified'`) === "1");
   const propFresco = await verificarTotp(await login(U.prop.email, PASS_PROP).then((x) => x.sesion), tot);   // propietario con aal2 y TOTP reciente
   const aprobSinEvidencia = await fel("mfa_recuperacion_aprobar", { solicitud_id: sol.datos?.datos?.solicitud_id, verificacion: "corta" }, propFresco.access_token); afirmar("X01c", "sin evidencia suficiente → 400", aprobSinEvidencia.status === 400, JSON.stringify(aprobSinEvidencia));
@@ -242,7 +323,7 @@ await escenario("X01", "recuperación de MFA", async () => {
   if (ren.datos?.access_token) { const y2 = await fel("yo", {}, ren.datos.access_token); afirmar("X01n", "un token RENOVADO desde la sesión vieja sigue rechazado (la marca no depende de Auth)", y2.status === 401, JSON.stringify(y2)); }
   const viejoAuth = await auth("user", { metodo: "GET", token: viejoAal2.access_token }); observar("X01o", "GET /auth/v1/user con el token viejo (¿Auth ya lo rechaza?)", viejoAuth.status);
   // inicio de sesión nuevo → aal1 (ya no hay factor): lo operativo sí, lo sensible no hasta configurar y verificar TOTP de nuevo
-  await new Promise((r) => setTimeout(r, 1300));   // los instantes del token son segundos enteros: un inicio de sesión legítimo ocurre después del segundo de la marca
+  await new Promise((r) => setTimeout(r, 6500));   // marca + margen de reloj (5 s): un inicio de sesión legítimo ocurre después
   const fresco = await login(U.emi.email); const yo = await fel("yo", {}, fresco.sesion.access_token); afirmar("X01p", "un inicio de sesión nuevo funciona (aal1)", yo.status === 200 && yo.datos.datos.mfa === "aal1", JSON.stringify(yo));
   const sens = await fel("mfa_recuperacion_listar", {}, fresco.sesion.access_token); afirmar("X01q", "lo sensible exige aal2 hasta verificar un TOTP nuevo → 403 mfa_requerido", sens.status === 403 && sens.datos.codigo === "mfa_requerido", JSON.stringify(sens));
   const nuevo = await activarTotp(U.emi.email, fresco.sesion);
@@ -263,7 +344,7 @@ await escenario("B01", "bloqueo en caliente", async () => {
 
 // ================================================================ 9c. Persona con dos empresas: permisos separados por empresa
 await escenario("MU01", "multiempresa", async () => {
-  const multi = { email: E("multi"), id: await crearUsuario(E("multi")) };
+  const multi = { email: E("multi"), id: await crearUsuario(E("multi"), PASS, "multi") };
   sql(`insert into public.perfiles (user_id) values ('${multi.id}'); insert into public.miembros (empresa_id, user_id, rol) values ('${EMP_A}','${multi.id}','lector'),('${EMP_B}','${multi.id}','propietario');`);
   const s = (await login(multi.email)).sesion;
   const yo = await fel("yo", {}, s.access_token); const roles = Object.fromEntries((yo.datos?.datos?.empresas ?? []).map((x) => [x.empresa.id, x.rol]));
@@ -286,7 +367,5 @@ await escenario("L01", "cierre de sesión", async () => {
   const ren = await refrescar(l.sesion.refresh_token); observar("L01b", "tras cerrar sesión, el token de renovación viejo", ren.status);
 });
 
-writeFileSync(process.env.RESULTADOS ?? "integracion-local-resultados.json", JSON.stringify({ fecha: new Date().toISOString(), resultados }, null, 2));
-const fallos = resultados.filter((r) => r.estado === "FALLO");
-console.log(`\n${resultados.filter((r) => r.estado === "OK").length} OK · ${resultados.filter((r) => r.estado === "OBSERVADO").length} observados · ${fallos.length} fallos`);
-process.exit(fallos.length ? 1 : 0);
+console.log(`Manifiesto de esta ejecución (necesario para la etapa limpiar): ${RUTA_MANIFIESTO}`);
+terminar();

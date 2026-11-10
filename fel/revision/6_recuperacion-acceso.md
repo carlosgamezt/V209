@@ -29,7 +29,7 @@ persona ──► inicia sesión con su contraseña (aal1) ──► activa un d
 
 ## Invalidación de las sesiones existentes (Fase 1.3)
 Eliminar el factor **no basta** (y un token de renovación robado produce JWT nuevos con el mismo nivel). Al **aprobar** (antes de tocar los factores) se hace, en este orden:
-1. **Marca de revocación** (`revocaciones_sesion`): desde ese instante, un token solo vale si contiene una **autenticación posterior** (`amr[].timestamp`). Renovar no crea autenticaciones nuevas, así que ninguna sesión anterior se salva renovándose. Se aplica en la API y en la RLS. *Comparación estricta* (un evento en el mismo segundo no vale).
+1. **Marca de revocación** (`revocaciones_sesion`): desde ese instante, un token solo vale si **TODOS** sus eventos de autenticación (`amr[].timestamp`) son posteriores a la marca **más un margen de reloj de 5 s** (se mira el evento **más antiguo**: una sesión vieja a la que luego se le añade un TOTP conserva su contraseña antigua y sigue revocada). Renovar no crea autenticaciones nuevas, así que ninguna sesión anterior se salva renovándose. Se aplica en la API y en la RLS. Comparación estricta, y los instantes situados más de 5 min en el futuro no valen.
 2. **Borrado de las sesiones en Auth** (`auth.sessions`; mejor esfuerzo). Verificado en la pila local real: `2 → 0` sesiones, el token viejo recibe 403 en Auth, la renovación falla (`refresh_token_not_found`).
 3. **Eliminación de los factores** con la API de administración de Auth (`auth.admin.mfa.deleteFactor`), repetible.
 Después: un inicio de sesión nuevo funciona en **aal1**; todo lo sensible exige configurar y **verificar de nuevo un TOTP** (aal2 con código reciente).

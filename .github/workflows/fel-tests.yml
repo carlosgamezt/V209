@@ -43,6 +43,8 @@ jobs:
           node fel/app/tests/ui.cjs
           node fel/app/tests/auth.cjs
           node fel/app/tests/cuentas.cjs
+      - name: Guardia del script de integración (rechaza proyectos no autorizados)
+        run: node --test fel/tools/integracion-local/guardia.test.mjs
 
   base-de-datos:
     name: Migraciones y RLS (Supabase local)
@@ -100,12 +102,22 @@ jobs:
             nohup deno run -A fel/supabase/functions/fel-api/index.ts > "$RUNNER_TEMP/fel-api.log" 2>&1 &
           for i in $(seq 1 40); do curl -s -o /dev/null http://127.0.0.1:8000 && break; sleep 1; done
           curl -s -o /dev/null -w "fel-api responde: %{http_code}\n" http://127.0.0.1:8000
-      - name: Pruebas de integración
+      - name: Etapa 1 · verificar (solo lectura)
         run: |
           set -a; source "$RUNNER_TEMP/sb.env"; set +a
-          export RESULTADOS="$RUNNER_TEMP/integracion-local-resultados.json"
-          node fel/tools/integracion-local/ejecutar.mjs
-      - name: Registro de fel-api y resultados
+          RESULTADOS="$RUNNER_TEMP/integracion-verificar.json" node fel/tools/integracion-local/ejecutar.mjs --etapa=verificar
+      - name: Etapa 2 · ejecutar (crea datos y escribe el manifiesto)
+        run: |
+          set -a; source "$RUNNER_TEMP/sb.env"; set +a
+          RESULTADOS="$RUNNER_TEMP/integracion-ejecutar.json" node fel/tools/integracion-local/ejecutar.mjs --etapa=ejecutar --manifiesto="$RUNNER_TEMP/manifiesto.json"
+      - name: Etapa 3 · limpiar (solo lo registrado en el manifiesto)
+        if: always()
+        run: |
+          set -a; source "$RUNNER_TEMP/sb.env"; set +a
+          if [ -f "$RUNNER_TEMP/manifiesto.json" ]; then
+            RESULTADOS="$RUNNER_TEMP/integracion-limpiar.json" node fel/tools/integracion-local/ejecutar.mjs --etapa=limpiar --manifiesto="$RUNNER_TEMP/manifiesto.json"
+          else echo "No hay manifiesto: la ejecución no creó nada."; fi
+      - name: Registro de fel-api
         if: always()
         run: |
           echo "---- fel-api.log (últimas líneas) ----"; tail -n 40 "$RUNNER_TEMP/fel-api.log" || true
@@ -113,7 +125,9 @@ jobs:
         if: always()
         with:
           name: integracion-local-resultados
-          path: ${{ runner.temp }}/integracion-local-resultados.json
+          path: |
+            ${{ runner.temp }}/integracion-*.json
+            ${{ runner.temp }}/manifiesto.json
           if-no-files-found: ignore
       - name: Detener
         if: always()

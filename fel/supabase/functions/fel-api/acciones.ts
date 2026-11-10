@@ -291,7 +291,9 @@ export const acciones: Acciones = {
       }
       // 3) se cierra la solicitud
       await rpc(ctx, "fel_op_mfa_recuperacion_cerrar", { p_actor: ctx.usuario.id, p_solicitud: p.solicitud_id, p_eliminados: eliminados });
-      return { solicitud_id: p.solicitud_id, factores_eliminados: r.total ?? eliminados, eliminados_en_esta_ejecucion: eliminados, siguiente_paso: "La persona inicia sesión con su contraseña y activa un dispositivo nuevo" };
+      const advertencias = r.sesiones_auth_borradas === -1
+        ? ["No se pudieron borrar las sesiones en Auth. Las sesiones anteriores ya no valen en NEXA FEL (marca de revocación), pero conviene cerrarlas también desde el panel de Supabase."] : [];
+      return { advertencias, solicitud_id: p.solicitud_id, factores_eliminados: r.total ?? eliminados, eliminados_en_esta_ejecucion: eliminados, siguiente_paso: "La persona inicia sesión con su contraseña y activa un dispositivo nuevo" };
     },
   },
   mfa_recuperacion_rechazar: {

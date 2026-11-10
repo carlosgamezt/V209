@@ -170,7 +170,7 @@ export function pantallaUsuarios(ctx, ruta) {
       if (!chk.checked) { err.textContent = "Confirma que verificaste la identidad por otro canal."; return; }
       if (ver.value.trim().length < 20) { err.textContent = "Describe cómo verificaste la identidad (mínimo 20 caracteres)."; return; }
       ocupado = true; aprobar.disabled = true;
-      try { const r = await ctx.api.aprobarSolicitudMfa(s.id, ver.value.trim()); m_.cerrar(); toast(`Recuperación aplicada (${r.factores_eliminados} dispositivo/s eliminados). La persona debe activar uno nuevo.`); tabRecuperacion(); }
+      try { const r = await ctx.api.aprobarSolicitudMfa(s.id, ver.value.trim()); m_.cerrar(); toast(`Recuperación aplicada (${r.factores_eliminados} dispositivo/s eliminados). La persona debe activar uno nuevo.`); for (const a of r.advertencias ?? []) toast(a, "error"); tabRecuperacion(); }
       catch (e) { err.textContent = mensajeError(e); } finally { ocupado = false; aprobar.disabled = false; }
     } });
     const rechazar = boton("Rechazar", { tipo: "sec", onclick: async () => {

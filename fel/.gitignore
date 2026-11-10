@@ -1,0 +1,9 @@
+# Secretos y artefactos de ejecuciones reales: nunca al repositorio
+.env
+.env.*
+*.env
+manifiesto-*.json
+integracion-manifiesto-*.json
+integracion-*-resultados.json
+supabase/.temp/
+supabase/.branches/
