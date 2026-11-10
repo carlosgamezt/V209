@@ -7,6 +7,7 @@ do $$ begin
 end $$;
 create schema if not exists auth;
 create table if not exists auth.users (id uuid primary key, email text, email_confirmed_at timestamptz);
+create table if not exists auth.mfa_factors (id uuid primary key default gen_random_uuid(), user_id uuid not null, factor_type text not null, status text not null);
 create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(coalesce(
     nullif(current_setting('request.jwt.claim.sub', true), ''),

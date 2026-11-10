@@ -36,10 +36,12 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
-      - name: Pruebas de interfaz
+      - name: Pruebas de interfaz y de autenticación
         env:
           NODE_PATH: ${{ runner.temp }}/pw/node_modules
-        run: node fel/app/tests/ui.cjs
+        run: |
+          node fel/app/tests/ui.cjs
+          node fel/app/tests/auth.cjs
 
   base-de-datos:
     name: Migraciones y RLS (Supabase local)

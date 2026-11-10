@@ -1,20 +1,12 @@
 // Prueba de interfaz de NEXA FEL (modo demostración, sin red ni credenciales). Uso: node ui.cjs [carpeta-de-capturas]
-const http = require("http"), fs = require("fs"), path = require("path"), assert = require("assert/strict");
+const fs = require("fs"), path = require("path"), assert = require("assert/strict");
 const { chromium } = require("playwright");
-const RAIZ = path.resolve(__dirname, "..");
-const TIPOS = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
+const { servirEstaticos } = require("./comun.cjs");
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null;
 if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
-const servidor = http.createServer((req, res) => {
-  const f = path.join(RAIZ, decodeURIComponent(req.url.split("?")[0]).replace(/^\/+$/, "/index.html"));
-  if (!f.startsWith(RAIZ) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { "content-type": TIPOS[path.extname(f)] ?? "application/octet-stream" }); fs.createReadStream(f).pipe(res);
-});
-
 (async () => {
-  await new Promise((r) => servidor.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${servidor.address().port}/`;
+  const { servidor, base } = await servirEstaticos();
   const navegador = await chromium.launch();
   const errores = [];
   const nueva = async (opts) => {

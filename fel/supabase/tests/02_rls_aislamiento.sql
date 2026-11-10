@@ -102,7 +102,7 @@ reset role;
 
 -- ============ administrador maestro: ve empresas y regímenes, NO datos de negocio
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated"}', true) as _cfg \gset
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","aal":"aal2"}', true) as _cfg \gset
 do $$ begin
   assert public.fel_es_admin_plataforma(), 'debe ser administrador maestro';
   assert (select count(*) from public.empresas) = 2, 'el maestro ve las 2 empresas';

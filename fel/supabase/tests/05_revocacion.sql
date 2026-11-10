@@ -57,7 +57,7 @@ select pg_temp.espera_error($$select public.fel_op_cliente_guardar('00000000-000
 insert into public.perfiles (user_id, activo) values ('00000000-0000-0000-0000-0000000000a1', false) on conflict (user_id) do update set activo = false;
 select pg_temp.espera_error($$select public.fel_admin_empresa_estado('00000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a', 'suspendida', 'Motivo válido')$$, 'FEL_NO_AUTORIZADO');
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated"}', true) as _cfg \gset
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","role":"authenticated","aal":"aal2"}', true) as _cfg \gset
 do $$ begin assert not public.fel_es_admin_plataforma(), 'maestro desactivado sigue siendo maestro'; assert (select count(*) from public.empresas) = 0; end $$;
 reset role;
 update public.perfiles set activo = true where user_id = '00000000-0000-0000-0000-0000000000a1';

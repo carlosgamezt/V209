@@ -8,4 +8,5 @@ grep -n -i -E "^create policy|^  using|^  with check" supabase/migrations/202611
 { echo "-- Políticas RLS (extraídas de la migración 0300)"; awk '/^create policy/{p=1} p{print} /;[[:space:]]*$/{if(p){p=0; print ""}}' supabase/migrations/20261110000300_fel_rls_y_datos.sql; } > "$out/2_politicas_rls.sql"
 { echo "-- Funciones de autorización y protecciones"; sed -n '/^create or replace function public.fel__rango/,/^create or replace function public.fel_siguiente_borrador/p' supabase/migrations/20261110000200_fel_funciones.sql; sed -n '/^create or replace function public.fel__exigir_permiso/,/^end \$\$;/p' supabase/migrations/20261110000400_fel_clientes_conceptos.sql; } > "$out/3_funciones_autorizacion.sql"
 cp docs/matriz-estados.md "$out/4_matriz_estados.md"
+cp docs/primer-administrador-maestro.md "$out/5_primer_administrador_maestro.md"
 echo "Paquete en fel/$out"
