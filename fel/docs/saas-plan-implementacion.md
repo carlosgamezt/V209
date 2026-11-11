@@ -15,7 +15,7 @@ fel/supabase/…                   migraciones y funciones SQL (Fase 2)
 ```
 CI: se añade el proyecto al job Deno del workflow existente.
 
-## Fase 1 — Interfaz de proveedores + mock (en curso)
+## Fase 1 — Interfaz de proveedores + mock (COMPLETADA)
 - Contrato `EmissionProvider` y tipos (§3 del diseño), con `portal_playwright`/`digifact` declarados como identificadores futuros.
 - Adaptador `mock` con servidor simulado: éxito, rechazo confirmado, timeout/corte antes y después de certificar, respuesta ilegible, código desconocido (con y sin certificación), respuesta tardía, límite/caída, conciliación indeterminada, acción humana; duplicado cuando el «servidor» no deduplica.
 - Validación estructural local (no fiscal).
@@ -24,7 +24,7 @@ CI: se añade el proyecto al job Deno del workflow existente.
 - **Pruebas:** unitarias por escenario, tabla escenario × acción, doble envío concurrente, y una **prueba de propiedades** con secuencias aleatorias (semilla fija) que afirma «nunca más de una certificación por documento» aun con un servidor que no deduplica.
 - **Criterio de salida:** todas las pruebas en verde en local y en CI.
 
-## Fase 2 — Flujo individual completo en simulación
+## Fase 2 — Flujo individual completo en simulación (COMPLETADA en simulación; informe: `saas-fase-2-informe.md`)
 Migraciones multiempresa (`establecimientos`, `empresa_canales`, `credenciales_proveedor` solo con referencias, `artefactos_documento`, `eventos_proveedor`, `ordenes_emision`, permisos nuevos), orquestador real sobre la base con las pruebas de la Fase 1, validaciones, errores y **recuperación** (conciliación, `por_verificar`, reintento con otra clave), almacenamiento de PDF/XML simulados con URL firmada, pruebas SQL de aislamiento entre empresas y pantallas del flujo borrador → validación → revisión → aprobación → solicitud → respuesta → PDF/XML. **Criterio:** recorrido completo con mock incluidos todos los fallos; pruebas de aislamiento en CI.
 
 ## Fase 3 — Adaptador `portal_playwright` con el simulador local

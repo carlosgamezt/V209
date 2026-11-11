@@ -59,6 +59,8 @@ export class MockProvider implements EmissionProvider {
   }
   private exigirSimulado(ctx: Contexto) { if (ctx.ambiente !== "simulado") throw new ErrorProveedor("NO_SOPORTADO", `El mock solo funciona en el ambiente «simulado» (se pidió «${ctx.ambiente}»)`); }
   private escenarioDe(documentoId: string): Escenario { return this.opciones.escenarioPorDocumento?.[documentoId] ?? this.opciones.escenarioPorDefecto ?? "exito"; }
+  /** Escenario fijado para un documento (nulo si usa el predeterminado). */
+  escenarioDeDocumento(documentoId: string): Escenario | null { return this.opciones.escenarioPorDocumento?.[documentoId] ?? null; }
   /** Cambia el escenario de un documento en caliente (p. ej. para probar la conciliación o el reintento). */
   fijarEscenario(documentoId: string, e: Escenario) { (this.opciones.escenarioPorDocumento ??= {})[documentoId] = e; }
 

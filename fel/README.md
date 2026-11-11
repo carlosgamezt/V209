@@ -7,6 +7,8 @@ Proyecto Supabase propio (multiempresa). Estado: **Fase 1.0 en desarrollo, rama 
 - `supabase/migrations/` — esquema, protecciones, RLS y datos iniciales. **No se ejecutan solas**: se aplican con `supabase db push` al proyecto FEL cuando se autorice.
 - `supabase/functions/fel-api/` — Edge Function (Deno/TypeScript). Única vía de escritura de la app.
 - `supabase/tests/` — pruebas SQL (estructura, aislamiento RLS, escritura atómica).
+- `proveedores/` — interfaz de proveedores de emisión, proveedor simulado y orquestador (Fases 1–2; solo simulación).
+- `demo-facturacion/` — demostración funcional de la facturación individual simulada (ver su README).
 - `tools/test-local.sh` — corre migraciones y pruebas SQL en un PostgreSQL temporal, sin Docker ni proyectos reales.
 - `docs/matriz-estados.md` — matriz de transiciones (propuesta).
 - La interfaz irá en `nexa/fel/` (aún no creada, para que ningún "publica" de NEXA la saque por accidente).

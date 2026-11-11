@@ -23,11 +23,14 @@ jobs:
         run: |
           deno check index.ts nucleo.ts acciones.ts lib/*.ts seguridad_test.ts
           deno test lib/ nucleo_test.ts seguridad_test.ts
-      - name: Proveedores de emisión (interfaz + mock, solo simulación)
+      - name: Proveedores de emisión (interfaz + mock + orquestador de referencia, solo simulación)
         working-directory: fel/proveedores
         run: |
-          deno check src/mod.ts pruebas/*.ts
+          deno check src/mod.ts src/repo_pg.ts pruebas/*.ts pruebas_db/*.ts
           deno test pruebas/
+      - name: Demostración de facturación simulada (tipos)
+        working-directory: fel/demo-facturacion
+        run: deno check servidor.ts src/*.ts
 
   interfaz:
     name: Interfaz (modo demostración)
@@ -37,6 +40,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - name: Instalar navegador de pruebas
         run: |
           npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1 angular@1.5.8 jquery@3.7.1
@@ -48,6 +54,10 @@ jobs:
           node fel/app/tests/ui.cjs
           node fel/app/tests/auth.cjs
           node fel/app/tests/cuentas.cjs
+      - name: Demostración de facturación individual SIMULADA (navegador + orquestador real + PostgreSQL en memoria; sin credenciales ni red externa)
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: node fel/demo-facturacion/tests/e2e.cjs
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)
@@ -81,6 +91,18 @@ jobs:
           PGPASSWORD: postgres
           PSQL_CMD: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres
         run: bash fel/supabase/tests/concurrencia.sh
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Orquestador del flujo simulado contra PostgreSQL real (17 pruebas, incluida la prueba de propiedades con caídas)
+        working-directory: fel/proveedores
+        env:
+          FEL_PGHOST: 127.0.0.1
+          FEL_PGPORT: "54322"
+          FEL_PGUSER: postgres
+          FEL_PGPASSWORD: postgres
+          FEL_PGDATABASE: postgres
+        run: deno test -A pruebas_db/
       - name: Detener
         if: always()
         run: supabase --workdir fel stop --no-backup
