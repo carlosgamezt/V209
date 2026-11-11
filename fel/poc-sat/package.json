@@ -10,7 +10,8 @@
     "test": "node --test tests/guardia.test.mjs && node tests/autoprueba.mjs && node tests/simulacion-angular.mjs",
     "huellas": "node bin/huellas.mjs",
     "observar": "node bin/observar.mjs",
-    "ejecutar": "node bin/ejecutar.mjs"
+    "ejecutar": "node bin/ejecutar.mjs",
+    "verificar:chrome": "node bin/verificar.mjs --navegador=chrome"
   },
   "dependencies": {
     "playwright": "1.49.1"

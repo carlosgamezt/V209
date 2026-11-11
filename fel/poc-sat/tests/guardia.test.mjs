@@ -14,6 +14,7 @@ import { crearLibro, claveIdempotencia, ESTADOS_BLOQUEANTES } from "../src/libro
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { opcionesNavegador } from "./navegador.mjs";
 
 const mapeoOk = () => ({ version: 1, dominios_permitidos: ["portal.ejemplo.gt"], permitir_post: [], pasos: [
   { id: "a", tipo: "manual", instruccion: "abre el formulario" },
@@ -289,4 +290,13 @@ test("red: un XHR/fetch GET a un dominio NO listado (p. ej. felav02) se bloquea;
   assert.ok(con(regla).ok); for (const mal of [{ ...regla, revisado: false }, { ...regla, motivo: "" }, { ...regla, host: "*.c.sat.gob.gt" }, { ...regla, ruta_prefijo: "/" }, { ...regla, ruta_prefijo: "/api/emitir/" }, { host: "x.gt" }]) assert.equal(con(mal).ok, false, JSON.stringify(mal));
   assert.deepEqual(mp.permitir_get, [], "el mapeo NO autoriza ninguna ruta adicional"); assert.ok(!dominios.includes("felav02.c.sat.gob.gt"), "felav02 no está en dominios_permitidos");
   assert.match(mp.red_observada_sat2d.interpretacion, /NO se puede atribuir/); assert.equal(mp.red_observada_sat2d.peticion_confirmada.ruta, "/fel-rest/rest/publico/consultaFallecido/CF");
+});
+
+test("navegador de las pruebas: Chromium por defecto; Chrome solo con FEL_NAVEGADOR=chrome; ruta explícita tiene prioridad; valores raros se rechazan", () => {
+  assert.deepEqual(opcionesNavegador({}), {}); assert.deepEqual(opcionesNavegador({ FEL_NAVEGADOR: "" }), {}); assert.deepEqual(opcionesNavegador({ FEL_NAVEGADOR: "chromium" }), {});
+  assert.deepEqual(opcionesNavegador({ FEL_NAVEGADOR: "chrome" }), { channel: "chrome" }); assert.deepEqual(opcionesNavegador({ FEL_NAVEGADOR: " Chrome " }), { channel: "chrome" });
+  assert.deepEqual(opcionesNavegador({ FEL_NAVEGADOR: "chrome", FEL_NAVEGADOR_RUTA: "C:\\x\\chrome.exe" }), { executablePath: "C:\\x\\chrome.exe" }, "la ruta manda sobre el canal (no pueden ir juntos)");
+  for (const mal of ["firefox", "edge", "chrome;x", "webkit"]) assert.throws(() => opcionesNavegador({ FEL_NAVEGADOR: mal }), /no válido/, mal);
+  const fuentes = ["src", "bin"].flatMap((d) => fs.readdirSync(new URL(`../${d}/`, import.meta.url)).filter((f) => f.endsWith(".mjs") && f !== "verificar.mjs").map((f) => fs.readFileSync(new URL(`../${d}/${f}`, import.meta.url), "utf8")));
+  assert.ok(fuentes.every((c) => !/FEL_NAVEGADOR/.test(c)), "el motor real (src/ y bin/ salvo verificar) no depende de FEL_NAVEGADOR");
 });

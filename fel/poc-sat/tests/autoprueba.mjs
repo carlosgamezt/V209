@@ -10,7 +10,7 @@ import { spawnSync, execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 const ejecutarAsync = (cmd, args, o) => promisify(execFile)(cmd, args, o).then((r) => ({ status: 0, stdout: r.stdout, stderr: r.stderr }), (e) => ({ status: e.code ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(e) }));
-import { chromium } from "../src/playwright.mjs";
+import { lanzar, lanzarPersistente, descripcionNavegador } from "./navegador.mjs";
 import { crearRegistro } from "../src/registro.mjs";
 import { ejecutarPlan } from "../src/ejecutor.mjs";
 import { bloquearEscrituras, conectar, tomarBloqueo } from "../src/conexion.mjs";
@@ -35,7 +35,8 @@ const servidor = http.createServer((req, res) => {
 });
 await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
 const URL_BASE = `http://127.0.0.1:${servidor.address().port}/`;
-const browser = await chromium.launch({ headless: true });
+console.log(`Navegador de pruebas: ${descripcionNavegador()} · páginas locales y simuladas; no se contacta con SAT\n`);
+const browser = await lanzar({ headless: true });
 
 let fallos = 0, n = 0;
 const caso = async (nombre, fn) => { n++; try { await fn(); console.log(`OK     ${nombre}`); } catch (e) { fallos++; console.log(`FALLO  ${nombre}\n       ${String(e.message ?? e).split("\n").slice(0, 4).join("\n       ")}`); } };
@@ -136,7 +137,7 @@ await caso("ERRORES: un localizador inexistente o ambiguo se registra como error
   const b = await mal({ estrategia: "rol", rol: "textbox", valor: "e", exacto: false }); assert.match(b.resumen.errores[0].detalle, /ambiguo/); await b.context.close();
 });
 await caso("MODO CDP: conecta a un Chrome local con puerto de depuración (el que abriría la persona) y rechaza endpoints remotos", async () => {
-  const puerto = 9300 + Math.floor(Math.random() * 500), b2 = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${puerto}`] });
+  const puerto = 9300 + Math.floor(Math.random() * 500), b2 = await lanzar({ headless: true, args: [`--remote-debugging-port=${puerto}`] });
   try {
     await b2.newContext().then((c) => c.newPage()).then((p) => p.goto(URL_BASE));
     const c = await conectar({ alias: "empresa-prueba", modo: "cdp", cdp: `http://127.0.0.1:${puerto}` });
@@ -146,7 +147,7 @@ await caso("MODO CDP: conecta a un Chrome local con puerto de depuración (el qu
   await assert.rejects(() => conectar({ alias: "x", modo: "perfil", perfil_dir: path.join(AQUI, "perfil-dentro-del-repo") }), /repositorio/);
 });
 await caso("MULTIEMPRESA: dos perfiles son sesiones separadas (la cookie de A no existe en B) y el bloqueo evita ejecuciones simultáneas", async () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-poc-")), A = await chromium.launchPersistentContext(path.join(tmp, "a"), { headless: true }), B = await chromium.launchPersistentContext(path.join(tmp, "b"), { headless: true });
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-poc-")), A = await lanzarPersistente(path.join(tmp, "a"), { headless: true }), B = await lanzarPersistente(path.join(tmp, "b"), { headless: true });
   try {
     await (await A.newPage()).goto(URL_BASE); await (await B.newPage()).goto(URL_BASE);
     await A.addCookies([{ name: "solo_a", value: "1", url: URL_BASE }]);
@@ -273,7 +274,7 @@ await caso("CREDENCIALES: un paso que intente llenar un campo de contraseña se 
 });
 
 await caso("MEDIR-SESIÓN (comando real): detecta el momento en que el portal pide iniciar sesión, sin interactuar", async () => {
-  const puerto = 9950 + Math.floor(Math.random() * 40), b4 = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${puerto}`] }), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-med-"));
+  const puerto = 9950 + Math.floor(Math.random() * 40), b4 = await lanzar({ headless: true, args: [`--remote-debugging-port=${puerto}`] }), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-med-"));
   const empresa = path.join(tmp, "e.json"), mapa = path.join(tmp, "m.json"); fs.writeFileSync(empresa, JSON.stringify({ alias: "empresa-med", modo: "cdp", cdp: `http://127.0.0.1:${puerto}` })); fs.writeFileSync(mapa, JSON.stringify(planSes()));
   try {
     const pg = await (await b4.newContext()).newPage(); await pg.goto(URL_BASE); const antes = await ev(pg);
@@ -400,7 +401,7 @@ await caso("AUTORIZACIÓN POR ETAPA: ejecutar con el mapeo REAL se niega sin aut
 });
 
 await caso("COMANDOS REALES: bin/observar.mjs y bin/ejecutar.mjs contra un Chrome con puerto de depuración (sesión «ya iniciada»)", async () => {
-  const puerto = 9800 + Math.floor(Math.random() * 150), b3 = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${puerto}`] }), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cli-"));
+  const puerto = 9800 + Math.floor(Math.random() * 150), b3 = await lanzar({ headless: true, args: [`--remote-debugging-port=${puerto}`] }), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cli-"));
   const empresa = path.join(tmp, "empresa.json"), mapa = path.join(tmp, "mapeo.json"), env = { ...process.env, FEL_POC_DEBUG: "" };
   fs.writeFileSync(empresa, JSON.stringify({ alias: "empresa-cli", modo: "cdp", cdp: `http://127.0.0.1:${puerto}`, identidad: { confirmacion_manual: true } })); fs.writeFileSync(mapa, JSON.stringify(mapeo()));
   try {

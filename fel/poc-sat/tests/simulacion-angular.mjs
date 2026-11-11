@@ -6,7 +6,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { chromium } from "../src/playwright.mjs";
+import { lanzar, lanzarPersistente, descripcionNavegador } from "./navegador.mjs";
 import { crearRegistro } from "../src/registro.mjs";
 import { ejecutarPlan } from "../src/ejecutor.mjs";
 import { bloquearEscrituras } from "../src/conexion.mjs";
@@ -35,10 +35,11 @@ const servidor = http.createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(html);
 });
 await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
+console.log(`Navegador de pruebas: ${descripcionNavegador()} · páginas locales y simuladas; no se contacta con SAT\n`);
 PUERTO = servidor.address().port;
-const URL_BASE = `http://127.0.0.1:${PUERTO}/`, browser = await chromium.launch({ headless: true });
+const URL_BASE = `http://127.0.0.1:${PUERTO}/`, browser = await lanzar({ headless: true });
 // Navegador SOLO para las pruebas con los nombres reales de host: los resuelve a 127.0.0.1 y NO resuelve ningún otro nombre (jamás se contacta a SAT).
-const browserHosts = await chromium.launch({ headless: true, args: ["--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP evil.example.test 127.0.0.1, MAP consulta.example.test 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
+const browserHosts = await lanzar({ headless: true, args: ["--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP evil.example.test 127.0.0.1, MAP consulta.example.test 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
 
 let fallos = 0, n = 0;
 const caso = async (nombre, fn) => { n++; try { await fn(); console.log(`OK     ${nombre}`); } catch (e) { fallos++; console.log(`FALLO  ${nombre}\n       ${String(e.message ?? e).split("\n").slice(0, 5).join("\n       ")}`); } };
