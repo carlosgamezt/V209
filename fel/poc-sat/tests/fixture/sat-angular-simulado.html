@@ -64,6 +64,7 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   const formato = (/[?&]formato=(\w+)/.exec(q) || [])[1] || "";   // variante: formato numérico del total (coma decimal / sin decimales)
   const conRed = /[?&]red=1/.test(location.search);   // variante con consulta GET entre orígenes (con preflight) hacia un host «de consulta» simulado
   $scope.consultarNit = () => { const n = $scope.datosGenerales.nitReceptor; if (n && conRed) { $http.get("http://consulta.example.test:" + location.port + "/consulta/receptor/" + encodeURIComponent(n), { headers: { "X-Prueba": "1" } }).then((r) => { $scope.resultadoNIT.nombre = r.data.nombre; }); return; } if (n) $timeout(() => { $scope.resultadoNIT.nombre = n === "CF" ? "CONSUMIDOR FINAL DE PRUEBA" : "RECEPTOR DE PRUEBA SIMULADO"; }, 120); };   // consulta SIMULADA local (sin red)
+  const retardoTardio = Number((/[?&]tardio=(\d+)/.exec(location.search) || [])[1] || 0);   // variante: autoguardado TARDÍO (temporizador) que se dispara ms después del primer cálculo
   const retardo = Number((/[?&]retardo=(\d+)/.exec(location.search) || [])[1] || 0);   // retraso EXPLÍCITO (ms) con el que el total calculado llega al modelo: permite pruebas deterministas del mecanismo de espera
   const asignarTotal = (d, v) => { if (retardo > 0) $timeout(() => { d.Total = v; }, retardo); else d.Total = v; };
   const num = (v) => (v === "" || v == null ? 0 : Number(v));
@@ -74,7 +75,7 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
     const sub = num(d.Cantidad) * num(d.PrecioUnitario), desc = num(d.Descuento) + num(d.OtrosDescuento);
     if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; asignarTotal(d, ""); return; }
     { const t = (sub - desc); asignarTotal(d, formato === "coma" ? t.toFixed(2).replace(".", ",") : formato === "entero" ? String(Math.round(t)) : t.toFixed(2)); }
-    autoguardado(); if (flag("expirar")) window.__expirar();   // variante: la sesión caduca al calcular el total (pérdida de sesión en pleno llenado)
+    autoguardado(); if (retardoTardio && !$scope.tardioArmado) { $scope.tardioArmado = true; $timeout(() => $http.post("/api/autoguardado-tardio", {}), retardoTardio); } if (flag("expirar")) window.__expirar();   // variante: la sesión caduca al calcular el total (pérdida de sesión en pleno llenado)
   };
   $scope.agregarItem = () => { $scope.detalleFactura.push(nuevo()); };
   $scope.eliminarItem = (i) => { $scope.detalleFactura.splice(i, 1); };

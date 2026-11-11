@@ -39,6 +39,7 @@ if (reiniciar) progreso.archivarPrevio();
 if (soloComprobar && (arg("reanudar") === true || arg("reiniciar") === true)) salir("--solo-comprobar no se combina con --reanudar ni --reiniciar.");
 const registro = crearRegistro({ dir: dirRegistros, empresa: empresa.alias });
 console.log(estricto ? `\nETAPA 2 · LLENADO CONTROLADO · empresa «${empresa.alias}» · UNA línea · datos ficticios · modo ESTRICTO: se detiene ante cualquier solicitud bloqueada, diálogo, sesión perdida, campo ambiguo o error. NO se pulsa nada; no se emite.\nNo se teclean credenciales: la sesión la inició una persona.\n` : soloComprobar ? `\nCOMPROBACIÓN (solo lectura) · empresa «${empresa.alias}» · NO se escribe, no se pulsa, no se elige, no se sale de ningún campo · se detiene ante cualquier señal inesperada.\nNo se teclean credenciales: la sesión la inició una persona.\n` : `\nEJECUCIÓN DE PRUEBA · empresa «${empresa.alias}» · datos ficticios · SOLO LECTURA DE RED · parada obligatoria antes de emitir.\nNo se teclean credenciales: la sesión la inició una persona.\n`);
+const detenerTardio = () => { const b = registro.eventos().find((e) => e.evento === "solicitud_bloqueada"); return b ? `solicitud bloqueada (${b.metodo} ${b.host}${b.ruta}): ${b.razon}` : null; };
 const c = await conectar(empresa);
 try {
   await bloquearEscrituras(c.context, { permitir_post: plan.permitir_post ?? [], permitir_get: plan.permitir_get ?? [], dominios: plan.dominios_permitidos }, registro);
@@ -51,4 +52,12 @@ try {
   console.log(`\n== RESUMEN ==\nPasos: ${s.pasos} · automáticos: ${s.automaticos.n} (${formatoMs(s.automaticos.ms)}) · manuales: ${s.manuales.n} (${formatoMs(s.manuales.ms)}) · total: ${formatoMs(s.duracion_total_ms)}\nFases: autenticación ${formatoMs(s.fases.autenticacion?.ms ?? 0)} · llenado ${formatoMs(s.fases.llenado?.ms ?? 0)} · espera ${formatoMs(s.fases.espera?.ms ?? 0)} · interrupciones de sesión: ${s.interrupciones_de_sesion} · estado final: ${s.estado_final}\nErrores: ${s.errores.length} · bloqueos de guardia: ${s.bloqueos_de_guardia.length} · solicitudes de red bloqueadas: ${s.solicitudes_bloqueadas.length}\nDetenido antes de emitir: ${s.detenido_antes_de_emitir ? "SÍ" : "NO"} · emitió: NO\nRegistro: ${registro.archivo()}`);
   if (s.solicitudes_bloqueadas.length) console.log("Solicitudes bloqueadas (observación útil: ¿el portal las necesitaba para llenar?):\n  " + [...new Set(s.solicitudes_bloqueadas)].join("\n  "));
   process.exitCode = r.ok ? 0 : 1;
+  // Etapa 2: la guardia de red vive SOLO mientras este proceso está conectado. Para que un temporizador o autoguardado tardío del portal no escape,
+  // se mantiene la guardia unos segundos tras el último paso y después hasta que la persona confirme que revisó/cerró la pestaña.
+  if (estricto) {
+    const final = Number(process.env.FEL_REPOSO_FINAL_MS ?? 15000); const t0 = Date.now(); let alerta = null;
+    if (r.ok) while (Date.now() - t0 < final && !alerta) { await new Promise((ok) => setTimeout(ok, 250)); alerta = detenerTardio(); }
+    if (alerta) { registro.nota(`alerta tardía: ${alerta}`); console.error(`\nALERTA TARDÍA tras el último paso: ${alerta}. NO sigas usando esta pestaña: recárgala o ciérrala y revisa que no haya nada guardado.`); process.exitCode = 1; }
+    else if (r.ok) { console.log(`\nGuardia de red activa ${Math.round(final / 1000)} s tras el último paso: sin solicitudes tardías.`); await esperarUsuario("La guardia de red SIGUE ACTIVA mientras este comando esté abierto. Revisa el formulario SIN pulsar nada y cierra o recarga la pestaña; después pulsa Enter para soltar la conexión."); const tarde = detenerTardio(); if (tarde) { registro.nota(`alerta tardía: ${tarde}`); console.error(`\nALERTA TARDÍA: ${tarde}`); process.exitCode = 1; } }
+  }
 } finally { await c.cerrar(); liberar(); }

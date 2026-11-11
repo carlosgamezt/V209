@@ -493,6 +493,18 @@ await caso("ETAPA 2 · E2E TRAMO 2B EN SIMULACIÓN: sin regla permitir_get la co
   try { assert.notEqual(b.r.status, 0, b.salida); assert.match(b.salida, /solicitud bloqueada|detenido_por_alerta/i, b.salida); assert.ok(/consulta\.example\.test/.test(b.salida), "la consulta no listada aparece como bloqueada"); } finally { await b.limpiar(); }
 });
 
+
+await caso("AUDITORÍA · AUTOGUARDADO TARDÍO (temporizador que dispara DESPUÉS del último paso): la guardia sigue activa, lo bloquea y el comando lo señala (código 1)", async () => {
+  posts.length = 0; const c = await cliE2({ query: "?radio=nit&tardio=7000" });
+  try {
+    if (process.env.DEBUG_SIM) console.log("TARDIO salida", c.r.status, c.resumen?.estado_final, JSON.stringify(c.resumen?.solicitudes_bloqueadas));
+    await new Promise((r) => setTimeout(r, 9000));
+    if (process.env.DEBUG_SIM) console.log("TARDIO posts tras 9 s:", JSON.stringify(posts));
+    assert.notEqual(c.r.status, 0, "el comando debe señalar la alerta tardía"); assert.match(c.salida, /ALERTA TARDÍA/); assert.match(c.salida, /autoguardado-tardio/);
+    assert.deepEqual(posts, [], "ningún POST tardío debe llegar al servidor");
+  } finally { await c.limpiar(); }
+});
+
 await browser.close(); await browserHosts.close(); servidor.close();
 console.log(`\n${n - fallos}/${n} casos OK${posts.length ? ` — POST residuales: ${posts.join(", ")}` : ""}`);
 process.exit(fallos ? 1 : 0);

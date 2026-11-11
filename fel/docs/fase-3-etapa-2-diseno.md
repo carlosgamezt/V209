@@ -49,7 +49,7 @@ El tramo 2B solo tras aprobar 2A y revisar específicamente la petición a felav
 
 **D.4 No hacer:** Vista Previa, Guardar, Certificar, Emitir, Enviar, Eliminar, Editar; cambiar moneda o fecha; resolver CAPTCHA o saltar controles; usar datos reales.
 
-**D.5 Limpieza:** cerrar Chrome, eliminar el perfil temporal, `Remove-Item Env:FEL_*`, comprobar manualmente que 0 facturas quedaron emitidas y que no queda borrador, conservar solo el registro saneado.
+**D.5 Limpieza:** tras el último paso el comando mantiene la guardia de red 15 s y luego pide Enter: **no pulses Enter hasta haber recargado o cerrado la pestaña del formulario** (si algo tardío se bloquea, sale con «ALERTA TARDÍA» y código 1); después, cerrar Chrome, eliminar el perfil temporal, `Remove-Item Env:FEL_*`, comprobar manualmente que 0 facturas quedaron emitidas y que no queda borrador, conservar solo el registro saneado.
 
 **D.6 Plantilla de autorización (la rellena la persona responsable)**
 > Autorizo la Etapa 2 (tramo __) del proyecto FEL: rama fel-fase-1-0 commit ____; empresa de prueba ____ confirmada manualmente; datos ficticios; una sola línea; condiciones de uso de SAT revisadas el ____ por ____; sin Vista Previa, guardar ni emisión; criterios de detención de D.3 aceptados. Firma/fecha: ____
