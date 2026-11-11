@@ -41,6 +41,8 @@ const URL_BASE = `http://127.0.0.1:${PUERTO}/`, browser = await lanzar({ headles
 // Navegador SOLO para las pruebas con los nombres reales de host: los resuelve a 127.0.0.1 y NO resuelve ningún otro nombre (jamás se contacta a SAT).
 const browserHosts = await lanzar({ headless: true, args: ["--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP evil.example.test 127.0.0.1, MAP consulta.example.test 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
 
+// Solo para comprobar que las pruebas no dependen de la velocidad del equipo: FEL_PRUEBAS_LENTAS=ms añade una pausa antes de cada paso (no cambia ninguna aserción).
+const PAUSA = Number(process.env.FEL_PRUEBAS_LENTAS ?? 0), HOOKS_LENTITUD = PAUSA > 0 ? { antesDePaso: () => new Promise((r) => setTimeout(r, PAUSA)) } : {};
 let fallos = 0, n = 0;
 const caso = async (nombre, fn) => { n++; try { await fn(); console.log(`OK     ${nombre}`); } catch (e) { fallos++; console.log(`FALLO  ${nombre}\n       ${String(e.message ?? e).split("\n").slice(0, 5).join("\n       ")}`); } };
 const L = (estrategia, valor, extra = {}) => ({ estrategia, valor, ...extra });
@@ -66,11 +68,11 @@ function planSimulado({ conBlur = true, extraFinal = [], conMarco = false } = {}
   return { ...m, pasos };
 }
 const modelo = (page) => page.evaluate(() => { const s = angular.element(document.body).scope(); return { tipo: s.datosGenerales.tipoDte?.nombre, moneda: s.datosGenerales.moneda, id: s.datosGenerales.tipoIdentificacion, nit: s.datosGenerales.nitReceptor, nombre: s.resultadoNIT.nombre, dir: s.datosGenerales.direccionReceptor, lineas: JSON.parse(angular.toJson(s.detalleFactura)), vistaPrevia: s.vistaPrevia }; });
-async function correr(plan, { datos = datosBase(), guardia = true, timeout = 2500, page: pg = null } = {}) {
+async function correr(plan, { datos = datosBase(), guardia = true, timeout = 2500, page: pg = null, url = URL_BASE } = {}) {
   const context = pg ? pg.context() : await browser.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} });
   if (guardia && !pg) await bloquearEscrituras(context, {}, registro);
-  const page = pg ?? await context.newPage(); if (!pg) await page.goto(URL_BASE);
-  const r = await ejecutarPlan({ page, plan, datos, registro, empresa: { alias: "empresa-prueba" }, local: true, timeout, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+  const page = pg ?? await context.newPage(); if (!pg) await page.goto(url);
+  const r = await ejecutarPlan({ page, plan, datos, registro, empresa: { alias: "empresa-prueba" }, local: true, timeout, hooks: HOOKS_LENTITUD, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
   return { ...r, page, context, registro };
 }
 const hits = () => posts.length;
@@ -95,10 +97,17 @@ await caso("1-5 FLUJO COMPLETO: tipo de documento y moneda, receptor, línea 0, 
   await r.context.close();
 });
 
-await caso("LECTURA ASÍNCRONA: con debounce de AngularJS el total se actualiza tarde y la lectura reintenta hasta que coincide", async () => {
-  const r = await correr(planSimulado({ conBlur: false })); assert.equal(r.ok, true, JSON.stringify(r.resumen.errores));
-  const rapida = planSimulado({ conBlur: false }); rapida.pasos.find((p) => p.id === "s100-leer-total").espera_ms = 0;   // sin reintento: la primera lectura llega antes que el modelo
-  const r2 = await correr(rapida); assert.equal(r2.ok, false, "sin tiempo de espera la lectura del total calculado de forma asíncrona falla (por eso leer reintenta)"); assert.match(r2.resumen.errores[0]?.detalle ?? "", /no coincide/);
+await caso("LECTURA ASÍNCRONA (determinista): el total llega al modelo con un retraso EXPLÍCITO; con espera la lectura reintenta y pasa; sin espera falla, sea cual sea la velocidad del equipo", async () => {
+  // El retraso lo fija la página (?retardo=ms), no la velocidad de la máquina ni del navegador.
+  const conEspera = planSimulado({ conBlur: false }); conEspera.pasos.find((p) => p.id === "s100-leer-total").espera_ms = 12000;
+  const r = await correr(conEspera, { url: URL_BASE + "?retardo=4000" }); assert.equal(r.ok, true, JSON.stringify(r.resumen.errores));
+  const lectura = r.registro.eventos().find((e) => e.evento === "paso" && e.id === "s100-leer-total");
+  assert.ok(lectura.resultado === "ok" && lectura.ms >= 300, `la lectura tuvo que ESPERAR al modelo asíncrono (tardó ${lectura.ms} ms)`);
+  assert.equal(await r.page.locator('input[name="Total0"]').inputValue(), "241.00");
+  const sinEspera = planSimulado({ conBlur: false }); sinEspera.pasos.find((p) => p.id === "s100-leer-total").espera_ms = 0;   // sin reintento: la primera lectura llega antes que el modelo
+  const r2 = await correr(sinEspera, { url: URL_BASE + "?retardo=6000" });
+  assert.equal(r2.ok, false, "con el modelo retrasado y sin tiempo de espera la lectura del total calculado de forma asíncrona falla (por eso leer reintenta)"); assert.match(r2.resumen.errores[0]?.detalle ?? "", /no coincide/);
+  assert.equal(r2.resumen.errores[0].id, "s100-leer-total");
   await r.context.close(); await r2.context.close();
 });
 

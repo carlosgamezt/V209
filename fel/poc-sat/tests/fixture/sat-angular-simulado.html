@@ -51,14 +51,16 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   $scope.noop = () => {};
   const conRed = /[?&]red=1/.test(location.search);   // variante con consulta GET entre orígenes (con preflight) hacia un host «de consulta» simulado
   $scope.consultarNit = () => { const n = $scope.datosGenerales.nitReceptor; if (n && conRed) { $http.get("http://consulta.example.test:" + location.port + "/consulta/receptor/" + encodeURIComponent(n), { headers: { "X-Prueba": "1" } }).then((r) => { $scope.resultadoNIT.nombre = r.data.nombre; }); return; } if (n) $timeout(() => { $scope.resultadoNIT.nombre = n === "CF" ? "CONSUMIDOR FINAL DE PRUEBA" : "RECEPTOR DE PRUEBA SIMULADO"; }, 120); };   // consulta SIMULADA local (sin red)
+  const retardo = Number((/[?&]retardo=(\d+)/.exec(location.search) || [])[1] || 0);   // retraso EXPLÍCITO (ms) con el que el total calculado llega al modelo: permite pruebas deterministas del mecanismo de espera
+  const asignarTotal = (d, v) => { if (retardo > 0) $timeout(() => { d.Total = v; }, retardo); else d.Total = v; };
   const num = (v) => (v === "" || v == null ? 0 : Number(v));
   $scope.calc = (d) => {
     d.errorCantidad = d.errorDescuento = "";
     if (d.Cantidad !== "" && !(Number(d.Cantidad) > 0)) d.errorCantidad = "Cantidad no válida";
-    if (isNaN(Number(d.Cantidad)) || isNaN(Number(d.PrecioUnitario)) || d.Cantidad === "" || d.PrecioUnitario === "") { d.Total = ""; return; }
+    if (isNaN(Number(d.Cantidad)) || isNaN(Number(d.PrecioUnitario)) || d.Cantidad === "" || d.PrecioUnitario === "") { asignarTotal(d, ""); return; }
     const sub = num(d.Cantidad) * num(d.PrecioUnitario), desc = num(d.Descuento) + num(d.OtrosDescuento);
-    if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; d.Total = ""; return; }
-    d.Total = (sub - desc).toFixed(2);
+    if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; asignarTotal(d, ""); return; }
+    asignarTotal(d, (sub - desc).toFixed(2));
   };
   $scope.agregarItem = () => { $scope.detalleFactura.push(nuevo()); };
   $scope.eliminarItem = (i) => { $scope.detalleFactura.splice(i, 1); };
