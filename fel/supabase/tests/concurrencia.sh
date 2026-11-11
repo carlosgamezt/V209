@@ -70,4 +70,71 @@ permitidas=$(cat /tmp/conc_lim_*.out | grep -c '^t$' || true)
 [ "$permitidas" = 5 ] || fallar "el limitador permitió $permitidas de 12 (debían ser 5)"
 [ "$(q "select contador from public.limites_peticiones where clave='$K'")" = 5 ] || fallar "el contador superó el máximo"
 echo "OK concurrencia: limitador atómico"
+
+# ===================== Fase 2: flujo simulado (proveedor mock) bajo concurrencia real =====================
+A2=00000000-0000-0000-0000-0000000000a2
+q "insert into auth.users (id,email) values ('$A2','a2-conc@fel.test') on conflict do nothing;
+   insert into public.perfiles (user_id, activo) values ('$A2', true) on conflict (user_id) do update set activo=true;
+   update public.perfiles set activo=true where user_id='$U';
+   insert into public.miembros (empresa_id,user_id,rol) values ('$E','$A2','administrador') on conflict do nothing;
+   update public.plataforma_parametros set valor=0 where clave in ('espera_conciliacion_manual_min','ventana_tardia_min');" >/dev/null
+EST=$(q "select (public.fel_op_establecimiento_guardar('$U','$E',null,'C1','Conc','x','activo')).id")
+CAN=$(q "select (public.fel_op_canal_configurar('$U','$E',null,'mock','simulado',true)).id")
+doc_sim() { # documento revisado con establecimiento (simulación)
+  local id; id=$(q "select (public.fel_op_documento_guardar('$U','$E',null,(select id from public.clientes where empresa_id='$E' limit 1),null,null,'[{\"orden\":1,\"descripcion\":\"x\",\"cantidad\":1,\"precio_unitario\":1}]'::jsonb,1,0,1,'{}'::jsonb,null)).id")
+  q "select public.fel_op_documento_establecimiento('$U','$E','$id','$EST')" >/dev/null
+  q "select public.fel_op_documento_preparacion('$U','$E','$id','revisado',null,(select version from public.documentos where id='$id'))" >/dev/null
+  echo "$id"
+}
+# 6. solicitudes simuladas simultáneas con claves distintas: una sola operación
+D6=$(doc_sim)
+correr "select public.fel_op_certificacion_solicitar('$U','$E','$D6','clave-sim-0000006A',public.fel_sys_hash_documento('$E','$D6'),'$CAN')" 6a &
+correr "select public.fel_op_certificacion_solicitar('$U','$E','$D6','clave-sim-0000006B',public.fel_sys_hash_documento('$E','$D6'),'$CAN')" 6b &
+wait
+[ "$(q "select count(*) from public.operaciones_fiscales where documento_id='$D6'")" = 1 ] || fallar "flujo simulado: varias operaciones"
+[ "$(cat /tmp/conc_6a.res /tmp/conc_6b.res | grep -c OK)" = 1 ] || fallar "flujo simulado: debía triunfar una sola solicitud"
+grep -q "FEL_OPERACION_ABIERTA" /tmp/conc_6a.out /tmp/conc_6b.out || fallar "la perdedora debía recibir FEL_OPERACION_ABIERTA"
+echo "OK concurrencia: solicitudes simuladas simultáneas → una sola operación"
+# 7. dos procesos intentan MARCAR EL ENVÍO a la vez: solo uno sale (nunca dos envíos)
+OP6=$(q "select id from public.operaciones_fiscales where documento_id='$D6'")
+correr "select public.fel_sys_operacion_marcar_envio('$E','$OP6')" 7a &
+correr "select public.fel_sys_operacion_marcar_envio('$E','$OP6')" 7b &
+wait
+[ "$(cat /tmp/conc_7a.res /tmp/conc_7b.res | grep -c OK)" = 1 ] || fallar "marcar envío: debía triunfar exactamente un proceso"
+grep -q "FEL_YA_ENVIADA" /tmp/conc_7a.out /tmp/conc_7b.out || fallar "el segundo proceso debía recibir FEL_YA_ENVIADA"
+echo "OK concurrencia: un solo envío por operación"
+# 8. resultado desconocido, propuesta manual doble y aprobación doble: una sola de cada
+q "select public.fel_sys_operacion_desconocida('$E','$OP6','corte')" >/dev/null
+q "select public.fel_sys_evento_registrar('$E','$OP6','conciliacion','indeterminado','prueba',null,null,null,null)" >/dev/null
+EV="jsonb_build_object('fuente','portal_sat_consulta','referencia','consulta-conc-1','fecha_consulta',clock_timestamp(),'conclusion','no_figura')"
+correr "select public.fel_op_conciliacion_proponer('$U','$E','$OP6','manual_fallida',$EV,null)" 8a &
+correr "select public.fel_op_conciliacion_proponer('$U','$E','$OP6','manual_fallida',$EV,null)" 8b &
+wait
+[ "$(cat /tmp/conc_8a.res /tmp/conc_8b.res | grep -c OK)" = 1 ] || fallar "propuestas: debía existir una sola propuesta abierta"
+[ "$(q "select count(*) from public.conciliaciones where operacion_id='$OP6'")" = 1 ] || fallar "hay varias conciliaciones"
+CON=$(q "select id from public.conciliaciones where operacion_id='$OP6'")
+correr "select public.fel_op_conciliacion_decidir('$A2','$E','$CON',true,'aprobada por a2 en paralelo')" 9a &
+correr "select public.fel_op_conciliacion_decidir('$A2','$E','$CON',true,'aprobada por a2 otra vez')" 9b &
+wait
+[ "$(cat /tmp/conc_9a.res /tmp/conc_9b.res | grep -c OK)" = 1 ] || fallar "aprobación: debía triunfar una sola"
+[ "$(q "select estado_fiscal from public.documentos where id='$D6'")" = rechazado ] || fallar "el documento debía quedar rechazado"
+echo "OK concurrencia: propuesta y aprobación únicas"
+# 9. carrera entre una RESPUESTA DEL PROVEEDOR (certificado) y una conciliación manual «fallida»: el resultado siempre es coherente
+D10=$(doc_sim)
+OP10=$(q "select (public.fel_op_certificacion_solicitar('$U','$E','$D10','clave-sim-0000010A',public.fel_sys_hash_documento('$E','$D10'),'$CAN')).id")
+q "select public.fel_sys_operacion_marcar_envio('$E','$OP10')" >/dev/null
+q "select public.fel_sys_operacion_desconocida('$E','$OP10','timeout')" >/dev/null
+q "select public.fel_sys_evento_registrar('$E','$OP10','conciliacion','indeterminado','prueba',null,null,null,null)" >/dev/null
+CON10=$(q "select (public.fel_op_conciliacion_proponer('$U','$E','$OP10','manual_fallida',$EV,null)).id")
+EVC=$(q "select public.fel_sys_evento_registrar('$E','$OP10','conciliacion','certificado',null,'SIMA','00000010','SIM-CONC-0010',null)")
+correr "select public.fel_sys_operacion_resolver_evento('$E','$OP10',$EVC)" 10a &
+correr "select public.fel_op_conciliacion_decidir('$A2','$E','$CON10',true,'carrera con el proveedor')" 10b &
+wait
+estado=$(q "select estado_fiscal from public.documentos where id='$D10'"); alertas=$(q "select count(*) from public.alertas_fiscales where operacion_id='$OP10'")
+if [ "$estado" = certificado ]; then [ "$alertas" = 0 ] || fallar "certificado y con alerta"; elif [ "$estado" = rechazado ]; then
+  # el proveedor llegó tarde: la certificación huérfana debe quedar registrada (se ejecuta de nuevo el evento: es idempotente)
+  q "select public.fel_sys_operacion_resolver_evento('$E','$OP10',$EVC)" >/dev/null; [ "$(q "select count(*) from public.alertas_fiscales where operacion_id='$OP10'")" = 1 ] || fallar "falta la alerta de certificación huérfana"
+else fallar "estado inesperado tras la carrera: $estado"; fi
+[ "$(q "select count(*) from public.operaciones_fiscales where documento_id='$D10' and estado in ('confirmada_exitosa','confirmada_fallida')")" = 1 ] || fallar "la operación debía cerrarse exactamente una vez"
+echo "OK concurrencia: respuesta del proveedor vs conciliación manual → estado coherente ($estado)"
 echo "CONCURRENCIA OK"

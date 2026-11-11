@@ -80,20 +80,35 @@ select pg_temp.espera_error($$select public.fel_op_certificacion_iniciar('000000
 select pg_temp.espera_error($$update public.documentos set estado_fiscal = 'certificado' where id = (select id from t_doc)$$, 'FEL_REGLA');
 
 -- ================= resultado desconocido: por verificar, SIN reintentos hasta conciliar
+select public.fel_sys_operacion_marcar_envio('10000000-0000-0000-0000-00000000000a', (select id from t_op1));   -- el envío se marca ANTES de salir (y por tanto antes de quedar desconocida)
 select public.fel_op_operacion_desconocida('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op1));
 do $$ begin assert (select estado_fiscal from public.documentos where id = (select id from t_doc)) = 'por_verificar', 'no quedó por verificar'; end $$;
 select pg_temp.espera_error($$select public.fel_op_certificacion_iniciar('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_doc), 'clave-0000000000003', repeat('a',64), 'prueba')$$, 'FEL_OPERACION_ABIERTA');
 select pg_temp.espera_error($$select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b3', '10000000-0000-0000-0000-00000000000a', (select id from t_op1), false, 'conciliacion_manual', '{"nota":"x"}', null, null, null)$$, 'FEL_NO_AUTORIZADO');
 select pg_temp.espera_error($$select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op1), false, 'conciliacion_manual', null, null, null, null)$$, 'FEL_REGLA');
--- se confirma (con evidencia) que NO se generó DTE: ahora sí se permite un nuevo intento con otra clave
-select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op1), false, 'conciliacion_manual', '{"nota":"consulta en el portal: sin DTE"}', null, null, null);
+-- ENDURECIDO en la Fase 2: marcar «fallida» (con o sin evidencia) YA NO libera una certificación; se exige conciliación verificable.
+select pg_temp.espera_error($$select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op1), false, 'conciliacion_manual', '{"nota":"consulta en el portal: sin DTE"}', null, null, null)$$, 'FEL_REGLA');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op1), 'manual_fallida', '{"fuente":"portal_sat_consulta","referencia":"consulta-001","fecha_consulta":"2000-01-01T00:00:00Z","conclusion":"no_figura"}', null)$$, 'FEL_REGLA');  -- el proveedor aún no respondió «indeterminado»
+-- vía verificable: se marca el envío, el proveedor (simulado) responde «indeterminado», se espera, se propone y APRUEBA OTRA persona
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000b5', 'admin2@fel.test'); insert into public.perfiles (user_id) values ('00000000-0000-0000-0000-0000000000b5') on conflict do nothing;
+insert into public.miembros (empresa_id, user_id, rol) values ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000b5', 'administrador');
+update public.plataforma_parametros set valor = 0 where clave in ('espera_conciliacion_manual_min', 'ventana_tardia_min');   -- solo en la prueba: sin esperas
+select public.fel_sys_evento_registrar('10000000-0000-0000-0000-00000000000a', (select id from t_op1), 'conciliacion', 'indeterminado', 'prueba', null, null, null, null);
+create temp table t_conc1 as select (public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op1), 'manual_fallida',
+  jsonb_build_object('fuente','portal_sat_consulta','referencia','consulta-001','fecha_consulta', clock_timestamp(), 'conclusion','no_figura'), null)).id as id;
+select pg_temp.espera_error($$select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_conc1), true, 'yo mismo')$$, 'FEL_REGLA');   -- no la aprueba quien la propuso
+select pg_temp.espera_error($$select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000b3', '10000000-0000-0000-0000-00000000000a', (select id from t_conc1), true, 'sin permiso')$$, 'FEL_NO_AUTORIZADO');
+select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000b5', '10000000-0000-0000-0000-00000000000a', (select id from t_conc1), true, 'confirmado por segunda persona');
+select public.fel_sys_evento_registrar('10000000-0000-0000-0000-00000000000a', (select id from t_op1), 'conciliacion', 'indeterminado', 'comprobación posterior', null, null, null, null);   -- auditoría posterior exigida antes de reintentar
 do $$ begin assert (select estado_fiscal from public.documentos where id = (select id from t_doc)) = 'rechazado', 'no quedó rechazado'; end $$;
 select pg_temp.espera_error($$update public.operaciones_fiscales set estado = 'iniciada'$$, 'FEL_REGLA');
 select pg_temp.espera_error($$delete from public.operaciones_fiscales$$, 'FEL_APPEND_ONLY|FEL_REGLA');
 create temp table t_op2 as
 select (public.fel_op_certificacion_iniciar('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_doc), 'clave-0000000000004', repeat('c',64), 'prueba')).id as id;
 select pg_temp.espera_error($$select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op2), true, 'proveedor', null, 'A', null, null)$$, 'FEL_REGLA');
-select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op2), true, 'proveedor', '{"respuesta":"simulada-test"}', 'SERIE-TEST', 'NUM-TEST', 'AUT-TEST');
+select pg_temp.espera_error($$select public.fel_op_operacion_resolver('00000000-0000-0000-0000-0000000000b1', '10000000-0000-0000-0000-00000000000a', (select id from t_op2), true, 'proveedor', '{"respuesta":"simulada-test"}', 'SERIE-TEST', 'NUM-TEST', 'AUT-TEST')$$, 'FEL_REGLA');   -- ENDURECIDO: ya no se certifica por palabra de usuario
+select public.fel_sys_operacion_marcar_envio('10000000-0000-0000-0000-00000000000a', (select id from t_op2));
+select public.fel_sys_operacion_resolver_evento('10000000-0000-0000-0000-00000000000a', (select id from t_op2), public.fel_sys_evento_registrar('10000000-0000-0000-0000-00000000000a', (select id from t_op2), 'envio', 'certificado', null, 'SERIE-TEST', 'NUM-TEST', 'AUT-TEST', null));
 
 -- ================= DTE certificado: inmutable, no vuelve a borrador
 do $$ begin assert (select estado_fiscal from public.documentos where id = (select id from t_doc)) = 'certificado', 'no certificó'; end $$;
