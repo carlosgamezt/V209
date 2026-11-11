@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 
 const canonico = (o) => JSON.stringify(o, (_, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v));
 export const hash = (o) => crypto.createHash("sha256").update(canonico(o)).digest("hex");
-export const TIPOS_IDEMPOTENTES = new Set(["llenar", "seleccionar", "marcar", "leer", "esperar_visible", "salir_del_campo", "verificar_ausente"]);
+export const TIPOS_IDEMPOTENTES = new Set(["llenar", "seleccionar", "marcar", "leer", "esperar_visible", "salir_del_campo", "verificar_ausente", "verificar_marcado"]);
 /** Un paso es idempotente (repetirlo no duplica nada) si es de llenado/lectura. clic_seguro y manual NO lo son salvo que una persona lo declare en el plan. */
 export const esIdempotente = (p) => (p.idempotente != null ? p.idempotente : TIPOS_IDEMPOTENTES.has(p.tipo));
 

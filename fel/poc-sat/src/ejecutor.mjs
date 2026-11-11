@@ -2,7 +2,7 @@
 // Falla cerrado: ante cualquier error o bloqueo de la guardia, la ejecución termina (no continúa con el resto del plan).
 // Sesión SAT: si el portal pide iniciar sesión, se PAUSA (sin tocar nada), la persona se autentica en el portal oficial, se VERIFICA la sesión,
 // se RECONCILIA lo ya llenado (solo lectura) y solo entonces se reanuda. No se hace ninguna acción para evitar la expiración por inactividad.
-import { validarMapeo, validarDatos, valorDe, clasificarControl, hostPermitido } from "./guardia.mjs";
+import { validarMapeo, validarDatos, valorDe, clasificarControl, hostPermitido, compararValor } from "./guardia.mjs";
 import { resolver, construir, ErrorDominio } from "./localizar.mjs";
 import { planificarReanudacion, esIdempotente } from "./progreso.mjs";
 import { claveIdempotencia } from "./libro.mjs";
@@ -17,9 +17,11 @@ const CAMPOS = new Set(["llenar", "seleccionar", "marcar"]);
  *   sesion (monitor de sesión SAT, opcional), progreso (checkpoint, opcional), libro + (claveDoc se calcula) (anti-duplicados, opcional),
  *   reanudar (continuar una ejecución interrumpida), hooks.antesDePaso (solo pruebas), salida
  */
-export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, soloComprobar = false, detenerSi = null, hooks = {}, salida = (s) => console.log(s) }) {
+export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, soloComprobar = false, detenerSi = null, estricto = false, hooks = {}, salida = (s) => console.log(s) }) {
   if (soloComprobar) { progreso = null; libro = null; reanudar = false; }   // comprobar no deja estado: ni progreso, ni libro, ni reanudación
-  const vm = validarMapeo(plan, { local, soloComprobar }), vd = validarDatos(datos), errVal = [...vm.errores, ...vd.errores];
+  if (estricto) { progreso = null; reanudar = false; }   // Etapa 2: se vigila todo, no se reanuda nunca; el libro (documento preparado, NO emitido) sí se mantiene
+  const vigilancia = soloComprobar || estricto;   // ante cualquier señal inesperada la ejecución se DETIENE (nunca se espera ni se reanuda)
+  const vm = validarMapeo(plan, { local, soloComprobar, etapa2: estricto }), vd = validarDatos(datos), errVal = [...vm.errores, ...vd.errores];
   const claveDoc = claveIdempotencia(empresa.alias, datos);
   if (!errVal.length && libro) { const pe = libro.puedeEjecutar(claveDoc); if (!pe.permitir) errVal.push(pe.razon); }
   if (errVal.length) { for (const m of errVal) registro.nota(`validación: ${m}`); return { ok: false, detenido: false, resumen: registro.resumen({ detenidoAntesDeEmitir: true, estadoFinal: "no_inicio" }), errores_validacion: errVal }; }
@@ -30,6 +32,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
   let dialogos = 0;
   page.on("dialog", (d) => { dialogos++; registro.nota(`diálogo ${d.type()} descartado`); d.dismiss().catch(() => {}); });   // descartar = cancelar: nunca se acepta nada
   sesion?.adjuntar(page);
+  if (estricto) registro.nota("modo estricto (Etapa 2): llenado controlado de UNA línea; se detiene ante cualquier solicitud bloqueada, diálogo, sesión perdida, campo ambiguo o error");
   if (soloComprobar) registro.nota("modo solo-comprobar: se resuelven y comprueban los localizadores; NO se escribe, ni se pulsa, ni se sale de ningún campo");
 
   let detenido = false, ok = true, estadoFinal = "interrumpido";
@@ -71,14 +74,14 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
   // ---- pausa por cierre de sesión: esperar a la persona, verificar, volver al formulario, reconciliar
   // En solo-comprobar cualquier señal inesperada DETIENE la comprobación (nunca se espera ni se reanuda).
   const vigilar = () => {
-    if (!soloComprobar) return;
-    const alerta = dialogos > 0 ? "el portal abrió un diálogo (descartado): acción no prevista" : detenerSi?.();
+    if (!vigilancia) return;
+    const alerta = dialogos > 0 ? "el portal abrió un diálogo (descartado): acción no prevista" : detenerSi?.();   // vigilancia de red: cualquier solicitud bloqueada
     if (alerta) { registro.paso({ id: "p-vigilancia", tipo: "leer", modo: "auto", ms: 0, resultado: "bloqueado", detalle: String(alerta).slice(0, 200) }); estadoFinal = "detenido_por_alerta"; throw new ErrorGuardia(alerta); }
   };
   const pausarPorSesion = async (razones) => {
     const t0 = reloj();
     registro.sesion({ estado: "requiere_login", razones });
-    if (soloComprobar) { registro.paso({ id: "p-sesion", tipo: "leer", modo: "auto", ms: 0, resultado: "bloqueado", detalle: "la sesión SAT no está activa o se perdió: la comprobación se detiene (no se espera ni se reanuda)" }); estadoFinal = "sesion_perdida"; throw new ErrorGuardia("la sesión SAT no está activa o se perdió"); }
+    if (vigilancia) { registro.paso({ id: "p-sesion", tipo: "leer", modo: "auto", ms: 0, resultado: "bloqueado", detalle: "la sesión SAT no está activa o se perdió: la ejecución se detiene (no se espera ni se reanuda)" }); estadoFinal = "sesion_perdida"; throw new ErrorGuardia("la sesión SAT no está activa o se perdió"); }
     progreso?.pausaPorSesion();
     const r = await sesion.esperarSesionActiva(page, { esperarUsuario, salida });
     registro.sesion({ estado: "activa", via: r.via });
@@ -122,7 +125,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
       await hooks.antesDePaso?.(p);
       await protegerSesion();
       await hooks.antesDeEjecutar?.(p);
-      try { await paso(p, "auto", () => ejecutarUno(p)); marcar(p); }
+      try { await paso(p, "auto", () => ejecutarUno(p)); marcar(p); if (estricto && ["llenar", "seleccionar", "salir_del_campo"].includes(p.tipo)) { await new Promise((r) => setTimeout(r, p.reposo_ms ?? (p.tipo === "salir_del_campo" ? 1500 : 400))); vigilar(); } }   // los manejadores de AngularJS pueden lanzar peticiones poco después de una edición: se espera y se vigila antes del siguiente paso
       catch (e) {
         if (!e.sesionPerdida || reintentos[p.id]) throw e;
         reintentos[p.id] = true;
@@ -156,7 +159,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
         if (!(await loc.isVisible()) || !(await loc.isEnabled()) || !(await loc.isEditable())) throw new Error("el campo no está visible, habilitado y editable");
         if (soloComprobar) return `comprobado sin escribir (${p.dato})`;
         await loc.fill(String(v));
-        if (p.verificar !== false && (await loc.inputValue()) !== String(v)) throw new Error("el campo no conservó el valor escrito (el portal lo modificó o lo rechazó)");
+        if (p.verificar !== false && !compararValor(await loc.inputValue(), String(v), { comparacion: p.comparacion, decimal: p.decimal, tolerancia: p.tolerancia })) throw new Error("el campo no conservó el valor escrito (el portal lo modificó o lo rechazó)");
         return `campo llenado (${p.dato})`;
       }
       case "seleccionar": {
@@ -166,13 +169,20 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
         await loc.selectOption({ label: String(v) }); return `opción elegida (${p.dato})`;
       }
       case "salir_del_campo": if (soloComprobar) return "comprobado sin salir del campo"; await loc.blur(); return "se salió del campo (evento blur)";
+      case "verificar_marcado": {   // SOLO comprueba el estado: nunca pulsa (pulsar un radio dispara manejadores del portal)
+        if (soloComprobar) return "comprobado: el control es legible (no se pulsa)";
+        const esperado = valorDe(datos, p.dato) === true || valorDe(datos, p.dato) === "true";
+        if ((await loc.isChecked()) !== esperado) throw new Error(`el control no está ${esperado ? "marcado" : "desmarcado"} como se esperaba: NO se pulsa; ajústalo a mano y repite`);
+        return "estado verificado sin pulsar";
+      }
       case "marcar": { if (soloComprobar) return `comprobado sin marcar (${p.dato})`; const v = valorDe(datos, p.dato); await loc.setChecked(v === true || v === "true"); return `casilla (${p.dato})`; }
       case "leer": {
         if (soloComprobar) return "comprobado: el campo es legible (no se compara el valor)";
         const v = valorDe(datos, p.dato), leerValor = () => loc.evaluate((el) => ("value" in el && el.value !== "" ? el.value : el.textContent) ?? "");
         let real = await leerValor(); const fin = reloj() + (p.espera_ms ?? 1500);   // valores calculados de forma asíncrona (AngularJS/debounce): se reintenta la LECTURA hasta el límite
-        while (String(real).trim() !== String(v) && reloj() < fin) { await new Promise((r) => setTimeout(r, 80)); real = await leerValor(); }
-        if (String(real).trim() !== String(v)) throw new Error(`lo leído no coincide con lo esperado (longitudes ${String(real).trim().length} vs ${String(v).length})`);
+        const cmp = { comparacion: p.comparacion, decimal: p.decimal, tolerancia: p.tolerancia };
+        while (!compararValor(real, String(v), cmp) && reloj() < fin) { await new Promise((r) => setTimeout(r, 80)); real = await leerValor(); }
+        if (!compararValor(real, String(v), cmp)) throw new Error(`lo leído no coincide con lo esperado (longitudes ${String(real).trim().length} vs ${String(v).length}; comparación ${p.comparacion ?? "exacta"})`);
         return "lectura coincide";
       }
       case "clic_seguro": {

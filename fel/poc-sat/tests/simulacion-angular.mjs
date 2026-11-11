@@ -12,7 +12,7 @@ const ejecutarAsync = (cmd, args, o, entrada) => new Promise((ok) => { const h =
 import { crearRegistro } from "../src/registro.mjs";
 import { ejecutarPlan } from "../src/ejecutor.mjs";
 import { bloquearEscrituras } from "../src/conexion.mjs";
-import { validarMapeo } from "../src/guardia.mjs";
+import { validarMapeo, recortarPlan } from "../src/guardia.mjs";
 import { crearMonitorSesion } from "../src/sesion.mjs";
 import { crearProgreso } from "../src/progreso.mjs";
 import { crearLibro } from "../src/libro.mjs";
@@ -340,6 +340,87 @@ await caso("ETAPA 1 · ENSAYO GENERAL DEL COMANDO EXACTO: node bin/ejecutar.mjs 
     const sin = await ejecutarAsync(process.execPath, ["bin/ejecutar.mjs", `--empresa=${empresa}`, "--mapeo=config/mapeo.sat-preliminar.json", "--datos=config/datos-ficticios-lineas.json", "--solo-comprobar"], { cwd, env: { ...process.env, FEL_AUTORIZACION_SAT: "", FEL_ETAPA_AUTORIZADA: "" }, timeout: 30000 }, "");
     assert.equal(sin.status, 2); assert.match(sin.stderr, /Se niega a correr/);
   } finally { await ctx.close(); fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(path.join(AQUI, "..", "registros"), { recursive: true, force: true }); }
+});
+
+
+// ───────────────────────── ETAPA 2 (llenado controlado) · SOLO SIMULACIÓN LOCAL ─────────────────────────
+const e2 = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-etapa2.json"), "utf8"));
+/** Plan de Etapa 2 adaptado a la página local: mismos pasos y localizadores; solo cambian dominio/marco y las confirmaciones humanas (que en la realidad pone la persona). */
+function planE2(hasta = "p150-linea0-leer-total", tocar = (m) => m) {
+  let m = structuredClone(e2); delete m.sesion; m.dominios_permitidos = ["127.0.0.1"];
+  for (const p of m.pasos) { if (p.localizador) delete p.localizador.marco; if (p.verificado === false) p.verificado = true; }
+  if (hasta) m = recortarPlan(m, hasta); return tocar(m);
+}
+async function correrE2(plan, { url = URL_BASE + "?radio=nit", datos = datosBase(), politica = { dominios: ["127.0.0.1"] }, sesion = null, timeout = 2500 } = {}) {
+  const context = await browser.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} });
+  await bloquearEscrituras(context, politica, registro); const page = await context.newPage(); await page.goto(url);
+  const detenerSi = () => { const b = registro.eventos().find((e) => e.evento === "solicitud_bloqueada"); return b ? `solicitud bloqueada (${b.metodo} ${b.host}${b.ruta})` : null; };
+  const r = await ejecutarPlan({ page, plan, datos, registro, empresa: { alias: "empresa-prueba" }, local: true, estricto: true, detenerSi, sesion, timeout, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+  return { ...r, page, context, registro };
+}
+const estadoBotones = (page) => page.evaluate(() => { const s = angular.element(document.body).scope(); return { vistaPrevia: s.vistaPrevia, modal: s.modalImpuestos, lineas: s.detalleFactura.length, radioClics: s.registroRadio ?? 0, id: s.datosGenerales.tipoIdentificacion, nit: s.datosGenerales.nitReceptor }; });
+
+await caso("ETAPA 2 · TRAMO 2A FELIZ: verifica el radio sin pulsarlo, escribe solo campos permitidos, lee el total (comparación numérica) y se detiene sin tocar nada más", async () => {
+  posts.length = 0; const plan = planE2(); assert.ok(validarMapeo(plan, { local: true, etapa2: true }).ok, validarMapeo(plan, { local: true, etapa2: true }).errores.join("\n"));
+  const r = await correrE2(plan, {}); assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); assert.equal(r.detenido, true); assert.equal(r.resumen.emitio, false);
+  const m = await modelo(r.page), b = await estadoBotones(r.page), d0 = m.lineas[0];
+  assert.deepEqual([d0.BienOServicio, d0.Cantidad, d0.Descripcion, d0.PrecioUnitario, d0.Total], ["Servicio", "2", "SERVICIO DE PRUEBA UNO - NO EMITIR", "125.50", "241.00"]); assert.equal(m.dir, "CIUDAD DE PRUEBA");
+  assert.equal(b.radioClics, 0, "el radio NIT NO se pulsó (su ng-change no se ejecutó)"); assert.equal(b.nit, "", "el NIT no se escribe en el tramo 2A"); assert.deepEqual([b.vistaPrevia, b.modal, b.lineas], [false, false, 1]); assert.deepEqual(posts, []);
+  await r.context.close();
+});
+await caso("ETAPA 2 · RADIO NO MARCADO: verificar_marcado falla y NO lo pulsa (no ejecuta su manejador); no se escribe nada después", async () => {
+  const r = await correrE2(planE2(), { url: URL_BASE }); assert.equal(r.ok, false); assert.equal(r.resumen.errores[0].id, "p010-receptor-radio-nit"); const b = await estadoBotones(r.page), m = await modelo(r.page);
+  assert.deepEqual([b.radioClics, b.id], [0, null]); assert.equal(m.dir, "", "no se escribió ningún campo tras el fallo"); assert.equal(m.lineas[0].Cantidad, ""); await r.context.close();
+});
+await caso("ETAPA 2 · FORMATOS DEL TOTAL: coma decimal sin declarar → se detiene; con decimal=«,» pasa; total sin decimales → numérico lo acepta solo dentro de la tolerancia", async () => {
+  const a = await correrE2(planE2(), { url: URL_BASE + "?radio=nit&formato=coma" }); assert.equal(a.ok, false); assert.equal(a.resumen.errores[0].id, "p150-linea0-leer-total"); await a.context.close();
+  const b = await correrE2(planE2("p150-linea0-leer-total", (m) => { const p = m.pasos.find((x) => x.id === "p150-linea0-leer-total"); p.decimal = ","; return m; }), { url: URL_BASE + "?radio=nit&formato=coma" }); assert.equal(b.ok, true, JSON.stringify(b.resumen.errores)); await b.context.close();
+  const c = await correrE2(planE2(), { url: URL_BASE + "?radio=nit&formato=entero" }); assert.equal(c.ok, true, "241 == 241.00 numéricamente"); await c.context.close();
+  const d = datosBase(); d.lineas[0].total_esperado = "241.50"; const e = await correrE2(planE2(), { datos: d, url: URL_BASE + "?radio=nit&formato=entero" }); assert.equal(e.ok, false, "241 ≠ 241.50"); await e.context.close();
+});
+await caso("ETAPA 2 · GUARDADO AUTOMÁTICO INESPERADO: si el portal envía un POST al cambiar un campo, la guardia lo aborta y la ejecución SE DETIENE en el campo siguiente", async () => {
+  posts.length = 0; const r = await correrE2(planE2(), { url: URL_BASE + "?radio=nit&autosave=1" }); assert.equal(r.ok, false); assert.equal(r.estado, "detenido_por_alerta", r.estado);
+  assert.ok(r.resumen.solicitudes_bloqueadas.some((x) => /POST .*autoguardado/.test(x)), JSON.stringify(r.resumen.solicitudes_bloqueadas)); assert.deepEqual(posts, [], "el POST nunca llegó al servidor");
+  const ids = r.registro.eventos().filter((e) => e.evento === "paso").map((e) => e.id); assert.ok(!ids.includes("p150-linea0-leer-total"), "no siguió hasta el final"); await r.context.close();
+});
+await caso("ETAPA 2 · DIÁLOGO INESPERADO: un aviso del portal detiene la ejecución (se descarta, nunca se acepta)", async () => {
+  const r = await correrE2(planE2(), { url: URL_BASE + "?radio=nit&alerta=1" }); assert.equal(r.ok, false); assert.equal(r.estado, "detenido_por_alerta"); assert.match(JSON.stringify(r.resumen), /diálogo/); await r.context.close();
+});
+await caso("ETAPA 2 · SESIÓN CADUCADA: se detiene (sesion_perdida) y NO espera ni reanuda", async () => {
+  const context = await browser.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: ["127.0.0.1"] }, registro); const page = await context.newPage(); await page.goto(URL_BASE + "?radio=nit");
+  const plan = planE2(); plan.sesion = { indicadores_sesion_activa: [{ localizador: { estrategia: "rol", rol: "tab", valor: "Datos Generales" }, verificado: true }], intervalo_ms: 1000, espera_max_ms: 60000 };
+  const sesion = crearMonitorSesion({ config: plan.sesion, dominios: plan.dominios_permitidos, salida: () => {} });
+  let expirada = false; const hooks = { antesDeEjecutar: async (p) => { if (p.id === "p110-linea0-cantidad" && !expirada) { expirada = true; await page.evaluate(() => window.__expirar()); } } };
+  const t0 = Date.now(), r = await ejecutarPlan({ page, plan, datos: datosBase(), registro, empresa: { alias: "x" }, local: true, estricto: true, sesion, hooks, timeout: 2500, esperarUsuario: async () => "si", salida: () => {}, detenerSi: () => null });
+  if (process.env.DEBUG_SIM) console.log("SES", JSON.stringify(r).slice(0, 900)); assert.equal(r.ok, false); assert.equal(r.estado, "sesion_perdida", r.estado); assert.ok(Date.now() - t0 < 30000, "no esperó a que volviera la sesión");
+  assert.ok(!registro.eventos().some((e) => e.id === "p150-linea0-leer-total"), "no continuó"); await context.close();
+});
+await caso("ETAPA 2 · GET A DOMINIO NO LISTADO: bloqueado y detiene; solo pasa con una regla permitir_get aprobada y fechada (host exacto + ruta)", async () => {
+  // La página con red=1 consulta al host «consulta.example.test» al salir del NIT: lo ejercitamos añadiendo salida del campo solo en la copia de prueba.
+  const conNit = (m) => { const i = m.pasos.findIndex((x) => x.id === "p030-receptor-direccion"); m.pasos.splice(i, 0, { ...structuredClone(e2.pasos.find((x) => x.id === "p020-receptor-nit")), verificado: true }, { ...structuredClone(e2.pasos.find((x) => x.id === "p025-receptor-salir-nit")), verificado: true }); for (const p of m.pasos) if (p.localizador) delete p.localizador.marco; return m; };
+  const sinRegla = await correrE2(planE2("p150-linea0-leer-total", conNit), { url: URL_BASE + "?radio=nit&red=1" }); if (process.env.DEBUG_SIM) console.log("GET", JSON.stringify([sinRegla.ok, sinRegla.estado, sinRegla.resumen.errores, sinRegla.resumen.solicitudes_bloqueadas])); assert.equal(sinRegla.ok, false); assert.ok(sinRegla.resumen.solicitudes_bloqueadas.some((x) => /GET consulta\.example\.test\/consulta\/receptor\/CF/.test(x)), JSON.stringify(sinRegla.resumen.solicitudes_bloqueadas)); await sinRegla.context.close();
+  const politica = { dominios: ["127.0.0.1"], permitir_get: [{ host: "consulta.example.test", ruta_prefijo: "/consulta/receptor/", motivo: "prueba local", revisado: true }] };
+  lecturas.length = 0; const conRegla = await correrE2(planE2("p150-linea0-leer-total", (m) => { const x = conNit(m); x.permitir_get = politica.permitir_get.map((r) => ({ ...r, aprobado_por: "prueba", fecha: "2026-01-01" })); return x; }), { url: URL_BASE + "?radio=nit&red=1", politica }); if (process.env.DEBUG_SIM) console.log("CR", JSON.stringify(conRegla).slice(0, 900)); assert.equal(conRegla.ok, true, JSON.stringify(conRegla.resumen.errores) + JSON.stringify(conRegla.resumen.solicitudes_bloqueadas)); assert.deepEqual(conRegla.resumen.solicitudes_bloqueadas, []); assert.ok(conRegla.resumen.lecturas_xhr.some((x) => /GET consulta\.example\.test\/consulta\/receptor\/CF/.test(x)), "la lectura aprobada se registra"); await conRegla.context.close();
+});
+await caso("ETAPA 2 · LOCALIZADOR AMBIGUO: si el campo coincide con dos elementos, se detiene sin escribir", async () => {
+  const plan = planE2("p150-linea0-leer-total", (m) => { const p = m.pasos.find((x) => x.id === "p120-linea0-descripcion"); p.localizador = { estrategia: "nombre", valor: "Descripcion0" }; return m; });   // sin tag: input + select oculto
+  const r = await correrE2(plan, {}); assert.equal(r.ok, false); assert.match(r.resumen.errores[0].detalle, /ambiguo/); assert.equal((await modelo(r.page)).lineas[0].Descripcion, ""); await r.context.close();
+});
+await caso("ETAPA 2 · INALCANZABLES: ningún paso del mapa real puede pulsar Vista Previa, Guardar, Emitir, Agregar/Eliminar, impuestos ni cambiar moneda; y un mapa que lo pida se rechaza", async () => {
+  const plan = planE2(null); assert.ok(!plan.pasos.some((p) => ["clic_seguro", "marcar"].includes(p.tipo)), "el mapa de Etapa 2 no contiene clics ni marcar");
+  const permitidos = new Set(["nitReceptor", "direccionReceptor", "BienOServicio0", "Cantidad0", "Descripcion0", "PrecioUnitario0", "Descuento0", "OtrosDescuento0"]);
+  for (const p of plan.pasos.filter((x) => ["llenar", "seleccionar"].includes(x.tipo))) assert.ok(permitidos.has(String(p.localizador.valor).split(".").pop()), `campo fuera de la lista cerrada: ${p.id}`);
+  const malos = [["clic_seguro", { estrategia: "texto", valor: "Vista Previa" }], ["marcar", { estrategia: "etiqueta", valor: "CUI" }], ["seleccionar", { estrategia: "ng_model", valor: "datosGenerales.moneda", tag: "select" }], ["llenar", { estrategia: "ng_model", valor: "datosGenerales.fechaEmision" }]];
+  for (const [tipo, loc] of malos) { const m = planE2(null); m.pasos.splice(1, 0, { id: "x-malo", tipo, localizador: loc, dato: "documento.moneda", verificado: true }); assert.equal(validarMapeo(m, { local: true, etapa2: true }).ok, false, `${tipo} ${loc.valor} debería rechazarse`); }
+  const conPost = planE2(null); conPost.permitir_post = [{ host: "127.0.0.1", ruta_prefijo: "/api/", motivo: "x", revisado: true }]; assert.equal(validarMapeo(conPost, { local: true, etapa2: true }).ok, false, "permitir_post debe estar vacío");
+  const sinAprob = planE2(null); sinAprob.permitir_get = [{ host: "consulta.example.test", ruta_prefijo: "/c/", motivo: "x", revisado: true }]; assert.equal(validarMapeo(sinAprob, { local: true, etapa2: true }).ok, false, "permitir_get sin aprobado_por/fecha se rechaza");
+  // y a nivel de página: tras el llenado real, los botones sensibles siguen sin haberse tocado y su POST se habría abortado
+  posts.length = 0; const r = await correrE2(planE2(), {}); const b = await estadoBotones(r.page); assert.deepEqual([b.vistaPrevia, b.modal, b.lineas], [false, false, 1]); assert.deepEqual(posts, []); await r.context.close();
+});
+await caso("ETAPA 2 · MAPA REAL SIN CONFIRMAR: tal como se entrega, no arranca (indicador de sesión y p026 sin verificar) y el tramo 2B exige además la decisión humana", async () => {
+  const v = validarMapeo(e2, { etapa2: true }); assert.equal(v.ok, false); assert.ok(v.errores.some((x) => /indicadores_sesion_activa/.test(x)) && v.errores.some((x) => /p026/.test(x)), v.errores.join("\n"));
+  const a = validarMapeo(recortarPlan(e2, "p150-linea0-leer-total"), { etapa2: true }); assert.ok(a.errores.some((x) => /indicadores_sesion_activa/.test(x)) && !a.errores.some((x) => /p026/.test(x)), a.errores.join("\n"));
+  assert.deepEqual(e2.permitir_post, []); assert.deepEqual(e2.permitir_get, []);
 });
 
 await browser.close(); await browserHosts.close(); servidor.close();

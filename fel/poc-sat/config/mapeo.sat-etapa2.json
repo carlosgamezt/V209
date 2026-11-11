@@ -1,0 +1,256 @@
+{
+  "version": 1,
+  "estado": "ETAPA 2 (NO AUTORIZADA): mapa de llenado controlado de UNA línea y un receptor CF. Se ejecuta por tramos con --hasta. Lista cerrada de campos escribibles en el código (ETAPA2_ESCRITURA).",
+  "tramos": {
+    "2A": {
+      "hasta": "p150-linea0-leer-total",
+      "descripcion": "Verifica el radio NIT; escribe dirección y una línea (tipo, cantidad, descripción, precio, descuento); lee el total. NO escribe el NIT."
+    },
+    "2B": {
+      "hasta": "p999-detener",
+      "descripcion": "Escribe NIT=CF, sale del campo y lee la respuesta. Requiere: 2A aprobada, revisión específica de la petición a felav02 (permitir_get con aprobado_por y fecha) y p026 verificado=true por decisión de la persona."
+    }
+  },
+  "dominios_permitidos": [
+    "felav.c.sat.gob.gt",
+    "farm3.sat.gob.gt"
+  ],
+  "permitir_post": [],
+  "permitir_get": [],
+  "nota_permitir_get": "VACÍO a propósito. Una regla solo puede añadirse en una copia local del mapa, con host exacto, ruta concreta, motivo, revisado:true, aprobado_por y fecha. Nunca para rutas de emisión/guardado.",
+  "sesion": {
+    "campo_clave_visible": true,
+    "indicadores_sesion_activa": [
+      {
+        "localizador": {
+          "estrategia": "rol",
+          "rol": "tab",
+          "valor": "Datos Generales",
+          "marco": {
+            "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+          }
+        },
+        "verificado": false,
+        "comentario": "verificado=false A PROPÓSITO: no se confirmó en la Etapa 1. La persona lo pone en true en su copia local tras comprobarlo; mientras tanto la Etapa 2 NO arranca."
+      }
+    ],
+    "indicadores_login": [],
+    "intervalo_ms": 5000,
+    "espera_max_ms": 1800000
+  },
+  "pasos": [
+    {
+      "id": "p000-sesion",
+      "tipo": "manual",
+      "instruccion": "Abre tú mismo el formulario FEL de PRUEBA en la sesión ya iniciada, en «Datos Generales», sin emitir ni usar la vista previa, y pulsa Enter."
+    },
+    {
+      "id": "p010-receptor-radio-nit",
+      "tipo": "verificar_marcado",
+      "comentario": "SOLO verifica que el radio NIT ya está marcado; NUNCA lo pulsa: su ng-change ejecuta asignacionesRadioNIT() y onChangeComboDestinoDespacho(), y el radio CUI limpia el receptor. Si no está marcado, se detiene y lo marcas tú a mano.",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "etiqueta",
+        "valor": "NIT",
+        "exacto": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "receptor.identificar_con_nit",
+      "verificado": true
+    },
+    {
+      "id": "p030-receptor-direccion",
+      "tipo": "llenar",
+      "comentario": "Campo visible de dirección.",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "datosGenerales.direccionReceptor",
+        "tag": "input",
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "receptor.direccion",
+      "verificado": true,
+      "reposo_ms": 400
+    },
+    {
+      "id": "p100-linea0-tipo",
+      "tipo": "seleccionar",
+      "comentario": "Elige «Servicio» en la lista de la línea 0. Sin ng-change observado; está deshabilitable por inhabilitaBienServicio||inhabilitaDCIVA (si está deshabilitado, se detiene).",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "BienOServicio0",
+        "tag": "select",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.tipo",
+      "verificado": true,
+      "reposo_ms": 400
+    },
+    {
+      "id": "p110-linea0-cantidad",
+      "tipo": "llenar",
+      "comentario": "ng-change: limpiarFrasesEspeciales(); calcularTotal(0); limpiarReferencia(); (efectos locales conocidos solo de nombre).",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Cantidad0",
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.cantidad",
+      "verificado": true,
+      "reposo_ms": 600
+    },
+    {
+      "id": "p120-linea0-descripcion",
+      "tipo": "llenar",
+      "comentario": "Modo texto libre. El modo catálogo es otro control (select, ng-model det.DescripcionIdp, oculto).",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Descripcion0",
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.descripcion",
+      "verificado": true,
+      "reposo_ms": 400
+    },
+    {
+      "id": "p130-linea0-precio",
+      "tipo": "llenar",
+      "comentario": "ng-change: calcularTotal(0); limpiarFrasesEspeciales();",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "PrecioUnitario0",
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.precio",
+      "verificado": true,
+      "reposo_ms": 600,
+      "comparacion": "numerica"
+    },
+    {
+      "id": "p140-linea0-descuento",
+      "tipo": "llenar",
+      "comentario": "ng-change: calcularTotal(0); limpiarFrasesEspeciales();",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Descuento0",
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.descuento",
+      "verificado": true,
+      "reposo_ms": 600,
+      "comparacion": "numerica"
+    },
+    {
+      "id": "p150-linea0-leer-total",
+      "tipo": "leer",
+      "comentario": "El total se calcula de forma asíncrona; se lee con reintento y comparación numérica con separador decimal declarado. El formato real del portal no se conoce: si no coincide, se detiene.",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Total0",
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.total_esperado",
+      "espera_ms": 6000,
+      "verificado": true,
+      "comparacion": "numerica",
+      "decimal": ".",
+      "tolerancia": 0.005
+    },
+    {
+      "id": "p020-receptor-nit",
+      "tipo": "llenar",
+      "comentario": "TRAMO 2B. Escribe CF. Con CF se observó una petición GET a otro dominio (felav02…/consultaFallecido/CF); si no hay una regla permitir_get aprobada, la guardia la bloquea y la ejecución SE DETIENE.",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "datosGenerales.nitReceptor",
+        "tag": "input",
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "receptor.nit",
+      "verificado": true,
+      "reposo_ms": 800
+    },
+    {
+      "id": "p025-receptor-salir-nit",
+      "tipo": "salir_del_campo",
+      "comentario": "TRAMO 2B. Sale del campo (blur): puede disparar manejadores del portal (consulta, validación).",
+      "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "datosGenerales.nitReceptor",
+        "tag": "input",
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "verificado": true,
+      "reposo_ms": 2000
+    },
+    {
+      "id": "p026-receptor-leer-respuesta",
+      "tipo": "leer",
+      "comentario": "TRAMO 2B. verificado=false A PROPÓSITO: en la Etapa 1 este campo no se pudo comprobar en frío (aparece tras escribir CF). Solo se pone en true tras decidirlo la persona. El origen del texto no está confirmado.",
+      "evidencia": "sat-2d: c23 (resultadoNIT.nombre) visible con CF; 1 visible entre 3 controles con el mismo modelo",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "resultadoNIT.nombre",
+        "tag": "input",
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "receptor.respuesta_consulta_cf",
+      "espera_ms": 3000,
+      "verificado": false,
+      "aparece_tras": "p025-receptor-salir-nit",
+      "comparacion": "sin_mayusculas"
+    },
+    {
+      "id": "p999-detener",
+      "tipo": "detener"
+    }
+  ],
+  "no_se_toca": [
+    "moneda y tipo de documento (cambiar la moneda ejecuta detalleFactura = [] y borra las líneas)",
+    "fecha de emisión (calendario)",
+    "impuestos y su diálogo",
+    "«Agregar item», «Eliminar item», Vista Previa, guardar, certificar, emitir",
+    "radios CUI e ID EXTRANJERO",
+    "cualquier línea distinta de la 0"
+  ]
+}

@@ -309,3 +309,36 @@ test("ejecutor: toda acción que modifica la página (fill, selectOption, setChe
   assert.ok(/if \(soloComprobar\) \{ progreso = null; libro = null; reanudar = false; \}/.test(src), "comprobar no deja progreso ni libro");
   assert.ok(!/\.(press|pressSequentially|check|dispatchEvent|hover|dblclick|setInputFiles|dragTo)\s*\(|\.type\s*\(\s*[^)\s]/.test(src), "el ejecutor no usa otras acciones de interacción (.type() sin argumentos es solo el tipo del diálogo)");
 });
+
+// ───── Etapa 2 ─────
+import { compararValor, recortarPlan, aNumero } from "../src/guardia.mjs";
+test("etapa2: compararValor numérico exige separador decimal declarado y respeta la tolerancia", () => {
+  assert.equal(compararValor("241.00", "241", { comparacion: "numerica", decimal: "." }), true);
+  assert.equal(compararValor("241,00", "241.00", { comparacion: "numerica", decimal: "," }), true);
+  assert.equal(compararValor("251,00", "251.00", { comparacion: "numerica", decimal: "." }), false, "coma con decimal «.» no se supone");
+  assert.equal(compararValor("241.50", "241.00", { comparacion: "numerica", decimal: "." }), false);
+  assert.equal(compararValor("Consumidor Final", "CONSUMIDOR FINAL", { comparacion: "sin_mayusculas" }), true);
+  assert.equal(compararValor("a", "A", { comparacion: "exacta" }), false);
+  assert.equal(aNumero("abc", "."), null);
+});
+test("etapa2: recortarPlan conserva el orden y falla con un id inexistente", () => {
+  const m = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-etapa2.json", import.meta.url), "utf8"));
+  const a = recortarPlan(m, "p150-linea0-leer-total");
+  assert.equal(a.pasos.at(-1).id, "p999-detener"); assert.equal(a.pasos.at(-2).id, "p150-linea0-leer-total"); assert.ok(!a.pasos.some((p) => /p020|p025|p026/.test(p.id)));
+  assert.throws(() => recortarPlan(m, "no-existe"));
+});
+test("etapa2: el mapa real se rechaza hasta que una persona confirme sesión y p026; nunca trae permitir_post/permitir_get", () => {
+  const m = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-etapa2.json", import.meta.url), "utf8"));
+  const v = validarMapeo(m, { etapa2: true }); assert.equal(v.ok, false);
+  assert.deepEqual([m.permitir_post, m.permitir_get], [[], []]);
+  assert.ok(!m.pasos.some((p) => ["clic_seguro", "marcar"].includes(p.tipo)));
+});
+test("etapa2: la autorización de etapa1 no habilita etapa2 y faltan las condiciones propias", () => {
+  const dominios = ["felav.c.sat.gob.gt"], datos = { receptor: { nit: "CF" } }, empresa = { alias: "e", identidad: { confirmacion_manual: true } };
+  const base = { dominios, soloComprobar: false, empresa, datos };
+  assert.equal(evaluarAutorizacionSat({ ...base, env: {} }).permitido, false);
+  assert.equal(evaluarAutorizacionSat({ ...base, env: { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa1" } }).permitido, false);
+  assert.equal(evaluarAutorizacionSat({ ...base, env: { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2" } }).permitido, false, "faltan condiciones de uso y empresa confirmada");
+  assert.equal(evaluarAutorizacionSat({ ...base, datos: { receptor: { nit: "1234567" } }, env: { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2", FEL_CONDICIONES_USO_REVISADAS: "si", FEL_EMPRESA_CONFIRMADA: "e" } }).permitido, false, "NIT distinto de CF");
+  assert.equal(evaluarAutorizacionSat({ ...base, env: { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2", FEL_CONDICIONES_USO_REVISADAS: "si", FEL_EMPRESA_CONFIRMADA: "e" } }).permitido, true);
+});

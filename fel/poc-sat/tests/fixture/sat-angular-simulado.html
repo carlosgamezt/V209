@@ -8,9 +8,9 @@
 <fieldset>
   <input type="text" ng-model="datosGenerales.fechaEmision" readonly><button type="button" ng-click="noop()"></button>
   <select ng-model="datosGenerales.tipoDte" ng-options="t as t.nombre for t in tipos" ng-required="true"><option value="">Seleccione</option></select>
-  <select ng-model="datosGenerales.moneda" ng-options="m for m in monedas" ng-required="true"><option value="">Seleccione</option></select>
-  <label><input type="radio" name="14" ng-model="datosGenerales.tipoIdentificacion" value="NIT"> NIT</label>
-  <label><input type="radio" name="15" ng-model="datosGenerales.tipoIdentificacion" value="CUI"> CUI</label>
+  <select ng-model="datosGenerales.moneda" ng-options="m for m in monedas" ng-required="true" ng-change="alCambiarMoneda()"><option value="">Seleccione</option></select>
+  <label><input type="radio" name="14" ng-model="datosGenerales.tipoIdentificacion" value="NIT" ng-change="alCambiarRadio()"> NIT</label>
+  <label><input type="radio" name="15" ng-model="datosGenerales.tipoIdentificacion" value="CUI" ng-change="alCambiarRadio()"> CUI</label>
   <label><input type="radio" name="16" ng-model="datosGenerales.tipoIdentificacion" value="EXT"> ID EXTRANJERO</label>
   <input type="text" ng-model="datosGenerales.nitReceptor" autocomplete="off" ng-blur="consultarNit()" ng-required="datosGenerales.tipoIdentificacion === 'NIT'">
   <input type="text" ng-model="resultadoNIT.nombre" disabled ng-show="resultadoNIT.nombre">
@@ -55,6 +55,13 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   $scope.datosGenerales = { fechaEmision: "01/01/2026", tipoDte: null, moneda: null, tipoIdentificacion: null, nitReceptor: "", direccionReceptor: "" };
   $scope.resultadoNIT = { nombre: "" }; $scope.detalleFactura = [nuevo()]; $scope.vistaPrevia = false; $scope.modalImpuestos = false;
   $scope.noop = () => {};
+  const q = location.search, flag = (n) => new RegExp("[?&]" + n + "=1").test(q);
+  if (/[?&]radio=nit/.test(q)) $scope.datosGenerales.tipoIdentificacion = "NIT";   // variante: el radio NIT ya viene marcado
+  $scope.alCambiarRadio = () => { $scope.registroRadio = ($scope.registroRadio || 0) + 1; if ($scope.datosGenerales.tipoIdentificacion === "CUI") { $scope.datosGenerales.nitReceptor = ""; $scope.resultadoNIT.nombre = ""; } };   // el radio CUI limpia el receptor
+  $scope.alCambiarMoneda = () => { $scope.detalleFactura = [nuevo()]; };   // cambiar la moneda borra las líneas (como en el portal real)
+  const autoguardado = () => { if (flag("autosave")) $http.post("/api/autoguardado", {}); };   // variante: el portal enviaría datos al cambiar un campo (escritura inesperada)
+  if (flag("alerta")) $scope.$watch("detalleFactura[0].Cantidad", (v, a) => { if (v !== a && v) window.alert("Aviso inesperado de la página"); });
+  const formato = (/[?&]formato=(\w+)/.exec(q) || [])[1] || "";   // variante: formato numérico del total (coma decimal / sin decimales)
   const conRed = /[?&]red=1/.test(location.search);   // variante con consulta GET entre orígenes (con preflight) hacia un host «de consulta» simulado
   $scope.consultarNit = () => { const n = $scope.datosGenerales.nitReceptor; if (n && conRed) { $http.get("http://consulta.example.test:" + location.port + "/consulta/receptor/" + encodeURIComponent(n), { headers: { "X-Prueba": "1" } }).then((r) => { $scope.resultadoNIT.nombre = r.data.nombre; }); return; } if (n) $timeout(() => { $scope.resultadoNIT.nombre = n === "CF" ? "CONSUMIDOR FINAL DE PRUEBA" : "RECEPTOR DE PRUEBA SIMULADO"; }, 120); };   // consulta SIMULADA local (sin red)
   const retardo = Number((/[?&]retardo=(\d+)/.exec(location.search) || [])[1] || 0);   // retraso EXPLÍCITO (ms) con el que el total calculado llega al modelo: permite pruebas deterministas del mecanismo de espera
@@ -66,7 +73,8 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
     if (isNaN(Number(d.Cantidad)) || isNaN(Number(d.PrecioUnitario)) || d.Cantidad === "" || d.PrecioUnitario === "") { asignarTotal(d, ""); return; }
     const sub = num(d.Cantidad) * num(d.PrecioUnitario), desc = num(d.Descuento) + num(d.OtrosDescuento);
     if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; asignarTotal(d, ""); return; }
-    asignarTotal(d, (sub - desc).toFixed(2));
+    { const t = (sub - desc); asignarTotal(d, formato === "coma" ? t.toFixed(2).replace(".", ",") : formato === "entero" ? String(Math.round(t)) : t.toFixed(2)); }
+    autoguardado();
   };
   $scope.agregarItem = () => { $scope.detalleFactura.push(nuevo()); };
   $scope.eliminarItem = (i) => { $scope.detalleFactura.splice(i, 1); };

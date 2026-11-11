@@ -114,14 +114,14 @@ export function evaluarSolicitud({ metodo, url, tipoRecurso }, politica = {}) {
 }
 
 // ---------------------------------------------------------------- validación del mapeo (plan)
-export const TIPOS_PASO = ["manual", "esperar_visible", "llenar", "seleccionar", "marcar", "salir_del_campo", "verificar_ausente", "clic_seguro", "leer", "detener"];
+export const TIPOS_PASO = ["manual", "esperar_visible", "llenar", "seleccionar", "marcar", "verificar_marcado", "salir_del_campo", "verificar_ausente", "clic_seguro", "leer", "detener"];
 export const ESTRATEGIAS = ["etiqueta", "rol", "id", "nombre", "ng_model", "marcador", "texto", "clase"];
 export const TAGS_LOCALIZADOR = ["input", "select", "textarea", "button"];
-const necesitaLocalizador = new Set(["esperar_visible", "llenar", "seleccionar", "marcar", "salir_del_campo", "verificar_ausente", "clic_seguro", "leer"]);
-const necesitaDato = new Set(["llenar", "seleccionar", "marcar", "leer"]);
+const necesitaLocalizador = new Set(["esperar_visible", "llenar", "seleccionar", "marcar", "verificar_marcado", "salir_del_campo", "verificar_ausente", "clic_seguro", "leer"]);
+const necesitaDato = new Set(["llenar", "seleccionar", "marcar", "verificar_marcado", "leer"]);
 
 /** opciones.local = true solo para la autoprueba con la página de ejemplo (permite no verificado y host local). */
-export function validarMapeo(m, { local = false, soloComprobar = false } = {}) {
+export function validarMapeo(m, { local = false, soloComprobar = false, etapa2 = false } = {}) {
   const errores = [], avisos = [];
   const e = (s) => errores.push(s);
   if (!m || typeof m !== "object") return { ok: false, errores: ["el mapeo no es un objeto"], avisos };
@@ -158,6 +158,9 @@ export function validarMapeo(m, { local = false, soloComprobar = false } = {}) {
       if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible" && p.tipo !== "verificar_ausente") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro, esperar_visible o verificar_ausente`);
     }
     if (p.aparece_tras != null && !m.pasos.slice(0, i).some((q) => q?.id === p.aparece_tras)) e(`${ctx}: aparece_tras debe ser el id de un paso anterior`);
+    if (p.comparacion != null && !["exacta", "sin_mayusculas", "numerica"].includes(p.comparacion)) e(`${ctx}: comparacion debe ser exacta, sin_mayusculas o numerica`);
+    if (p.decimal != null && ![".", ","].includes(p.decimal)) e(`${ctx}: decimal debe ser «.» o «,»`);
+    if (p.tolerancia != null && !(typeof p.tolerancia === "number" && p.tolerancia >= 0 && p.tolerancia <= 0.5)) e(`${ctx}: tolerancia debe estar entre 0 y 0.5`);
     if (p.idempotente != null && typeof p.idempotente !== "boolean") e(`${ctx}: idempotente debe ser true o false`);
     if (necesitaDato.has(p.tipo) && !(typeof p.dato === "string" && p.dato.trim())) e(`${ctx}: falta «dato» (ruta en el archivo de datos ficticios, p. ej. cliente.nombre)`);
     if (p.tipo === "clic_seguro") {
@@ -166,6 +169,7 @@ export function validarMapeo(m, { local = false, soloComprobar = false } = {}) {
       if (!p.motivo) e(`${ctx}: clic_seguro necesita «motivo» (para qué se hace clic, p. ej. abrir la pestaña Detalle)`);
     }
   });
+  if (etapa2) validarEtapa2(m, e);
   const ult = m.pasos[m.pasos.length - 1];
   if (ult?.tipo !== "detener") e("el último paso debe ser de tipo «detener» (parada obligatoria antes de emitir)");
   if (m.pasos.filter((p) => p?.tipo === "detener").length !== 1) e("debe haber exactamente un paso «detener», y al final");
@@ -236,11 +240,60 @@ export function validarAislamiento(empresas) {
  *   FEL_AUTORIZACION_SAT=si  y  FEL_ETAPA_AUTORIZADA=etapa1 (--solo-comprobar: solo lectura)  o  etapa2 (llenado en seco).
  * Sin ella, se niega (y la etapa 1 no autoriza la 2). Contra páginas locales (simulaciones) no se pide nada.
  */
-export function evaluarAutorizacionSat({ env = {}, dominios = [], soloComprobar = false }) {
+export function evaluarAutorizacionSat({ env = {}, dominios = [], soloComprobar = false, empresa = null, datos = null }) {
   const real = (dominios ?? []).some((d) => !esLoopback(d));
   if (!real) return { permitido: true, real: false, razones: [] };
   const etapa = soloComprobar ? "etapa1" : "etapa2", razones = [];
   if (env.FEL_AUTORIZACION_SAT !== "si") razones.push("falta FEL_AUTORIZACION_SAT=si (el plan apunta a un portal REAL)");
   if (env.FEL_ETAPA_AUTORIZADA !== etapa) razones.push(`la etapa autorizada (${env.FEL_ETAPA_AUTORIZADA ?? "ninguna"}) no coincide con la que se pide (${etapa}); cada etapa se autoriza por separado`);
+  if (etapa === "etapa2") {   // la Etapa 2 ESCRIBE en el formulario: exige condiciones propias, además de la autorización independiente
+    if (env.FEL_CONDICIONES_USO_REVISADAS !== "si") razones.push("falta FEL_CONDICIONES_USO_REVISADAS=si (la persona responsable verificó que las acciones previstas están permitidas por las condiciones de uso del portal)");
+    if (!empresa || env.FEL_EMPRESA_CONFIRMADA !== empresa.alias) razones.push(`FEL_EMPRESA_CONFIRMADA debe ser exactamente el alias de la única empresa de prueba («${empresa?.alias ?? "?"}»)`);
+    if (empresa?.identidad?.confirmacion_manual === false) razones.push("la confirmación manual de la empresa no puede desactivarse en la Etapa 2");
+    if (datos && (datos.receptor?.nit !== "CF" || (datos.nits_de_prueba_declarados ?? []).length)) razones.push("en la Etapa 2 el único NIT permitido es «CF» (sin NIT declarados): ningún dato de personas o empresas reales");
+  }
   return { permitido: razones.length === 0, real: true, etapa, razones };
+}
+
+// ---------------------------------------------------------------- ETAPA 2 (llenado controlado): lista cerrada de lo que se puede escribir
+/** Firma de un localizador: «estrategia:valor» (sin marco, tag ni visible). */
+const firma = (l) => `${l?.estrategia}:${l?.valor}`;
+/** ÚNICOS campos que la Etapa 2 puede escribir (una sola línea, índice 0). Ampliarla exige cambiar el código y sus pruebas. */
+export const ETAPA2_ESCRITURA = new Set(["ng_model:datosGenerales.nitReceptor", "ng_model:datosGenerales.direccionReceptor", "nombre:BienOServicio0", "nombre:Cantidad0", "nombre:Descripcion0", "nombre:PrecioUnitario0", "nombre:Descuento0", "nombre:OtrosDescuento0"]);
+/** Campos que solo se pueden LEER o VERIFICAR (nunca escribir ni pulsar). */
+export const ETAPA2_LECTURA = new Set(["nombre:Total0", "ng_model:resultadoNIT.nombre", "etiqueta:NIT"]);
+export const ETAPA2_TIPOS = new Set(["manual", "llenar", "seleccionar", "salir_del_campo", "leer", "verificar_marcado", "verificar_ausente", "esperar_visible", "detener"]);
+function validarEtapa2(m, e) {
+  if ((m.permitir_post ?? []).length) e("etapa 2: permitir_post debe estar vacío (ninguna escritura de red está permitida)");
+  for (const r of m.permitir_get ?? []) if (!String(r?.aprobado_por ?? "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(r?.fecha ?? ""))) e("etapa 2: cada regla permitir_get necesita aprobado_por y fecha (AAAA-MM-DD): una aprobación explícita, específica y fechada");
+  (m.pasos ?? []).forEach((p, i) => {
+    const ctx = `etapa 2 · paso ${i + 1} (${p?.id})`;
+    if (!ETAPA2_TIPOS.has(p?.tipo)) return e(`${ctx}: el tipo «${p?.tipo}» no está permitido en la Etapa 2 (no hay clics ni «marcar»: los radios solo se verifican)`);
+    if (["llenar", "seleccionar", "salir_del_campo"].includes(p.tipo) && !ETAPA2_ESCRITURA.has(firma(p.localizador))) e(`${ctx}: «${firma(p.localizador)}» no está en la lista cerrada de campos escribibles de la Etapa 2`);
+    if (["leer", "verificar_marcado"].includes(p.tipo) && !ETAPA2_LECTURA.has(firma(p.localizador)) && !ETAPA2_ESCRITURA.has(firma(p.localizador))) e(`${ctx}: «${firma(p.localizador)}» no está en la lista de campos legibles de la Etapa 2`);
+    if (p.tipo === "salir_del_campo" && !String(p.localizador?.valor).includes("nitReceptor")) e(`${ctx}: solo se puede salir del campo NIT (provoca una consulta que debe estar revisada)`);
+    if (p.reposo_ms != null && !(Number.isInteger(p.reposo_ms) && p.reposo_ms >= 0 && p.reposo_ms <= 5000)) e(`${ctx}: reposo_ms debe estar entre 0 y 5000`);
+  });
+}
+
+/** Recorta el plan hasta un paso (incluido) y le añade el paso «detener»: permite ejecutar la etapa por tramos (2A, 2B). */
+export function recortarPlan(plan, hastaId) {
+  const i = (plan.pasos ?? []).findIndex((p) => p.id === hastaId);
+  if (i < 0 || plan.pasos[i].tipo === "detener") throw new Error(`--hasta: no existe un paso ejecutable con id «${hastaId}»`);
+  return { ...plan, pasos: [...plan.pasos.slice(0, i + 1).filter((p) => p.tipo !== "detener"), { id: "p999-detener", tipo: "detener" }] };
+}
+
+// ---------------------------------------------------------------- comparación de valores (formatos del portal desconocidos: se declaran, no se suponen)
+const sinAcentos = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+/** Convierte a número con el separador decimal DECLARADO ('.' o ','); devuelve null si no es un número limpio. */
+export function aNumero(texto, decimal = ".") {
+  let t = String(texto ?? "").trim().replace(/\s/g, "");
+  if (decimal === ",") t = t.replace(/\./g, "").replace(",", "."); else t = t.replace(/,/g, "");
+  return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : null;
+}
+/** comparacion: "exacta" (por defecto) · "sin_mayusculas" (ignora mayúsculas, acentos y espacios) · "numerica" (con decimal declarado y tolerancia). */
+export function compararValor(real, esperado, { comparacion = "exacta", decimal = ".", tolerancia = 0.005 } = {}) {
+  if (comparacion === "numerica") { const a = aNumero(real, decimal), b = aNumero(esperado, "."); return a !== null && b !== null && Math.abs(a - b) <= tolerancia; }
+  if (comparacion === "sin_mayusculas") return sinAcentos(real) === sinAcentos(esperado);
+  return String(real).trim() === String(esperado);
 }
