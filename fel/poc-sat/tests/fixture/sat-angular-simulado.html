@@ -60,6 +60,7 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   $scope.sentinela = 0;
   $scope.$watch("sentinela", (n, o) => { if (n !== o) { $http.post("/api/autoguardado-watch", {}); } }, true);   // watcher «peligroso» que NUNCA se dispara en la prueba (solo debe aparecer su llamada a $http.post en el análisis)
   const q = location.search, flag = (n) => new RegExp("[?&]" + n + "=1").test(q);
+  if (flag("inicial")) Object.assign($scope.detalleFactura[0], { BienOServicio: "Servicio", Cantidad: "1", PrecioUnitario: "0", Descuento: "0", OtrosDescuento: "0", Total: "0.000000" });   // variante: valores iniciales observados en el formulario real
   if (/[?&]radio=nit/.test(q)) $scope.datosGenerales.tipoIdentificacion = "NIT";   // variante: el radio NIT ya viene marcado
   $scope.alCambiarRadio = () => { $scope.registroRadio = ($scope.registroRadio || 0) + 1; if ($scope.datosGenerales.tipoIdentificacion === "CUI") { $scope.datosGenerales.nitReceptor = ""; $scope.resultadoNIT.nombre = ""; } };   // el radio CUI limpia el receptor
   $scope.alCambiarMoneda = () => { $scope.detalleFactura = [nuevo()]; };   // cambiar la moneda borra las líneas (como en el portal real)
@@ -73,12 +74,13 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   const asignarTotal = (d, v) => { if (retardo > 0) $timeout(() => { d.Total = v; }, retardo); else d.Total = v; };
   const num = (v) => (v === "" || v == null ? 0 : Number(v));
   $scope.calc = (d) => {
+    $scope.calcCuenta = ($scope.calcCuenta || 0) + 1;
     d.errorCantidad = d.errorDescuento = "";
     if (d.Cantidad !== "" && !(Number(d.Cantidad) > 0)) d.errorCantidad = "Cantidad no válida";
     if (isNaN(Number(d.Cantidad)) || isNaN(Number(d.PrecioUnitario)) || d.Cantidad === "" || d.PrecioUnitario === "") { asignarTotal(d, ""); return; }
     const sub = num(d.Cantidad) * num(d.PrecioUnitario), desc = num(d.Descuento) + num(d.OtrosDescuento);
     if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; asignarTotal(d, ""); return; }
-    { const t = (sub - desc); asignarTotal(d, formato === "coma" ? t.toFixed(2).replace(".", ",") : formato === "entero" ? String(Math.round(t)) : t.toFixed(2)); }
+    { const t = (sub - desc); asignarTotal(d, formato === "coma" ? t.toFixed(2).replace(".", ",") : formato === "entero" ? String(Math.round(t)) : formato === "seis" ? t.toFixed(6) : t.toFixed(2)); }
     autoguardado(); if (retardoTardio && !$scope.tardioArmado) { $scope.tardioArmado = true; $timeout(() => $http.post("/api/autoguardado-tardio", {}), retardoTardio); } if (flag("expirar")) window.__expirar();   // variante: la sesión caduca al calcular el total (pérdida de sesión en pleno llenado)
   };
   $scope.agregarItem = () => { $scope.detalleFactura.push(nuevo()); };

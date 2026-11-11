@@ -34,7 +34,7 @@ Pruebas locales (sin SAT): unitarias 32, navegador 32/32, simulación AngularJS 
 
 ## D. Procedimiento Windows (solo si se autoriza)
 
-**D.1 Condiciones previas.** 1) Autorización nueva (D.6). 2) **Revisar las condiciones de uso de SAT**: si la automatización de llenado no es claramente compatible, NO ejecutar. 3) Chrome con perfil temporal separado, inicio de sesión manual, una sola empresa de prueba confirmada. 4) Rama `fel-fase-1-0` validada y las tres baterías en verde. 5) Radio NIT marcado a mano. 6) Copia local del mapa (`*.local.json`) con el indicador de sesión confirmado por ti (y `p026` solo para 2B).
+**D.1 Condiciones previas.** 1) Autorización nueva (D.6). 2) **Revisar las condiciones de uso de SAT**: si la automatización de llenado no es claramente compatible, NO ejecutar. 3) Chrome con perfil temporal separado, inicio de sesión manual, una sola empresa de prueba confirmada. 4) Rama `fel-fase-1-0` validada y las tres baterías en verde. 5) Radio NIT: en la observación de referencia aparece **sin marcar** y `p010` se detiene si no lo está; marcarlo a mano requiere una **evaluación independiente de sus efectos** (su `ng-change` ejecuta `asignacionesRadioNIT()` y `onChangeComboDestinoDespacho()`) y no está autorizado por este documento (ver `fase-3-estado-inicial-formulario.md`). 6) Copia local del mapa (`*.local.json`) con el indicador de sesión confirmado por ti (y `p026` solo para 2B).
 
 **D.2 Ejecución (PowerShell)**
 ```powershell

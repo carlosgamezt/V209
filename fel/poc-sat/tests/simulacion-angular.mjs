@@ -674,6 +674,27 @@ await caso("O-1 MÍNIMO · ANALIZADOR (comando real): salida del fragmento sobre
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); await r.context.close(); }
 });
 
+
+// ───────── ETAPA 2 · VALORES INICIALES Y TOTAL CON SEIS DECIMALES (observados en el formulario real) ─────────
+await caso("ETAPA 2 · ESTADO INICIAL OBSERVADO: con Servicio/1/0/0/0 y total «0.000000», el tramo 2A llena, el descuento «0» sobre «0» no dispara el cálculo y el total «251.000000» coincide numéricamente; una comparación de texto exacta fallaría", async () => {
+  const q = "?radio=nit&inicial=1&formato=seis", datosReales = () => { const d = datosBase(); d.lineas[0].descuento = "0"; d.lineas[0].total_esperado = "251.00"; return d; };   // los datos ficticios del repositorio: descuento 0, total 251.00
+  const antes = await (async () => { const c = await browser.newContext(); const pg = await c.newPage(); await pg.goto(URL_BASE + q); const m = await modelo(pg); await c.close(); return m.lineas[0]; })();
+  assert.deepEqual([antes.BienOServicio, antes.Cantidad, antes.PrecioUnitario, antes.Descuento, antes.OtrosDescuento, antes.Total], ["Servicio", "1", "0", "0", "0", "0.000000"], "estado inicial de la simulación = el observado: " + JSON.stringify(antes));
+  const r = await correrE2(planE2(), { url: URL_BASE + q, datos: datosReales() }); assert.equal(r.ok, true, JSON.stringify(r.resumen.errores));
+  const d0 = (await modelo(r.page)).lineas[0], cuenta = await r.page.evaluate(() => angular.element(document.body).scope().calcCuenta);
+  assert.deepEqual([d0.BienOServicio, d0.Cantidad, d0.PrecioUnitario, d0.Descuento, d0.OtrosDescuento, d0.Total], ["Servicio", "2", "125.50", "0", "0", "251.000000"], JSON.stringify(d0));
+  assert.equal(await r.page.locator('input[name="Total0"]').inputValue(), "251.000000", "el total se muestra con seis decimales");
+  assert.equal(cuenta, 2, "solo cantidad (1→2) y precio (0→125.50) disparan el cálculo; el descuento «0» sobre «0» no");
+  await r.context.close();
+  const exacta = await correrE2(planE2("p150-linea0-leer-total", (m) => { m.pasos.find((x) => x.id === "p150-linea0-leer-total").comparacion = "exacta"; return m; }), { url: URL_BASE + q, datos: datosReales() }); assert.equal(exacta.ok, false, "texto exacto: 251.000000 ≠ 251.00"); assert.equal(exacta.resumen.errores[0].id, "p150-linea0-leer-total"); await exacta.context.close();
+});
+await caso("ETAPA 2 · CONTROLES INFERIORES: «Agregar item», «Vista Previa», editar impuestos y eliminar quedan sin tocar tras el tramo 2A con el estado inicial observado", async () => {
+  const r = await correrE2(planE2(), { url: URL_BASE + "?radio=nit&inicial=1&formato=seis" }); assert.equal(r.ok, true);
+  const b = await estadoBotones(r.page); assert.deepEqual([b.vistaPrevia, b.modal, b.lineas, b.radioClics], [false, false, 1, 0]); assert.deepEqual(posts.filter((x) => /vista|emitir|guardar/.test(x)), []);
+  const nombres = ["agregarItem", "validarInformacion", "mostrarModalImpuestos", "eliminarItem", "emitir"]; assert.ok(!r.registro.eventos().some((e) => /agregar|vista|impuesto|eliminar|emit/i.test(`${e.id} ${e.tipo}`)), "ningún paso del registro corresponde a esos controles"); void nombres;
+  await r.context.close();
+});
+
 await browser.close(); await browserHosts.close(); servidor.close();
 console.log(`\n${n - fallos}/${n} casos OK${posts.length ? ` — POST residuales: ${posts.join(", ")}` : ""}`);
 process.exit(fallos ? 1 : 0);

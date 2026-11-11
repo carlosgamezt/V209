@@ -24,6 +24,8 @@ Con ambos cerrados y las comprobaciones del §8 en verde, la 2A pasaría a **aut
 | Repetir verificación en Windows con Chrome | La persona informa que se completó satisfactoriamente; **yo no pude verificarlo** | No (dato aportado por la persona) |
 | El ensayo local no demuestra seguridad frente al portal real | Se mantiene | — |
 
+> **Actualización (observación visual del formulario):** valores iniciales de la línea 0, radio NIT sin marcar, total con seis decimales y controles inferiores documentados en `fase-3-estado-inicial-formulario.md`. No cambia el comportamiento del robot ni la recomendación.
+
 ## 3. Auditoría de efectos secundarios (código y comportamiento de Playwright)
 
 Acciones del ejecutor sobre el formulario: `fill`, `selectOption`, `blur` (solo en el tramo 2B), `isChecked`, lectura de texto/valor. No hay `click`, `press` ni `type` en ningún paso del mapa de Etapa 2 (verificado: la única `click` del ejecutor es `clic_seguro`, que el mapa de Etapa 2 no puede contener).

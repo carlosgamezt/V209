@@ -422,3 +422,24 @@ test("o1m: veredictos por mecanismo y tramo; INCOMPLETO nunca es VERDE", () => {
   const e = base(); e.autoguardado.angular.watchers_con = { palabra_guardado: 1 }; assert.equal(analizarO1Minimo(e).veredicto, "ROJO");
   for (const mut of [(o) => { o.herramientas.getEventListeners = false; }, (o) => { o.herramientas.angular_debug = false; }, (o) => { o.cobertura.truncado = true; }, (o) => { o.contexto.dominio_sat = false; }, (o) => { o.lista_cerrada.cantidad0.encontrados = 2; }, (o) => { delete o.lista_cerrada.precio0; }]) { const o = base(); mut(o); assert.equal(analizarO1Minimo(o).veredicto, "INCOMPLETO"); }
 });
+
+// ───── Mapa de Etapa 2: estado inicial observado (solo documentación; el comportamiento no cambia) ─────
+import crypto from "node:crypto";
+test("mapa etapa2: los campos que gobiernan el comportamiento del robot no cambiaron con la documentación (huella fija)", () => {
+  const m = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-etapa2.json", import.meta.url), "utf8"));
+  const canon = JSON.stringify({ d: m.dominios_permitidos, pp: m.permitir_post, pg: m.permitir_get, s: m.sesion, t: m.tramos, pasos: m.pasos.map((p) => { const { comentario, evidencia, ...r } = p; return r; }) });
+  assert.equal(crypto.createHash("sha256").update(canon).digest("hex"), "7a18da8dfd3e15b08d1bb2215a03b5dadba78b5e3bb6716a572d235d257e9cf3", "si cambias pasos, localizadores, dominios, sesión, tramos o permisos, actualiza esta huella a conciencia (es un cambio de comportamiento)");
+  assert.equal(m.pasos.find((p) => p.id === "p010-receptor-radio-nit").tipo, "verificar_marcado");
+  assert.deepEqual(m.pasos.filter((p) => ["clic_seguro", "marcar"].includes(p.tipo)), []);
+});
+test("mapa etapa2: documenta valores iniciales, radio sin marcar, total con seis decimales y controles inferiores; sin datos personales ni fiscales", () => {
+  const raw = fs.readFileSync(new URL("../config/mapeo.sat-etapa2.json", import.meta.url), "utf8"), m = JSON.parse(raw), e = m.estado_inicial_observado;
+  assert.equal(e.receptor.radio_nit, "SIN MARCAR"); assert.match(e.receptor.consecuencia, /evaluación independiente/);
+  assert.deepEqual(e.linea0_valores_iniciales, { tipo: "Servicio", cantidad: "1", descripcion: "vacía", precio_unitario: "0", descuentos: "0", otros_descuentos: "0", total: "0.000000 (seis decimales, campo deshabilitado)", impuestos: "columna vacía" });
+  const p150 = m.pasos.find((p) => p.id === "p150-linea0-leer-total"); assert.equal(p150.comparacion, "numerica"); assert.match(p150.comentario, /SEIS decimales/);
+  const nombres = m.controles_inferiores_observados.controles.map((c) => c.control); for (const x of [/Agregar item/, /Frase Especial/, /medios de pago/, /Vista Previa/]) assert.ok(nombres.some((n) => x.test(n)), `falta ${x}`);
+  for (const c of m.controles_inferiores_observados.controles) assert.ok(/^ninguna/.test(c.accion_del_robot), `el robot no actúa sobre ${c.control}`);
+  assert.equal(m.controles_inferiores_observados.controles.find((c) => c.control === "Vista Previa").clasificacion_de_la_guardia, "prohibido");
+  const limpio = (t) => t.replace(/20261028\.1439/g, "").replace(/\d+\.\d{6}\b/g, ""); /* se permiten el build visible del portal y los importes con seis decimales */ const docs = [JSON.stringify([m.estado_inicial_observado, m.controles_inferiores_observados, m.pasos.map((p) => p.comentario)]), fs.readFileSync(new URL("../../docs/fase-3-estado-inicial-formulario.md", import.meta.url), "utf8")].map(limpio);   // del mapa se revisa solo lo documental (el resto lleva tiempos en ms)
+  for (const t of docs) { assert.ok(!/\d{6,}/.test(t), "no debe haber números largos (NIT, DPI, teléfonos)"); assert.ok(!/@/.test(t), "no debe haber correos"); }
+});

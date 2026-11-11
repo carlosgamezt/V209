@@ -47,7 +47,7 @@
     {
       "id": "p010-receptor-radio-nit",
       "tipo": "verificar_marcado",
-      "comentario": "SOLO verifica que el radio NIT ya está marcado; NUNCA lo pulsa: su ng-change ejecuta asignacionesRadioNIT() y onChangeComboDestinoDespacho(), y el radio CUI limpia el receptor. Si no está marcado, se detiene y lo marcas tú a mano.",
+      "comentario": "SOLO verifica que el radio NIT ya está marcado; NUNCA lo pulsa. En la observación visual de referencia NINGÚN radio aparece marcado, así que con el formulario recién abierto este paso se detiene (es lo diseñado). Marcar el radio a mano requiere una evaluación independiente de sus efectos: su ng-change ejecuta asignacionesRadioNIT() y onChangeComboDestinoDespacho(), y el radio CUI limpia el receptor. Este mapa no autoriza esa selección.",
       "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
       "localizador": {
         "estrategia": "etiqueta",
@@ -81,7 +81,7 @@
     {
       "id": "p100-linea0-tipo",
       "tipo": "seleccionar",
-      "comentario": "Elige «Servicio» en la lista de la línea 0. Sin ng-change observado; está deshabilitable por inhabilitaBienServicio||inhabilitaDCIVA (si está deshabilitado, se detiene).",
+      "comentario": "Elige «Servicio» en la lista de la línea 0 (valor inicial observado: «Servicio»). Sin ng-change observado; está deshabilitable por inhabilitaBienServicio||inhabilitaDCIVA (si está deshabilitado, se detiene).",
       "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
       "localizador": {
         "estrategia": "nombre",
@@ -98,7 +98,7 @@
     {
       "id": "p110-linea0-cantidad",
       "tipo": "llenar",
-      "comentario": "ng-change: limpiarFrasesEspeciales(); calcularTotal(0); limpiarReferencia(); (efectos locales conocidos solo de nombre).",
+      "comentario": "Valor inicial observado: 1. ng-change: limpiarFrasesEspeciales(); calcularTotal(0); limpiarReferencia(); (efectos locales conocidos solo de nombre).",
       "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
       "localizador": {
         "estrategia": "nombre",
@@ -132,7 +132,7 @@
     {
       "id": "p130-linea0-precio",
       "tipo": "llenar",
-      "comentario": "ng-change: calcularTotal(0); limpiarFrasesEspeciales();",
+      "comentario": "Valor inicial observado: 0. ng-change: calcularTotal(0); limpiarFrasesEspeciales();",
       "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
       "localizador": {
         "estrategia": "nombre",
@@ -150,7 +150,7 @@
     {
       "id": "p140-linea0-descuento",
       "tipo": "llenar",
-      "comentario": "ng-change: calcularTotal(0); limpiarFrasesEspeciales();",
+      "comentario": "Valor inicial observado: 0 (los datos ficticios también usan 0: si el valor no cambia, AngularJS normalmente no dispara ng-change; no verificado en el portal). ng-change: calcularTotal(0); limpiarFrasesEspeciales();",
       "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
       "localizador": {
         "estrategia": "nombre",
@@ -168,7 +168,7 @@
     {
       "id": "p150-linea0-leer-total",
       "tipo": "leer",
-      "comentario": "El total se calcula de forma asíncrona; se lee con reintento y comparación numérica con separador decimal declarado. El formato real del portal no se conoce: si no coincide, se detiene.",
+      "comentario": "El total se calcula de forma asíncrona y SAT lo muestra con SEIS decimales (valor inicial observado «0.000000»): se lee con reintento y comparación NUMÉRICA con separador decimal «.» y tolerancia 0.005, de modo que 251.000000 coincide con 251.00. Si el formato real difiere (coma, miles), se detiene.",
       "evidencia": "Etapa 1 (real): comprobado sin errores (existe, único, visible/habilitado/editable)",
       "localizador": {
         "estrategia": "nombre",
@@ -252,5 +252,96 @@
     "«Agregar item», «Eliminar item», Vista Previa, guardar, certificar, emitir",
     "radios CUI e ID EXTRANJERO",
     "cualquier línea distinta de la 0"
-  ]
+  ],
+  "estado_inicial_observado": {
+    "fuente": "Dos capturas de pantalla del formulario FEL ya abierto por la persona, sin interactuar con él (10/11/2026). Las capturas NO se guardan en el repositorio (muestran datos personales y fiscales); aquí solo se anotan los hallazgos, sin ningún dato personal ni fiscal.",
+    "fecha_observacion": "2026-11-10",
+    "estado": "OBSERVACION VISUAL: no se ha verificado con DevTools ni con el robot; no cambia el comportamiento del robot (es solo documentación del mapa).",
+    "version_visible_del_portal": "2.0.0 (build 20261028.1439, tal como aparece en el pie de la página)",
+    "encabezado": {
+      "tipo_de_dte": "Factura Pequeño Contribuyente",
+      "moneda": "GTQ-Quetzal",
+      "fecha_de_emision": "fecha del día, campo de solo lectura con botón de calendario",
+      "exportacion": "casilla sin marcar",
+      "emision_en_ubicacion_temporal": "casilla sin marcar"
+    },
+    "receptor": {
+      "radio_nit": "SIN MARCAR",
+      "radio_cui": "sin marcar",
+      "radio_id_extranjero": "sin marcar",
+      "nit_del_receptor": "vacío",
+      "direccion_del_comprador": "vacío",
+      "consecuencia": "con el formulario así, p010 (verificar_marcado) se detiene: es lo diseñado; el robot NO marca el radio. Cualquier selección manual del radio requiere una evaluación independiente de sus efectos (su ng-change ejecuta asignacionesRadioNIT() y onChangeComboDestinoDespacho(); el radio CUI limpia el receptor) y NO está autorizada por este mapa."
+    },
+    "linea0_valores_iniciales": {
+      "tipo": "Servicio",
+      "cantidad": "1",
+      "descripcion": "vacía",
+      "precio_unitario": "0",
+      "descuentos": "0",
+      "otros_descuentos": "0",
+      "total": "0.000000 (seis decimales, campo deshabilitado)",
+      "impuestos": "columna vacía"
+    },
+    "implicaciones": [
+      "p100 elige «Servicio»: coincide con el valor inicial (seleccionar el mismo valor no cambia el modelo; no se ha verificado qué eventos dispara el portal).",
+      "p110 cambia la cantidad de 1 a 2; p130 cambia el precio de 0 a 125.50; p120 escribe la descripción: estos cambios sí modifican el modelo.",
+      "p140 escribe descuento «0» sobre un valor inicial «0»: si el valor no cambia, AngularJS normalmente no ejecuta ng-change (no verificado en el portal).",
+      "El total se muestra con SEIS decimales: la comparación debe ser numérica (p150, decimal «.», tolerancia 0.005); una comparación de texto exacta fallaría."
+    ]
+  },
+  "controles_inferiores_observados": {
+    "fuente": "captura de pantalla; los manejadores indicados vienen de observaciones anteriores (fragmentos de consola 1 y 3) salvo donde se diga «sin observar»",
+    "regla": "El robot NO pulsa, marca ni selecciona ninguno de estos controles; ninguno es campo escribible de la lista cerrada.",
+    "controles": [
+      {
+        "control": "Agregar item",
+        "tipo": "botón",
+        "manejador_conocido": "agregarItem()",
+        "clasificacion_de_la_guardia": "ambiguo",
+        "riesgo": "añade una línea y cambia los índices de la tabla (Cantidad0, Cantidad1…); el mapa asume UNA sola línea",
+        "accion_del_robot": "ninguna"
+      },
+      {
+        "control": "Seleccione Frase Especial",
+        "tipo": "lista desplegable",
+        "manejador_conocido": "sin observar",
+        "clasificacion_de_la_guardia": "fuera de la lista cerrada",
+        "riesgo": "cantidad, precio y descuento ejecutan limpiarFrasesEspeciales() en su ng-change: editarlos puede limpiar la frase especial; el texto fijo «No genera derecho a crédito fiscal» que aparece sobre la lista no se ha verificado a qué depende",
+        "accion_del_robot": "ninguna"
+      },
+      {
+        "control": "Complemento medios de pago",
+        "tipo": "casilla",
+        "manejador_conocido": "sin observar",
+        "clasificacion_de_la_guardia": "fuera de la lista cerrada",
+        "riesgo": "podría abrir campos adicionales o cambiar el documento; sin evaluar",
+        "accion_del_robot": "ninguna"
+      },
+      {
+        "control": "Vista Previa",
+        "tipo": "botón",
+        "manejador_conocido": "validarInformacion()",
+        "clasificacion_de_la_guardia": "prohibido",
+        "riesgo": "avanza hacia la emisión (la emisión probablemente se ofrece tras la vista previa); irreversible en la práctica",
+        "accion_del_robot": "ninguna; inalcanzable (sin clic_seguro; texto prohibido)"
+      },
+      {
+        "control": "Editar impuestos (lápiz de la línea)",
+        "tipo": "botón",
+        "manejador_conocido": "mostrarModalImpuestos()",
+        "clasificacion_de_la_guardia": "ambiguo",
+        "riesgo": "abre un diálogo de impuestos",
+        "accion_del_robot": "ninguna"
+      },
+      {
+        "control": "Eliminar item (papelera de la línea)",
+        "tipo": "botón",
+        "manejador_conocido": "eliminarItem()",
+        "clasificacion_de_la_guardia": "prohibido",
+        "riesgo": "borra la línea",
+        "accion_del_robot": "ninguna"
+      }
+    ]
+  }
 }
