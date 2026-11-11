@@ -39,7 +39,7 @@ select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-00
 create temp table t_cA as select (public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'mock', 'simulado', true)).id as id;
 create temp table t_cB as select (public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b', null, 'mock', 'simulado', true)).id as id;
 -- cerrojo: solo canales simulados del proveedor simulado pueden habilitarse; el real/otros proveedores, jamás en esta versión
-select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'simulado', true)$$, 'FEL_REGLA');
+select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'produccion', true)$$, 'FEL_REGLA');   -- Fase 4 (D-F2): el portal con agente solo admite el ambiente simulado; en producción sigue rechazado
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'pruebas', true)$$, 'FEL_REGLA');
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'mock', 'produccion', false)$$, 'FEL_REGLA');
 select pg_temp.espera_error($$insert into public.empresa_canales (empresa_id, proveedor_id, ambiente, habilitado) values ('10000000-0000-0000-0000-00000000000a', 'digifact', 'produccion', true)$$, '23514|check');

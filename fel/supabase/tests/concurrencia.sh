@@ -137,4 +137,52 @@ if [ "$estado" = certificado ]; then [ "$alertas" = 0 ] || fallar "certificado y
 else fallar "estado inesperado tras la carrera: $estado"; fi
 [ "$(q "select count(*) from public.operaciones_fiscales where documento_id='$D10' and estado in ('confirmada_exitosa','confirmada_fallida')")" = 1 ] || fallar "la operación debía cerrarse exactamente una vez"
 echo "OK concurrencia: respuesta del proveedor vs conciliación manual → estado coherente ($estado)"
+# ===== Fase 4: agente local
+CANP=$(q "select (public.fel_op_canal_configurar('$U','$E',null,'portal_playwright','simulado',true)).id")
+vincular() { # $1 = letra de la clave; devuelve el id del agente
+  local cod; cod=$(q "select public.fel_op_agente_codigo_crear('$U','$E') ->> 'codigo'")
+  q "select public.fel_sys_agente_vincular('$cod', repeat('$1',43), 'agente $1', '1') ->> 'agente_id'"
+}
+AG1=$(vincular K); AG2=$(vincular L)
+orden_lista() { # documento + operación con envío marcado + orden vinculada; devuelve «operación orden»
+  local d op ord; d=$(doc_sim)
+  op=$(q "select (public.fel_op_certificacion_solicitar('$U','$E','$d','clave-ag-$RANDOM$RANDOM$RANDOM',public.fel_sys_hash_documento('$E','$d'),'$CANP')).id")
+  q "select public.fel_sys_operacion_marcar_envio('$E','$op')" >/dev/null
+  ord=$(q "select public.fel_sys_orden_crear('$E','$op')")
+  q "select public.fel_sys_operacion_orden('$E','$op','$ord')" >/dev/null
+  echo "$op $ord"
+}
+# 11. dos agentes reclaman a la vez UNA orden: solo uno la recibe (SKIP LOCKED + token)
+read -r OP11 ORD11 < <(orden_lista)
+$P -v ON_ERROR_STOP=1 -q -X -t -A -c "begin; select public.fel_sys_orden_reclamar('$AG1'); select pg_sleep(1); commit;" >/tmp/conc_11a.out 2>&1 &
+$P -v ON_ERROR_STOP=1 -q -X -t -A -c "begin; select public.fel_sys_orden_reclamar('$AG2'); select pg_sleep(1); commit;" >/tmp/conc_11b.out 2>&1 &
+wait
+[ "$(cat /tmp/conc_11a.out /tmp/conc_11b.out | grep -c "$ORD11")" = 1 ] || fallar "reclamo: debía recibir la orden exactamente un agente"
+[ "$(q "select token from public.ordenes_emision where id='$ORD11'")" = 1 ] || fallar "el token debía ser 1"
+echo "OK concurrencia: dos agentes, una orden → un solo reclamo"
+# 12. dos creaciones simultáneas de la orden de la MISMA operación: una sola orden
+DOC12=$(doc_sim)
+OP12=$(q "select (public.fel_op_certificacion_solicitar('$U','$E','$DOC12','clave-ag-0000012A',public.fel_sys_hash_documento('$E','$DOC12'),'$CANP')).id")
+q "select public.fel_sys_operacion_marcar_envio('$E','$OP12')" >/dev/null
+correr "select public.fel_sys_orden_crear('$E','$OP12')" 12a &
+correr "select public.fel_sys_orden_crear('$E','$OP12')" 12b &
+wait
+[ "$(cat /tmp/conc_12a.res /tmp/conc_12b.res | grep -c OK)" = 1 ] || fallar "orden: debía crearse exactamente una"
+[ "$(q "select count(*) from public.ordenes_emision where operacion_id='$OP12'")" = 1 ] || fallar "hay órdenes duplicadas"
+echo "OK concurrencia: una sola orden por operación"
+# 13. carrera entre el RESULTADO del agente y el VENCIMIENTO del arrendamiento: el estado final es coherente y la operación nunca queda sin proteger
+AG3=$(vincular M)   # agente libre (AG1/AG2 pueden conservar la orden del caso 11)
+read -r OP13 ORD13 < <(orden_lista)
+T13=$(q "select (public.fel_sys_orden_reclamar('$AG3') ->> 'token')")
+q "select public.fel_sys_orden_progreso('$AG3','$ORD13',$T13,'detenido_en_vista_previa')" >/dev/null
+q "update public.ordenes_emision set lease_hasta = clock_timestamp() - interval '1 second' where id='$ORD13'"
+correr "select public.fel_sys_ordenes_vencer('$E')" 13a &
+correr "select public.fel_sys_orden_resultado('$AG3','$ORD13',$T13,'emitido_simulado','SIMA','00000013','SIM-CONC-0013',null)" 13b &
+wait
+est=$(q "select estado from public.ordenes_emision where id='$ORD13'")
+case "$est" in
+  incierta) [ "$(q "select estado from public.operaciones_fiscales where id='$OP13'")" = desconocida ] || fallar "orden incierta pero la operación no está por verificar";;
+  *) fallar "con el arrendamiento vencido el resultado no debía aceptarse (estado: $est)";;
+esac
+echo "OK concurrencia: resultado vs vencimiento → incierta y por_verificar (nunca se acepta un resultado vencido)"
 echo "CONCURRENCIA OK"
