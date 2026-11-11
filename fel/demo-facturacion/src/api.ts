@@ -4,6 +4,8 @@ import { MockProvider, type Escenario } from "../../proveedores/src/mock.ts";
 import { OrquestadorDb, ProcesoCaido } from "../../proveedores/src/orquestador_db.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import { calcular, type LineaEntrada } from "../../supabase/functions/fel-api/lib/calculo.ts";
+import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
+import type { Autorizador } from "../../proveedores/src/autorizacion_humana.ts";
 import type { BdDemo } from "./bd.ts";
 import { EMPRESA, USUARIOS, type ClaveUsuario, type Sembrado } from "./mundo_demo.ts";
 
@@ -23,16 +25,16 @@ const ESC_IDS = new Set(ESCENARIOS.map((e) => e.id));
 export class ErrorHttp extends Error { constructor(public status: number, mensaje: string, public codigo = "error") { super(mensaje); } }
 
 const STATUS: Record<string, number> = { FEL_NO_AUTORIZADO: 403, FEL_NO_ENCONTRADO: 404, FEL_CONFLICTO: 409, FEL_OPERACION_ABIERTA: 409, FEL_POR_VERIFICAR: 409, FEL_ALERTA_ABIERTA: 409,
-  FEL_ESPERA_TARDIA: 409, FEL_AUDITORIA_PENDIENTE: 409, FEL_YA_ENVIADA: 409, FEL_REGLA: 422 };
+  FEL_ESPERA_TARDIA: 409, FEL_ESTADO: 409, FEL_REVOCADO: 409, FEL_AUDITORIA_PENDIENTE: 409, FEL_YA_ENVIADA: 409, FEL_REGLA: 422 };
 const uuidOk = (x: unknown): x is string => typeof x === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
 const texto = (x: unknown, min: number, max: number, campo: string): string => { if (typeof x !== "string" || x.trim().length < min || x.length > max) throw new ErrorHttp(400, `${campo}: texto de ${min} a ${max} caracteres`, "entrada_invalida"); return x.trim(); };
 // (Ahora los datos de contacto viven en la tabla de empresas y se editan con fel_op_empresa_datos_guardar.)
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown } } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
-  const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, mock, ganchos);
+  const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, extras.proveedor ?? mock, ganchos);   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
   const CTX = { ambiente: "simulado" as const, ahora: () => new Date() };
   const actor = (req: Request): { clave: ClaveUsuario; id: string } => {
     const c = (req.headers.get("x-demo-usuario") ?? "ana") as ClaveUsuario; if (!(c in USUARIOS)) throw new ErrorHttp(400, "Usuario de la demostración no válido", "entrada_invalida");
@@ -151,6 +153,12 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     if (m === "POST" && ruta === "/api/agentes/codigo") { await cuerpo(); return json(await bd.rpc("fel_op_agente_codigo_crear", { p_actor: a.id, p_empresa: EMPRESA })); }
     if (m === "GET" && ruta === "/api/agentes") return json(await bd.rpc("fel_op_agentes_listar", { p_actor: a.id, p_empresa: EMPRESA }));
     if (m === "POST" && ruta === "/api/agentes/revocar") { const b = await cuerpo(); await bd.rpc("fel_op_agente_revocar", { p_actor: a.id, p_empresa: EMPRESA, p_agente: id(b.agente as string) }); return json({ ok: true }); }
+    // ---- autorización HUMANA de la confirmación (la persona, no el agente; fel/docs/agente-confirmacion-humana.md). La respuesta nunca incluye la concesión firmada.
+    if (m === "GET" && (r = /^\/api\/ordenes\/([^/]+)\/vista-previa$/.exec(ruta))) return json(await bd.rpc("fel_op_orden_vista_previa", { p_actor: a.id, p_empresa: EMPRESA, p_orden: id(r[1]) }));
+    if (m === "POST" && (r = /^\/api\/ordenes\/([^/]+)\/autorizar$/.exec(ruta))) {
+      await cuerpo(); if (!extras.autorizador) throw new ErrorHttp(404, "La autorización de confirmación no está disponible en esta demostración", "no_disponible");
+      return json({ ok: true, ...(await extras.autorizador.autorizar({ actor: a.id, empresa: EMPRESA, orden: id(r[1]) })) });
+    }
     if (m === "GET" && ruta === "/api/agentes/salud") {
       if (!(await permisosDe(a)).includes("canales.ver")) throw new ErrorHttp(403, "No tienes permiso", "no_autorizado");
       return json(extras.supervisor?.salud() ?? { ok: false, en_marcha: false });

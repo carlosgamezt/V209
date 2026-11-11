@@ -68,7 +68,10 @@ jobs:
       - name: Servidor de la demostración con el plano de control del agente (firma Ed25519 por HTTP, supervisor periódico y cierre ordenado; simulado y local)
         run: deno test -A fel/demo-facturacion/tests/agente_servidor_test.ts
       - name: Simulador FEL del agente local (núcleo, servidor 127.0.0.1 y formulario en Chromium; confirmación solo humana, interrupciones, duplicados; sin SAT ni credenciales)
-        run: node --test "fel/agente-local/pruebas/*.test.mjs"
+        run: node --test "fel/agente-local/pruebas/nucleo.test.mjs" "fel/agente-local/pruebas/servidor.test.mjs" "fel/agente-local/pruebas/concesion.test.mjs" "fel/agente-local/pruebas/navegador.test.mjs"
+      - name: Agente local con Playwright (Chromium 131 exigido) contra NEXA de prueba y el simulador; autorización humana separada, desconexiones, revocación, aislamiento, fencing y recuperación (todo local y simulado)
+        timeout-minutes: 15
+        run: node --test --test-concurrency=1 fel/agente-local/pruebas/agente.test.mjs
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)

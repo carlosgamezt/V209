@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { crearNucleo, ErrorSim, esEmpresaValida, esReferenciaValida } from "./nucleo.mjs";
+import { crearVerificador } from "../comun/concesion.mjs";
 
 const WEB = fileURLToPath(new URL("./web/", import.meta.url));
 const ESTATICOS = { "/estilo.css": ["estilo.css", "text/css; charset=utf-8"], "/app.js": ["app.js", "text/javascript; charset=utf-8"] };
@@ -17,8 +18,9 @@ const CABECERAS = {
 };
 const igual = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && timingSafeEqual(x, y); };
 
-export async function iniciarSimulador({ puerto = 0, ahora, demoraLentoMs = 1500 } = {}) {
-  const nucleo = crearNucleo({ ahora });
+/** `clavePublicaNexa`: si se indica, la confirmación exige una concesión firmada por NEXA (autorización humana; ver fel/docs/agente-confirmacion-humana.md). */
+export async function iniciarSimulador({ puerto = 0, ahora, demoraLentoMs = 1500, clavePublicaNexa = null } = {}) {
+  const nucleo = crearNucleo({ ahora, verificarConcesion: clavePublicaNexa ? crearVerificador(clavePublicaNexa) : null });
   const tokenControl = randomBytes(24).toString("hex");
   let host = "127.0.0.1", port = 0;
 
@@ -39,7 +41,8 @@ export async function iniciarSimulador({ puerto = 0, ahora, demoraLentoMs = 1500
   const origenValido = (req) => { const o = req.headers.origin; return o === undefined || o === `http://127.0.0.1:${port}` || o === `http://localhost:${port}`; };
   const autorizadoControl = (req) => igual(req.headers["x-control-token"] ?? "", tokenControl);
   const vistaEstado = (s) => ({ id: s.id, empresa: s.empresa, referencia: s.referencia, estado: s.estado, fallo: s.fallo, total: s.resumen?.total ?? null });
-  const mapaErr = { DATOS: 400, TIPO: 415, TAMANO: 413, JSON: 400, ESTADO: 409, CSRF: 403, SOLO_HUMANO: 403, YA_CONFIRMADA: 409, ERROR_SERVIDOR: 500 };
+  const vistaControl = (s) => ({ ...vistaEstado(s), resumen: s.resumen ?? null, hash: s.hash ?? null });   // el agente lee lo que REALMENTE muestra la vista previa (nunca el token de confirmación)
+  const mapaErr = { CONCESION_INVALIDA: 401, NO_CONFIGURADO: 404, LIMITE: 429, SIN_AUTORIZACION_HUMANA: 403, DATOS: 400, TIPO: 415, TAMANO: 413, JSON: 400, ESTADO: 409, CSRF: 403, SOLO_HUMANO: 403, YA_CONFIRMADA: 409, ERROR_SERVIDOR: 500 };
 
   const servidor = http.createServer(async (req, res) => {
     try {
@@ -55,6 +58,12 @@ export async function iniciarSimulador({ puerto = 0, ahora, demoraLentoMs = 1500
         return responder(res, 200, await readFile(WEB + "formulario.html"), "text/html; charset=utf-8");
       }
       if (m === "GET" && ses && ses[2] === "/estado") { const s = nucleo.sesion(ses[1]); return s ? responder(res, 200, vistaEstado(s)) : error(res, 404, "NO_EXISTE", "Sesión no encontrada"); }
+
+      // --- concesiones de NEXA (servidor a servidor): solo se aceptan con firma válida; sin credenciales ni cabeceras especiales
+      if (m === "POST" && ruta === "/nexa/autorizaciones") {
+        if (req.headers.origin !== undefined) return error(res, 403, "ORIGEN", "Origen no permitido");   // una página web no puede entregar concesiones
+        const c = await leerJson(req); nucleo.registrarConcesion(c.token); return responder(res, 200, { ok: true });
+      }
 
       // --- acciones del navegador (únicas que pueden confirmar)
       if (m === "POST" && ses && ses[2]) {
@@ -86,7 +95,7 @@ export async function iniciarSimulador({ puerto = 0, ahora, demoraLentoMs = 1500
         if (cs) {
           if (!esEmpresaValida(empresa)) return error(res, 400, "DATOS", "empresa requerida");
           const s = nucleo.sesionDeEmpresa(cs[1], empresa); if (!s) return error(res, 404, "NO_EXISTE", "Sesión no encontrada");   // otra empresa ⇒ como si no existiera
-          if (m === "GET" && !cs[2]) return responder(res, 200, vistaEstado(s));
+          if (m === "GET" && !cs[2]) return responder(res, 200, vistaControl(s));
           if (m === "POST" && cs[2]) { nucleo.interrumpir(s, "control"); return responder(res, 200, vistaEstado(s)); }
         }
         if (m === "GET" && ruta === "/control/eventos") { if (!esEmpresaValida(empresa)) return error(res, 400, "DATOS", "empresa requerida"); return responder(res, 200, nucleo.eventos({ empresa, sesion: url.searchParams.get("sesion") ?? undefined })); }
@@ -113,7 +122,7 @@ export async function iniciarSimulador({ puerto = 0, ahora, demoraLentoMs = 1500
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const s = await iniciarSimulador({ puerto: Number(process.env.FEL_SIM_PUERTO ?? 0) });
+  const s = await iniciarSimulador({ puerto: Number(process.env.FEL_SIM_PUERTO ?? 0), clavePublicaNexa: process.env.FEL_SIM_CLAVE_NEXA || null });
   console.log(`Simulador FEL (SIMULADO - SIN VALOR FISCAL) en ${s.url}`);
   console.log(`Token de control: ${s.tokenControl}`);
   for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, async () => { await s.detener(); process.exit(0); });

@@ -77,8 +77,9 @@ export const FALLOS = ["ninguno", "error_antes", "corte_tras_confirmar", "lento"
 export class ErrorSim extends Error { constructor(codigo, estado, mensaje) { super(mensaje ?? codigo); this.codigo = codigo; this.estado = estado; } }
 
 const RE_EMPRESA = /^[A-Za-z0-9_-]{1,64}$/, RE_REF = /^[A-Za-z0-9_.:-]{8,80}$/;
-export function crearNucleo({ ahora = () => new Date(), maxEventos = 5000 } = {}) {
-  const sesiones = new Map(), emisiones = [], eventos = []; let numero = 0, seq = 0;
+/** `verificarConcesion(token, ahora)` → concesión | null. Si se entrega, la confirmación EXIGE una concesión firmada por NEXA (autorización humana separada del agente). */
+export function crearNucleo({ ahora = () => new Date(), maxEventos = 5000, verificarConcesion = null } = {}) {
+  const sesiones = new Map(), emisiones = [], eventos = [], concesiones = new Map(); let numero = 0, seq = 0;
   const log = (s, evento, detalle) => { eventos.push({ n: ++seq, t: ahora().toISOString(), empresa: s.empresa, sesion: s.id, evento, ...(detalle ? { detalle } : {}) }); if (eventos.length > maxEventos) eventos.shift(); };
   const mover = (s, a) => { if (!(TRANSICIONES[s.estado] ?? []).includes(a)) throw new ErrorSim("ESTADO", s.estado, `La sesión está «${s.estado}»: no admite pasar a «${a}»`); s.estado = a; };
 
@@ -91,6 +92,18 @@ export function crearNucleo({ ahora = () => new Date(), maxEventos = 5000 } = {}
       sesiones.set(s.id, s); log(s, "sesion_creada", fallo === "ninguno" ? undefined : `fallo:${fallo}`); return s;
     },
     sesion: (id) => sesiones.get(id) ?? null,
+    exigeAutorizacionHumana: () => verificarConcesion !== null,
+    /** Recibe una concesión de NEXA (servidor a servidor). Solo se guarda si la firma es válida y no caducó; nunca se devuelve a nadie. */
+    registrarConcesion(token) {
+      if (!verificarConcesion) throw new ErrorSim("NO_CONFIGURADO", "-", "El simulador no exige autorización humana");
+      const c = verificarConcesion(token, ahora());
+      if (!c) throw new ErrorSim("CONCESION_INVALIDA", "-", "Concesión no válida");
+      for (const [k, v] of concesiones) if (Date.parse(v.c.expira) <= ahora().getTime()) concesiones.delete(k);   // purga de caducadas
+      if (concesiones.size >= 1000) throw new ErrorSim("LIMITE", "-", "Demasiadas concesiones pendientes");
+      if (!concesiones.has(c.jti)) concesiones.set(c.jti, { c, usada: false });
+      eventos.push({ n: ++seq, t: ahora().toISOString(), empresa: c.empresa, sesion: "-", evento: "concesion_recibida", detalle: `orden:${c.orden}` }); if (eventos.length > maxEventos) eventos.shift();
+      return { jti: c.jti };
+    },
     /** Lectura desde el plano de control: solo con la empresa de la sesión (otra empresa ⇒ como si no existiera). */
     sesionDeEmpresa: (id, empresa) => { const s = sesiones.get(id); return s && s.empresa === empresa ? s : null; },
     abrir(s) { if (s.estado === "creada") { mover(s, "abierta"); log(s, "formulario_abierto"); } return s; },
@@ -111,7 +124,13 @@ export function crearNucleo({ ahora = () => new Date(), maxEventos = 5000 } = {}
       if (s.estado === "confirmada") { log(s, "confirmacion_repetida_bloqueada"); throw new ErrorSim("YA_CONFIRMADA", s.estado, "Esta sesión ya fue confirmada"); }
       if (s.estado !== "previsualizada") { log(s, "confirmacion_bloqueada", `estado:${s.estado}`); throw new ErrorSim("ESTADO", s.estado, "Primero debe verse la vista previa"); }
       if (typeof csrf !== "string" || csrf.length !== 32 || csrf !== s.csrf) { log(s, "confirmacion_bloqueada", "sin_token_valido"); throw new ErrorSim("CSRF", s.estado, "Token de confirmación no válido"); }
+      let concesion = null;
+      if (verificarConcesion) {
+        for (const v of concesiones.values()) if (!v.usada && v.c.empresa === s.empresa && v.c.orden === s.referencia && v.c.resumen_hash === s.hash && Date.parse(v.c.expira) > ahora().getTime()) { concesion = v; break; }
+        if (!concesion) { log(s, "confirmacion_bloqueada", "sin_autorizacion_humana"); throw new ErrorSim("SIN_AUTORIZACION_HUMANA", s.estado, "Falta la autorización de la persona en NEXA para esta vista previa"); }
+      }
       log(s, "confirmacion_solicitada");
+      if (concesion) { concesion.usada = true; log(s, "autorizacion_humana_usada", `jti:${concesion.c.jti.slice(0, 8)}`); }   // un solo uso: se consume ANTES de registrar
       if (s.fallo === "error_antes") { mover(s, "error"); log(s, "error_inyectado", "antes_de_registrar"); throw new ErrorSim("ERROR_SERVIDOR", s.estado, "Error del servidor simulado"); }
       const previas = emisiones.filter((x) => x.empresa === s.empresa && x.referencia === s.referencia).length;
       const em = { id: randomUUID(), empresa: s.empresa, referencia: s.referencia, sesion: s.id, serie: "SIMA", numero: String(++numero).padStart(8, "0"), autorizacion: `SIM-${randomUUID().toUpperCase()}`, hash: s.hash, t: ahora().toISOString() };

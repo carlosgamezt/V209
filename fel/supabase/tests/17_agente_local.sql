@@ -207,7 +207,7 @@ select pg_temp.espera_error($$update public.ordenes_emision set estado = 'pendie
 select pg_temp.espera_error($$update public.ordenes_emision set hash_contenido = repeat('c',64) where id = (select (r ->> 'orden')::uuid from t_r1)$$, 'FEL_REGLA');
 select pg_temp.espera_error($$update public.ordenes_emision set empresa_id = '10000000-0000-0000-0000-00000000000b' where id = (select (r ->> 'orden')::uuid from t_r1)$$, 'FEL_REGLA|23503');
 select pg_temp.espera_error($$delete from public.ordenes_emision where id = (select (r ->> 'orden')::uuid from t_r1)$$, 'FEL_REGLA');
-select pg_temp.espera_error($$truncate public.ordenes_emision$$, 'FEL_REGLA');
+select pg_temp.espera_error($$truncate public.ordenes_emision$$, 'FEL_REGLA|0A000|foreign key');
 select pg_temp.espera_error($$update public.ordenes_emision set autorizacion = 'REAL-1' where id = (select (r ->> 'orden')::uuid from t_r1)$$, '23514|check|FEL_ESTADO');
 
 -- 4.5 reinicio del agente: reclama su propia orden con token nuevo; el proceso anterior queda invalidado (fencing)
@@ -344,6 +344,10 @@ select pg_temp.espera_error($$update public.ordenes_emision set estado = 'comple
 select pg_temp.espera_error($$select public.fel_sys_orden_reclamar(gen_random_uuid())$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_sys_orden_cierre_reservar(gen_random_uuid(), 60)$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_sys_orden_cierre_liberar(gen_random_uuid())$$, '42501|permission denied');
+select pg_temp.espera_error($$select public.fel_sys_orden_vista_previa(gen_random_uuid(), gen_random_uuid(), 1, '{}'::jsonb, repeat('a',64))$$, '42501|permission denied');
+select pg_temp.espera_error($$select public.fel_op_orden_confirmacion_autorizar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', gen_random_uuid(), 300)$$, '42501|permission denied');
+select pg_temp.espera_error($$select public.fel_op_orden_vista_previa('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', gen_random_uuid())$$, '42501|permission denied');
+select pg_temp.espera_error($$select * from public.ordenes_confirmaciones$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_sys_agente_vincular('AAAA-AAAA-AAAA', repeat('A',43), 'x', '1')$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_op_agente_codigo_crear('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b')$$, '42501|permission denied');
 reset role;

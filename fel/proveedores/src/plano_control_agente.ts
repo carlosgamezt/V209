@@ -7,7 +7,7 @@ import { ErrorBd, type Rpc } from "./rpc.ts";
 import { mensajeFirmado, sha256Hex, verificarFirma } from "./firma_agente.ts";
 
 export const PREFIJO_AGENTE = "/api/agente/v1/";
-const OPERACIONES = ["vincular", "latido", "reclamar", "progreso", "resultado"] as const;
+const OPERACIONES = ["vincular", "latido", "reclamar", "progreso", "vista_previa", "resultado"] as const;
 type Operacion = typeof OPERACIONES[number];
 const MAX_CUERPO = 64 * 1024;
 
@@ -22,6 +22,7 @@ const MENSAJES: Record<string, [number, string]> = {
   FEL_FENCING: [409, "La orden ya no te corresponde; no se hizo ningún cambio."],
   FEL_ESTADO: [409, "La orden no está en un estado que lo permita."],
   FEL_ORDEN_DUPLICADA: [409, "Ya existe una orden para esa operación."],
+  FEL_CONFLICTO: [409, "La orden ya no admite ese cambio."],
   FEL_DATOS_INVALIDOS: [422, "Datos no válidos."],
   FEL_LIMITE: [429, "Demasiados intentos; espera unos minutos."],
   FEL_METODO: [405, "Método no permitido."],
@@ -82,6 +83,12 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
         if (!orden || !token || !fase) return responder("FEL_DATOS_INVALIDOS");
         return responder(null, await sql<Obj>("fel_sys_orden_progreso", { p_agente: agente, p_orden: orden, p_token: token, p_fase: fase }));
       }
+      case "vista_previa": {   // el agente informa lo que el simulador REALMENTE muestra; NEXA lo contrasta y una PERSONA decide (fel/docs/agente-confirmacion-humana.md)
+        const orden = typeof b.orden === "string" && RE_UUID.test(b.orden) ? b.orden : null, token = entero(b.token), hash = cadena(b.hash, 64);
+        const resumen = b.resumen !== null && typeof b.resumen === "object" && !Array.isArray(b.resumen) ? b.resumen : null;
+        if (!orden || !token || !hash || !resumen) return responder("FEL_DATOS_INVALIDOS");
+        return responder(null, await sql<Obj>("fel_sys_orden_vista_previa", { p_agente: agente, p_orden: orden, p_token: token, p_resumen: resumen, p_hash: hash }));
+      }
       case "resultado": {
         const orden = typeof b.orden === "string" && RE_UUID.test(b.orden) ? b.orden : null, token = entero(b.token), tipo = cadena(b.tipo, 40);
         const serie = cadena(b.serie, 40, true), numero = cadena(b.numero, 40, true), autorizacion = cadena(b.autorizacion, 80, true), detalle = cadena(b.detalle, 60, true);
@@ -109,7 +116,7 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
       if (!codigo || !clave || !nombreAg || version === undefined) return { resp: responder("FEL_DATOS_INVALIDOS"), op: operacion };
       const r = await sql<Obj>("fel_sys_agente_vincular", { p_codigo: codigo, p_clave_publica: clave, p_nombre: nombreAg, p_version: version });
       if (typeof r.error === "string") return { resp: responder(r.error), op: operacion };
-      return { resp: responder(null, { agente_id: r.agente_id, empresa: r.empresa }), op: operacion, agente: String(r.agente_id) };
+      return { resp: responder(null, { agente_id: r.agente_id, empresa_id: r.empresa_id, empresa: r.empresa }), op: operacion, agente: String(r.agente_id) };
     }
 
     // ---- autenticación: formato → firma → (agente activo, reloj, nonce) → acción

@@ -72,7 +72,7 @@
     else errores([{ campo: "formulario", mensaje: r.cuerpo?.mensaje ?? "Error" }]);
   });
   $("btn-confirmar").addEventListener("click", async () => {
-    if (enviando) return; enviando = true; $("btn-confirmar").disabled = true;           // un solo envío por clic: se evita el doble clic
+    if (enviando) return; enviando = true; $("btn-confirmar").disabled = true; errores([]);           // un solo envío por clic: se evita el doble clic
     try {
       let r; try { r = await llamar("confirmar", { csrf }); } catch { r = null; }
       if (r === null) { mostrar("seccion-resultado"); $("resultado-titulo").textContent = "Conexión interrumpida"; $("resultado-detalle").textContent = "No se recibió respuesta. NO repita la operación: primero verifique si la emisión simulada quedó registrada."; estado("Resultado incierto."); }
