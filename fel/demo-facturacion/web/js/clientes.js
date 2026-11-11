@@ -31,7 +31,7 @@ export function pantallaClientes(ctx) {
           h("div", { class: "celda mono", "data-et": "Identificación" }, c.tipo_identificacion === "CF" ? "C/F" : c.numero_identificacion),
           h("div", { class: "celda celda-main", "data-et": "Nombre" }, h("strong", {}, c.nombre), c.direccion ? h("small", {}, c.direccion) : null, c.activo ? null : insignia("Inactivo", "gris")),
           h("div", { class: "celda", "data-et": "Tipo" }, insignia(c.tipo_identificacion === "CF" ? "Con. Final" : c.tipo_identificacion === "NIT" ? "Empresa" : "Persona", c.tipo_identificacion === "CF" ? "verde" : "azul")),
-          h("div", { class: "celda", "data-et": "Teléfono" }, c.telefono ?? "—"), h("div", { class: "celda", "data-et": "Correo" }, c.email ?? "—"),
+          h("div", { class: "celda", "data-et": "Teléfono" }, c.telefono ?? "—"), h("div", { class: "celda celda-correo", "data-et": "Correo" }, c.email ? h("button", { type: "button", class: "correo", title: c.email, "data-correo": c.numero_identificacion, "aria-label": `Ver el correo completo de ${c.nombre}`, onclick: () => verCorreo(c) }, c.email) : "—"),
           h("div", { class: "celda celda-ac" }, puedeEscribir && c.tipo_identificacion !== "CF" ? h("button", { type: "button", class: "icon-btn", title: "Editar", "aria-label": `Editar ${c.nombre}`, onclick: () => formulario(c) }, icono("pencil")) : null)))]
         : vacio("users", "No hay clientes", busqueda || tipo !== "todos" || soloFrecuentes ? "Ningún cliente coincide con los filtros." : "Agrega tu primer cliente.", puedeEscribir && !busqueda ? boton("Nuevo cliente", { icon: "plus", onclick: () => formulario(null) }) : null));
     poner(pie, h("span", { class: "mut" }, todos.length ? `Mostrando ${(pagina - 1) * POR_PAGINA + 1} a ${(pagina - 1) * POR_PAGINA + vista.length} de ${todos.length} clientes` : "Sin resultados"),
@@ -45,6 +45,11 @@ export function pantallaClientes(ctx) {
       title: c.tipo_identificacion === "CF" ? "El consumidor final no es cliente frecuente" : frecuente(c) ? "Quitar de frecuentes" : "Marcar como frecuente",
       "aria-label": `${frecuente(c) ? "Quitar de frecuentes a" : "Marcar como frecuente a"} ${c.nombre}`,
       onclick: async () => { try { await api.frecuenteCliente(c.id, !frecuente(c)); await ctx.recargarEstado(); await cargar(); } catch (e) { toast(mensajeError(e), "error"); } } }, "★");
+  }
+  function verCorreo(c) {
+    let m; const estado = h("p", { class: "mut", role: "status" });
+    m = modal({ titulo: "Correo del cliente", ancho: "sm", contenido: [h("p", { class: "mut" }, c.nombre), h("p", { class: "correo-completo", "data-correo-completo": "1" }, c.email), estado],
+      pie: [boton("Copiar", { tipo: "sec", onclick: async () => { try { await navigator.clipboard.writeText(c.email); estado.textContent = "Copiado."; } catch { estado.textContent = "No se pudo copiar; selecciona el texto."; } } }), boton("Cerrar", { onclick: () => m.cerrar() })] });
   }
   function descargar() {
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"`;   // evita fórmulas al abrir en hojas de cálculo

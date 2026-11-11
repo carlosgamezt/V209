@@ -52,10 +52,9 @@ export function pantallaConfig(ctx) {
           h("div", { class: "form" }, h("div", { class: "grid2" }, campo("Nombre comercial", inp("nombre", "Nombre comercial", { maxlength: 120 })), campo("Teléfono", inp("telefono", "Teléfono de la empresa", { maxlength: 40 }))),
             h("div", { class: "grid2" }, campo("Correo de facturación", inp("correo", "Correo de facturación", { maxlength: 200, type: "email" })), campo("Dirección fiscal", inp("direccion", "Dirección fiscal", { maxlength: 300 }))), err,
             puedeEmp ? h("div", { class: "acciones-fila" }, guardar) : h("p", { class: "aviso" }, icono("lock"), h("span", {}, "Tu rol solo permite consultar estos datos."))),
-          solo("La razón social, el NIT, el régimen y el estado son datos fiscales críticos: los gestiona la plataforma, no se editan aquí.")),
+          h("p", { class: "nota-fiscal" }, icono("lock"), h("span", {}, "Razón social, NIT, régimen y estado son datos fiscales críticos: los gestiona la plataforma."))),
         h("div", { class: "card" }, h("h2", { class: "card-t" }, "Régimen tributario"), h("div", { class: "datos" }, dato("Régimen", e.regimen), dato("Moneda", "GTQ – Quetzal"), h("div", { class: "dato" }, h("small", {}, "Verificación del régimen"), insignia(e.regimen_estado === "verificado" ? "Verificado" : "Sin verificar", e.regimen_estado === "verificado" ? "verde" : "ambar"))),
-          solo("Las reglas del régimen siguen sin verificar con un contador: por eso la demostración no calcula impuestos ni total.")),
-        h("div", { class: "card cfg-ancho" }, h("h2", { class: "card-t" }, "Configuración independiente por empresa"), solo("Establecimientos, canales de emisión, clientes, conceptos y facturas pertenecen a esta empresa; ninguna otra empresa los ve ni los comparte.")))); }
+          h("p", { class: "aviso aviso-ambar" }, icono("info"), h("span", {}, "Régimen sin verificar con un contador: la demostración no calcula impuestos ni total."))))); }
     if (pestana === "establecimientos") return poner(cuerpo, h("div", { class: "barra" }, h("p", { class: "mut" }, "Cada factura se emite desde un establecimiento."), puedeEst ? boton("Nuevo establecimiento", { icon: "plus", id: "nuevo-establecimiento", onclick: () => formEstablecimiento(null) }) : null),
       h("div", { class: "lista" }, cfg.establecimientos.length ? [h("div", { class: "fila fila-est fila-cab", "aria-hidden": "true" }, ...["Código", "Nombre", "Dirección", "Facturas", "Estado", ""].map((t) => h("span", {}, t))),
         ...cfg.establecimientos.map((x) => h("div", { class: "fila fila-est", "data-establecimiento": x.codigo_sat }, h("div", { class: "celda mono", "data-et": "Código" }, x.codigo_sat), h("div", { class: "celda celda-main", "data-et": "Nombre" }, h("strong", {}, x.nombre)),
@@ -72,11 +71,10 @@ export function pantallaConfig(ctx) {
             h("div", { class: "celda celda-tags" }, insignia(pt, pton), c ? insignia("Habilitado · simulado", "verde") : insignia(p.id === "mock" ? "Sin configurar" : "Bloqueado en esta fase", "gris")));
         })),
         h("div", { class: "card", "data-panel": "agente" }, h("h2", { class: "card-t" }, "Agente local (canal de portal)"),
-          h("div", { class: "datos" }, dato("Estado del agente", "No registrado"), dato("Conexión", "Ninguna (no se simula)"), dato("Última actividad", "—"), dato("Sesión del portal", "No iniciada")),
-          h("small", { class: "mut" }, "Estados posibles del agente (hoy solo existe el primero):"), h("div", { class: "estados-agente", "aria-label": "Estados posibles del agente" }, ...[["No registrado", "gris"], ["Sin conexión", "gris"], ["Conectado", "gris"], ["Sesión por iniciar", "gris"]].map(([t, tono], i) => h("span", { class: `tag tag-${tono}${i === 0 ? " tag-actual" : ""}`, "aria-current": i === 0 ? "true" : null }, t))),
+          h("div", { class: "agente-estado" }, h("span", { class: "dato" }, h("small", {}, "Estado actual")), h("span", { class: "tag tag-gris tag-actual", "data-estado-agente": "no_registrado" }, "No registrado")),
           h("div", { class: "acciones-fila" }, h("button", { type: "button", class: "btn btn-sec", id: "registrar-agente", disabled: true, title: "Bloqueado: el agente local llega en una fase posterior" }, icono("lock"), h("span", {}, "Registrar agente")),
             h("button", { type: "button", class: "btn btn-sec", id: "activar-canal-real", disabled: true, title: "Bloqueado: ningún canal real puede activarse en esta fase" }, icono("lock"), h("span", {}, "Activar canal real"))),
-          solo("El agente local (Windows, inicio de sesión manual, sin guardar contraseñas de Agencia Virtual) llega en la Fase 4. Ninguno de estos estados es una conexión real ni simulada: la activación de canales reales está bloqueada.")));
+          h("p", { class: "mut" }, "El agente local aún no existe; no hay conexión real ni simulada. Los demás estados se añadirán cuando se implemente.")));
     }
     if (pestana === "numeracion") return poner(cuerpo, h("div", { class: "card" }, h("h2", { class: "card-t" }, "Numeración"), h("div", { class: "datos" }, dato("Último número de borrador", String(cfg.ultimo_borrador)), dato("Serie y número fiscales", "Los asigna el proveedor al certificar (en simulación: serie SIMA, autorización SIM-…)")),
       solo("El número de borrador es interno y no es un número fiscal.")));

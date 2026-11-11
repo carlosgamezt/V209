@@ -50,13 +50,13 @@ export function pantallaLista(ctx) {
     m = modal({ titulo: `Revisar ${codigoBorrador(d.numero_borrador)}`, ancho: "sm", contenido: [h("p", {}, "Al marcarlo como revisado el contenido queda congelado; para cambiarlo habrá que volver a borrador."), h("p", { class: "mut" }, `${d.cliente_nombre ?? "Sin receptor"} · ${quetzales(d.base_imponible)}`)], pie: [boton("Cancelar", { tipo: "sec", onclick: () => m.cerrar() }), ok] });
   }
   const accionesDe = (d) => {
-    const a = [], abrir = (t, id, ik) => h("a", { class: "btn btn-sec btn-mini", href: `#/f/${d.id}`, "data-accion": id }, icono(ik), h("span", {}, t));
+    const a = [], abrir = (t, id, ik) => h("a", { class: "btn btn-sec btn-mini slot-1", href: `#/f/${d.id}`, "data-accion": id }, icono(ik), h("span", {}, t));   // ranuras fijas: 1 acción principal · 2 revisar · 3 consultar
     const sinFiscal = d.estado_fiscal === "ninguno";
     if (d.estado_preparacion === "borrador" && sinFiscal && ctx.tiene("borradores.editar")) a.push(abrir("Continuar", "continuar", "pencil"));
-    if (d.estado_preparacion === "borrador" && sinFiscal && ctx.tiene("borradores.revisar")) a.push(h("button", { type: "button", class: "btn btn-sec btn-mini", "data-accion": "revisar", "aria-label": `Revisar ${codigoBorrador(d.numero_borrador)}`, onclick: () => revisar(d) }, icono("circleCheck"), h("span", {}, "Revisar")));
+    if (d.estado_preparacion === "borrador" && sinFiscal && ctx.tiene("borradores.revisar")) a.push(h("button", { type: "button", class: "btn btn-sec btn-mini slot-2", "data-accion": "revisar", "aria-label": `Revisar ${codigoBorrador(d.numero_borrador)}`, onclick: () => revisar(d) }, icono("circleCheck"), h("span", {}, "Revisar")));
     if (d.estado_preparacion === "revisado" && sinFiscal && ctx.tiene("fiscal.certificar")) a.push(abrir("Enviar", "enviar", "shield"));
     if ((d.estado_fiscal === "por_verificar" || d.alertas > 0 || d.estado_fiscal === "pendiente_certificacion") && ctx.tiene("fiscal.conciliar")) a.push(abrir("Resolver", "resolver", "info"));
-    a.push(h("a", { class: "icon-btn", href: `#/f/${d.id}`, title: "Consultar", "aria-label": `Consultar ${codigoBorrador(d.numero_borrador)}`, "data-accion": "consultar" }, icono("eye")));
+    a.push(h("a", { class: "icon-btn slot-3", href: `#/f/${d.id}`, title: "Consultar", "aria-label": `Consultar ${codigoBorrador(d.numero_borrador)}`, "data-accion": "consultar" }, icono("eye")));
     return a;
   };
   const fila = (d) => h("div", { class: "fila fila-fac", "data-factura": codigoBorrador(d.numero_borrador) },
