@@ -7,7 +7,7 @@ import { RAIZ } from "./comun.mjs";
 const hash = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
 const version = path.resolve(RAIZ, "../../VERSION.txt"), esperado = fs.existsSync(version) ? fs.readFileSync(version, "utf8") : "";
 let mal = 0;
-for (const n of ["observar-consola.js", "observar-consola-2.js", "observar-consola-3.js", "observar-consola-4.js"]) {
+for (const n of ["observar-consola.js", "observar-consola-2.js", "observar-consola-3.js", "observar-consola-4.js", "observar-consola-5.js"]) {
   const h = hash(path.join(RAIZ, "consola", n)), linea = esperado.split(/\r?\n/).find((l) => l.includes(n)), ok = linea ? linea.includes(h) : null;
   if (ok === false) mal++;
   console.log(`${ok === null ? "?" : ok ? "OK" : "DISTINTA"}  ${n}  ${h}${n === "observar-consola-2.js" ? "   (RETIRADO: no usar)" : ""}`);

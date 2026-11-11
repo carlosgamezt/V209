@@ -399,3 +399,26 @@ test("o2: un registro vacío solo es válido si la persona lo declara («# sin s
   assert.equal(analizarO2([]).veredicto, "INCOMPLETO");
   const d = leerRegistroO2("# sin solicitudes en 300 s\n"); assert.equal(d.vacio_confirmado, true); assert.equal(analizarO2(d.filas, { vacio_confirmado: d.vacio_confirmado }).veredicto, "VERDE");
 });
+
+// ───── O-1 mínimo (fragmento 5) ─────
+import { analizarO1Minimo } from "../src/o1o2.mjs";
+test("o1m: el fragmento 5 no contiene escritura, eventos, red, almacenamiento, temporizadores, observadores ni interceptores (análisis estático; el bloque de patrones solo contiene expresiones regulares)", () => {
+  const txt = fs.readFileSync(new URL("../consola/observar-consola-5.js", import.meta.url), "utf8");
+  const bloque = /\/\/ PATRONES-INICIO\n([\s\S]*?)\n\s*\/\/ PATRONES-FIN/.exec(txt); assert.ok(bloque, "falta el bloque de patrones delimitado");
+  for (const l of bloque[1].split("\n").map((x) => x.trim()).filter(Boolean)) assert.ok(/^(const PATRONES = \{|\w+: \/.+\/[gimsu]*,\s*(\/\/.*)?|\};)$/.test(l), `línea no permitida en el bloque de patrones: ${l}`);
+  const codigo = txt.replace(bloque[0], "").split("\n").filter((l) => !/^\s*\/\//.test(l)).map((l) => l.replace(/\s\/\/ .*$/, "")).join("\n");
+  const prohibidos = [/\.click\s*\(/, /\.focus\s*\(/, /\.blur\s*\(/, /dispatchEvent/, /new\s+(Mouse|Keyboard|Input|Focus)?Event\s*\(/, /\.trigger\s*\(/, /\.submit\s*\(/, /\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /WebSocket/, /\$http/, /\$injector|\.injector\s*\(/, /document\.cookie/, /localStorage|sessionStorage|indexedDB/, /\bcopy\s*\(/, /\beval\s*\(/, /new\s+Function/, /\.setAttribute\s*\(|\.removeAttribute\s*\(|\.appendChild|\.insertBefore|\.innerHTML\s*=|\.outerHTML\s*=|\.textContent\s*=|\.value\s*=[^=]/, /window\.\w+\s*=[^=]/, /\.\$apply|\.\$digest|\.\$eval|\.\$broadcast|\.\$emit|\.\$watch/, /\.addEventListener|\.removeEventListener/, /(?<!\bd)\.value\b/, /\.checked\b/, /\.innerText|\.textContent/, /\.options\b/, /\.last\b/, /ajaxSettings|\.headers/, /setTimeout|setInterval|requestAnimationFrame|requestIdleCallback/, /MutationObserver|PerformanceObserver|IntersectionObserver|ResizeObserver/, /XMLHttpRequest\.prototype|window\.fetch\s*=|navigator\.\w+\s*=/, /Object\.defineProperty|Object\.assign\(window|Proxy\s*\(/, /(?<!toString|slice)\.call\s*\(/, /\.apply\s*\(/, /\b(el|e|x|h|f)\(\)/];
+  for (const re of prohibidos) assert.ok(!re.test(codigo), `el fragmento 5 no debe contener ${re}`);
+  for (const campo of ["nombre", "name:", "id:", "selector", "titulo", "ng_model", "host", "ruta", "href", "url"]) assert.ok(!new RegExp(`\\b${campo}\\b`, "i").test(txt.replace(bloque[0], "").replace(/\/\/.*$/gm, "").replace(/getAttribute\("(name|ng-model)"\)/g, "")), `la salida no debe tener campo «${campo}»`);
+});
+test("o1m: veredictos por mecanismo y tramo; INCOMPLETO nunca es VERDE", () => {
+  const base = () => ({ herramientas: { getEventListeners: true, jquery: null, jquery_data: false, angular: "1.5.8", angular_debug: true }, contexto: { en_iframe: true, dominio_sat: true }, cobertura: { truncado: false }, por_clase: {}, globales: {}, autoguardado: { angular: { watchers_con: {} }, formularios: { metodo_post: 0 }, meta_refresco: 0, service_worker_activo: false },
+    lista_cerrada: Object.fromEntries(["nit_receptor", "direccion_receptor", "tipo_linea0", "cantidad0", "descripcion0", "precio0", "descuento0", "otros_descuentos0"].map((k) => [k, { encontrados: 1, eventos: {}, mecanismos: {} }])) });
+  assert.equal(analizarO1Minimo(base()).veredicto, "VERDE");
+  const a = base(); a.lista_cerrada.cantidad0.mecanismos = { change: { http: 1 } }; assert.equal(analizarO1Minimo(a).veredicto, "ROJO");
+  const b = base(); b.lista_cerrada.nit_receptor.mecanismos = { blur: { http: 1 } }; assert.equal(analizarO1Minimo(b, { tramo: "2A" }).veredicto, "VERDE"); assert.equal(analizarO1Minimo(b, { tramo: "2B" }).veredicto, "ROJO");
+  const c = base(); c.globales.ventana = { eventos: { nativo: { beforeunload: 1 }, jquery: {}, ng: {} }, mecanismos: { beforeunload: { envio_beacon: 1 } } }; assert.equal(analizarO1Minimo(c).veredicto, "ROJO");
+  const d = base(); d.autoguardado.angular.watchers_con = { temporizador: 2 }; assert.equal(analizarO1Minimo(d).veredicto, "AMARILLO");
+  const e = base(); e.autoguardado.angular.watchers_con = { palabra_guardado: 1 }; assert.equal(analizarO1Minimo(e).veredicto, "ROJO");
+  for (const mut of [(o) => { o.herramientas.getEventListeners = false; }, (o) => { o.herramientas.angular_debug = false; }, (o) => { o.cobertura.truncado = true; }, (o) => { o.contexto.dominio_sat = false; }, (o) => { o.lista_cerrada.cantidad0.encontrados = 2; }, (o) => { delete o.lista_cerrada.precio0; }]) { const o = base(); mut(o); assert.equal(analizarO1Minimo(o).veredicto, "INCOMPLETO"); }
+});

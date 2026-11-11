@@ -26,6 +26,22 @@ const html = fs.readFileSync(path.join(AQUI, "fixture/sat-angular-simulado.html"
 const pre = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-preliminar.json"), "utf8"));
 const datosBase = () => { const d = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios-lineas.json"), "utf8")); d.documento = { tipo_dte: "Factura de prueba A", moneda: "GTQ-Quetzal" }; d.lineas[0].descuento = "10"; d.lineas[0].total_esperado = "241.00"; d.receptor.nombre_esperado = "CONSUMIDOR FINAL DE PRUEBA"; d.receptor.respuesta_consulta_cf = "CONSUMIDOR FINAL DE PRUEBA"; return d; };
 
+
+/** Página mínima con la estructura de la lista cerrada y una VARIANTE de mecanismo de autoguardado (el código de la variante existe pero nunca se ejecuta en las pruebas de O-1). */
+function paginaBenigna(q) {
+  const v = q.get("v") || "limpio", cuerpoCalc = { limpio: "", http: "$http.post('/api/x', $scope.d);", beacon: "navigator.sendBeacon('/api/b', 'x');", timer: "setTimeout(function () {}, 5000);", guardar: "$scope.guardarBorrador();", almacen: "window['local' + 'Storage'];" }[v] ?? "";
+  const extraCtrl = { watch: "$scope.$watch('d', function (n, o) { if (n !== o) { $http.put('/api/w', n); } }, true);", guardar: "$scope.guardarBorrador = function () { $http.post('/api/g', $scope.d); };", unload: "window.addEventListener('beforeunload', function () { navigator.sendBeacon('/api/u', 'x'); });", salida: "document.addEventListener('visibilitychange', function () { $scope.total = 0; });" }[v] ?? "", cuerpoNit = v === "nit" ? "$http.get('/api/c');" : "";
+  return `<!doctype html><html ng-app="b"><head><meta charset="utf-8">${v === "refresh" ? '<meta http-equiv="refresh" content="3600">' : ""}<title>benigno (NO es SAT)</title></head><body ng-controller="C">
+${q.get("jq") ? '<script src="/jquery.js"></script>' : ""}<script src="/angular.js"></script>
+${v === "form" ? '<form method="post" action="/x"><input type="hidden"></form>' : ""}
+<input ng-model="datosGenerales.nitReceptor" ng-blur="consultar()">
+<input ng-model="datosGenerales.direccionReceptor">
+<select name="BienOServicio0" ng-model="d.tipo" ng-change="calcular()"><option value="">x</option><option>Servicio</option></select>
+<input name="Cantidad0" ng-model="d.cant" ng-change="calcular()"><input name="Descripcion0" ng-model="d.desc"><input name="PrecioUnitario0" ng-model="d.precio" ng-change="calcular()">
+<input name="Descuento0" ng-model="d.d0" ng-change="calcular()"><input name="OtrosDescuento0" ng-model="d.o0" ng-change="calcular()"><button ng-click="verPrevia()">Vista Previa</button>
+<script>angular.module("b", []).controller("C", function ($scope, $http) { $scope.d = {}; $scope.total = 0; $scope.datosGenerales = {}; $scope.calcular = function () { $scope.total = Number($scope.d.cant) * Number($scope.d.precio); ${cuerpoCalc} }; $scope.consultar = function () { ${cuerpoNit} }; $scope.verPrevia = function () { $scope.vp = true; }; ${extraCtrl} });</script></body></html>`;
+}
+
 const posts = [], lecturas = [];   // lecturas: OPTIONS y GET que llegan al servidor de consulta simulado
 let PUERTO = 0;
 const envoltorio = (src, red) => `${envoltorioBase(src + (red ? "?red=1" : ""))}`;
@@ -39,6 +55,7 @@ const servidor = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json", ...cors }); return res.end(JSON.stringify({ nombre: "CONSUMIDOR FINAL DE PRUEBA" }));
   }
   if (req.method === "POST") { posts.push(`${req.method} ${req.url}`); req.resume(); res.writeHead(200, { "content-type": "application/json" }); return res.end("{}"); }
+  if (req.url.startsWith("/benigno")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(paginaBenigna(new URL(req.url, "http://x").searchParams)); }
   if (req.url === "/jquery.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(fs.readFileSync(JQUERY)); }
   if (req.url === "/angular.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(fs.readFileSync(ANGULAR)); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(/[?&]o1=1/.test(req.url) ? html.toString("utf8").replace('<script src="/angular.js"></script>', '<script src="/jquery.js"></script><script src="/angular.js"></script>') : html);   // ?o1=1: jQuery ANTES de AngularJS (como el portal real)
@@ -586,6 +603,74 @@ await caso("O-1 ANALIZADOR (comando real): la salida del fragmento 4 sobre la p�
     const b = await ejecutarAsync(process.execPath, ["bin/analizar-o1.mjs", `--entrada=${f}`], { cwd: path.join(AQUI, ".."), timeout: 30000 });   // tramo 2A: el NIT (sendBeacon) no cuenta, pero el watcher con $http.post sí
     assert.equal(b.status, 1); assert.match(b.stdout, /watcher «sentinela»/); assert.doesNotMatch(b.stdout.split("Manejadores por campo")[0], /alTeclearNit|sendBeacon/);
     const c = await ejecutarAsync(process.execPath, ["bin/analizar-o1.mjs", `--entrada=${path.join(tmp, "no-existe.txt")}`], { cwd: path.join(AQUI, ".."), timeout: 30000 }); assert.notEqual(c.status, 0);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); await r.context.close(); }
+});
+
+
+// ───────────────── O-1 MÍNIMO · FRAGMENTO 5 (solo tipos de evento y mecanismos de autoguardado) · SIMULACIÓN LOCAL ─────────────────
+import { analizarO1Minimo } from "../src/o1o2.mjs";
+const FRAG5 = fs.readFileSync(path.join(AQUI, "../consola/observar-consola-5.js"), "utf8");
+async function correrObs(url, { frag = FRAG5, marcaSalida = "NEXA-O1M ", conCli = true } = {}) {
+  const context = await browser.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: ["127.0.0.1"] }, registro);
+  const page = await context.newPage(), consola = [], peticiones = []; page.on("console", (m) => consola.push(m.text())); await page.goto(url); await page.locator("input:not([type=hidden])").first().waitFor();
+  await page.evaluate((tipos) => {   // ESPÍAS de la prueba (no del fragmento): eventos, peticiones, temporizadores, observadores, listeners nuevos, dispatch, APIs nativas
+    window.__espia = []; for (const t of tipos) window.addEventListener(t, () => window.__espia.push(t), true);
+    window.__cuenta = { timers: 0, observadores: 0, listeners: 0, dispatch: 0, nativas: 0 }; const c = window.__cuenta;
+    window.__orig = { st: window.setTimeout, si: window.setInterval, ael: EventTarget.prototype.addEventListener, de: EventTarget.prototype.dispatchEvent, fetch: window.fetch, open: XMLHttpRequest.prototype.open, send: XMLHttpRequest.prototype.send, beacon: navigator.sendBeacon, MO: window.MutationObserver, PO: window.PerformanceObserver };
+    window.setTimeout = function (...a) { c.timers++; return window.__orig.st.apply(this, a); }; window.setInterval = function (...a) { c.timers++; return window.__orig.si.apply(this, a); };
+    EventTarget.prototype.addEventListener = function (...a) { c.listeners++; return window.__orig.ael.apply(this, a); }; EventTarget.prototype.dispatchEvent = function (...a) { c.dispatch++; return window.__orig.de.apply(this, a); };
+    window.MutationObserver = function (...a) { c.observadores++; return new window.__orig.MO(...a); }; window.PerformanceObserver = function (...a) { c.observadores++; return new window.__orig.PO(...a); };
+  }, TIPOS_EVENTO);
+  const foto = () => page.evaluate(() => { const s = angular.element(document.body).scope(); return { dom: document.documentElement.outerHTML, modelo: JSON.stringify([s.datosGenerales, s.d, s.detalleFactura, s.total, s.vp, s.vistaPrevia, s.resultadoNIT]), activo: document.activeElement?.outerHTML?.slice(0, 80) ?? null, y: window.scrollY, cookies: document.cookie, globales: Object.keys(window).length }; });
+  page.on("request", (r) => peticiones.push(`${r.method()} ${r.url()}`)); const antes = await foto(), nPost = posts.length; peticiones.length = 0; consola.length = 0;
+  if (conCli) { const cdp = await context.newCDPSession(page); const r = await cdp.send("Runtime.evaluate", { expression: frag, includeCommandLineAPI: true }); assert.ok(!r.exceptionDetails, JSON.stringify(r.exceptionDetails)); } else await page.evaluate(frag);
+  const despues = await foto(), espia = await page.evaluate(() => window.__espia), cuenta = await page.evaluate(() => window.__cuenta);
+  const nativas = await page.evaluate(() => ({ fetch: window.fetch === window.__orig.fetch, open: XMLHttpRequest.prototype.open === window.__orig.open, send: XMLHttpRequest.prototype.send === window.__orig.send, beacon: navigator.sendBeacon === window.__orig.beacon }));
+  const linea = consola.find((x) => x.startsWith(marcaSalida)); assert.ok(linea, consola.join("\n")); return { o: JSON.parse(linea.slice(marcaSalida.length)), linea, antes, despues, espia, cuenta, nativas, peticiones, hechoPost: posts.length - nPost, context, page };
+}
+const CLAVES_PERMITIDAS = new Set(["version", "nivel", "contexto", "en_iframe", "dominio_sat", "herramientas", "getEventListeners", "jquery", "jquery_data", "angular", "angular_debug", "cobertura", "elementos_encontrados", "elementos_leidos", "scopes", "truncado", "por_clase", "lista_cerrada", "globales", "autoguardado", "watchers", "watchers_profundos", "watchers_con", "funciones_de_scope_con_palabra_de_guardado", "formularios", "total", "metodo_post", "con_ng_submit", "meta_refresco", "service_worker_activo", "no_cubierto", "eventos", "nativo", "ng", "mecanismos", "encontrados", "formulario", "lista", "boton", "texto", "radio_casilla", "otro", "ventana", "documento", "cuerpo", "nit_receptor", "direccion_receptor", "tipo_linea0", "cantidad0", "descripcion0", "precio0", "descuento0", "otros_descuentos0", "otros", "angular_", "otro", "http", "envio_beacon", "almacenamiento", "temporizador", "metodo_escritura", "palabra_guardado", "navegacion", ...TIPOS_EVENTO, "ajaxStart", "ajaxStop", "ajaxSend", "ajaxComplete", "ajaxSuccess", "ajaxError", "init", "mouseover", "mouseenter", "mouseleave", "propertychange", "beforeunload", "unload", "pagehide", "visibilitychange", "online", "offline", "storage", "resize", "reset"]);
+const esquemaOk = (v, ruta = "") => { if (v === null || typeof v === "number" || typeof v === "boolean") return []; if (typeof v === "string") return ruta.includes("no_cubierto") || /^(O-1 mínimo|\d{1,2}\.\d{1,2}\.\d{1,3}.{0,9})$/.test(v) ? [] : [`${ruta}: texto no permitido «${v.slice(0, 40)}»`]; if (Array.isArray(v)) return v.flatMap((x, i) => esquemaOk(x, `${ruta}[${i}]`)); return Object.entries(v).flatMap(([k, x]) => (CLAVES_PERMITIDAS.has(k) ? esquemaOk(x, `${ruta}.${k}`) : [`${ruta}.${k}: clave no permitida`])); };
+const veredicto = async (url, tramo = "2A") => { const r = await correrObs(url); const a = analizarO1Minimo(r.o, { tramo }); await r.context.close(); return { ...a, r }; };
+
+await caso("O-1 MÍNIMO · SALIDA SOLO CON CLAVES Y VALORES PERMITIDOS: ningún nombre, texto, valor ni dato de la página (esquema cerrado), y página limpia → VERDE", async () => {
+  const r = await correrObs(URL_BASE + "benigno?v=limpio&jq=1".replace(/^/, ""));
+  try {
+    assert.deepEqual(esquemaOk(r.o), [], "esquema cerrado de la salida"); const a = analizarO1Minimo({ ...r.o, contexto: { ...r.o.contexto, dominio_sat: true } }); assert.equal(a.veredicto, "VERDE", JSON.stringify(a));
+    for (const x of ["calcular", "consultar", "verPrevia", "datosGenerales", "Cantidad0", "BienOServicio0", "nitReceptor", "d.cant", "Vista Previa", "benigno", "127.0.0.1"]) assert.ok(!r.linea.includes(x), `la salida no debe contener «${x}»`);
+    assert.equal(r.o.lista_cerrada.cantidad0.encontrados, 1); assert.deepEqual(r.o.lista_cerrada.cantidad0.eventos.ng, { change: 1 }); assert.deepEqual(r.o.lista_cerrada.nit_receptor.eventos.ng, { blur: 1 }); assert.equal(r.o.contexto.dominio_sat, false, "localhost no es sat.gob.gt");
+  } finally { await r.context.close(); }
+});
+await caso("O-1 MÍNIMO · MECANISMOS: cada variante de autoguardado se detecta sin ejecutarla (http, beacon, salida de página, watcher, función de guardado resuelta por nombre, temporizador, meta refresh, formulario POST)", async () => {
+  const mk = (v, extra = "") => `${URL_BASE}benigno?v=${v}${extra}`, f = async (v, tramo, extra) => { const r = await correrObs(mk(v, extra)); try { const o = { ...r.o, contexto: { ...r.o.contexto, dominio_sat: true } }; return { a: analizarO1Minimo(o, { tramo }), r }; } finally { await r.context.close(); } };   // dominio_sat se fuerza: la simulación corre en localhost
+  const casos = [["http", "2A", "ROJO", /http/], ["beacon", "2A", "ROJO", /envio_beacon/], ["unload", "2A", "ROJO", /ventana|global/], ["watch", "2A", "ROJO", /watcher/], ["guardar", "2A", "ROJO", /http|palabra_guardado/], ["timer", "2A", "AMARILLO", /temporizador/], ["refresh", "2A", "AMARILLO", /meta refresh/], ["form", "2A", "AMARILLO", /POST/], ["salida", "2A", "AMARILLO", /salida|ocultamiento/], ["nit", "2A", "AMARILLO", /campo fuera/], ["nit", "2B", "ROJO", /nit_receptor/], ["limpio", "2A", "VERDE", /./]];
+  for (const [v, tramo, esperado, re] of casos) { const { a } = await f(v, tramo); assert.equal(a.veredicto, esperado, `${v}/${tramo}: ${JSON.stringify(a)}`); if (esperado !== "VERDE") assert.ok(re.test(JSON.stringify([...a.rojos, ...a.amarillos])), `${v}/${tramo}: ${JSON.stringify(a)}`); }
+});
+await caso("O-1 MÍNIMO · NO EJECUTA, NO MODIFICA, NO INSTALA NADA: DOM, modelos, foco y scroll idénticos; 0 eventos, 0 peticiones, 0 temporizadores, 0 observadores, 0 listeners nuevos, 0 dispatch; APIs nativas intactas; sin globales", async () => {
+  posts.length = 0; const r = await correrObs(URL_BASE + "?o1=1&radio=nit");
+  try {
+    assert.equal(r.despues.dom, r.antes.dom); assert.equal(r.despues.modelo, r.antes.modelo); assert.equal(r.despues.activo, r.antes.activo); assert.equal(r.despues.y, r.antes.y); assert.equal(r.despues.cookies, r.antes.cookies); assert.equal(r.despues.globales, r.antes.globales, "no se crearon variables globales");
+    assert.deepEqual(r.espia, []); assert.deepEqual(r.peticiones, []); assert.equal(r.hechoPost, 0); assert.deepEqual(r.cuenta, { timers: 0, observadores: 0, listeners: 0, dispatch: 0, nativas: 0 }, JSON.stringify(r.cuenta));
+    assert.deepEqual(r.nativas, { fetch: true, open: true, send: true, beacon: true }, "ninguna API nativa fue reemplazada");
+    assert.equal(await r.page.evaluate(() => { const s = angular.element(document.body).scope(); return [s.ultimoBlur, s.ultimoFoco, s.vistaPrevia, s.sentinela].join(","); }), ",,false,0", "ninguna función de la página se ejecutó");
+    assert.deepEqual(esquemaOk(r.o), []); for (const x of ["PERSONAL", "1234567890", "99887766", "SECRETO", "1234567-8", "OPCION", "DIRECCION", "alSalirDireccion", "previaJq", "alTeclearNit"]) assert.ok(!r.linea.includes(x), `la salida no debe contener «${x}»`);
+    const a = analizarO1Minimo({ ...r.o, contexto: { ...r.o.contexto, dominio_sat: true } }); assert.equal(a.veredicto, "ROJO", "la página simulada con manejadores peligrosos da ROJO"); assert.ok(a.rojos.some((x) => x.categoria === "envio_beacon" || x.categoria === "http"));
+  } finally { await r.context.close(); }
+});
+await caso("O-1 MÍNIMO · CONTROL NEGATIVO: los espías de la prueba SÍ detectan un fragmento que usa temporizadores, listeners, observadores, dispatch o reemplaza una API", async () => {
+  const malo = FRAG5 + "\nsetTimeout(() => {}, 10); document.addEventListener('click', () => {}); new MutationObserver(() => {}); document.dispatchEvent(new Event('x')); window.fetch = () => {};";
+  const r = await correrObs(URL_BASE + "benigno?v=limpio", { frag: malo });
+  try { assert.ok(r.cuenta.timers > 0 && r.cuenta.listeners > 0 && r.cuenta.observadores > 0 && r.cuenta.dispatch > 0, JSON.stringify(r.cuenta)); assert.equal(r.nativas.fetch, false); } finally { await r.context.close(); }
+});
+await caso("O-1 MÍNIMO · CONTEXTO: sin getEventListeners o con página sin AngularJS depurable el veredicto es INCOMPLETO, nunca VERDE", async () => {
+  const r = await correrObs(URL_BASE + "benigno?v=limpio", { conCli: false });
+  try { assert.equal(r.o.herramientas.getEventListeners, false); const a = analizarO1Minimo({ ...r.o, contexto: { ...r.o.contexto, dominio_sat: true } }); assert.equal(a.veredicto, "INCOMPLETO"); assert.match(a.incompleto.join("|"), /getEventListeners/); assert.deepEqual(r.cuenta, { timers: 0, observadores: 0, listeners: 0, dispatch: 0, nativas: 0 }); } finally { await r.context.close(); }
+});
+await caso("O-1 MÍNIMO · ANALIZADOR (comando real): salida del fragmento sobre la variante con beacon → código 1 y informe sin nombres ni datos", async () => {
+  const r = await correrObs(URL_BASE + "benigno?v=beacon"), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-o1m-")), f = path.join(tmp, "o1m.txt");
+  try {
+    const o = { ...r.o, contexto: { ...r.o.contexto, dominio_sat: true } }; fs.writeFileSync(f, "ruido\nNEXA-O1M " + JSON.stringify(o) + "\n");
+    const a = await ejecutarAsync(process.execPath, ["bin/analizar-o1m.mjs", `--entrada=${f}`], { cwd: path.join(AQUI, ".."), timeout: 30000 }); assert.equal(a.status, 1, a.stdout + a.stderr); assert.match(a.stdout, /VEREDICTO: ROJO/); assert.match(a.stdout, /envio_beacon/); for (const x of ["calcular", "Cantidad0", "benigno"]) assert.ok(!a.stdout.includes(x));
+    const c = await ejecutarAsync(process.execPath, ["bin/analizar-o1m.mjs", `--entrada=${path.join(tmp, "nada.txt")}`], { cwd: path.join(AQUI, ".."), timeout: 30000 }); assert.notEqual(c.status, 0);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); await r.context.close(); }
 });
 

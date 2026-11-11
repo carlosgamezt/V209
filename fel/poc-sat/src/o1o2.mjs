@@ -107,3 +107,40 @@ export function informeTexto(titulo, r) {
   if (r.hallazgos && !r.rojos) L.push("", `Hallazgos (${r.hallazgos.length}):`, ...r.hallazgos.map((h) => `  - [${h.clase}] ${h.clave}: ${h.razones.join("; ")}`));
   return L.join("\n");
 }
+
+// ───── O-1 MÍNIMO (fragmento 5): solo tipos de evento y posibles mecanismos de autoguardado ─────
+export const O1M_CAMPOS = [["nit_receptor", true], ["direccion_receptor", false], ["tipo_linea0", false], ["cantidad0", false], ["descripcion0", false], ["precio0", false], ["descuento0", false], ["otros_descuentos0", false]];   // [etiqueta, solo2B]
+const EVENTOS_EDICION = new Set(["change", "input", "blur", "focus", "focusin", "focusout", "keyup", "keydown", "keypress", "paste", "cut", "propertychange", "init"]);
+const EVENTOS_SALIDA = new Set(["beforeunload", "unload", "pagehide", "visibilitychange"]);
+const CATS_ROJAS = new Set(["http", "envio_beacon", "almacenamiento", "metodo_escritura", "palabra_guardado", "navegacion"]);
+export function analizarO1Minimo(o, { tramo = "2A" } = {}) {
+  const incompleto = [], rojos = [], amarillos = [];
+  if (!o?.herramientas?.getEventListeners) incompleto.push("getEventListeners no estaba disponible (no se ejecutó en la consola de DevTools)");
+  if (o?.herramientas?.angular && !o.herramientas.angular_debug) incompleto.push("AngularJS sin información de depuración: scopes y watchers no legibles");
+  if (o?.herramientas?.jquery && !o.herramientas.jquery_data) incompleto.push("jQuery presente sin _data: manejadores de jQuery no legibles");
+  if (o?.cobertura?.truncado) incompleto.push("la lectura se truncó (demasiados elementos, scopes o watchers)");
+  if (!o?.contexto?.dominio_sat) incompleto.push("el contexto no era un marco de sat.gob.gt (¿elegiste el marco correcto en la consola?)");
+  const vigentes = O1M_CAMPOS.filter(([, s2b]) => tramo === "2B" || !s2b);
+  for (const [etq] of vigentes) { const c = o?.lista_cerrada?.[etq]; if (!c || c.encontrados !== 1) incompleto.push(`campo «${etq}»: ${c?.encontrados ?? 0} controles encontrados (debe ser 1)`); }
+  const revisar = (donde, mec, { edicion = false, salida = false, siempre = false } = {}) => {
+    for (const [tipo, cats] of Object.entries(mec ?? {})) for (const [cat, n] of Object.entries(cats)) {
+      const rojo = CATS_ROJAS.has(cat) && (siempre || (edicion && EVENTOS_EDICION.has(tipo)) || (salida && EVENTOS_SALIDA.has(tipo)) || (salida && edicion && EVENTOS_EDICION.has(tipo)));
+      if (rojo) rojos.push({ donde, tipo, categoria: cat, n }); else if (cat === "temporizador") amarillos.push({ donde, tipo, categoria: cat, n }); else if (CATS_ROJAS.has(cat)) amarillos.push({ donde, tipo, categoria: `${cat} (evento no relacionado con la edición)`, n });
+    }
+  };
+  for (const [etq] of vigentes) revisar(`campo ${etq}`, o?.lista_cerrada?.[etq]?.mecanismos, { edicion: true });
+  for (const [g, a] of Object.entries(o?.globales ?? {})) { revisar(`global ${g}`, a.mecanismos, { edicion: true, salida: true }); for (const t of Object.keys({ ...a.eventos?.nativo, ...a.eventos?.jquery })) { if (EVENTOS_SALIDA.has(t)) amarillos.push({ donde: `global ${g}`, tipo: t, categoria: "manejador de salida/ocultamiento (revisar qué hace al cerrar la pestaña)", n: 1 }); if (/^ajax/.test(t)) amarillos.push({ donde: `global ${g}`, tipo: t, categoria: "evento global de jQuery.ajax", n: 1 }); } }
+  for (const [cl, a] of Object.entries(o?.por_clase ?? {})) { const antes = rojos.length; revisar(`clase ${cl}`, a.mecanismos, { edicion: true }); const nuevos = rojos.splice(antes); for (const r of nuevos) amarillos.push({ ...r, categoria: `${r.categoria} (campo fuera de la lista cerrada o NIT en 2A: no distingue)` }); }
+  for (const [cat, n] of Object.entries(o?.autoguardado?.angular?.watchers_con ?? {})) { if (CATS_ROJAS.has(cat)) rojos.push({ donde: "watcher de AngularJS", tipo: "cambio de modelo", categoria: cat, n }); else if (cat === "temporizador") amarillos.push({ donde: "watcher de AngularJS", tipo: "cambio de modelo", categoria: cat, n }); }
+  const f = o?.autoguardado?.formularios; if (f?.metodo_post > 0) amarillos.push({ donde: "formularios", tipo: "submit", categoria: `${f.metodo_post} con método POST`, n: f.metodo_post });
+  if (o?.autoguardado?.meta_refresco > 0) amarillos.push({ donde: "página", tipo: "recarga", categoria: "meta refresh", n: o.autoguardado.meta_refresco });
+  if (o?.autoguardado?.service_worker_activo) amarillos.push({ donde: "página", tipo: "service worker", categoria: "controla la página", n: 1 });
+  const veredicto = incompleto.length ? "INCOMPLETO" : rojos.length ? "ROJO" : amarillos.length ? "AMARILLO" : "VERDE";
+  return { veredicto, tramo, incompleto, rojos, amarillos, nota: "VERDE no demuestra ausencia de autoguardado: solo que no se vio ninguno en lo que este fragmento puede leer (ver no_cubierto)." };
+}
+export function informeO1Minimo(r) {
+  const L = [`# O-1 mínimo · tramo ${r.tramo}`, `VEREDICTO: ${r.veredicto}`];
+  if (r.incompleto.length) L.push("", "Incompleto:", ...r.incompleto.map((x) => `  - ${x}`));
+  L.push("", `ROJOS (${r.rojos.length}):`, ...r.rojos.map((h) => `  - ${h.donde} · evento ${h.tipo} · ${h.categoria} (x${h.n})`), `AMARILLOS (${r.amarillos.length}):`, ...r.amarillos.map((h) => `  - ${h.donde} · evento ${h.tipo} · ${h.categoria} (x${h.n})`), "", r.nota);
+  return L.join("\n");
+}
