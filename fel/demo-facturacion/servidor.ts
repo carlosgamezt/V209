@@ -19,7 +19,7 @@ const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fon
 const bd = await crearBd();
 const mundo = await sembrar(bd);
 const agente = montarAgente(bd, { intervaloMs: intervaloDesdeEntorno(Deno.env.get("FEL_AGENTE_SUPERVISOR_MS")) });   // intervalo configurable (50 ms – 1 h; 15 s por defecto)
-const api = crearApi(bd, mundo, { supervisor: agente.supervisor });
+const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;

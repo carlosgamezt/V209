@@ -1,6 +1,9 @@
 // Ayudas de las pruebas del agente local: NEXA de prueba (Deno + PGlite), simulador con autorización humana, personas de la demostración, órdenes y agentes.
 import { generateKeyPairSync, randomBytes, randomUUID, sign } from "node:crypto";
 import { spawn } from "node:child_process";
+import http from "node:http";
+import https from "node:https";
+import { readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,22 +29,32 @@ export function parNexaDePrueba() {
 }
 
 const RAIZ = fileURLToPath(new URL("..", import.meta.url));
-/** Arranca NEXA de prueba (proceso Deno) y espera su línea PRUEBA_LISTA. */
-export async function arrancarNexa() {
+/** Petición a NEXA de prueba (http, o https confiando SOLO en el certificado de prueba). */
+function pedirHttp(base, ca, { metodo, ruta, headers = {}, cuerpo }) {
+  return new Promise((ok, ko) => {
+    const u = new URL(base + ruta), seguro = u.protocol === "https:", t = cuerpo === undefined ? undefined : JSON.stringify(cuerpo);
+    const r = (seguro ? https : http).request({ method: metodo, hostname: u.hostname, port: u.port, path: u.pathname + u.search, agent: false, headers: { ...headers, ...(t !== undefined ? { "content-type": "application/json", "content-length": Buffer.byteLength(t) } : {}) }, ...(seguro ? { ca } : {}) }, (res) => {
+      const c = []; res.on("data", (x) => c.push(x)); res.on("end", () => ok({ status: res.statusCode, texto: Buffer.concat(c).toString(), headers: res.headers }));
+    }); r.on("error", ko); if (t !== undefined) r.write(t); r.end();
+  });
+}
+const CERT = (n) => fileURLToPath(new URL(`./certificados/${n}`, import.meta.url));
+/** Arranca NEXA de prueba (proceso Deno) y espera su línea PRUEBA_LISTA. `tls`: sirve por HTTPS con el certificado de prueba (el agente solo confía en él si se le entrega como `ca`). */
+export async function arrancarNexa({ tls = false } = {}) {
   const puerto = 9700 + Math.floor(Math.random() * 250);
-  const hijo = spawn("deno", ["run", "-A", "--node-modules-dir=none", join(RAIZ, "pruebas/nexa_prueba.ts"), `--puerto=${puerto}`], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_AGENTE_SUPERVISOR_MS: "100" } });
+  const hijo = spawn("deno", ["run", "-A", "--node-modules-dir=none", join(RAIZ, "pruebas/nexa_prueba.ts"), `--puerto=${puerto}`, ...(tls ? ["--tls"] : [])], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_AGENTE_SUPERVISOR_MS: "100" } });
   const info = await new Promise((ok, ko) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); ko(new Error("NEXA de prueba no arrancó:\n" + salida)); }, 120000);
     const leer = (d) => { salida += d; const m = /PRUEBA_LISTA (\{.*\})/.exec(salida); if (m) { clearTimeout(t); ok(JSON.parse(m[1])); } };
     hijo.stdout.on("data", leer); hijo.stderr.on("data", leer); hijo.on("exit", (c) => { if (c) ko(new Error(`NEXA de prueba terminó (${c}):\n${salida}`)); });
   });
-  const base = `http://127.0.0.1:${info.puerto}`;
+  const ca = tls ? readFileSync(CERT("localhost.crt"), "utf8") : undefined, base = `${tls ? "https" : "http"}://127.0.0.1:${info.puerto}`;
   const api = async (usuario, metodo, ruta, cuerpo) => {
-    const r = await fetch(base + ruta, { method: metodo, headers: { "x-demo": "1", "x-demo-usuario": usuario, "content-type": "application/json" }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
-    const texto = await r.text(); let json = null; try { json = JSON.parse(texto); } catch { /* sin JSON */ } return { status: r.status, json, texto };
+    const r = await pedirHttp(base, ca, { metodo, ruta, headers: { "x-demo": "1", "x-demo-usuario": usuario }, cuerpo }); let json = null; try { json = JSON.parse(r.texto); } catch { /* sin JSON */ } return { status: r.status, json, texto: r.texto };
   };
-  const prueba = async (metodo, ruta, cuerpo) => { const r = await fetch(base + ruta, { method: metodo, headers: { "content-type": "application/json" }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) }); return r.json(); };
-  return { base, info, api, prueba, ordenes: () => prueba("GET", "/prueba/ordenes"), auditoria: () => prueba("GET", "/prueba/auditoria"), parar: async () => { hijo.kill("SIGTERM"); await new Promise((r) => hijo.once("exit", r)); } };
+  const prueba = async (metodo, ruta, cuerpo) => JSON.parse((await pedirHttp(base, ca, { metodo, ruta, cuerpo })).texto);
+  const claves = info.claves_nexa;
+  return { base, info, api, prueba, ca, claves, opcionesAgente: { claves, ...(ca ? { ca } : {}) }, ordenes: () => prueba("GET", "/prueba/ordenes"), auditoria: () => prueba("GET", "/prueba/auditoria"), parar: async () => { hijo.kill("SIGTERM"); await new Promise((r) => hijo.once("exit", r)); } };
 }
 
 let secNit = 1000000 + Math.floor(Math.random() * 500000);
@@ -69,8 +82,8 @@ export async function arrancarSimulador(nexa, opciones = {}) {
 export async function nuevoAgente(nexa, sim, { nombre = "PC de prueba", config = {}, ganchos, estado } = {}) {
   const dir = estado ?? mkdtempSync(join(tmpdir(), "nexa-agente-"));
   const cod = (await nexa.api("ana", "POST", "/api/agentes/codigo", {})).json.codigo;
-  const v = await vincular({ nexa: nexa.base, codigo: cod, estado: dir, nombre });
-  const agente = crearAgente({ estado: dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ganchos, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500, headless: true, ...config } });
+  const v = await vincular({ nexa: nexa.base, codigo: cod, estado: dir, nombre, ...nexa.opcionesAgente });
+  const agente = crearAgente({ estado: dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ganchos, ...nexa.opcionesAgente, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500, headless: true, ...config } });
   return { ...agente, id: v.agente_id, dir, limpiar: () => rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }) };
 }
 export const persona = (nexa) => ({

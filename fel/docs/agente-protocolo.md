@@ -50,3 +50,6 @@ Una operación con orden se cierra por la ruta existente (`resolverAccionHumana`
 - **La confirmación no la decide el agente**: ver `agente-confirmacion-humana.md` (concesión firmada por NEXA tras la autorización de una persona con `fiscal.certificar`; el simulador la exige en el servidor).
 - Reglas del agente: tras presentar **nunca repite**; el resultado se resuelve **siempre con el libro del simulador** (emisión única ⇒ `emitido_simulado`; sin emisión y sesión cerrada ⇒ `descartado`; cualquier otra cosa ⇒ `error` ⇒ orden incierta ⇒ `por_verificar`); si el libro ya tiene una emisión de la orden no crea otra sesión (incierta). Revocado, token viejo o arrendamiento vencido ⇒ el agente cierra su sesión y se detiene sin cambiar nada más.
 - Cierre en NEXA: reserva exclusiva por orden (migración 5); migración 6: vista previa, concesiones registradas (solo inserción) y funciones de autorización.
+
+## 8. Transporte remoto (fase 8a)
+Respuestas firmadas por NEXA y ligadas al nonce, claves de verificación con rotación y revocación, sondeo adaptativo (`politica.siguiente_ms`), espera exponencial con variación, `version_minima` (426 `FEL_VERSION`), `kids` y `metricas` en el cuerpo de `reclamar`/`latido`, métricas por empresa. Detalle y límites: `agente-transporte-remoto.md`.

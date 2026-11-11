@@ -32,7 +32,7 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> } } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, extras.proveedor ?? mock, ganchos);   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
   const CTX = { ambiente: "simulado" as const, ahora: () => new Date() };
@@ -158,6 +158,11 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     if (m === "POST" && (r = /^\/api\/ordenes\/([^/]+)\/autorizar$/.exec(ruta))) {
       await cuerpo(); if (!extras.autorizador) throw new ErrorHttp(404, "La autorización de confirmación no está disponible en esta demostración", "no_disponible");
       return json({ ok: true, ...(await extras.autorizador.autorizar({ actor: a.id, empresa: EMPRESA, orden: id(r[1]) })) });
+    }
+    if (m === "GET" && ruta === "/api/agentes/metricas") {   // uso real del plano de control de SU empresa (para estimar costos); requiere permiso en la base
+      const h = Number(url.searchParams.get("horas") ?? "24"); if (!Number.isInteger(h) || h < 1 || h > 720) throw new ErrorHttp(400, "Horas no válidas", "entrada_invalida");
+      await extras.metricas?.vaciar();
+      return json(await bd.rpc("fel_op_agente_metricas", { p_actor: a.id, p_empresa: EMPRESA, p_horas: h }));
     }
     if (m === "GET" && ruta === "/api/agentes/salud") {
       if (!(await permisosDe(a)).includes("canales.ver")) throw new ErrorHttp(403, "No tienes permiso", "no_autorizado");

@@ -95,7 +95,7 @@ test("DESCONEXIÓN ANTES DE PRESENTAR: el proceso cae con la orden reclamada ⇒
   await nexa.prueba("POST", "/prueba/vencer", { orden });                              // el arrendamiento vence (el equipo no volvió)
   await hasta(orden, "pendiente");                                                      // el supervisor la devuelve solo a la cola
   // el mismo equipo arranca de nuevo (sin ganchos de caída): cierra la sesión vieja, reclama con token 2 y completa
-  const g = conPagina(); const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ganchos: { punto: g.punto }, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
+  const g = conPagina(); const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ...nexa.opcionesAgente, ganchos: { punto: g.punto }, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
   const corrida = nuevo.ciclo(); const pag = await conLimite(g.pagina, 60000);
   assert.equal((await ctl("GET", `/control/sesiones/${d.sesion}?empresa=${nexa.info.empresa}`)).json.estado, "interrumpida", "la sesión vieja se cerró al recuperar");
   o = await ordenDe(nexa, orden); assert.equal(o.token, 2); assert.equal(o.estado, "llenada");
@@ -109,7 +109,7 @@ test("DESCONEXIÓN DESPUÉS DE PRESENTAR (sin que la persona haya confirmado): a
   await assert.rejects(conLimite(ag.ciclo(), 60000), CaidaSimulada);
   assert.equal((await ordenDe(nexa, orden)).estado, "llenada");
   const sesiones = (await eventosSim()).filter((e) => e.evento === "sesion_creada").length;
-  const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
+  const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ...nexa.opcionesAgente, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
   const r = await conLimite(nuevo.ciclo()); assert.equal(r.estado, "descartada");
   assert.equal((await eventosSim()).filter((e) => e.evento === "sesion_creada").length, sesiones, "no se creó otra sesión: no hay reintento");
   assert.equal((await libro(orden)).length, 0); assert.equal((await ordenDe(nexa, orden)).estado, "descartada");
@@ -127,7 +127,7 @@ test("RECUPERACIÓN DE RESULTADO INCIERTO: la persona confirmó y el agente cay�
   } } });
   await assert.rejects(conLimite(ag.ciclo(), 60000), CaidaSimulada);
   assert.equal((await libro(orden)).length, 1); assert.equal((await ordenDe(nexa, orden)).estado, "llenada", "NEXA aún no sabe el resultado");
-  const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
+  const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ...nexa.opcionesAgente, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
   const r = await conLimite(nuevo.ciclo()); assert.equal(r.estado, "emitida");
   assert.equal((await libro(orden)).length, 1, "no se emitió otra vez");
   assert.equal((await ordenDe(nexa, orden)).estado, "completada"); await esperar(async () => (await docFiscal(orden)) === "certificado", { que: "certificado" });
@@ -139,7 +139,7 @@ test("RESULTADO INCIERTO SIN PODER INFORMAR: si el arrendamiento venció, NEXA d
   await assert.rejects(conLimite(ag.ciclo(), 60000), CaidaSimulada);
   await nexa.prueba("POST", "/prueba/vencer", { orden }); await hasta(orden, "incierta");
   assert.equal(await docFiscal(orden), "por_verificar");
-  const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
+  const nuevo = (await import("../agente/agente.mjs")).crearAgente({ estado: ag.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ...nexa.opcionesAgente, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } });
   const r = await conLimite(nuevo.ciclo()); assert.ok(["perdida", "revocado"].includes(r.estado), `estado: ${r.estado}`);
   assert.equal((await ordenDe(nexa, orden)).estado, "incierta"); assert.equal(await docFiscal(orden), "por_verificar"); assert.equal((await libro(orden)).length, 0);
   const rec = await nexa.api("ana", "POST", `/api/documentos/${(await ordenDe(nexa, orden)).documento_id}/certificar`, { clave: "otra-clave-" + "x".repeat(20), escenario: "exito" });
@@ -170,7 +170,7 @@ test("REVOCACIÓN antes de reclamar: un equipo revocado no recibe ni toca ningun
   assert.equal((await ordenDe(nexa, orden)).estado, "pendiente"); assert.equal((await libro(orden)).length, 0);
   const otro = await crear(); const g = conPagina(); otro.ejecutor; // otro equipo sano sí puede atender la orden pendiente
   await nexa.prueba("POST", "/prueba/vencer", { orden: "00000000-0000-0000-0000-000000000000" }).catch(() => {});
-  const corr = (await import("../agente/agente.mjs")).crearAgente({ estado: otro.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ganchos: { punto: g.punto }, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } }).ciclo();
+  const corr = (await import("../agente/agente.mjs")).crearAgente({ estado: otro.dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ...nexa.opcionesAgente, ganchos: { punto: g.punto }, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500 } }).ciclo();
   const pag = await conLimite(g.pagina, 60000); assert.equal((await per.autorizar(orden)).status, 200); await pulsarConfirmar(pag); assert.equal((await conLimite(corr)).estado, "emitida");
 });
 
@@ -245,7 +245,7 @@ test("separación simulador ↔ real: el agente rechaza NEXA o simulador que no 
   assert.equal(peticionPermitida("http://127.0.0.1:8123/f/abc", "http://127.0.0.1:8123"), true);
   for (const u of ["http://127.0.0.1:9999/f/abc", "https://portal.sat.gob.gt/", "http://localhost:8123/f/abc", "data:text/html,hola", "file:///etc/passwd"]) assert.equal(peticionPermitida(u, "http://127.0.0.1:8123"), false, u);
   const { crearAgente, vincular } = await import("../agente/agente.mjs");
-  await assert.rejects(vincular({ nexa: "https://nexa.example.com", codigo: "AAAA-AAAA-AAAA", estado: (await crear()).dir + "-x" }), /solo se admite/);
+  await assert.rejects(vincular({ nexa: "https://nexa.example.com", codigo: "AAAA-AAAA-AAAA", estado: (await crear()).dir + "-x" }), /lista de destinos|solo se admite/);
   const a = await crear(); assert.throws(() => crearAgente({ estado: a.dir, simulador: "https://portal.sat.gob.gt", tokenSimulador: "x" }), /bloqueado/);
 });
 

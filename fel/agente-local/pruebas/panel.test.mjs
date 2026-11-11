@@ -52,8 +52,8 @@ test("SEGURIDAD del panel: solo 127.0.0.1, ruta secreta, cabecera propia en las 
 });
 
 test("el panel y el lanzador solo admiten NEXA y simulador locales (nada real)", async () => {
-  for (const nexa of ["https://portal.sat.gob.gt", "https://api.digifact.com", "http://192.168.1.10:80", "https://nexa.example.com"]) await assert.rejects(iniciarPanel({ estado: temp(), config: { nexa, simulador: { modo: "integrado" } } }), /bloqueado|solo se admite/i, nexa);
-  await assert.rejects(iniciarPanel({ estado: temp(), config: { nexa: "http://127.0.0.1:9", simulador: { modo: "externo", url: "https://portal.sat.gob.gt", token: "t" } } }), /bloqueado|solo se admite/i);
+  for (const nexa of ["https://portal.sat.gob.gt", "https://api.digifact.com", "http://192.168.1.10:80", "https://nexa.example.com"]) await assert.rejects(iniciarPanel({ estado: temp(), config: { nexa, simulador: { modo: "integrado" } } }), /bloqueado|solo se admite|lista de destinos|no se admiten/i, nexa);
+  await assert.rejects(iniciarPanel({ estado: temp(), config: { nexa: "http://127.0.0.1:9", simulador: { modo: "externo", url: "https://portal.sat.gob.gt", token: "t" } } }), /bloqueado|solo se admite|lista de destinos/i);
   const e = temp(); const c = leerConfiguracion(e, { FEL_AGENTE_NEXA: "http://127.0.0.1:1234" }); assert.equal(c.simulador.modo, "integrado"); assert.equal(c.nexa, "http://127.0.0.1:1234");
   const lanzados = []; abrirEnNavegador("http://127.0.0.1:1/p/x/", { plataforma: "win32", lanzar: (cmd, args, o) => { lanzados.push({ cmd, args, o }); return { on() {}, unref() {} }; } });
   assert.equal(lanzados[0].cmd, "rundll32"); assert.deepEqual(lanzados[0].args, ["url.dll,FileProtocolHandler", "http://127.0.0.1/p/x/".replace("127.0.0.1", "127.0.0.1:1")]); assert.equal(lanzados[0].o.windowsHide, true);
@@ -69,7 +69,7 @@ const conLimite = (p, ms = 60000) => Promise.race([p, new Promise((_, ko) => set
 
 test("EXPERIENCIA DE INICIO: abrir el panel, escribir el código, ver el estado en lenguaje sencillo, emitir con autorización humana, pausar y cerrar en orden", async () => {
   const estado = temp(); let resolver; const pagina = new Promise((r) => { resolver = r; });
-  const panel = await iniciarPanel({ estado, config: { nexa: nexa.base, simulador: { modo: "integrado", clave_nexa: nexa.info.clave_publica } }, agenteConfig: CFG.agente, ganchos: { punto: async (n, c) => { if (n === "despues_de_presentar") resolver(c.pagina); } } });
+  const panel = await iniciarPanel({ estado, config: { nexa: nexa.base, clavesNexa: nexa.claves, simulador: { modo: "integrado", clave_nexa: nexa.info.clave_publica } }, agenteConfig: CFG.agente, ganchos: { punto: async (n, c) => { if (n === "despues_de_presentar") resolver(c.pagina); } } });
   await nexa.prueba("POST", "/prueba/config", { simulador: `${panel.simulador.url}/nexa/autorizaciones` });
   const nav = await chromium.launch(); const ctx = await nav.newContext({ locale: "es-GT" }); const ui = await ctx.newPage(); const errores = [];
   ui.on("pageerror", (e) => errores.push(e.message));
@@ -105,8 +105,8 @@ test("EXPERIENCIA DE INICIO: abrir el panel, escribir el código, ver el estado 
 
 test("CIERRE ORDENADO con la vista previa abierta (señal de cierre): la sesión se cierra, el libro queda vacío, la orden se descarta y Chromium se cierra", async () => {
   sim = await arrancarSimulador(nexa); const estado = temp(); let resolver; const pagina = new Promise((r) => { resolver = r; });
-  const cod = await codigoNuevo(); await vincular({ nexa: nexa.base, codigo: cod, estado });
-  const panel = await iniciarPanel({ estado, config: { nexa: nexa.base, simulador: { modo: "externo", url: sim.url, token: sim.tokenControl } }, agenteConfig: CFG.agente, ganchos: { punto: async (n, c) => { if (n === "despues_de_presentar") resolver(c.pagina); } } });
+  const cod = await codigoNuevo(); await vincular({ nexa: nexa.base, codigo: cod, estado, ...nexa.opcionesAgente });
+  const panel = await iniciarPanel({ estado, config: { nexa: nexa.base, clavesNexa: nexa.claves, simulador: { modo: "externo", url: sim.url, token: sim.tokenControl } }, agenteConfig: CFG.agente, ganchos: { punto: async (n, c) => { if (n === "despues_de_presentar") resolver(c.pagina); } } });
   const { orden } = await nuevaOrden(nexa); const pag = await conLimite(pagina);
   let cerrada = false; pag.on("close", () => { cerrada = true; });
   assert.equal((await ordenDe(nexa, orden)).estado, "llenada");
@@ -119,7 +119,7 @@ test("CIERRE ORDENADO con la vista previa abierta (señal de cierre): la sesión
 
 // ---------------------------------------------------------------- proceso real: arranque, vinculación por la página y recuperación tras matarlo
 function lanzarProceso(estado, simulador, extra = {}) {
-  const hijo = spawn(process.execPath, [PANEL], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_AGENTE_ESTADO: estado, FEL_AGENTE_NEXA: nexa.base, FEL_SIM_URL: simulador.url, FEL_SIM_TOKEN: simulador.tokenControl, FEL_AGENTE_NO_ABRIR: "1", FEL_AGENTE_CHROMIUM_MAJOR: process.env.FEL_AGENTE_CHROMIUM_MAJOR ?? "131", ...extra } });
+  const hijo = spawn(process.execPath, [PANEL], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_AGENTE_ESTADO: estado, FEL_AGENTE_NEXA: nexa.base, FEL_SIM_URL: simulador.url, FEL_SIM_TOKEN: simulador.tokenControl, FEL_AGENTE_NO_ABRIR: "1", FEL_AGENTE_CLAVES_NEXA: JSON.stringify(nexa.claves), FEL_AGENTE_CHROMIUM_MAJOR: process.env.FEL_AGENTE_CHROMIUM_MAJOR ?? "131", ...extra } });
   let salida = ""; const listo = new Promise((ok, ko) => {
     const t = setTimeout(() => { hijo.kill(); ko(new Error("el panel no arrancó:\n" + salida)); }, 60000);
     const leer = (d) => { salida += d; const m = /PANEL_LISTO (\{.*\})/.exec(salida); if (m) { clearTimeout(t); ok(JSON.parse(m[1]).url); } };

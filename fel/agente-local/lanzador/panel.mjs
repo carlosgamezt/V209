@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { abrirAlmacen } from "../agente/almacen.mjs";
 import { crearAgente, vincular } from "../agente/agente.mjs";
-import { exigirBaseLocal } from "../agente/seguridad_red.mjs";
+import { exigirBaseLocal, exigirBaseNexa } from "../agente/seguridad_red.mjs";
 import { iniciarSimulador } from "../simulador/servidor.mjs";
 
 const WEB = fileURLToPath(new URL("./web/", import.meta.url));
@@ -37,21 +37,25 @@ export const MENSAJES = {
   fallida: "No se pudo preparar la última factura; no se emitió nada. Revisa los datos en NEXA.",
   perdida: "NEXA ya no considera esta factura como tuya (se venció el tiempo). No se emitió nada desde aquí.",
   revocado: "Este equipo fue desvinculado en NEXA. El agente se detuvo.",
-  error: "No se pudo hablar con NEXA. El agente seguirá intentándolo.",
+  error: "Ocurrió un problema. El agente seguirá intentándolo.",
+  sin_conexion: "Sin conexión con NEXA. El agente reintentará solo; no se pierde nada.",
+  respuesta_no_autenticada: "NEXA respondió, pero no se pudo comprobar que la respuesta sea auténtica. Por seguridad no se hace nada hasta poder comprobarlo.",
+  actualizar: "Esta versión del agente ya no es compatible. Actualiza el agente para seguir recibiendo facturas.",
   cerrando: "Cerrando el agente de forma ordenada…",
   detenido: "El agente está detenido.",
 };
 
-export async function iniciarPanel({ estado, config, log = () => {}, protector, chromium, agenteConfig = {}, abrir = false, ganchos } = {}) {
+export async function iniciarPanel({ estado, config, log = () => {}, protector, chromium, agenteConfig = {}, abrir = false, ganchos, ca, transporte } = {}) {
   const almacen = abrirAlmacen(estado, { protector });
-  const nexaBase = exigirBaseLocal(config.nexa, "NEXA");
+  const nexaBase = exigirBaseNexa(config.nexa, { hostsPermitidos: config.hostsNexa ?? [] });
+  const claves = config.clavesNexa ?? [], hostsPermitidos = config.hostsNexa ?? [];
   let simulador = null, simUrl, simToken;
   if (config.simulador?.modo === "integrado") { simulador = await iniciarSimulador({ clavePublicaNexa: config.simulador.clave_nexa ?? null }); simUrl = simulador.url; simToken = simulador.tokenControl; }
   else { simUrl = exigirBaseLocal(config.simulador?.url, "Simulador"); simToken = config.simulador?.token; if (!simToken) throw new Error("Falta el token del simulador"); }
 
   const eventos = []; let fase = "sin_vincular", agente = null, cerrando = false, resolverFin;
   const nota = (tipo) => { eventos.push({ t: new Date().toISOString(), tipo, texto: MENSAJES[tipo] }); if (eventos.length > 30) eventos.shift(); };
-  const FINALES = ["emitida", "descartada", "incierta", "fallida", "perdida", "revocado", "pausado"];
+  const FINALES = ["emitida", "descartada", "incierta", "fallida", "perdida", "revocado", "pausado", "actualizar", "sin_conexion", "respuesta_no_autenticada"];
   const alRegistrar = (tipo, detalle) => {
     log(tipo, detalle);
     if (tipo === "trabajando") { fase = "trabajando"; return; }
@@ -63,7 +67,7 @@ export async function iniciarPanel({ estado, config, log = () => {}, protector, 
     if (fase !== k) { fase = k; if (FINALES.includes(k)) nota(k); }
   };
   function arrancarAgente() {
-    agente = crearAgente({ estado, simulador: simUrl, tokenSimulador: simToken, protector, chromium, ganchos, log: alRegistrar, config: agenteConfig });
+    agente = crearAgente({ estado, simulador: simUrl, tokenSimulador: simToken, protector, chromium, ganchos, claves, ca, hostsPermitidos, transporte, log: alRegistrar, config: agenteConfig });
     fase = "esperando"; nota("esperando"); agente.ejecutar().then(() => { if (!cerrando) { fase = agente.estado === "detenido" ? "revocado" : fase; } });
   }
   if (almacen.identidad()) arrancarAgente(); else nota("sin_vincular");
@@ -75,7 +79,7 @@ export async function iniciarPanel({ estado, config, log = () => {}, protector, 
     let n = 0; const t = []; req.on("data", (c) => { n += c.length; if (n > 4096) { ko(Object.assign(new Error("tamano"), { st: 413 })); } else t.push(c); });
     req.on("end", () => { try { ok(JSON.parse(Buffer.concat(t).toString("utf8") || "{}")); } catch { ko(Object.assign(new Error("json"), { st: 400 })); } });
   });
-  const vista = () => ({ vinculado: !!almacen.identidad(), fase, mensaje: MENSAJES[fase], estado_agente: agente?.estado ?? null, agente_id: almacen.identidad()?.agente_id ?? null, eventos: eventos.slice(-12), version: "1.0.0", modo_simulador: config.simulador?.modo ?? "externo" });
+  const vista = () => ({ vinculado: !!almacen.identidad(), fase, mensaje: MENSAJES[fase], estado_agente: agente?.estado ?? null, agente_id: almacen.identidad()?.agente_id ?? null, eventos: eventos.slice(-12), version: "1.0.0", modo_simulador: config.simulador?.modo ?? "externo", conexion: agente?.metricas() ?? null });
 
   const servidor = http.createServer(async (req, res) => {
     try {
@@ -92,7 +96,7 @@ export async function iniciarPanel({ estado, config, log = () => {}, protector, 
         if (ruta === "/api/vincular") {
           if (almacen.identidad()) return responder(res, 409, { error: "ya_vinculado", mensaje: "Este equipo ya está vinculado." });
           const codigo = String(b.codigo ?? "").trim().toUpperCase(); if (!RE_CODIGO.test(codigo)) return responder(res, 400, { error: "codigo", mensaje: "Revisa el código: son 12 letras y números, por ejemplo 1A2B-3C4D-5E6F." });
-          try { await vincular({ nexa: nexaBase, codigo: codigo.replace(/-/g, "").replace(/(.{4})(.{4})(.{4})/, "$1-$2-$3"), estado, nombre: String(b.nombre ?? "Equipo de la empresa").slice(0, 80), protector }); }
+          try { await vincular({ nexa: nexaBase, codigo: codigo.replace(/-/g, "").replace(/(.{4})(.{4})(.{4})/, "$1-$2-$3"), estado, nombre: String(b.nombre ?? "Equipo de la empresa").slice(0, 80), protector, claves, ca, hostsPermitidos, transporte }); }
           catch (e) { return responder(res, 422, { error: "vinculacion", mensaje: /Código|Codigo|FEL_CODIGO/i.test(String(e.codigo ?? e.message)) ? "Ese código no es válido, ya se usó o venció. Pide uno nuevo en NEXA." : "No se pudo vincular. Revisa el código e inténtalo de nuevo." }); }
           arrancarAgente(); return responder(res, 200, vista());
         }
@@ -135,6 +139,8 @@ export function leerConfiguracion(estado, env = process.env) {
     nexa: env.FEL_AGENTE_NEXA ?? archivo.nexa,
     simulador: env.FEL_SIM_URL ? { modo: "externo", url: env.FEL_SIM_URL, token: env.FEL_SIM_TOKEN } : (archivo.simulador ?? { modo: "integrado", clave_nexa: env.FEL_SIM_CLAVE_NEXA ?? archivo.clave_nexa ?? null }),
     puertoPanel: Number(env.FEL_AGENTE_PUERTO_PANEL ?? archivo.puertoPanel ?? 0),
+    clavesNexa: env.FEL_AGENTE_CLAVES_NEXA ? JSON.parse(env.FEL_AGENTE_CLAVES_NEXA) : (archivo.claves_nexa ?? []),
+    hostsNexa: env.FEL_AGENTE_HOSTS_NEXA ? env.FEL_AGENTE_HOSTS_NEXA.split(",").map((h) => h.trim()).filter(Boolean) : (archivo.hosts_nexa ?? []),
   };
 }
 

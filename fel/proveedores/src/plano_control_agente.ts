@@ -5,6 +5,9 @@
 // Respuestas: códigos estables y mensajes genéricos; nunca trazas, SQL ni detalles internos. Diseño: fel/docs/agente-protocolo.md y agente-seguridad.md.
 import { ErrorBd, type Rpc } from "./rpc.ts";
 import { mensajeFirmado, sha256Hex, verificarFirma } from "./firma_agente.ts";
+import type { FirmanteRespuestas } from "./firma_respuesta.ts";
+import type { Metricas } from "./metricas_agente.ts";
+import { acotarSondeo, versionBloqueada } from "./politica_agente.ts";
 
 export const PREFIJO_AGENTE = "/api/agente/v1/";
 const OPERACIONES = ["vincular", "latido", "reclamar", "progreso", "vista_previa", "resultado"] as const;
@@ -23,6 +26,7 @@ const MENSAJES: Record<string, [number, string]> = {
   FEL_ESTADO: [409, "La orden no está en un estado que lo permita."],
   FEL_ORDEN_DUPLICADA: [409, "Ya existe una orden para esa operación."],
   FEL_CONFLICTO: [409, "La orden ya no admite ese cambio."],
+  FEL_VERSION: [426, "Esta versión del agente ya no es compatible: actualízala para seguir recibiendo facturas."],
   FEL_DATOS_INVALIDOS: [422, "Datos no válidos."],
   FEL_LIMITE: [429, "Demasiados intentos; espera unos minutos."],
   FEL_METODO: [405, "Método no permitido."],
@@ -51,12 +55,30 @@ const cadena = (x: unknown, max: number, opcional = false): string | null | unde
 const entero = (x: unknown): number | null => (typeof x === "number" && Number.isSafeInteger(x) && x >= 1 ? x : null);
 
 export interface EventoPlano { op: string; codigo: string; status: number; ms: number; agente?: string }
-export interface OpcionesPlano { rpc: Rpc; registrar?: (e: EventoPlano) => void }
+export interface OpcionesPlano {
+  rpc: Rpc; registrar?: (e: EventoPlano) => void;
+  /** Si se entrega, TODAS las respuestas llevan la firma de NEXA ligada al nonce de la petición (x-nexa-kid / x-nexa-ts / x-nexa-firma). */
+  firmante?: FirmanteRespuestas;
+  /** Contadores de uso por agente y hora (se vuelcan a la base por lotes con `metricas.vaciar()`). */
+  metricas?: Metricas;
+}
+const CLAVES_CLIENTE = ["reconexiones", "errores_red", "no_autenticas", "peticiones"] as const;
 
 /** Devuelve el manejador de las peticiones «/api/agente/v1/*». No depende del servidor HTTP: recibe y devuelve Request/Response estándar. */
 export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<Response> {
   const { rpc } = op;
   const sql = async <T = unknown>(fn: string, args: Record<string, unknown>): Promise<T> => await rpc(fn, args) as T;
+  /** Política que se comunica al agente: versiones, si está bloqueado y cuándo volver a consultar (límites seguros). */
+  const politicaPublica = (pol: Obj, version: unknown, forzarMs?: number) => ({ politica: {
+    version_minima: Number(pol.version_minima), version_recomendada: Number(pol.version_recomendada), bloqueado: versionBloqueada(version, Number(pol.version_minima)),
+    siguiente_ms: acotarSondeo(forzarMs ?? Number(pol.siguiente_ms)) } });
+  /** Claves nuevas/revocadas que el agente aún no conoce (según los kid que declara). */
+  const distribucion = (kids: unknown) => op.firmante ? op.firmante.distribucion(Array.isArray(kids) ? kids.filter((k): k is string => typeof k === "string" && k.length <= 64).slice(0, 20) : []) : {};
+  /** Contadores que informa el propio agente (reconexiones, errores de red…): solo enteros acotados. */
+  const contarCliente = (agente: string, m: unknown) => {
+    if (!op.metricas || m === null || typeof m !== "object") return;
+    for (const k of CLAVES_CLIENTE) { const n = (m as Obj)[k]; if (typeof n === "number" && Number.isSafeInteger(n) && n >= 1 && n <= 1_000_000) op.metricas.sumar(agente, `cliente_${k}`, n); }
+  };
 
   async function leerCuerpo(req: Request): Promise<{ bytes: Uint8Array } | Response> {
     const largo = Number(req.headers.get("content-length") ?? "0");
@@ -72,11 +94,20 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
       case "latido": {
         const version = cadena(b.version, 40, true), error = cadena(b.error, 40, true);
         if (version === undefined || error === undefined) return responder("FEL_DATOS_INVALIDOS");
-        return responder(null, await sql<Obj>("fel_sys_agente_latido", { p_agente: agente, p_version: version, p_error: error }));
+        contarCliente(agente, b.metricas);
+        const estado = await sql<Obj>("fel_sys_agente_latido", { p_agente: agente, p_version: version, p_error: error });
+        const pol = await sql<Obj>("fel_sys_agente_politica", { p_agente: agente });
+        return responder(null, { ...estado, ...politicaPublica(pol, version), ...distribucion(b.kids) });
       }
-      case "reclamar": {
+      case "reclamar": {   // también hace de latido: una sola petición por ciclo (cada invocación cuesta)
+        const version = cadena(b.version, 40, true);
+        if (version === undefined) return responder("FEL_DATOS_INVALIDOS");
+        contarCliente(agente, b.metricas);
+        await sql<Obj>("fel_sys_agente_latido", { p_agente: agente, p_version: version, p_error: cadena(b.error, 40, true) ?? null });
+        const pol = await sql<Obj>("fel_sys_agente_politica", { p_agente: agente });
+        if (versionBloqueada(version, Number(pol.version_minima))) return responder("FEL_VERSION", { ...politicaPublica(pol, version), ...distribucion(b.kids) });   // sin órdenes nuevas; las ya reclamadas pueden terminar
         const r = await sql<Obj | null>("fel_sys_orden_reclamar", { p_agente: agente });
-        return responder(null, r ? { orden: r } : { orden: null });
+        return responder(null, { orden: r ?? null, ...politicaPublica(pol, version, r ? 2000 : undefined), ...distribucion(b.kids) });
       }
       case "progreso": {
         const orden = typeof b.orden === "string" && RE_UUID.test(b.orden) ? b.orden : null, token = entero(b.token), fase = cadena(b.fase, 40);
@@ -114,9 +145,11 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
     if (operacion === "vincular") {   // sin firma: el código de un solo uso es la credencial
       const codigo = cadena(cuerpo.codigo, 20), clave = cadena(cuerpo.clave_publica, 64), nombreAg = cadena(cuerpo.nombre, 80), version = cadena(cuerpo.version, 40, true);
       if (!codigo || !clave || !nombreAg || version === undefined) return { resp: responder("FEL_DATOS_INVALIDOS"), op: operacion };
+      const polV = await sql<Obj>("fel_sys_agente_politica", { p_agente: null });
+      if (versionBloqueada(version, Number(polV.version_minima))) return { resp: responder("FEL_VERSION", politicaPublica(polV, version)), op: operacion };   // antes de gastar el código
       const r = await sql<Obj>("fel_sys_agente_vincular", { p_codigo: codigo, p_clave_publica: clave, p_nombre: nombreAg, p_version: version });
       if (typeof r.error === "string") return { resp: responder(r.error), op: operacion };
-      return { resp: responder(null, { agente_id: r.agente_id, empresa_id: r.empresa_id, empresa: r.empresa }), op: operacion, agente: String(r.agente_id) };
+      return { resp: responder(null, { agente_id: r.agente_id, empresa_id: r.empresa_id, empresa: r.empresa, ...politicaPublica(polV, version), ...distribucion([]) }), op: operacion, agente: String(r.agente_id) };
     }
 
     // ---- autenticación: formato → firma → (agente activo, reloj, nonce) → acción
@@ -141,7 +174,21 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
       if (codigo === "FEL_INTERNO") console.error("plano de control del agente: error interno", e instanceof ErrorBd ? e.codigo : (e as Error)?.name);   // sin mensaje ni datos
     }
     let codigo = "ok"; if (resultado.resp.status !== 200) { try { codigo = (await resultado.resp.clone().json()).codigo ?? "error"; } catch { codigo = "error"; } }
-    op.registrar?.({ op: resultado.op, codigo, status: resultado.resp.status, ms: Math.round(performance.now() - t0), agente: resultado.agente });
-    return resultado.resp;
+    const ms = Math.round(performance.now() - t0);
+    op.registrar?.({ op: resultado.op, codigo, status: resultado.resp.status, ms, agente: resultado.agente });
+    if (op.metricas && resultado.agente) {
+      op.metricas.sumar(resultado.agente, `peticion:${resultado.op.replace(/[^a-z_]/g, "_")}`);
+      op.metricas.sumar(resultado.agente, `estado:${resultado.op.replace(/[^a-z_]/g, "_")}:${resultado.resp.status}`);
+      if (codigo !== "ok" && /^[A-Z_]{3,30}$/.test(codigo)) op.metricas.sumar(resultado.agente, `error:${codigo}`);
+    }
+    return await firmar(req, resultado.resp);
   };
+
+  /** Firma la respuesta con la clave de NEXA, ligada al nonce de ESTA petición (si no vino uno válido, «-»). */
+  async function firmar(req: Request, resp: Response): Promise<Response> {
+    if (!op.firmante) return resp;
+    const nonce = req.headers.get("x-nonce") ?? ""; const bytes = new Uint8Array(await resp.arrayBuffer());
+    const cab = new Headers(resp.headers); for (const [k, v] of Object.entries(await op.firmante.cabeceras(RE_NONCE.test(nonce) ? nonce : "-", resp.status, bytes))) cab.set(k, v);
+    return new Response(bytes, { status: resp.status, headers: cab });
+  }
 }

@@ -71,12 +71,17 @@ jobs:
         run: node --test "fel/agente-local/pruebas/nucleo.test.mjs" "fel/agente-local/pruebas/servidor.test.mjs" "fel/agente-local/pruebas/concesion.test.mjs" "fel/agente-local/pruebas/navegador.test.mjs"
       - name: Protección de la clave del agente (contrato de DPAPI; DPAPI real solo en el trabajo de Windows)
         run: node --test fel/agente-local/pruebas/proteccion.test.mjs
+      - name: Transporte remoto seguro (8a) · NEXA falso hostil — TLS estricto, respuestas firmadas/alteradas/repetidas/vencidas, rotación y revocación de claves, interrupciones, espera exponencial y versión mínima
+        run: node --test --test-timeout=60000 fel/agente-local/pruebas/transporte.test.mjs
       - name: Agente local con Playwright (Chromium 131 exigido) contra NEXA de prueba y el simulador; autorización humana separada, desconexiones, revocación, aislamiento, fencing y recuperación (todo local y simulado)
         timeout-minutes: 15
         run: node --test --test-concurrency=1 fel/agente-local/pruebas/agente.test.mjs
       - name: Panel y arranque del agente (vinculación desde la página, pausa, cierre ordenado y recuperación tras matar el proceso)
         timeout-minutes: 10
         run: node --test --test-concurrency=1 fel/agente-local/pruebas/panel.test.mjs
+      - name: Transporte remoto (8a) de extremo a extremo contra NEXA real de prueba por HTTPS (intermediario hostil, rotación, versión mínima, sondeo, métricas, revocación)
+        timeout-minutes: 12
+        run: node --test --test-concurrency=1 --test-timeout=240000 fel/agente-local/pruebas/remoto.test.mjs
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)
@@ -219,3 +224,8 @@ jobs:
       - name: Panel y arranque del agente (vinculación desde la página, pausa, cierre ordenado, matar el proceso y recuperar)
         timeout-minutes: 15
         run: node --test --test-concurrency=1 fel/agente-local/pruebas/panel.test.mjs
+      - name: Transporte remoto (8a) · NEXA falso hostil (TLS estricto, respuestas firmadas, rotación, interrupciones, espera exponencial, versión mínima)
+        run: node --test --test-timeout=60000 fel/agente-local/pruebas/transporte.test.mjs
+      - name: Transporte remoto (8a) de extremo a extremo contra NEXA real de prueba por HTTPS
+        timeout-minutes: 15
+        run: node --test --test-concurrency=1 --test-timeout=240000 fel/agente-local/pruebas/remoto.test.mjs

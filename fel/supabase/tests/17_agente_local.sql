@@ -348,6 +348,10 @@ select pg_temp.espera_error($$select public.fel_sys_orden_vista_previa(gen_rando
 select pg_temp.espera_error($$select public.fel_op_orden_confirmacion_autorizar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', gen_random_uuid(), 300)$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_op_orden_vista_previa('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', gen_random_uuid())$$, '42501|permission denied');
 select pg_temp.espera_error($$select * from public.ordenes_confirmaciones$$, '42501|permission denied');
+select pg_temp.espera_error($$select public.fel_sys_agente_politica(null)$$, '42501|permission denied');
+select pg_temp.espera_error($$select public.fel_sys_agente_metricas_guardar('[]'::jsonb)$$, '42501|permission denied');
+select pg_temp.espera_error($$select public.fel_op_agente_metricas('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', 24)$$, '42501|permission denied');
+select pg_temp.espera_error($$select * from public.agente_metricas$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_sys_agente_vincular('AAAA-AAAA-AAAA', repeat('A',43), 'x', '1')$$, '42501|permission denied');
 select pg_temp.espera_error($$select public.fel_op_agente_codigo_crear('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b')$$, '42501|permission denied');
 reset role;

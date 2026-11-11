@@ -12,6 +12,8 @@ export function abrirAlmacen(dir, { protector } = {}) {
   const escribir = (n, v) => { const tmp = ruta(`${n}.tmp`); writeFileSync(tmp, JSON.stringify(v), { mode: 0o600 }); renameSync(tmp, ruta(n)); };   // escritura atómica
   return {
     dir, perfil: ruta("perfil-chromium"),
+    /** Archivo JSON simple dentro de la carpeta del agente (p. ej. las claves de NEXA aprendidas). */
+    persistencia: (nombre) => ({ leer: () => leer(nombre), escribir: (v) => escribir(nombre, v) }),
     identidad: () => leer("identidad.json"),
     /** Guarda la identidad con la clave PROTEGIDA (nunca el PEM en claro). `clavePem` se protege con el protector de la plataforma. */
     guardarIdentidad: ({ clavePem, ...datos }) => { const p = protector ?? elegirProtector(); escribir("identidad.json", { ...datos, protector: p.nombre, clave_protegida: p.proteger(Buffer.from(clavePem, "utf8")) }); },
