@@ -28,7 +28,7 @@ Rama `fel-proveedores-diseno`. **Todo en simulación local: sin credenciales, si
 |---|---|
 | Pruebas SQL (migraciones, RLS, estados, privilegios, etc.) + `15_proveedores_flujo.sql` | todas en verde (`TODO OK`) |
 | Concurrencia con dos sesiones reales (incluye 5 casos nuevos: solicitudes simultáneas, un solo envío, propuesta y aprobación únicas, carrera proveedor vs conciliación manual) | verde |
-| Orquestador contra PostgreSQL real (`pruebas_db/`) | **17/17**: flujo completo, rechazo, aislamiento, solicitudes simultáneas, desconocidos y reintentos, conciliación del proveedor, caídas antes de marcar / tras marcar / tras enviar / tras registrar, respuestas tardías, conciliación manual de dos personas, ventana de espera, canal asistido, respuesta sospechosa y **prueba de propiedades** (1000 acciones aleatorias, 127 caídas simuladas, proveedor sin deduplicación: nunca más de una certificación por documento) |
+| Orquestador contra PostgreSQL real (`pruebas_db/`) | **18/18**: flujo completo, rechazo, aislamiento, solicitudes simultáneas, desconocidos y reintentos, conciliación del proveedor, caídas antes de marcar / tras marcar / tras enviar / tras registrar, respuestas tardías, conciliación manual de dos personas, ventana de espera, canal asistido, respuesta sospechosa, recuperación acotada por empresa y **prueba de propiedades** (1000 acciones aleatorias, 127 caídas simuladas, proveedor sin deduplicación: nunca más de una certificación por documento) |
 | Fase 1 (interfaz, mock, orquestador de referencia, propiedades) | 30/30 |
 | Demostración de extremo a extremo en navegador (`e2e.cjs`) | OK: validaciones, líneas, vista previa, estados, descargas con marca de simulación, doble clic, conciliación de dos personas, alerta huérfana, caídas con recuperación, canal asistido, móvil sin desborde y consola sin errores |
 | Comprobación de tipos (`deno check`) | OK |
@@ -42,6 +42,7 @@ Rama `fel-proveedores-diseno`. **Todo en simulación local: sin credenciales, si
 - `fel_op_documento_establecimiento` permitía tocar un documento ya revisado (aunque sin cambiar el valor); ahora solo actúa sobre borradores sin vida fiscal.
 - La ventana de auditoría de respuestas tardías dependía por error de la ventana de espera de reintento; ahora tiene parámetro propio.
 - Un helper de pruebas pisaba el parámetro de auditoría (la prueba de propiedades lo detectó como alerta ausente).
+- En una base compartida (la de CI con restos de la prueba de concurrencia) la recuperación barría operaciones pendientes de otras empresas y las pruebas contaban resultados ajenos; ahora `recuperar`/`auditarFallidas`/`completarArtefactos` admiten un ámbito `empresaId` (un trabajo por empresa) y hay una prueba de regresión. No se debilitó ninguna aserción.
 - Los tiempos de eventos y resoluciones usaban el reloj de la transacción; ahora usan reloj real para que el orden entre ellos sea verificable.
 
 ## 4. Seguridad de la demostración

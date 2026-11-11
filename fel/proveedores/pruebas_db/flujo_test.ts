@@ -104,7 +104,7 @@ T("CAÍDA ANTES de marcar el envío: el reinicio PRUEBA que nada salió, libera 
   await assert.rejects(() => p.sol(clave(1), caida), (e) => e instanceof ProcesoCaido);
   assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "pendiente_certificacion"); assert.equal(p.mock.llamadasEnviar.length, 0);
   await assert.rejects(() => p.sol(clave(2)), (e) => codigo(e) === "FEL_OPERACION_ABIERTA");                  // mientras tanto, nada se reenvía
-  const r = await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.equal(r.liberadas_sin_envio, 1);
+  const r = await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.equal(r.liberadas_sin_envio, 1);
   const ops = await operaciones(cx, p.doc); assert.equal(ops[0].resolucion, "sistema_no_enviada"); assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "rechazado");
   const fin = await p.sol(clave(3)); assert.equal(fin.operacion.estado, "confirmada_exitosa"); assert.equal(p.mock.certificacionesDe(p.doc), 1); assert.equal(p.mock.llamadasEnviar.length, 1);
 });
@@ -112,7 +112,7 @@ T("CAÍDA ANTES de marcar el envío: el reinicio PRUEBA que nada salió, libera 
 T("CAÍDA tras marcar el envío pero ANTES de que el proveedor reciba nada: desconocida → conciliación «no existe» → reintento seguro", async () => {
   const p = await preparar("exito"); const caida = new OrquestadorDb(cx.rpc, p.mock, { ganchos: { despuesDeMarcarEnvio: () => { throw new ProcesoCaido("tras marcar el envío"); } } });
   await assert.rejects(() => p.sol(clave(1), caida), (e) => e instanceof ProcesoCaido); assert.equal(p.mock.llamadasEnviar.length, 0);
-  const r = await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.deepEqual([r.marcadas_desconocidas, r.conciliadas, r.resueltas], [1, 1, 1]);
+  const r = await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.deepEqual([r.marcadas_desconocidas, r.conciliadas, r.resueltas], [1, 1, 1]);
   assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "rechazado"); assert.equal(p.mock.certificacionesDe(p.doc), 0);
   const fin = await p.sol(clave(2)); assert.equal(fin.operacion.estado, "confirmada_exitosa"); assert.equal(p.mock.certificacionesDe(p.doc), 1);
 });
@@ -121,7 +121,7 @@ T("CAÍDA DESPUÉS de que el proveedor certificó (antes de registrar la respues
   const p = await preparar("exito"); const caida = new OrquestadorDb(cx.rpc, p.mock, { ganchos: { despuesDeEnviar: () => { throw new ProcesoCaido("tras enviar"); } } });
   await assert.rejects(() => p.sol(clave(1), caida), (e) => e instanceof ProcesoCaido);
   assert.equal(p.mock.certificacionesDe(p.doc), 1, "el servidor sí certificó"); assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "pendiente_certificacion");
-  const r = await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.equal(r.resueltas, 1);
+  const r = await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.equal(r.resueltas, 1);
   const d = await estadoDoc(cx, p.doc); assert.equal(d.estado_fiscal, "certificado"); assert.match(String(d.autorizacion_sat), /^SIM-/);
   assert.equal(p.mock.llamadasEnviar.length, 1, "no se reenvió"); assert.equal(p.mock.certificacionesDe(p.doc), 1);
   assert.equal(Number((await cx.sql.unsafe("select count(*)::int as n from public.artefactos_documento where documento_id = $1", [p.doc]))[0].n), 2);
@@ -130,9 +130,9 @@ T("CAÍDA DESPUÉS de que el proveedor certificó (antes de registrar la respues
 T("CAÍDA tras registrar el resultado y ANTES de guardar PDF/XML: la recuperación completa los artefactos", async () => {
   const p = await preparar("exito"); const falla = new OrquestadorDb(cx.rpc, p.mock, { ganchos: { despuesDeEvento: () => { throw new ProcesoCaido("tras el evento"); } } });
   await assert.rejects(() => p.sol(clave(1), falla), (e) => e instanceof ProcesoCaido);
-  await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "certificado");
+  await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "certificado");
   const n = async () => Number((await cx.sql.unsafe("select count(*)::int as n from public.artefactos_documento where documento_id = $1", [p.doc]))[0].n);
-  assert.equal(await n(), 2); const otra = await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.equal(otra.artefactos_completados, 0, "idempotente"); assert.equal(await n(), 2);
+  assert.equal(await n(), 2); const otra = await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.equal(otra.artefactos_completados, 0, "idempotente"); assert.equal(await n(), 2);
 });
 
 T("RESPUESTA TARDÍA: el proveedor certifica después; mientras no se sepa, bloquea; al conciliar, certifica sin duplicar", async () => {
@@ -140,7 +140,7 @@ T("RESPUESTA TARDÍA: el proveedor certifica después; mientras no se sepa, bloq
   const c1 = await p.orq.conciliar(p.m.empresa, r.operacion.id); assert.deepEqual([c1.resultado, c1.aplicado], ["indeterminado", "sin_cambio"]);
   await assert.rejects(() => p.sol(clave(2)), (e) => codigo(e) === "FEL_POR_VERIFICAR");
   await p.mock.liberarTardios(CTX); assert.equal(p.mock.certificacionesDe(p.doc), 1);
-  const c2 = await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.equal(c2.resueltas, 1);
+  const c2 = await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.equal(c2.resueltas, 1);
   assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "certificado"); assert.equal(p.mock.llamadasEnviar.length, 1); assert.equal(p.mock.certificacionesDe(p.doc), 1);
 });
 
@@ -177,7 +177,7 @@ T("canal asistido (futuro Playwright): la operación queda abierta; el reinicio 
   const p = await preparar("accion_humana"); const r = await p.sol(clave(1));
   assert.equal(r.operacion.estado, "iniciada"); assert.ok(r.operacion.orden_externa); assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "pendiente_certificacion");
   await assert.rejects(() => p.sol(clave(2)), (e) => codigo(e) === "FEL_OPERACION_ABIERTA");
-  const rec = await reinicio(p.mock).recuperar({ umbralMin: 0 }); assert.equal(rec.esperando_humano, 1); assert.equal((await operaciones(cx, p.doc))[0].estado, "iniciada");
+  const rec = await reinicio(p.mock).recuperar({ umbralMin: 0, empresaId: p.m.empresa }); assert.equal(rec.esperando_humano, 1); assert.equal((await operaciones(cx, p.doc))[0].estado, "iniciada");
   const c = await p.orq.conciliar(p.m.empresa, r.operacion.id); assert.equal(c.aplicado, "sin_cambio");
   const fin = await p.mock.completarAccionHumana(String(r.operacion.orden_externa), CTX); await p.orq.resolverAccionHumana(p.m.empresa, r.operacion.id, fin);
   assert.equal((await estadoDoc(cx, p.doc)).estado_fiscal, "certificado"); assert.equal(p.mock.certificacionesDe(p.doc), 1); assert.equal(p.mock.llamadasEnviar.length, 1);
@@ -203,6 +203,17 @@ T("ventana de respuestas tardías: tras una conciliación manual «fallida» no 
   await assert.rejects(() => p.sol(clave(2)), (e) => codigo(e) === "FEL_ESPERA_TARDIA"); assert.equal(p.mock.llamadasEnviar.length, 1);
   await cx.sql.unsafe("select 1");   // (la espera real son 24 h: aquí solo se comprueba que bloquea)
   await parametros(cx, 0, 0, 0);
+});
+
+T("recuperación acotada por empresa: no toca operaciones pendientes de otras empresas (base compartida)", async () => {
+  const caer = (mock: MockProvider) => new OrquestadorDb(cx.rpc, mock, { ganchos: { despuesDeSolicitar: () => { throw new ProcesoCaido("antes de marcar el envío"); } } });
+  const a = await preparar("exito"), b = await preparar("exito");
+  for (const p of [a, b]) await assert.rejects(() => p.sol(clave(1), caer(p.mock)), (e) => e instanceof ProcesoCaido);
+  const ra = await reinicio(a.mock).recuperar({ umbralMin: 0, empresaId: a.m.empresa }); assert.equal(ra.liberadas_sin_envio, 1);
+  assert.equal((await operaciones(cx, a.doc))[0].resolucion, "sistema_no_enviada");
+  assert.equal((await operaciones(cx, b.doc))[0].estado, "iniciada", "la otra empresa no se toca");
+  const rb = await reinicio(b.mock).recuperar({ umbralMin: 0, empresaId: b.m.empresa }); assert.equal(rb.liberadas_sin_envio, 1);
+  assert.equal((await operaciones(cx, b.doc))[0].resolucion, "sistema_no_enviada");
 });
 
 T("cierre de la conexión", async () => { await cx.cerrar(); });

@@ -32,7 +32,7 @@ Deno.test({ name: "propiedades en la base: 40 secuencias × 25 acciones con caí
             const g = r() < 0.35 ? pick(["a", "b", "c", "d"] as const) : undefined; if (g) vistos.caidas++;
             const k = clave(Math.floor(r() * 4));
             await Promise.allSettled(Array.from({ length: 1 + Math.floor(r() * 3) }, () => orq(g).solicitar({ actor: m.propietario, empresa: m.empresa, documento: d, clave: k, canal: m.canal })));
-          } else if (a === 4) await orq().recuperar({ umbralMin: 0 });
+          } else if (a === 4) await orq().recuperar({ umbralMin: 0, empresaId: m.empresa });
           else if (a === 5) { const o = await abierta(d); if (o) await orq().conciliar(m.empresa, o.id); }
           else if (a === 6) await mock.liberarTardios(CTX);
           else if (a === 7) mock.fijarEscenario(d, pick(ESCENARIOS));
@@ -68,7 +68,7 @@ Deno.test({ name: "propiedades en la base: 40 secuencias × 25 acciones con caí
         }
       }
       // cierre de la secuencia: tras reinicio y recuperación, nada queda con un envío no marcado y los certificados cuadran con el proveedor
-      await orq().recuperar({ umbralMin: 0 });
+      await orq().recuperar({ umbralMin: 0, empresaId: m.empresa });
       for (const doc of docs) { const e = await estadoDoc(cx, doc); if (e.estado_fiscal === "certificado") vistos.certificados++; if (e.estado_fiscal === "por_verificar") vistos.por_verificar++; if (mock.certificacionesDe(doc) === 1 && e.estado_fiscal === "rechazado") vistos.alertas++; }
       vistos.liberadas += Number((await cx.sql.unsafe("select count(*)::int as n from public.operaciones_fiscales where empresa_id = $1 and resolucion = 'sistema_no_enviada'", [m.empresa]))[0].n);
     }

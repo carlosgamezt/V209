@@ -94,7 +94,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Orquestador del flujo simulado contra PostgreSQL real (17 pruebas, incluida la prueba de propiedades con caídas)
+      - name: Orquestador del flujo simulado contra PostgreSQL real (18 pruebas, incluida la prueba de propiedades con caídas)
         working-directory: fel/proveedores
         env:
           FEL_PGHOST: 127.0.0.1

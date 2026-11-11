@@ -142,9 +142,10 @@ export class OrquestadorDb {
   }
 
   /** Recuperación tras reinicios o caídas. NUNCA reenvía: libera solo lo que se PRUEBA que no salió y concilia lo demás. */
-  async recuperar(opciones: { umbralMin?: number } = {}): Promise<ResumenRecuperacion> {
+  async recuperar(opciones: { umbralMin?: number; empresaId?: string } = {}): Promise<ResumenRecuperacion> {
     const r: ResumenRecuperacion = { liberadas_sin_envio: 0, marcadas_desconocidas: 0, conciliadas: 0, resueltas: 0, alertas: 0, esperando_humano: 0, artefactos_completados: 0 };
-    const pendientes = await this.rpc("fel_sys_operaciones_pendientes", { p_umbral_min: opciones.umbralMin ?? null }) as PendienteBd[];
+    const soloEmpresa = <T extends { empresa_id: string }>(xs: T[]) => opciones.empresaId ? xs.filter((x) => x.empresa_id === opciones.empresaId) : xs;   // ámbito opcional: un trabajo por empresa; sin él, barrido de plataforma
+    const pendientes = soloEmpresa(await this.rpc("fel_sys_operaciones_pendientes", { p_umbral_min: opciones.umbralMin ?? null }) as PendienteBd[]);
     for (const p of pendientes) {
       if (p.estado === "iniciada" && p.orden_externa) { r.esperando_humano++; continue; }                 // espera a una persona: no se toca
       if (p.estado === "iniciada" && !p.enviada) { await this.rpc("fel_sys_operacion_no_enviada", { p_empresa: p.empresa_id, p_op: p.operacion_id }); r.liberadas_sin_envio++; continue; }
@@ -152,22 +153,24 @@ export class OrquestadorDb {
       const c = await this.conciliar(p.empresa_id, p.operacion_id); r.conciliadas++;
       if (c.aplicado === "certificado" || c.aplicado === "rechazado") r.resueltas++;
     }
-    const a = await this.auditarFallidas(); r.alertas = a.alertas;
-    r.artefactos_completados = await this.completarArtefactos();
+    const a = await this.auditarFallidas(opciones.empresaId); r.alertas = a.alertas;
+    r.artefactos_completados = await this.completarArtefactos(opciones.empresaId);
     return r;
   }
 
   /** Respuestas tardías: vuelve a consultar las operaciones dadas por fallidas a mano; un «certificado» genera una alerta bloqueante. Los demás resultados dejan la comprobación posterior exigida para reintentar. */
-  async auditarFallidas(): Promise<{ revisadas: number; alertas: number }> {
-    const fs = await this.rpc("fel_sys_fallidas_manuales_recientes", {}) as { operacion_id: string; empresa_id: string }[];
+  async auditarFallidas(empresaId?: string): Promise<{ revisadas: number; alertas: number }> {
+    let fs = await this.rpc("fel_sys_fallidas_manuales_recientes", {}) as { operacion_id: string; empresa_id: string }[];
+    if (empresaId) fs = fs.filter((f) => f.empresa_id === empresaId);
     let alertas = 0;
     for (const f of fs) { const c = await this.conciliar(f.empresa_id, f.operacion_id); if (c.aplicado === "alerta") alertas++; }
     return { revisadas: fs.length, alertas };
   }
 
   /** Caída entre certificar y guardar PDF/XML: se vuelven a pedir al proveedor (solo lectura). */
-  async completarArtefactos(): Promise<number> {
-    const fs = await this.rpc("fel_sys_artefactos_faltantes", {}) as { operacion_id: string; empresa_id: string; documento_id: string; clave_idempotencia: string; ambiente: string }[];
+  async completarArtefactos(empresaId?: string): Promise<number> {
+    let fs = await this.rpc("fel_sys_artefactos_faltantes", {}) as { operacion_id: string; empresa_id: string; documento_id: string; clave_idempotencia: string; ambiente: string }[];
+    if (empresaId) fs = fs.filter((f) => f.empresa_id === empresaId);
     let n = 0;
     for (const f of fs) {
       let arts: ArtefactoRef[] = [];
