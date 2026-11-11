@@ -35,34 +35,39 @@ jobs:
   interfaz:
     name: Interfaz (modo demostración)
     runs-on: ubuntu-latest
+    timeout-minutes: 25          # una espera anómala falla rápido y a la vista, no en silencio
+    # Imagen oficial de Playwright (misma versión que el paquete npm), fijada por etiqueta Y digest: trae Chromium 131 y sus dependencias,
+    # así que ya no se instala nada con apt (los espejos de Ubuntu fallaron por DNS en 3 ejecuciones seguidas). Solo este trabajo usa contenedor.
+    container:
+      image: mcr.microsoft.com/playwright:v1.49.1-noble@sha256:70e367e0cbf60340a5b5fd562f6247a34eb3196efab9f88a3dd56482d9fe09d2
+      options: --ipc=host --init
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - name: Instalar navegador de pruebas
+      - name: Instalar Deno 2.9.6 con npm (la imagen no trae unzip, que necesita setup-deno)
+        run: |
+          npm install -g deno@2.9.6
+          test "$(deno --version | head -n 1 | cut -d' ' -f2)" = "2.9.6"
+          deno --version
+      - name: Preparar Playwright (paquete npm; los navegadores ya vienen en la imagen) y comprobar versión y arranque
         run: |
           npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1 angular@1.5.8 jquery@3.7.1
-          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          test "$("$RUNNER_TEMP/pw/node_modules/.bin/playwright" --version)" = "Version 1.49.1"
+          # Ruta de módulos para los pasos siguientes (en un contenedor, $RUNNER_TEMP es la ruta correcta dentro de él)
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" node -e "require('playwright').chromium.launch().then(async b => { const v = b.version(); console.log('Chromium', v); await b.close(); if (!/^131[.]/.test(v)) { console.error('Se esperaba Chromium 131 y se obtuvo ' + v); process.exit(1); } })"
       - name: Pruebas de interfaz y de autenticación
-        env:
-          NODE_PATH: ${{ runner.temp }}/pw/node_modules
         run: |
           node fel/app/tests/ui.cjs
           node fel/app/tests/auth.cjs
           node fel/app/tests/cuentas.cjs
       - name: Demostración de facturación individual SIMULADA (navegador + orquestador real + PostgreSQL en memoria; sin credenciales ni red externa)
-        env:
-          NODE_PATH: ${{ runner.temp }}/pw/node_modules
         run: node fel/demo-facturacion/tests/e2e.cjs
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)
-        env:
-          NODE_PATH: ${{ runner.temp }}/pw/node_modules
         run: |
           node --test fel/poc-sat/tests/guardia.test.mjs
           node fel/poc-sat/tests/autoprueba.mjs
