@@ -30,7 +30,7 @@ let PUERTO = 0;
 const envoltorio = (src, red) => `${envoltorioBase(src + (red ? "?red=1" : ""))}`;
 const envoltorioBase = (src) => `<!doctype html><meta charset="utf-8"><title>Menú simulado (NO es SAT)</title><p>Página de menú SIMULADA con el formulario en un iframe.</p><iframe src="${src}" style="width:1100px;height:900px"></iframe>`;
 const servidor = http.createServer((req, res) => {
-  if (req.method === "GET" && req.url.startsWith("/menu/portada.jsf")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://felav.c.sat.gob.gt:${PUERTO}/fel-web/privado/vistas/fel.jsf`, req.url.includes("red=1"))); }
+  if (req.method === "GET" && req.url.startsWith("/menu/portada.jsf")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); { const qs = req.url.split("?")[1]; return res.end(envoltorioBase(`http://felav.c.sat.gob.gt:${PUERTO}/fel-web/privado/vistas/fel.jsf${qs ? "?" + qs : ""}`)); } }
   if (req.method === "GET" && req.url.startsWith("/menu/hostil")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://evil.example.test:${PUERTO}/felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf`)); }
   if (req.url.startsWith("/consulta/")) {
     lecturas.push(`${req.method} ${req.url.split("?")[0]}`); const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "x-prueba", "access-control-allow-methods": "GET" };
@@ -421,6 +421,76 @@ await caso("ETAPA 2 · MAPA REAL SIN CONFIRMAR: tal como se entrega, no arranca 
   const v = validarMapeo(e2, { etapa2: true }); assert.equal(v.ok, false); assert.ok(v.errores.some((x) => /indicadores_sesion_activa/.test(x)) && v.errores.some((x) => /p026/.test(x)), v.errores.join("\n"));
   const a = validarMapeo(recortarPlan(e2, "p150-linea0-leer-total"), { etapa2: true }); assert.ok(a.errores.some((x) => /indicadores_sesion_activa/.test(x)) && !a.errores.some((x) => /p026/.test(x)), a.errores.join("\n"));
   assert.deepEqual(e2.permitir_post, []); assert.deepEqual(e2.permitir_get, []);
+});
+
+
+// ───────── ETAPA 2 · EXTREMO A EXTREMO CON EL COMANDO REAL (bin/ejecutar.mjs + Chrome por CDP + nombres reales de host resueltos a localhost) ─────────
+const ENV_E2 = { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2", FEL_CONDICIONES_USO_REVISADAS: "si", FEL_EMPRESA_CONFIRMADA: "empresa-e2" };
+const modeloIf = (f) => f.evaluate(() => { const s = angular.element(document.body).scope(); return { id: s.datosGenerales.tipoIdentificacion, nit: s.datosGenerales.nitReceptor, dir: s.datosGenerales.direccionReceptor, vp: s.vistaPrevia, modal: s.modalImpuestos, radio: s.registroRadio ?? 0, lineas: JSON.parse(angular.toJson(s.detalleFactura)) }; });
+/** Copia LOCAL del mapa real con SOLO la confirmación humana del indicador de sesión (lo que haría la persona); `tocar` permite variantes negativas. */
+async function cliE2({ query = "?radio=nit", hasta = "p150-linea0-leer-total", env = ENV_E2, tocar = (m) => m, extra = [], datosTocar = null } = {}) {
+  const puerto = 9800 + Math.floor(Math.random() * 90), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cli2-")), cwd = path.join(AQUI, "..");
+  const ctx = await lanzarPersistente(path.join(tmp, "perfil"), { headless: true, args: [`--remote-debugging-port=${puerto}`, "--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
+  const empresa = path.join(tmp, "empresa.local.json"), mapa = path.join(tmp, "mapeo.etapa2.local.json"), datos = path.join(tmp, "datos.json");
+  fs.writeFileSync(empresa, JSON.stringify({ alias: "empresa-e2", modo: "cdp", cdp: `http://127.0.0.1:${puerto}`, identidad: { confirmacion_manual: true } }));
+  const m = structuredClone(e2); m.sesion.indicadores_sesion_activa[0].verificado = true; fs.writeFileSync(mapa, JSON.stringify(tocar(m)));
+  const d = JSON.parse(fs.readFileSync(path.join(cwd, "config/datos-ficticios-lineas.json"), "utf8")); fs.writeFileSync(datos, JSON.stringify(datosTocar ? datosTocar(d) : d));
+  const pg = ctx.pages()[0] ?? await ctx.newPage(); await pg.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf${query}`); await pg.frameLocator("iframe").locator("body").waitFor();
+  const fr = () => pg.frames().find((f) => f.url().includes("/fel-web/"));
+  const r = await ejecutarAsync(process.execPath, ["bin/ejecutar.mjs", `--empresa=${empresa}`, `--mapeo=${mapa}`, `--datos=${datos}`, ...(hasta ? [`--hasta=${hasta}`] : []), ...extra], { cwd, env: { ...process.env, ...env }, timeout: 120000 }, "si\n\n\n\n");
+  const dirReg = path.join(cwd, "registros", "empresa-e2"), archivos = fs.existsSync(dirReg) ? fs.readdirSync(dirReg).sort() : [];
+  const resumenArch = archivos.find((x) => x.endsWith(".resumen.json")), resumen = resumenArch ? JSON.parse(fs.readFileSync(path.join(dirReg, resumenArch), "utf8")) : null;
+  const registros = archivos.map((x) => fs.readFileSync(path.join(dirReg, x), "utf8")).join("\n");
+  const limpiar = async () => { await ctx.close().catch(() => {}); fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(path.join(cwd, "registros"), { recursive: true, force: true }); };
+  return { r, fr, pg, resumen, registros, archivos, limpiar, salida: r.stdout + r.stderr };
+}
+const SIN_VALORES = ["PRUEBA", "125.50", "251.00", "Consumidor Final", "cookie", "token", "CIUDAD"];
+
+await caso("ETAPA 2 · E2E COMANDO REAL (tramo 2A): llena una línea por el iframe, lee el total, termina «detenido» con código 0; sin POST, sin progreso, sin valores en el registro, sin Vista Previa/Guardar/Emitir", async () => {
+  posts.length = 0; const c = await cliE2();
+  try {
+    if (process.env.FEL_MOSTRAR_SALIDA) console.log("----- SALIDA E2E -----\n" + c.salida + "----------------------");
+    assert.equal(c.r.status, 0, c.salida); assert.match(c.salida, /ETAPA 2 · LLENADO CONTROLADO/); assert.match(c.salida, /ESTRICTO/); assert.match(c.salida, /emitió: NO/);
+    const m = await modeloIf(c.fr()), d0 = m.lineas[0];
+    assert.deepEqual([d0.BienOServicio, d0.Cantidad, d0.Descripcion, d0.PrecioUnitario, d0.Total, m.dir, m.nit, m.radio, m.vp, m.modal, m.lineas.length], ["Servicio", "2", "SERVICIO DE PRUEBA UNO - NO EMITIR", "125.50", "251.00", "CIUDAD DE PRUEBA", "", 0, false, false, 1], JSON.stringify(m));
+    assert.deepEqual(posts, []); assert.ok(!c.archivos.some((x) => /progreso/.test(x)), c.archivos.join(","));
+    assert.ok(c.resumen && c.resumen.errores.length === 0 && c.resumen.solicitudes_bloqueadas.length === 0 && c.resumen.emitio === false && c.resumen.estado_final === "detenido", JSON.stringify(c.resumen));
+    for (const x of SIN_VALORES) assert.ok(!c.registros.includes(x), `el registro no debe contener «${x}»`);
+  } finally { await c.limpiar(); }
+});
+await caso("ETAPA 2 · E2E RECHAZOS DEL COMANDO: sin variables, con la autorización de la Etapa 1, sin revisar condiciones de uso, con otra empresa confirmada y con --reanudar → se niega (código 2) y NO toca la página", async () => {
+  const casos = [[{ FEL_AUTORIZACION_SAT: "", FEL_ETAPA_AUTORIZADA: "", FEL_CONDICIONES_USO_REVISADAS: "", FEL_EMPRESA_CONFIRMADA: "" }, /Se niega a correr/], [{ FEL_ETAPA_AUTORIZADA: "etapa1" }, /Se niega a correr/], [{ FEL_CONDICIONES_USO_REVISADAS: "" }, /Se niega a correr/], [{ FEL_EMPRESA_CONFIRMADA: "otra-empresa" }, /Se niega a correr/]];
+  for (const [env, re] of casos) { const c = await cliE2({ env: { ...ENV_E2, ...env } }); try { assert.equal(c.r.status, 2, c.salida); assert.match(c.salida, re); assert.equal((await modeloIf(c.fr())).lineas[0].Cantidad, "", "no se escribió nada"); } finally { await c.limpiar(); } }
+  const c = await cliE2({ extra: ["--reanudar"] }); try { assert.equal(c.r.status, 2, c.salida); assert.match(c.salida, /no admite --reanudar/); assert.equal((await modeloIf(c.fr())).lineas[0].Cantidad, ""); } finally { await c.limpiar(); }
+  const m = await cliE2({ tocar: (x) => { x.pasos.splice(1, 0, { id: "x-vp", tipo: "clic_seguro", localizador: { estrategia: "texto", valor: "Vista Previa" }, verificado: true }); return x; } });
+  try { assert.equal(m.r.status, 2, m.salida); assert.match(m.salida, /Se niega a correr \(mapeo\)/); assert.equal((await modeloIf(m.fr())).vp, false); } finally { await m.limpiar(); }
+});
+await caso("ETAPA 2 · E2E ANOMALÍAS: autoguardado, diálogo, sesión perdida, campo ambiguo y radio sin marcar detienen el comando de inmediato (código ≠ 0), sin seguir llenando y sin que llegue ningún POST", async () => {
+  const esc = [
+    ["AUTOGUARDADO", "?radio=nit&autosave=1", (x) => x, /solicitud bloqueada|detenido_por_alerta|POST/i, "p150-linea0-leer-total"],
+    ["DIÁLOGO", "?radio=nit&alerta=1", (x) => x, /diálogo/i, "p150-linea0-leer-total"],
+    ["SESIÓN PERDIDA", "?radio=nit&expirar=1", (x) => x, /sesión|sesion/i, "p150-linea0-leer-total"],
+    ["CAMPO AMBIGUO", "?radio=nit", (x) => { x.pasos.find((p) => p.id === "p120-linea0-descripcion").localizador = { estrategia: "nombre", valor: "Descripcion0", marco: x.pasos.find((p) => p.id === "p110-linea0-cantidad").localizador.marco }; return x; }, /ambiguo/i, "p130-linea0-precio"],
+    ["RADIO SIN MARCAR", "?x=1", (x) => x, /marcado|radio/i, "p030-receptor-direccion"],
+  ];
+  for (const [nombre, query, tocar, re, noDebeLlegarA] of esc) {
+    posts.length = 0; const c = await cliE2({ query, tocar });
+    try {
+      assert.notEqual(c.r.status, 0, `${nombre}: debe fallar\n${c.salida}`); assert.notEqual(c.r.status, 2, `${nombre}: no es un rechazo previo, es una detención en ejecución\n${c.salida}`); assert.match(c.salida.replace(/^.*ESTRICTO.*$/m, ""), re, `${nombre}\n${c.salida}`); const esperado = { AUTOGUARDADO: "detenido_por_alerta", "DIÁLOGO": "detenido_por_alerta", "SESIÓN PERDIDA": "sesion_perdida", "CAMPO AMBIGUO": "interrumpido", "RADIO SIN MARCAR": "interrumpido" }[nombre]; assert.equal(c.resumen?.estado_final, esperado, `${nombre}: estado final`); if (nombre === "AUTOGUARDADO") assert.deepEqual(c.resumen.solicitudes_bloqueadas, ["POST felav.c.sat.gob.gt/api/autoguardado"]); if (nombre === "CAMPO AMBIGUO") assert.equal(c.resumen.errores[0].id, "p120-linea0-descripcion"); if (nombre === "RADIO SIN MARCAR") assert.equal(c.resumen.errores[0].id, "p010-receptor-radio-nit");
+      assert.deepEqual(posts, [], `${nombre}: ningún POST`); const m = await modeloIf(c.fr()); assert.deepEqual([m.vp, m.modal, m.lineas.length], [false, false, 1], `${nombre}: sin Vista Previa/impuestos/líneas nuevas`);
+      const ids = c.registros.split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return {}; } }).filter((e) => e.evento === "paso").map((e) => e.id);
+      assert.ok(!ids.includes(noDebeLlegarA), `${nombre}: no debió llegar a ${noDebeLlegarA} (pasos: ${ids.join(",")})`);
+      assert.ok(!ids.includes("p999-detener"), `${nombre}: no debió terminar con normalidad`);
+      for (const x of SIN_VALORES) assert.ok(!c.registros.includes(x), `${nombre}: el registro no debe contener «${x}»`);
+    } finally { await c.limpiar(); }
+  }
+});
+await caso("ETAPA 2 · E2E TRAMO 2B EN SIMULACIÓN: sin regla permitir_get la consulta del CF se bloquea y detiene; el mapa sin confirmar p026 se niega aunque haya autorización", async () => {
+  // p026 sin confirmar (tal como se entrega) → el comando se niega antes de tocar la página
+  const a = await cliE2({ hasta: null, query: "?radio=nit&red=1" }); try { assert.equal(a.r.status, 2, a.salida); assert.match(a.salida, /p026/); assert.equal((await modeloIf(a.fr())).nit, ""); } finally { await a.limpiar(); }
+  // confirmado por la persona en su copia local, pero SIN regla para el GET a otro dominio → se bloquea y se detiene (en la simulación esa consulta apunta a un host simulado)
+  const b = await cliE2({ hasta: null, query: "?radio=nit&red=1", tocar: (x) => { x.pasos.find((p) => p.id === "p026-receptor-leer-respuesta").verificado = true; return x; } });
+  try { assert.notEqual(b.r.status, 0, b.salida); assert.match(b.salida, /solicitud bloqueada|detenido_por_alerta/i, b.salida); assert.ok(/consulta\.example\.test/.test(b.salida), "la consulta no listada aparece como bloqueada"); } finally { await b.limpiar(); }
 });
 
 await browser.close(); await browserHosts.close(); servidor.close();

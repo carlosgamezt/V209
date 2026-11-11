@@ -74,7 +74,7 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
     const sub = num(d.Cantidad) * num(d.PrecioUnitario), desc = num(d.Descuento) + num(d.OtrosDescuento);
     if (desc > sub) { d.errorDescuento = "El descuento supera el subtotal"; asignarTotal(d, ""); return; }
     { const t = (sub - desc); asignarTotal(d, formato === "coma" ? t.toFixed(2).replace(".", ",") : formato === "entero" ? String(Math.round(t)) : t.toFixed(2)); }
-    autoguardado();
+    autoguardado(); if (flag("expirar")) window.__expirar();   // variante: la sesión caduca al calcular el total (pérdida de sesión en pleno llenado)
   };
   $scope.agregarItem = () => { $scope.detalleFactura.push(nuevo()); };
   $scope.eliminarItem = (i) => { $scope.detalleFactura.splice(i, 1); };
