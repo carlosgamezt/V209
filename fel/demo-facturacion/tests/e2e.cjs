@@ -39,7 +39,8 @@ function arrancar() {
     await p.fill('input[aria-label="Descripción de la línea 1"]', desc); await p.fill('input[aria-label="Cantidad de la línea 1"]', cant); await p.fill('input[aria-label="Precio de la línea 1"]', precio);
     await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); return p.url().split("/").pop();
   };
-  const abrirDemo = async () => { await p.locator('details.demo-controles').evaluate((d) => { d.open = true; }); };
+  const abrirDemo = async () => { const d = p.locator('details.demo-controles'); await p.waitForLoadState("networkidle");   // tolera un repintado de la acción anterior: reabre hasta que quede abierto de forma estable
+    for (let n = 0; n < 20; n++) { await d.evaluate((x) => { x.open = true; }); await p.waitForTimeout(150); if (await p.locator('details.demo-controles[open]').count()) return; } throw new Error("no se pudieron abrir los controles de la demostración"); };
   const revisar = async () => { await p.click('button:has-text("Marcar como revisado")'); await p.waitForSelector('.doc-cab .tag:has-text("Revisado")'); };
   const enviar = async (escenario) => { await p.selectOption('select[aria-label="Comportamiento del proveedor simulado"]', escenario); await p.click("#enviar"); };
 
@@ -183,7 +184,7 @@ function arrancar() {
     for (const s of ["1", "2"]) assert.equal(new Set(cajas.filter((c) => c.slot === s).map((c) => c.w)).size, 1, `ranura ${s}: mismo ancho`); assert.equal(new Set(cajas.filter((c) => c.slot === "3").map((c) => c.izq)).size, 1, "el botón «Consultar» queda alineado en todas las filas"); assert.equal(new Set(cajas.filter((c) => c.slot === "1").map((c) => c.izq)).size, 1, "la acción principal queda alineada"); }
   await foto("12-facturas.png");
   await filaB.locator('[data-accion="revisar"]').click(); await p.click("#confirmar-revision"); await toast("marcado como revisado");
-  await p.waitForFunction(() => [...document.querySelectorAll(".fila-fac")].some((f) => f.querySelector('[data-accion="enviar"]'))); assert.equal(await api("GET", `/api/documentos/${idB}`).then((d) => d.documento.estado_preparacion), "revisado");
+  await p.waitForSelector('.fila-fac [data-accion="enviar"]'); assert.equal(await api("GET", `/api/documentos/${idB}`).then((d) => d.documento.estado_preparacion), "revisado");
   const idV = await crear("Por verificar desde la lista", "1", "6"); await p.click('button:has-text("Marcar como revisado")'); await p.waitForSelector('.doc-cab .tag:has-text("Revisado")');
   await api("POST", `/api/documentos/${idV}/certificar`, { clave: "clave-lista-0123456789", escenario: "timeout_antes" }); await p.goto(`${srv.url}/#/`); await p.waitForSelector('.fila-fac [data-accion="resolver"]');
   assert.match(await p.locator(".fila-fac", { has: p.locator('[data-accion="resolver"]') }).first().innerText(), /Por verificar/);
@@ -207,7 +208,7 @@ function arrancar() {
   // conceptos: edición, duplicado, desactivar (sale del catálogo al facturar) y reactivar
   await como("ana"); await p.goto(`${srv.url}/#/conceptos`); await p.waitForSelector("[data-concepto]");
   await p.click('button[aria-label="Editar Concepto de prueba"]'); await p.fill('input[aria-label="Precio sugerido"]', "abc"); await p.click("#guardar-concepto"); await p.waitForSelector(".modal .err:has-text('precio debe ser un número')");
-  await p.fill('input[aria-label="Precio sugerido"]', "90.25"); await p.selectOption('select[aria-label="Tipo de concepto"]', "bien"); await p.click("#guardar-concepto"); await toast("Concepto actualizado"); await p.waitForFunction(() => /Q\s?90\.25/.test(document.querySelector('[data-concepto="SERV-900"]')?.innerText ?? ""));
+  await p.fill('input[aria-label="Precio sugerido"]', "90.25"); await p.selectOption('select[aria-label="Tipo de concepto"]', "bien"); await p.click("#guardar-concepto"); await toast("Concepto actualizado"); await p.locator('[data-concepto="SERV-900"]', { hasText: /Q\s?90\.25/ }).waitFor();
   assert.match(await p.locator('[data-concepto="SERV-900"]').innerText(), /Bien/);
   await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "SERV-900"); await p.fill('input[aria-label="Descripción del concepto"]', "Duplicado"); await p.click("#guardar-concepto"); await p.waitForSelector(".modal .err:has-text('Ya existe')"); await p.keyboard.press("Escape");
   await p.click('button[aria-label="Editar Concepto de prueba"]'); await p.click("#estado-concepto"); await toast("Concepto desactivado"); await p.waitForTimeout(200); assert.equal(await p.locator('[data-concepto="SERV-900"]').count(), 0);
@@ -237,7 +238,7 @@ function arrancar() {
     for (const [ruta, sel] of [["/#/", ".fila-fac"], ["/#/clientes", "[data-cliente]"], ["/#/conceptos", "[data-concepto]"]]) { await mm.goto(srv.url + ruta); await mm.waitForSelector(sel); await mm.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight)); await mm.waitForTimeout(250);
       const g = await mm.evaluate((s) => { const nav = document.querySelector(".nav-movil").getBoundingClientRect(), ult = [...document.querySelectorAll(s)].pop().getBoundingClientRect(), pie = document.querySelector(".pie-demo").getBoundingClientRect(); return { navTop: nav.top, ultimaBase: ult.bottom, pieBase: pie.bottom }; }, sel);
       assert.ok(g.ultimaBase <= g.navTop + 0.5, `${ruta}: la última tarjeta queda por encima de la barra inferior (${JSON.stringify(g)})`); assert.ok(g.pieBase <= g.navTop + 0.5, `${ruta}: el pie queda visible sobre la barra inferior`);
-      if (ruta === "/#/") await mm.screenshot({ path: capturas ? path.join(capturas, "m-facturas-final-scroll.png") : "/dev/null" }); }
+      if (ruta === "/#/" && capturas) await mm.screenshot({ path: path.join(capturas, "m-facturas-final-scroll.png") }); }
     await mm.close(); }
   await movil.close();
 
