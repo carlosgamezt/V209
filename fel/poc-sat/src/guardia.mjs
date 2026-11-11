@@ -96,6 +96,13 @@ export function evaluarSolicitud({ metodo, url, tipoRecurso }, politica = {}) {
   const m = String(metodo ?? "").toUpperCase();
   if (METODOS_LECTURA.has(m)) {
     if (m !== "OPTIONS" && TIPOS_DINAMICOS.has(tipoRecurso)) { let ruta = ""; try { ruta = decodeURIComponent(new URL(url).pathname); } catch { /* URL rara: se deja pasar solo si no es dinámica */ } if (RUTA_LECTURA_PROHIBIDA.test(ruta)) return { permitir: false, razon: `${m} bloqueado: la ruta parece de emisión o guardado` }; }
+    if (m !== "OPTIONS" && (tipoRecurso === "fetch" || tipoRecurso === "xhr") && Array.isArray(politica.dominios)) {   // lecturas dinámicas: solo a dominios permitidos o a rutas revisadas una por una
+      let u; try { u = new URL(url); } catch { return { permitir: false, razon: "URL no válida" }; }
+      if (!hostPermitido(u.hostname, politica.dominios)) {
+        const regla = (politica.permitir_get ?? []).find((r) => r.host?.toLowerCase() === u.hostname.toLowerCase() && u.pathname.startsWith(r.ruta_prefijo ?? "/\u0000"));
+        if (!regla) return { permitir: false, razon: `${m} XHR/fetch a «${u.hostname}», que no está en dominios_permitidos: requiere una revisión específica (permitir_get)` };
+      }
+    }
     return { permitir: true, razon: "lectura" };
   }
   let u; try { u = new URL(url); } catch { return { permitir: false, razon: "URL no válida" }; }
@@ -114,7 +121,7 @@ const necesitaLocalizador = new Set(["esperar_visible", "llenar", "seleccionar",
 const necesitaDato = new Set(["llenar", "seleccionar", "marcar", "leer"]);
 
 /** opciones.local = true solo para la autoprueba con la página de ejemplo (permite no verificado y host local). */
-export function validarMapeo(m, { local = false } = {}) {
+export function validarMapeo(m, { local = false, soloComprobar = false } = {}) {
   const errores = [], avisos = [];
   const e = (s) => errores.push(s);
   if (!m || typeof m !== "object") return { ok: false, errores: ["el mapeo no es un objeto"], avisos };
@@ -125,8 +132,13 @@ export function validarMapeo(m, { local = false } = {}) {
     if (!r || !r.metodo || !r.host || !r.ruta_prefijo) e("permitir_post: cada regla necesita metodo, host y ruta_prefijo");
     else if (textoProhibido(String(r.ruta_prefijo).replace(/[/_-]+/g, " ")).prohibido || /(emit|certific|firm|envi|dte|factura|anul)/i.test(r.ruta_prefijo)) e(`permitir_post: la ruta «${r.ruta_prefijo}» parece de emisión`);
   }
+  for (const r of m.permitir_get ?? []) {
+    if (!r || !r.host || !r.ruta_prefijo || !String(r.motivo ?? "").trim() || r.revisado !== true) e("permitir_get: cada regla necesita host exacto, ruta_prefijo, motivo y revisado:true (una persona revisó ese dominio y esa ruta)");
+    else if (!patronHostValido(r.host) || String(r.host).includes("*") || !String(r.ruta_prefijo).startsWith("/") || String(r.ruta_prefijo) === "/") e(`permitir_get: host exacto (sin comodín) y ruta_prefijo concreta (no «/»): «${r.host}${r.ruta_prefijo}»`);
+    else if (RUTA_LECTURA_PROHIBIDA.test(r.ruta_prefijo)) e(`permitir_get: la ruta «${r.ruta_prefijo}» parece de emisión o guardado`);
+  }
   if (!Array.isArray(m.pasos) || !m.pasos.length) { e("no hay pasos"); return { ok: false, errores, avisos }; }
-  validarSesion(m.sesion, { local, e, avisos });
+  validarSesion(m.sesion, { local: local || soloComprobar, e, avisos });   // en solo-comprobar no se exige verificado: es justo lo que ese modo comprueba
   const ids = new Set();
   m.pasos.forEach((p, i) => {
     const ctx = `paso ${i + 1}${p?.id ? ` (${p.id})` : ""}`;
@@ -142,7 +154,7 @@ export function validarMapeo(m, { local = false } = {}) {
       if (l?.marco != null && !(typeof l.marco.url_contiene === "string" && l.marco.url_contiene.length >= 8 && !/[\s;]/.test(l.marco.url_contiene))) e(`${ctx}: marco.url_contiene debe ser un texto de al menos 8 caracteres (host y ruta del marco, p. ej. «felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf»)`);
       if (l?.visible != null && typeof l.visible !== "boolean") e(`${ctx}: visible debe ser true o false`);
       if (l?.tag != null && !TAGS_LOCALIZADOR.includes(l.tag)) e(`${ctx}: tag no permitido «${l.tag}» (${TAGS_LOCALIZADOR.join("|")})`);
-      if (!local && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);
+      if (!local && !soloComprobar && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);
       if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible" && p.tipo !== "verificar_ausente") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro, esperar_visible o verificar_ausente`);
     }
     if (p.aparece_tras != null && !m.pasos.slice(0, i).some((q) => q?.id === p.aparece_tras)) e(`${ctx}: aparece_tras debe ser el id de un paso anterior`);
@@ -216,4 +228,19 @@ export function validarAislamiento(empresas) {
     marca(vistos.registros, e.registros_dir ? path.resolve(e.registros_dir) : null, e.alias, "la carpeta de registros");
   }
   return { ok: errores.length === 0, errores };
+}
+
+// ---------------------------------------------------------------- autorización por etapa para actuar sobre el portal REAL
+/**
+ * Si el plan apunta a un dominio que no es local, la ejecución exige una autorización explícita por etapa en el entorno:
+ *   FEL_AUTORIZACION_SAT=si  y  FEL_ETAPA_AUTORIZADA=etapa1 (--solo-comprobar: solo lectura)  o  etapa2 (llenado en seco).
+ * Sin ella, se niega (y la etapa 1 no autoriza la 2). Contra páginas locales (simulaciones) no se pide nada.
+ */
+export function evaluarAutorizacionSat({ env = {}, dominios = [], soloComprobar = false }) {
+  const real = (dominios ?? []).some((d) => !esLoopback(d));
+  if (!real) return { permitido: true, real: false, razones: [] };
+  const etapa = soloComprobar ? "etapa1" : "etapa2", razones = [];
+  if (env.FEL_AUTORIZACION_SAT !== "si") razones.push("falta FEL_AUTORIZACION_SAT=si (el plan apunta a un portal REAL)");
+  if (env.FEL_ETAPA_AUTORIZADA !== etapa) razones.push(`la etapa autorizada (${env.FEL_ETAPA_AUTORIZADA ?? "ninguna"}) no coincide con la que se pide (${etapa}); cada etapa se autoriza por separado`);
+  return { permitido: razones.length === 0, real: true, etapa, razones };
 }

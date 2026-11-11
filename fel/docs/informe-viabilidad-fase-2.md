@@ -13,27 +13,31 @@
 | Las acciones se conocen por `ng-click`: Vista Previa = `validarInformacion()`, Eliminar = `eliminarItem()`, Agregar = `agregarItem()`, Editar impuestos = `mostrarModalImpuestos()` | 2a |
 | **No existe botón de emitir/guardar en el DOM**; la emisión no es alcanzable sin pasar por Vista Previa (hipótesis) | 1, 2a |
 
-## 2. Consulta del receptor con CF (observación 2d)
-- **Qué cambió con CF:** solo el control `resultadoNIT.nombre` (c23) pasó de oculto y deshabilitado a **visible y habilitado**; el resto de controles, selectores y estados no cambió (solo clases `ng-*` de validación). Su `ng-disabled` es `nitReceptor.toUpperCase() !== CONSTANTE.CF`: **solo es editable cuando el NIT es CF**.
-- **Red observada por la persona:** una solicitud **GET + preflight (OPTIONS)**, estado 200; el portal devolvió «Consumidor Final». *Faltan el host y la ruta (enmascarada) de esa petición; no se aportaron.*
-- **El mapeo del receptor sigue válido:** radio NIT por etiqueta (la opción NIT venía seleccionada por defecto: sin cambios de clases al pulsarla), NIT por `ng-model` único y visible, dirección sin cambios, nombre devuelto por `ng-model` con `:visible` (1 visible de 3). Se añadieron al mapeo `salir_del_campo` en el NIT y la lectura de la respuesta.
+## 2. Qué pasó con CF (observación 2d) — y una corrección
+- **Qué cambió con CF:** solo el control `resultadoNIT.nombre` (c23) pasó de oculto y deshabilitado a **visible y habilitado**; el resto de controles, selectores y estados no cambió. Su `ng-disabled` es `nitReceptor.toUpperCase() !== CONSTANTE.CF`: la propia página trata CF como caso especial y el campo es editable solo con CF. Apareció el texto «Consumidor Final».
+- **Petición observada por la persona (Chrome DevTools):** `GET` + preflight, **HTTP 200, XHR**, a **`felav02.c.sat.gob.gt`** (otro dominio que el formulario, `felav.c.sat.gob.gt`; por eso hay preflight/CORS), ruta **`/fel-rest/rest/publico/consultaFallecido/CF`**.
+- **Corrección de mi análisis anterior:** yo había tratado esa petición como «la consulta del receptor que devuelve el nombre». **No hay base para eso**: `consultaFallecido` sugiere una validación específica (fallecidos). **El origen de «Consumidor Final» no está confirmado** (puede ser una constante de la página o la respuesta de otra petición). Los comentarios del mapeo se corrigieron.
+- **Estado de revisión:** `felav02.c.sat.gob.gt` y esa ruta están **PENDIENTES de revisión específica y NO autorizados** (no están en `dominios_permitidos` ni en `permitir_get`).
+- **El mapeo del receptor sigue válido** para localizar los campos (radio NIT, NIT por `ng-model`, dirección, nombre con `:visible`).
 
-## 3. Qué implica la consulta GET para la guardia de red
-| Aspecto | Resultado (verificado en la simulación con hosts reales resueltos a localhost) |
+## 3. Qué implica para la guardia de red
+| Aspecto | Resultado (probado en simulación con hosts reales resueltos a localhost) |
 |---|---|
-| ¿Bloquea la guardia un GET? | **No**: GET/HEAD/OPTIONS pasan. **No hace falta `permitir_post`.** |
-| Preflight (OPTIONS) bajo interceptación | **Hallazgo:** con la guardia activa Playwright **responde el preflight por su cuenta**; al servidor solo llega el GET, y el nombre aparece. Es normal y no afecta al flujo. |
-| GET con efectos | Un GET «no debería» cambiar nada, pero no se confía: **nuevo** bloqueo de GET/HEAD dinámicos (fetch/XHR/documentos) cuya ruta contiene emitir, emisión, certificar, firma, guardar, anular, enviar o transmitir. Si la ruta real de la consulta contuviera una de esas palabras quedaría bloqueada y hay que verla (por eso pedimos la ruta). |
-| Visibilidad | **Nuevo:** las lecturas fetch/XHR permitidas se registran como `lecturas_xhr` (método + host + ruta saneada; un NIT largo en la ruta sale `:id`; nunca parámetros, cabeceras ni cuerpos). |
-| Moderación del motor | `salir_del_campo` dispara la consulta; `leer` reintenta hasta que llega el valor asíncrono. |
-| Límite | Solo se vio CF. **Un NIT real** podría usar otra ruta o un POST: no se sabe. |
+| **Cambio de política (nuevo)** | Un XHR/fetch **GET a un dominio que no está en `dominios_permitidos` se BLOQUEA por defecto** y se registra. Solo pasa con una regla **`permitir_get`** (host exacto + ruta_prefijo concreta + motivo + `revisado:true`), nunca con rutas de emisión/guardado ni con prefijo «/». Hoy `permitir_get` está **vacío**. |
+| Con esta guardia y CF | La petición a `felav02…/consultaFallecido/CF` **se bloquearía**. El efecto en la página (validación pendiente, mensaje de error, formulario bloqueado, o ninguno) **se desconoce** y hay que decidirlo antes de la Etapa 2. |
+| XHR a los dominios permitidos | Pasan y se registran (`lecturas_xhr`: método + host + ruta saneada; sin parámetros, cabeceras ni cuerpos). |
+| Recursos estáticos y navegaciones | Se permiten (scripts, imágenes, estilos, documentos): no se filtran por host. |
+| Preflight (OPTIONS) | Con la interceptación activa **Playwright lo responde por su cuenta**; al servidor solo llega el GET. |
+| GET con rutas de emisión/guardado | Siguen bloqueados (emitir, certificar, firma, guardar, anular, enviar…). |
+| Límite | WebSockets y service workers no están cubiertos. |
+**Experimento opcional (NO autorizado, solo propuesta):** bloquear esa URL en DevTools (Network → bloqueo de solicitudes) y repetir CF para ver si el nombre sigue apareciendo; así se sabría si viene de esa petición.
 
 ## 4. Estado del mapeo (`config/mapeo.sat-preliminar.json`)
 **Confirmado en la observación (existe, único, estable; no comprobado en ejecución):** radio NIT, NIT del receptor y su consulta (blur + lectura), dirección, línea 0 (tipo, cantidad, descripción, precio, descuento, otros descuentos, total de lectura), tipo de documento y moneda (listas), pestañas.
-**Pendiente:** host/ruta de la consulta; fecha de emisión (solo lectura con calendario → dejar la de la página); opción de tipo de documento (decisión de la persona); impuestos (sin campos observados, probablemente automáticos); varias líneas (patrón por comprobar); texto exacto de la respuesta CF (mayúsculas/acentos); indicador de sesión activa y manifestación del cierre; errores de validación reales (solo aparecen al validar, que está prohibido).
+**Pendiente:** revisión específica de la petición a `felav02` (dominio y ruta); fecha de emisión (solo lectura con calendario → dejar la de la página); opción de tipo de documento (decisión de la persona); impuestos (sin campos observados, probablemente automáticos); varias líneas (patrón por comprobar); texto exacto de la respuesta CF (mayúsculas/acentos); indicador de sesión activa y manifestación del cierre; errores de validación reales (solo aparecen al validar, que está prohibido).
 
 ## 5. Lo que se añadió a la PoC en esta fase
-Observadores 1→3 (el 2 retirado por privacidad), análisis y comparación de observaciones, iframe con comprobación de dominio del marco, pasos `salir_del_campo` y `verificar_ausente`, estrategias `ng_model`/`clase`/`nombre+tag`, lectura con reintento, **modo `--solo-comprobar`** (resuelve y comprueba localizadores sin escribir ni pulsar nada), registro de lecturas XHR, bloqueo de GET sensibles. Pruebas: 24 tests, 31 casos con Chrome y 18 de simulación AngularJS con hosts reales resueltos a localhost (el navegador de pruebas no resuelve ningún otro nombre).
+Observadores 1→3 (el 2 retirado por privacidad), análisis y comparación de observaciones, iframe con comprobación de dominio del marco, pasos `salir_del_campo` y `verificar_ausente`, estrategias `ng_model`/`clase`/`nombre+tag`, lectura con reintento, **modo `--solo-comprobar`** (resuelve y comprueba localizadores sin escribir ni pulsar nada), registro de lecturas XHR, bloqueo de GET sensibles. Pruebas: 26 tests, 32 casos con Chrome y 18 de simulación AngularJS con hosts reales resueltos a localhost (el navegador de pruebas no resuelve ningún otro nombre).
 
 ## 6. Riesgos y límites que siguen abiertos
 Simulación ≠ portal (tiempos, mensajes, máscaras, reglas); validaciones que solo ocurren en Vista Previa nunca se verán; `angular.element().scope()` probablemente no esté disponible en producción (se verifican valores del DOM); sesión SAT (cierre, un segundo inicio de sesión podría cerrar el primero); **términos de uso de SAT y autorización para automatizar**: no revisados.

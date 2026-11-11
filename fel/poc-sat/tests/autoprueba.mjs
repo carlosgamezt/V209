@@ -388,6 +388,17 @@ await caso("TERCERA observación (fragmento 3): sin texto de opciones salvo list
   await context.close();
 });
 
+await caso("AUTORIZACIÓN POR ETAPA: ejecutar con el mapeo REAL se niega sin autorización explícita (y no intenta conectarse); la etapa 1 no autoriza el llenado", async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-aut-")), empresa = path.join(tmp, "e.json"); fs.writeFileSync(empresa, JSON.stringify({ alias: "empresa-aut", modo: "cdp", cdp: "http://127.0.0.1:9" }));
+  const cmd = (extra, env) => spawnSync(process.execPath, [path.join(AQUI, "../bin/ejecutar.mjs"), `--empresa=${empresa}`, `--mapeo=${path.join(AQUI, "../config/mapeo.sat-preliminar.json")}`, `--datos=${path.join(AQUI, "../config/datos-ficticios-lineas.json")}`, ...extra], { encoding: "utf8", env: { ...process.env, FEL_AUTORIZACION_SAT: "", FEL_ETAPA_AUTORIZADA: "", ...env }, timeout: 30000 });
+  try {
+    for (const [extra, env, etiqueta] of [[["--solo-comprobar"], {}, "sin variables"], [["--solo-comprobar"], { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2" }, "etapa equivocada"], [[], { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa1" }, "llenar con la autorización de la etapa 1"]]) {
+      const r = cmd(extra, env); assert.equal(r.status, 2, `${etiqueta}: ${r.stdout}${r.stderr}`); assert.match(r.stderr, /Se niega a correr/, etiqueta); assert.doesNotMatch(r.stderr + r.stdout, /ECONNREFUSED|connectOverCDP/, `${etiqueta}: no debe intentar conectarse`);
+    }
+    assert.match(cmd(["--solo-comprobar"], {}).stderr, /FEL_AUTORIZACION_SAT/);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(path.join(AQUI, "../registros"), { recursive: true, force: true }); }
+});
+
 await caso("COMANDOS REALES: bin/observar.mjs y bin/ejecutar.mjs contra un Chrome con puerto de depuración (sesión «ya iniciada»)", async () => {
   const puerto = 9800 + Math.floor(Math.random() * 150), b3 = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${puerto}`] }), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cli-"));
   const empresa = path.join(tmp, "empresa.json"), mapa = path.join(tmp, "mapeo.json"), env = { ...process.env, FEL_POC_DEBUG: "" };

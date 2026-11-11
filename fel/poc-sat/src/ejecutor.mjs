@@ -18,7 +18,7 @@ const CAMPOS = new Set(["llenar", "seleccionar", "marcar"]);
  *   reanudar (continuar una ejecución interrumpida), hooks.antesDePaso (solo pruebas), salida
  */
 export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, soloComprobar = false, hooks = {}, salida = (s) => console.log(s) }) {
-  const vm = validarMapeo(plan, { local }), vd = validarDatos(datos), errVal = [...vm.errores, ...vd.errores];
+  const vm = validarMapeo(plan, { local, soloComprobar }), vd = validarDatos(datos), errVal = [...vm.errores, ...vd.errores];
   const claveDoc = claveIdempotencia(empresa.alias, datos);
   if (!errVal.length && libro) { const pe = libro.puedeEjecutar(claveDoc); if (!pe.permitir) errVal.push(pe.razon); }
   if (errVal.length) { for (const m of errVal) registro.nota(`validación: ${m}`); return { ok: false, detenido: false, resumen: registro.resumen({ detenidoAntesDeEmitir: true, estadoFinal: "no_inicio" }), errores_validacion: errVal }; }

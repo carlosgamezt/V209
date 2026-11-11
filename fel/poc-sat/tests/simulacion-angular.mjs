@@ -200,16 +200,27 @@ await caso("IFRAME + BLOQUEO: los clics a Vista Previa / Guardar / Eliminar dent
   assert.deepEqual(posts, []);
 });
 
-await caso("CONSULTA GET + PREFLIGHT: con la guardia activa el GET entre orígenes (con OPTIONS previo) pasa, el nombre aparece y la lectura solo registra método+host+ruta", async () => {
-  posts.length = 0; lecturas.length = 0;
-  const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} }); await bloquearEscrituras(context, {}, registro);
-  const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf?red=1`); await page.frameLocator("iframe").locator("body").waitFor();
-  const r = await ejecutarPlan({ page, plan: planSimulado({ conMarco: true }), datos: datosBase(), registro, empresa: { alias: "empresa-prueba" }, local: false, timeout: 2500, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
-  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia));
-  assert.ok(lecturas.includes("GET /consulta/receptor/CF"), `el GET llegó al servidor: ${lecturas}`);
-  assert.ok(!lecturas.includes("OPTIONS /consulta/receptor/CF"), "HALLAZGO: con la interceptación activa Playwright responde el preflight por su cuenta; al servidor solo llega el GET");
-  assert.deepEqual(r.resumen.lecturas_xhr, ["GET consulta.example.test/consulta/receptor/CF"]); assert.deepEqual(r.resumen.solicitudes_bloqueadas, []); assert.deepEqual(posts, []);
-  const txt = JSON.stringify(registro.eventos()); assert.ok(!txt.includes("X-Prueba") && !txt.includes("CONSUMIDOR FINAL DE PRUEBA"), "no se registran cabeceras ni cuerpos"); await context.close();
+await caso("GET ENTRE DOMINIOS (como felav → felav02): se BLOQUEA por defecto; solo pasa con una regla permitir_get revisada; con ella el preflight lo responde Playwright y el registro solo guarda método+host+ruta", async () => {
+  const plan = planSimulado({ conMarco: true }), politicaBase = { dominios: plan.dominios_permitidos };
+  const ejecutar = async (politica, quitarLectura = false) => {
+    posts.length = 0; lecturas.length = 0; const p = structuredClone(plan); if (quitarLectura) p.pasos = p.pasos.filter((x) => x.id !== "p026-receptor-leer-respuesta");
+    const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} }); await bloquearEscrituras(context, politica, registro);
+    const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf?red=1`); await page.frameLocator("iframe").locator("body").waitFor();
+    const r = await ejecutarPlan({ page, plan: p, datos: datosBase(), registro, empresa: { alias: "empresa-prueba" }, local: false, timeout: 2500, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+    return { ...r, registro, context, page };
+  };
+  // 1) sin regla: el XHR a otro dominio se bloquea, el servidor no lo ve y el nombre no aparece (la prueba lo detecta)
+  const a = await ejecutar(politicaBase); assert.equal(a.ok, false, "sin autorización del dominio el campo del nombre no se llena"); assert.equal(lecturas.length, 0, "el GET no llegó al servidor");
+  assert.ok(a.resumen.solicitudes_bloqueadas.some((x) => /GET consulta\.example\.test\/consulta\/receptor\/CF/.test(x)), JSON.stringify(a.resumen.solicitudes_bloqueadas)); assert.deepEqual(a.resumen.lecturas_xhr, []); await a.context.close();
+  // 2) con una regla explícita (host + ruta + motivo + revisado) pasa
+  const regla = { host: "consulta.example.test", ruta_prefijo: "/consulta/receptor/", motivo: "ruta de lectura revisada en la prueba", revisado: true };
+  assert.ok(validarMapeo({ ...plan, permitir_get: [regla] }).ok);
+  const b = await ejecutar({ ...politicaBase, permitir_get: [regla] }); assert.equal(b.ok, true, JSON.stringify(b.resumen.errores) + JSON.stringify(b.resumen.bloqueos_de_guardia));
+  assert.ok(lecturas.includes("GET /consulta/receptor/CF")); assert.ok(!lecturas.includes("OPTIONS /consulta/receptor/CF"), "HALLAZGO: con la interceptación activa Playwright responde el preflight por su cuenta; al servidor solo llega el GET");
+  assert.deepEqual(b.resumen.lecturas_xhr, ["GET consulta.example.test/consulta/receptor/CF"]); assert.deepEqual(posts, []);
+  const txt = JSON.stringify(b.registro.eventos()); assert.ok(!txt.includes("X-Prueba") && !txt.includes("CONSUMIDOR FINAL DE PRUEBA"), "no se registran cabeceras ni cuerpos"); await b.context.close();
+  // 3) una regla para un prefijo distinto no autoriza esta ruta
+  const c = await ejecutar({ ...politicaBase, permitir_get: [{ ...regla, ruta_prefijo: "/consulta/otra/" }] }); assert.equal(c.ok, false); assert.equal(lecturas.length, 0); await c.context.close();
 });
 await caso("GET SENSIBLES: una lectura dinámica con ruta de emisión/guardado se bloquea y se registra; una ruta con un NIT largo se registra enmascarada", async () => {
   lecturas.length = 0; const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, {}, registro);

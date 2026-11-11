@@ -1,5 +1,7 @@
 # Fase 2 — Preparación de sat-2d: cómo funciona la consulta del receptor (CF, solo lectura)
 
+> **Corrección posterior:** la petición observada resultó ser `GET felav02.c.sat.gob.gt/fel-rest/rest/publico/consultaFallecido/CF`; **no** se puede atribuir a la consulta del nombre del receptor. Ver `docs/informe-viabilidad-fase-2.md` §2–3. Esta guía conserva el procedimiento original de observación.
+
 > Nada de esto se ejecuta contra SAT desde la PoC: **Playwright no se usa contra el portal**. Lo harás tú a mano en Chrome. No se pulsa Vista Previa, no se guarda, no se emite. `main` no se toca.
 
 ## 1. CI del commit 2e9e527

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   textoProhibido, textoAmbiguo, clasificarControl, patronHostValido, hostPermitido, validarEndpointCdp, rutaDentroDe, evaluarSolicitud,
-  validarMapeo, validarDatos, validarAislamiento, TIPOS_PASO,
+  validarMapeo, validarDatos, validarAislamiento, TIPOS_PASO, evaluarAutorizacionSat,
 } from "../src/guardia.mjs";
 import { crearRegistro } from "../src/registro.mjs";
 import { borradorMapeo } from "../src/observar.mjs";
@@ -256,4 +256,37 @@ test("aparece_tras: solo puede referirse a un paso anterior; y GET dinámicos co
   for (const r of ["/consulta/emitir/x", "/a/guardar", "/x/Certificar", "/api/anular/3", "/doc/firma", "/api/envio", "/x/transmitir"]) { assert.equal(ev("https://p.gt" + r, "fetch").permitir, false, r); assert.equal(ev("https://p.gt" + r, "xhr", "HEAD").permitir, false, r); }
   for (const r of ["/consulta/receptor/CF", "/catalogos/monedas", "/menu/portada.jsf", "/fel-web/privado/vistas/fel.jsf"]) assert.equal(ev("https://p.gt" + r, "fetch").permitir, true, r);
   assert.equal(ev("https://p.gt/js/emision.js", "script").permitir, true, "los recursos estáticos no se filtran por nombre"); assert.equal(ev("https://p.gt/api/emitir", "fetch", "OPTIONS").permitir, true, "OPTIONS (preflight) no lleva efectos");
+});
+
+test("solo-comprobar: el mapeo preliminar (verificado=false) vale para COMPROBAR pero no para ejecutar; el portal real exige autorización explícita por etapa", () => {
+  const mp = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-preliminar.json", import.meta.url), "utf8"));
+  assert.equal(validarMapeo(mp).ok, false); assert.equal(validarMapeo(mp, { soloComprobar: true }).ok, true, validarMapeo(mp, { soloComprobar: true }).errores.join("\n"));
+  const m2 = structuredClone(mp); m2.pasos = m2.pasos.filter((p) => p.tipo !== "detener"); assert.equal(validarMapeo(m2, { soloComprobar: true }).ok, false, "sigue exigiendo detener");
+  const m3 = structuredClone(mp); m3.dominios_permitidos = []; assert.equal(validarMapeo(m3, { soloComprobar: true }).ok, false, "sigue exigiendo dominios");
+  const m4 = structuredClone(mp); m4.pasos.splice(1, 0, { id: "z1", tipo: "clic_seguro", motivo: "x", localizador: { estrategia: "texto", valor: "Vista Previa" } }); assert.equal(validarMapeo(m4, { soloComprobar: true }).ok, false, "palabras prohibidas siguen rechazadas");
+  const aut = (env, sc) => evaluarAutorizacionSat({ env, dominios: mp.dominios_permitidos, soloComprobar: sc });
+  assert.equal(aut({}, true).permitido, false); assert.equal(aut({ FEL_AUTORIZACION_SAT: "si" }, true).permitido, false);
+  assert.equal(aut({ FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2" }, true).permitido, false, "la etapa 2 no autoriza la 1");
+  assert.equal(aut({ FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa1" }, false).permitido, false, "la etapa 1 NO autoriza llenar");
+  assert.equal(aut({ FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa1" }, true).permitido, true); assert.equal(aut({ FEL_AUTORIZACION_SAT: "SI", FEL_ETAPA_AUTORIZADA: "etapa1" }, true).permitido, false);
+  assert.equal(evaluarAutorizacionSat({ env: {}, dominios: ["127.0.0.1"] }).permitido, true, "páginas locales: sin requisitos");
+});
+test("red: un XHR/fetch GET a un dominio NO listado (p. ej. felav02) se bloquea; solo pasa con una regla permitir_get revisada; el hallazgo consultaFallecido NO está autorizado", () => {
+  const mp = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-preliminar.json", import.meta.url), "utf8")), dominios = mp.dominios_permitidos;
+  const ev = (url, tipoRecurso, pol = { dominios }, metodo = "GET") => evaluarSolicitud({ metodo, url, tipoRecurso }, pol);
+  const f02 = "https://felav02.c.sat.gob.gt/fel-rest/rest/publico/consultaFallecido/CF";
+  assert.equal(ev(f02, "xhr").permitir, false); assert.match(ev(f02, "xhr").razon, /revisión específica/); assert.equal(ev(f02, "fetch", { dominios }, "HEAD").permitir, false);
+  assert.equal(ev("https://felav.c.sat.gob.gt/fel-rest/rest/publico/catalogo/monedas", "xhr").permitir, true, "XHR al dominio permitido pasa (y se registra)");
+  assert.equal(ev(f02, "xhr", { dominios }, "OPTIONS").permitir, true, "OPTIONS no lleva efectos");
+  for (const t of ["script", "image", "stylesheet", "font", "document"]) assert.equal(ev("https://cdn.otro.example/x.js", t).permitir, true, `recurso estático ${t}`);
+  assert.equal(ev(f02, "xhr", {}).permitir, true, "sin lista de dominios (modo antiguo/pruebas) no se filtra por host");
+  const regla = { host: "felav02.c.sat.gob.gt", ruta_prefijo: "/fel-rest/rest/publico/consultaFallecido/", motivo: "revisada por la persona responsable", revisado: true };
+  assert.equal(ev(f02, "xhr", { dominios, permitir_get: [regla] }).permitir, true, "con regla explícita");
+  assert.equal(ev("https://felav02.c.sat.gob.gt/fel-rest/rest/publico/otra/CF", "xhr", { dominios, permitir_get: [regla] }).permitir, false, "otra ruta del mismo dominio sigue bloqueada");
+  assert.equal(ev("https://felav03.c.sat.gob.gt/fel-rest/rest/publico/consultaFallecido/CF", "xhr", { dominios, permitir_get: [regla] }).permitir, false, "otro host sigue bloqueado");
+  assert.equal(ev("https://felav02.c.sat.gob.gt/fel-rest/rest/publico/emitir/1", "xhr", { dominios, permitir_get: [{ ...regla, ruta_prefijo: "/fel-rest/rest/publico/" }] }).permitir, false, "ni con regla amplia pasa una ruta de emisión");
+  const con = (r) => validarMapeo({ ...mapeoOk(), permitir_get: [r] });
+  assert.ok(con(regla).ok); for (const mal of [{ ...regla, revisado: false }, { ...regla, motivo: "" }, { ...regla, host: "*.c.sat.gob.gt" }, { ...regla, ruta_prefijo: "/" }, { ...regla, ruta_prefijo: "/api/emitir/" }, { host: "x.gt" }]) assert.equal(con(mal).ok, false, JSON.stringify(mal));
+  assert.deepEqual(mp.permitir_get, [], "el mapeo NO autoriza ninguna ruta adicional"); assert.ok(!dominios.includes("felav02.c.sat.gob.gt"), "felav02 no está en dominios_permitidos");
+  assert.match(mp.red_observada_sat2d.interpretacion, /NO se puede atribuir/); assert.equal(mp.red_observada_sat2d.peticion_confirmada.ruta, "/fel-rest/rest/publico/consultaFallecido/CF");
 });

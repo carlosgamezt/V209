@@ -67,8 +67,8 @@
     {
       "id": "p025-receptor-salir-nit",
       "tipo": "salir_del_campo",
-      "comentario": "La consulta del receptor se dispara al salir del campo NIT (GET con preflight observado con CF). El blur la provoca antes de leer.",
-      "evidencia": "sat-2d: tras CF + Tab, c23 pasa a visible y el portal respondió GET+preflight 200",
+      "comentario": "Al salir del campo NIT la página puede disparar validaciones (con CF se observó un GET a otro dominio, consultaFallecido, aún sin autorizar). El blur provoca ese comportamiento antes de leer el campo del nombre.",
+      "evidencia": "sat-2d: tras CF + Tab, c23 pasa a visible; petición GET+preflight a felav02 observada por la persona (ver red_observada_sat2d)",
       "localizador": {
         "estrategia": "ng_model",
         "valor": "datosGenerales.nitReceptor",
@@ -83,8 +83,8 @@
     {
       "id": "p026-receptor-leer-respuesta",
       "tipo": "leer",
-      "comentario": "Respuesta de la consulta con CF. El valor esperado lo dio la persona (texto exacto por confirmar: mayúsculas/acentos).",
-      "evidencia": "sat-2d: c23 (resultadoNIT.nombre) visible; 3 controles comparten el modelo, solo 1 visible",
+      "comentario": "Lee el campo del nombre que aparece con CF. El origen del texto («Consumidor Final») NO está confirmado: puede ser una constante de la página y no la respuesta de ninguna petición.",
+      "evidencia": "sat-2d: c23 (resultadoNIT.nombre) visible con CF; 1 visible entre 3 controles con el mismo modelo",
       "localizador": {
         "estrategia": "ng_model",
         "valor": "resultadoNIT.nombre",
@@ -226,15 +226,15 @@
           "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
         }
       },
-      "nota": "Con CF el campo (c23) pasa a visible y EDITABLE (ng-disabled: nitReceptor.toUpperCase() !== CONSTANTE.CF) y el portal devolvió «Consumidor Final». Se lee, no se escribe. Los otros 2 controles con el mismo modelo siguen ocultos.",
+      "nota": "Con CF el campo (c23) pasa a visible y EDITABLE (ng-disabled: nitReceptor.toUpperCase() !== CONSTANTE.CF) y apareció «Consumidor Final» (su origen no está confirmado). Se lee, no se escribe. Los otros 2 controles con el mismo modelo siguen ocultos.",
       "evidencia": "sat-2d: 1 visible entre 3"
     }
   ],
   "pendientes_localizador": [
     {
-      "campo": "Consulta del NIT con un NIT real (no CF)",
-      "motivo": "solo se observó CF: GET + preflight, 200. Falta host y ruta (enmascarada) de esa petición y qué pasa con un NIT real",
-      "necesita": "ruta enmascarada y host de la petición observada; decidir si se prueba un NIT propio"
+      "campo": "Petición consultaFallecido (felav02.c.sat.gob.gt, GET+preflight)",
+      "motivo": "dominio y ruta nuevos, sin autorizar; relación con el nombre del receptor NO confirmada",
+      "necesita": "revisión específica de la persona responsable antes de cualquier permitir_get"
     },
     {
       "campo": "Fecha de emisión (c1 input solo lectura + c2 botón calendario; ng-model datosGenerales.fechaEmision)",
@@ -483,8 +483,23 @@
   },
   "nota_marco": "El formulario real vive en un IFRAME (felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf) dentro de la página del menú (farm3.sat.gob.gt, dato dado por la persona; confirmar). Todos los localizadores llevan marco.url_contiene y el motor exige que el host del marco esté en dominios_permitidos.",
   "red_observada_sat2d": {
-    "con_cf": "GET + preflight (OPTIONS), estado 200; el portal devolvió «Consumidor Final» (dato aportado por la persona)",
-    "guardia": "los GET y OPTIONS ya pasan; los GET dinámicos con palabras de emisión/guardado en la ruta se bloquean; las lecturas fetch/XHR se registran (método+host+ruta saneada)",
-    "falta": "host y ruta de la petición (no se aportaron)"
-  }
+    "peticion_confirmada": {
+      "dominio": "felav02.c.sat.gob.gt",
+      "metodo": "GET + preflight (OPTIONS)",
+      "estado": 200,
+      "tipo": "XHR",
+      "ruta": "/fel-rest/rest/publico/consultaFallecido/CF",
+      "origen_de_la_pagina": "felav.c.sat.gob.gt (otro dominio: por eso hay preflight/CORS)",
+      "fuente": "Chrome DevTools, aportado por la persona"
+    },
+    "interpretacion": "El nombre «Consumidor Final» NO se puede atribuir a esta petición: «consultaFallecido» sugiere una validación específica (fallecidos), no la consulta del nombre del receptor. El origen del nombre (constante del código —el ng-disabled compara con CONSTANTE.CF— o la respuesta de otra petición) NO está confirmado.",
+    "estado_de_revision": "PENDIENTE de revisión específica. El dominio felav02.c.sat.gob.gt y esta ruta NO están autorizados: no están en dominios_permitidos ni en permitir_get.",
+    "efecto_con_la_guardia_actual": "un XHR/fetch GET a un dominio que no está en dominios_permitidos se BLOQUEA salvo regla permitir_get revisada (host exacto + ruta_prefijo + motivo + revisado:true). Hoy permitir_get está vacío: con CF, esta petición se bloquearía y se registraría; el efecto sobre la página (validación pendiente, mensaje, bloqueo del formulario) se desconoce.",
+    "por_decidir": [
+      "¿permitir exactamente esa ruta (GET de lectura) tras la revisión de la persona responsable?",
+      "¿qué hace la página si la petición falla o no responde?",
+      "¿el nombre aparece sin esa petición? (experimento manual opcional: bloquear esa URL en DevTools y repetir CF; no autorizado todavía)"
+    ]
+  },
+  "permitir_get": []
 }
