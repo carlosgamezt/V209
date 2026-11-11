@@ -29,7 +29,7 @@ const RAIZ = fileURLToPath(new URL("..", import.meta.url));
 /** Arranca NEXA de prueba (proceso Deno) y espera su línea PRUEBA_LISTA. */
 export async function arrancarNexa() {
   const puerto = 9700 + Math.floor(Math.random() * 250);
-  const hijo = spawn("deno", ["run", "-A", join(RAIZ, "pruebas/nexa_prueba.ts"), `--puerto=${puerto}`], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_AGENTE_SUPERVISOR_MS: "100" } });
+  const hijo = spawn("deno", ["run", "-A", "--node-modules-dir=none", join(RAIZ, "pruebas/nexa_prueba.ts"), `--puerto=${puerto}`], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_AGENTE_SUPERVISOR_MS: "100" } });
   const info = await new Promise((ok, ko) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); ko(new Error("NEXA de prueba no arrancó:\n" + salida)); }, 120000);
     const leer = (d) => { salida += d; const m = /PRUEBA_LISTA (\{.*\})/.exec(salida); if (m) { clearTimeout(t); ok(JSON.parse(m[1])); } };
