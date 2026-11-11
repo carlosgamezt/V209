@@ -37,3 +37,9 @@ Errores: `FEL_NO_AUTORIZADO`, `FEL_EMPRESA`, `FEL_FENCING`, `FEL_ORDEN_DUPLICADA
 
 ## 5. Cierre en NEXA
 Una operación con orden se cierra por la ruta existente (`resolverAccionHumana`): `completada` ⇒ certificado simulado; `descartada`/`fallida` ⇒ rechazo confirmado; `incierta` ⇒ la operación pasa a **`por_verificar`** y solo se resuelve por consulta del canal o **conciliación manual de dos personas** (las reglas actuales, ahora habilitadas para órdenes `incierta`).
+
+## 6. Implementación del plano de control (commit 4)
+- Rutas: `POST /api/agente/v1/{vincular,latido,reclamar,progreso,resultado}` (módulo `fel/proveedores/src/plano_control_agente.ts`, montado en la demo; el lado de la persona está en `/api/agentes/{codigo,revocar,salud}` y `GET /api/agentes`).
+- Orden de validación: método → tipo (JSON) → tamaño (64 KiB) → formato de cabeceras → **firma Ed25519** → agente activo (si está revocado y la firma es válida: 403 `FEL_REVOCADO`) → marca de tiempo ±60 s (`FEL_RELOJ`) y **nonce de un solo uso** (`FEL_REPETICION`) → acción (la base valida empresa, estado y token). Una petición con firma inválida **no consume** el nonce.
+- Respuestas: `{ok:false, codigo, mensaje}` con mensajes genéricos y `cache-control: no-store`; agente desconocido y firma inválida reciben exactamente la misma respuesta 401; los fallos internos responden 500 `FEL_INTERNO` sin detalles.
+- **Supervisor periódico** (`supervisor_ordenes.ts`): cada `FEL_AGENTE_SUPERVISOR_MS` ms (50–3 600 000; 15 000 por defecto) aplica `fel_sys_ordenes_vencer` y `cerrarOrdenes`, sin solapar ciclos; `GET /api/agentes/salud` informa ciclos, errores y atraso (tres intervalos sin ciclo); al recibir SIGINT/SIGTERM se detiene primero el supervisor (espera al ciclo en curso) y luego el servidor. En producción real la misma función se programaría con `pg_cron` o una función programada (pendiente).

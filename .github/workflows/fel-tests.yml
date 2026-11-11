@@ -30,7 +30,7 @@ jobs:
           deno test pruebas/
       - name: Demostración de facturación simulada (tipos)
         working-directory: fel/demo-facturacion
-        run: deno check servidor.ts src/*.ts
+        run: deno check servidor.ts src/*.ts tests/*.ts
 
   interfaz:
     name: Interfaz (modo demostración)
@@ -65,6 +65,8 @@ jobs:
           node fel/app/tests/cuentas.cjs
       - name: Demostración de facturación individual SIMULADA (navegador + orquestador real + PostgreSQL en memoria; sin credenciales ni red externa)
         run: node fel/demo-facturacion/tests/e2e.cjs
+      - name: Servidor de la demostración con el plano de control del agente (firma Ed25519 por HTTP, supervisor periódico y cierre ordenado; simulado y local)
+        run: deno test -A fel/demo-facturacion/tests/agente_servidor_test.ts
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)
@@ -99,7 +101,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Orquestador del flujo simulado contra PostgreSQL real (18 pruebas, incluida la prueba de propiedades con caídas)
+      - name: Orquestador, agente local y plano de control contra PostgreSQL real (flujo, órdenes, firma, nonce, aislamiento, supervisor y prueba de propiedades con caídas)
         working-directory: fel/proveedores
         env:
           FEL_PGHOST: 127.0.0.1

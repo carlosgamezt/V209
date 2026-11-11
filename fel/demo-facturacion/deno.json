@@ -1,6 +1,7 @@
 {
   "tasks": {
     "demo": "deno run -A servidor.ts",
-    "check": "deno check servidor.ts src/*.ts"
+    "check": "deno check servidor.ts src/*.ts tests/*.ts",
+    "test": "deno test -A tests/agente_servidor_test.ts"
   }
 }

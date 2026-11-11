@@ -30,7 +30,7 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown } } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, mock, ganchos);
   const CTX = { ambiente: "simulado" as const, ahora: () => new Date() };
@@ -146,6 +146,14 @@ export function crearApi(bd: BdDemo, mundo: Sembrado) {
     }
     if (m === "POST" && (r = /^\/api\/conceptos\/([^/]+)\/estado$/.exec(ruta))) {
       const b = await cuerpo(); await bd.rpc("fel_op_concepto_estado", { p_actor: a.id, p_empresa: EMPRESA, p_id: id(r[1]), p_activo: b.activo === true }); return json({ ok: true });
+    }
+    // ---- agentes locales (lado de la persona de la empresa; el lado del agente está en /api/agente/v1/*, con firma)
+    if (m === "POST" && ruta === "/api/agentes/codigo") { await cuerpo(); return json(await bd.rpc("fel_op_agente_codigo_crear", { p_actor: a.id, p_empresa: EMPRESA })); }
+    if (m === "GET" && ruta === "/api/agentes") return json(await bd.rpc("fel_op_agentes_listar", { p_actor: a.id, p_empresa: EMPRESA }));
+    if (m === "POST" && ruta === "/api/agentes/revocar") { const b = await cuerpo(); await bd.rpc("fel_op_agente_revocar", { p_actor: a.id, p_empresa: EMPRESA, p_agente: id(b.agente as string) }); return json({ ok: true }); }
+    if (m === "GET" && ruta === "/api/agentes/salud") {
+      if (!(await permisosDe(a)).includes("canales.ver")) throw new ErrorHttp(403, "No tienes permiso", "no_autorizado");
+      return json(extras.supervisor?.salud() ?? { ok: false, en_marcha: false });
     }
     if (m === "GET" && ruta === "/api/documentos") {
       return json(await bd.filas("select d.id, d.numero_borrador, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [EMPRESA]));

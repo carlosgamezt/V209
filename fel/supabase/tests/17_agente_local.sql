@@ -95,6 +95,7 @@ do $$ declare r jsonb; begin
   r := public.fel_sys_agente_autenticar(pg_temp.ag('a1'), clock_timestamp(), 'nonce-aaaaaaaaaaaaaaaa');
   assert (r ->> 'ok')::boolean and r ->> 'empresa_id' = '10000000-0000-0000-0000-00000000000a', 'autenticación correcta devuelve la empresa del agente';
   assert (public.fel_sys_agente_clave(pg_temp.ag('a1')) ->> 'clave_publica') = repeat('A',43), 'clave pública para verificar la firma';
+  assert (public.fel_sys_agente_clave(pg_temp.ag('a1')) ->> 'estado') = 'activo' and public.fel_sys_agente_clave(gen_random_uuid()) is null, 'agente desconocido: sin clave';
 end $$;
 select pg_temp.espera_error($$select public.fel_sys_agente_autenticar(pg_temp.ag('a1'), clock_timestamp(), 'nonce-aaaaaaaaaaaaaaaa')$$, 'FEL_REPETICION');
 select pg_temp.espera_error($$select public.fel_sys_agente_autenticar(gen_random_uuid(), clock_timestamp(), 'nonce-bbbbbbbbbbbbbbbb')$$, 'FEL_NO_AUTORIZADO');
@@ -232,12 +233,30 @@ select pg_temp.espera_error($$select public.fel_sys_orden_resultado(pg_temp.ag('
 -- conciliación manual: antes de la consulta al canal («indeterminado») no; después sí (dos personas, evidencia): la orden incierta ya no bloquea
 select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','revision-visual-1','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null)$$, 'FEL_REGLA');
 select public.fel_sys_evento_registrar('10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'conciliacion', 'indeterminado', 'orden_incierta', null, null, null, null);
-do $$ declare c public.conciliaciones; begin
-  c := public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','revision-visual-1','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null);
-  assert c.estado = 'propuesta', 'conciliación propuesta sobre una orden incierta';
-  select * into c from public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', c.id, true, 'revisado por una segunda persona');
+-- quién puede PROPONER sobre una orden incierta: solo con fiscal.conciliar (emisor, lector y otra empresa no)
+select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','revision-visual-1','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null)$$, 'FEL_NO_AUTORIZADO');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c2', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','revision-visual-1','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null)$$, 'FEL_NO_AUTORIZADO');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','revision-visual-1','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null)$$, 'FEL_NO_AUTORIZADO');
+-- evidencia inventada, referencia corta o fecha anterior al envío: rechazadas
+select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', '{"fuente":"mi_palabra","referencia":"abcde","fecha_consulta":"2026-01-01T00:00:00Z","conclusion":"no_figura"}'::jsonb, null)$$, 'FEL_REGLA');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','x','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null)$$, 'FEL_REGLA');
+create temp table t_c as select (public.fel_op_conciliacion_proponer('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select (j ->> 'op')::uuid from t_s2), 'manual_fallida', jsonb_build_object('fuente','documento_fisico','referencia','revision-visual-1','fecha_consulta', clock_timestamp()::text,'conclusion','no_figura'), null)).id as id;
+-- quién puede APROBAR: otra persona con conciliacion.aprobar (no quien propone; ni emisor, lector u otra empresa)
+select pg_temp.espera_error($$select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select id from t_c), true, 'yo mismo')$$, 'FEL_REGLA');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-00000000000a', (select id from t_c), true, 'emisor')$$, 'FEL_NO_AUTORIZADO');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000c2', '10000000-0000-0000-0000-00000000000a', (select id from t_c), true, 'lector')$$, 'FEL_NO_AUTORIZADO');
+select pg_temp.espera_error($$select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000a', (select id from t_c), true, 'otra empresa')$$, 'FEL_NO_AUTORIZADO');
+do $$ begin assert pg_temp.op_estado((select (j ->> 'op')::uuid from t_s2)) = 'desconocida' and pg_temp.doc_estado((select (j ->> 'doc')::uuid from t_s2)) = 'por_verificar', 'hasta aprobar, sigue por_verificar'; end $$;
+-- una respuesta TARDÍA del agente no cierra la orden incierta (ni descartar, ni error, ni progreso), antes ni después de aprobar
+select pg_temp.espera_error($$select public.fel_sys_orden_resultado(pg_temp.ag('a2'), (select (r ->> 'orden')::uuid from t_r2c), (select (r ->> 'token')::bigint from t_r2c), 'descartado', null, null, null, null)$$, 'FEL_ESTADO');
+select pg_temp.espera_error($$select public.fel_sys_orden_resultado(pg_temp.ag('a2'), (select (r ->> 'orden')::uuid from t_r2c), (select (r ->> 'token')::bigint from t_r2c), 'error', null, null, null, 'X')$$, 'FEL_ESTADO');
+select pg_temp.espera_error($$select public.fel_sys_orden_progreso(pg_temp.ag('a2'), (select (r ->> 'orden')::uuid from t_r2c), (select (r ->> 'token')::bigint from t_r2c), 'detenido_en_vista_previa')$$, 'FEL_ESTADO');
+select public.fel_op_conciliacion_decidir('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', (select id from t_c), true, 'revisado por una segunda persona');
+do $$ begin
   assert pg_temp.op_estado((select (j ->> 'op')::uuid from t_s2)) = 'confirmada_fallida', 'la aprobación de otra persona cierra la operación';
+  assert pg_temp.ord_estado((select (r ->> 'orden')::uuid from t_r2c)) = 'incierta', 'la orden sigue incierta (la historia no se reescribe)';
 end $$;
+select pg_temp.espera_error($$select public.fel_sys_orden_resultado(pg_temp.ag('a2'), (select (r ->> 'orden')::uuid from t_r2c), (select (r ->> 'token')::bigint from t_r2c), 'emitido_simulado', 'SIMA', '9', 'SIM-TARDIO-2', null)$$, 'FEL_ESTADO');   -- tampoco tras cerrar la operación
 
 -- 4.8 error: antes de presentar ⇒ fallida (se prueba que nada salió); tras presentar ⇒ incierta
 create temp table t_s3 as select pg_temp.op('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000c3', '00000000-0000-0000-0000-0000000000c1', (select id from t_eA), (select id from t_cA), 'clave-orden-000003') as j;
@@ -291,6 +310,7 @@ do $$ begin
   assert (select estado from public.fel_op_agentes_listar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a') where id = pg_temp.ag('a2')) = 'revocado';
   assert (select count(*) from public.auditoria where accion = 'agente.revocado') = 1;
 end $$;
+do $$ begin assert (public.fel_sys_agente_clave(pg_temp.ag('a2')) ->> 'estado') = 'revocado', 'clave de un revocado con su estado (el plano de control verifica la firma antes de decir revocado)'; end $$;
 select pg_temp.espera_error($$select public.fel_sys_agente_latido(pg_temp.ag('a2'), '1', null)$$, 'FEL_REVOCADO');
 select pg_temp.espera_error($$select public.fel_sys_orden_reclamar(pg_temp.ag('a2'))$$, 'FEL_REVOCADO');
 select pg_temp.espera_error($$select public.fel_sys_agente_autenticar(pg_temp.ag('a2'), clock_timestamp(), 'nonce-dddddddddddddddd')$$, 'FEL_REVOCADO');

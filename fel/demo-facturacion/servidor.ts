@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { crearBd } from "./src/bd.ts";
 import { sembrar } from "./src/mundo_demo.ts";
 import { crearApi } from "./src/api.ts";
+import { montarAgente } from "./src/agente_demo.ts";
+import { intervaloDesdeEntorno } from "../proveedores/src/supervisor_ordenes.ts";
+import { PREFIJO_AGENTE } from "../proveedores/src/plano_control_agente.ts";
 
 const arg = (n: string, d: string) => Deno.args.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
 const PUERTO = Number(arg("puerto", Deno.env.get("FEL_DEMO_PUERTO") ?? "8787"));
@@ -15,7 +18,8 @@ const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fon
 
 const bd = await crearBd();
 const mundo = await sembrar(bd);
-const api = crearApi(bd, mundo);
+const agente = montarAgente(bd, { intervaloMs: intervaloDesdeEntorno(Deno.env.get("FEL_AGENTE_SUPERVISOR_MS")) });   // intervalo configurable (50 ms – 1 h; 15 s por defecto)
+const api = crearApi(bd, mundo, { supervisor: agente.supervisor });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;
@@ -36,6 +40,21 @@ const servidor = Deno.serve({ hostname: "127.0.0.1", port: PUERTO, onListen: ({ 
   const host = (req.headers.get("host") ?? "").split(":")[0];
   if (host !== "127.0.0.1" && host !== "localhost") return new Response("Host no permitido", { status: 403 });   // contra DNS rebinding
   const url = new URL(req.url);
+  if (url.pathname.startsWith(PREFIJO_AGENTE)) return agente.plano(req);   // plano de control del agente local: peticiones FIRMADAS, sin cabeceras de la demostración
   return url.pathname.startsWith("/api/") ? api(req) : estatico(url.pathname);
 });
+agente.supervisor.iniciar();
+
+// Cierre ordenado (Ctrl+C o señal de terminación): primero el supervisor (espera al ciclo en curso), luego el servidor y la base.
+let cerrando = false;
+async function cierre(senal: string) {
+  if (cerrando) return; cerrando = true;
+  console.log(`\n  Cerrando (${senal})…`);
+  await agente.supervisor.detener();
+  await servidor.shutdown();
+  await bd.db.close().catch(() => {});
+  console.log("  Cierre ordenado completado.");
+  Deno.exit(0);
+}
+for (const senal of ["SIGINT", "SIGTERM"] as const) { try { Deno.addSignalListener(senal, () => { void cierre(senal); }); } catch { /* señal no disponible en este sistema (p. ej. SIGTERM en Windows) */ } }
 await servidor.finished;

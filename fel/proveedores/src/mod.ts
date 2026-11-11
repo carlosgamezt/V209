@@ -6,3 +6,6 @@ export * from "./rpc.ts";
 export * from "./orquestador_db.ts";
 export * from "./portal_playwright.ts";
 export * from "./cierre_ordenes.ts";
+export * from "./firma_agente.ts";
+export * from "./plano_control_agente.ts";
+export * from "./supervisor_ordenes.ts";
