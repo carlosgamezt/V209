@@ -342,3 +342,60 @@ test("etapa2: la autorización de etapa1 no habilita etapa2 y faltan las condici
   assert.equal(evaluarAutorizacionSat({ ...base, datos: { receptor: { nit: "1234567" } }, env: { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2", FEL_CONDICIONES_USO_REVISADAS: "si", FEL_EMPRESA_CONFIRMADA: "e" } }).permitido, false, "NIT distinto de CF");
   assert.equal(evaluarAutorizacionSat({ ...base, env: { FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa2", FEL_CONDICIONES_USO_REVISADAS: "si", FEL_EMPRESA_CONFIRMADA: "e" } }).permitido, true);
 });
+
+// ───── O-1 / O-2 (observación pasiva) ─────
+import { analizarO1, leerRegistroO2, analizarO2, ROJO } from "../src/o1o2.mjs";
+const ctrlBase = (c) => ({ tag: "input", tipo: "text", name: null, id: null, ng_model: null, titulo: null, visible: true, ng: {}, atributos_on: {}, nativos: {}, jquery: {}, ...c });
+const o1Limpio = () => ({
+  herramientas: { getEventListeners: true, jquery: "3.7.1", jquery_data: true, angular: "1.5.8" }, marco: { host: "felav.c.sat.gob.gt", ruta: "/fel-web/x", en_iframe: true }, totales: { controles_encontrados: 7, controles_listados: 7 },
+  controles: [
+    ctrlBase({ ng_model: "datosGenerales.nitReceptor", ng: { "ng-blur": { llama_a: ["consultarNit"] } } }),
+    ctrlBase({ ng_model: "datosGenerales.direccionReceptor" }),
+    ctrlBase({ tag: "select", name: "BienOServicio0" }),
+    ctrlBase({ name: "Cantidad0", ng: { "ng-change": { llama_a: ["calcularTotal", "limpiarFrasesEspeciales", "limpiarReferencia"] } } }),
+    ctrlBase({ name: "Descripcion0" }),
+    ctrlBase({ name: "PrecioUnitario0", ng: { "ng-change": { llama_a: ["calcularTotal"] } }, nativos: { input: [{ nombre: "(anónima)", llama_a: ["$setViewValue", "scope.$apply"] }] } }),
+    ctrlBase({ name: "Descuento0", ng: { "ng-change": { llama_a: ["calcularTotal"] } } }), ctrlBase({ name: "OtrosDescuento0" }),
+  ],
+  globales: { document: { nativos: {}, jquery: {} } }, angular: { debug_info: true, truncado: false, scopes: [{ id: 1, funciones: ["calcularTotal", "guardar"], n_watchers: 0 }], watchers: [], watchers_por_llamada: {} },
+});
+test("o1: sin manejadores peligrosos y con funciones aprobadas → VERDE; sin aprobar → AMARILLO", () => {
+  assert.equal(analizarO1(o1Limpio(), { aprobadas: ["calcularTotal", "limpiarFrasesEspeciales", "limpiarReferencia"] }).veredicto, "VERDE");
+  const a = analizarO1(o1Limpio()); assert.equal(a.veredicto, "AMARILLO"); assert.ok(a.amarillos.some((h) => h.nombre === "calcularTotal"));
+  assert.ok(!a.amarillos.some((h) => /consultarNit/.test(h.nombre)), "el NIT no cuenta en el tramo 2A");
+  const b = analizarO1(o1Limpio(), { tramo: "2B", aprobadas: ["calcularTotal", "limpiarFrasesEspeciales", "limpiarReferencia"] }); assert.equal(b.veredicto, "AMARILLO"); assert.ok(b.amarillos.some((h) => h.nombre === "consultarNit"));
+});
+test("o1: cualquier llamada a guardar/enviar/http en un campo, un manejador global o un watcher → ROJO", () => {
+  for (const mut of [(o) => { o.controles[3].ng["ng-change"].llama_a.push("guardarBorrador"); }, (o) => { o.controles[1].jquery = { blur: [{ nombre: "x", llama_a: ["$http.post"] }] }; }, (o) => { o.globales.document.jquery = { change: [{ nombre: "d", selector_delegado: "input", llama_a: ["fetch"] }] }; }, (o) => { o.angular.watchers = [{ exp: "detalleFactura", funcion: "(anónima)", llama_a: ["autoGuardar"], profundo: true }]; }]) {
+    const o = o1Limpio(); mut(o); assert.equal(analizarO1(o, { aprobadas: ["calcularTotal", "limpiarFrasesEspeciales", "limpiarReferencia"] }).veredicto, "ROJO");
+  }
+});
+test("o1: resultados incompletos nunca son VERDE (sin getEventListeners, sin debug de AngularJS, campo ausente o duplicado, contexto equivocado)", () => {
+  const ap = ["calcularTotal", "limpiarFrasesEspeciales", "limpiarReferencia"];
+  for (const mut of [(o) => { o.herramientas.getEventListeners = false; }, (o) => { o.angular.debug_info = false; }, (o) => { o.controles.splice(3, 1); }, (o) => { o.controles.push(o.controles[3]); }, (o) => { o.marco = { host: "farm3.sat.gob.gt", en_iframe: false }; }, (o) => { o.totales.controles_listados = 3; }]) {
+    const o = o1Limpio(); mut(o); assert.equal(analizarO1(o, { aprobadas: ap }).veredicto, "INCOMPLETO");
+  }
+});
+test("o1: el fragmento 4 no contiene operaciones de escritura, eventos, red, almacenamiento ni credenciales (análisis estático del código sin comentarios)", () => {
+  const src = fs.readFileSync(new URL("../consola/observar-consola-4.js", import.meta.url), "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  const prohibidos = [/\.click\s*\(/, /\.focus\s*\(/, /\.blur\s*\(/, /dispatchEvent/, /new\s+(Mouse|Keyboard|Input|Focus)?Event\s*\(/, /\.trigger\s*\(/, /\.submit\s*\(/, /\bfetch\s*\(/, /XMLHttpRequest/, /sendBeacon/, /WebSocket/, /\$http/, /\$injector|\.injector\s*\(/, /document\.cookie/, /localStorage|sessionStorage|indexedDB/, /\bcopy\s*\(/, /\beval\s*\(/, /new\s+Function/, /\.setAttribute\s*\(|\.removeAttribute\s*\(|\.appendChild|\.insertBefore|\.innerHTML\s*=|\.outerHTML\s*=|\.textContent\s*=|\.value\s*=[^=]/, /\.checked\s*=[^=]/, /window\.\w+\s*=[^=]/, /\.\$apply|\.\$digest|\.\$eval|\.\$broadcast|\.\$emit/, /\.addEventListener|\.removeEventListener/, /\.value\b/, /\.checked\b/, /\.innerText|\.textContent/, /\.options\b/, /\.last\b/, /ajaxSettings|\.headers/];
+  for (const re of prohibidos) assert.ok(!re.test(src), `el fragmento 4 no debe contener ${re}`);
+  assert.ok(!ROJO.test("calcularTotal"));
+});
+test("o2: solo lecturas conocidas y sin periodicidad → VERDE; POST, host nuevo, ruta de guardado, periódicas y canales persistentes → ROJO/AMARILLO", () => {
+  const ok = leerRegistroO2("# comentario\nsegundo,metodo,host,ruta,tipo\n0,GET,felav.c.sat.gob.gt,/fel-web/privado/vistas/fel.jsf,document\n");
+  assert.equal(ok.errores.length, 0); assert.equal(analizarO2(ok.filas).veredicto, "VERDE");
+  const r = (t) => analizarO2(leerRegistroO2(t).filas);
+  assert.equal(r("10,POST,felav.c.sat.gob.gt,/fel-web/rest/x,xhr").veredicto, "ROJO");
+  assert.equal(r("10,GET,felav02.c.sat.gob.gt,/fel-rest/rest/publico/consultaFallecido/CF,xhr").veredicto, "ROJO");
+  assert.equal(r("10,GET,felav.c.sat.gob.gt,/fel-web/guardarBorrador,xhr").veredicto, "ROJO");
+  assert.equal(r("30,GET,felav.c.sat.gob.gt,/fel-web/ping,xhr\n90,GET,felav.c.sat.gob.gt,/fel-web/ping,xhr\n150,GET,felav.c.sat.gob.gt,/fel-web/ping,xhr").veredicto, "AMARILLO");
+  assert.equal(r("5,GET,felav.c.sat.gob.gt,/fel-web/canal,websocket").veredicto, "AMARILLO");
+  assert.equal(analizarO2(leerRegistroO2("30,GET,felav.c.sat.gob.gt,/fel-web/ping,xhr\n90,GET,felav.c.sat.gob.gt,/fel-web/ping,xhr\n150,GET,felav.c.sat.gob.gt,/fel-web/ping,xhr").filas, { aprobadas: ["GET felav.c.sat.gob.gt/fel-web/ping"] }).veredicto, "AMARILLO", "aprobar la ruta no elimina la periodicidad: sigue siendo hallazgo");
+  assert.equal(analizarO2([]).veredicto, "INCOMPLETO"); assert.ok(leerRegistroO2("x,GET,a,b,c").errores.length === 1);
+  assert.equal(leerRegistroO2("1,GET,felav.c.sat.gob.gt,/fel-web/consulta/12345678901234567890?token=abc#x,xhr").filas[0].ruta.includes("token"), false, "la ruta se sanea: sin consulta ni ids largos");
+});
+test("o2: un registro vacío solo es válido si la persona lo declara («# sin solicitudes»)", () => {
+  assert.equal(analizarO2([]).veredicto, "INCOMPLETO");
+  const d = leerRegistroO2("# sin solicitudes en 300 s\n"); assert.equal(d.vacio_confirmado, true); assert.equal(analizarO2(d.filas, { vacio_confirmado: d.vacio_confirmado }).veredicto, "VERDE");
+});

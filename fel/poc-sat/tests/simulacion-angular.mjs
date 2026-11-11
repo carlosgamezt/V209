@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const ANGULAR = (() => { try { return createRequire(import.meta.url).resolve("angular/angular.min.js"); } catch { const alt = process.env.ANGULAR_JS; if (alt && fs.existsSync(alt)) return alt; throw new Error("Falta AngularJS 1.5.8 para la simulación: ejecuta «npm install» en fel/poc-sat (o define ANGULAR_JS=ruta/angular.min.js)"); } })();
+const JQUERY = createRequire(import.meta.url).resolve("jquery/dist/jquery.min.js");
 const html = fs.readFileSync(path.join(AQUI, "fixture/sat-angular-simulado.html"));
 const pre = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-preliminar.json"), "utf8"));
 const datosBase = () => { const d = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios-lineas.json"), "utf8")); d.documento = { tipo_dte: "Factura de prueba A", moneda: "GTQ-Quetzal" }; d.lineas[0].descuento = "10"; d.lineas[0].total_esperado = "241.00"; d.receptor.nombre_esperado = "CONSUMIDOR FINAL DE PRUEBA"; d.receptor.respuesta_consulta_cf = "CONSUMIDOR FINAL DE PRUEBA"; return d; };
@@ -38,8 +39,9 @@ const servidor = http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "application/json", ...cors }); return res.end(JSON.stringify({ nombre: "CONSUMIDOR FINAL DE PRUEBA" }));
   }
   if (req.method === "POST") { posts.push(`${req.method} ${req.url}`); req.resume(); res.writeHead(200, { "content-type": "application/json" }); return res.end("{}"); }
+  if (req.url === "/jquery.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(fs.readFileSync(JQUERY)); }
   if (req.url === "/angular.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(fs.readFileSync(ANGULAR)); }
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(html);
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(/[?&]o1=1/.test(req.url) ? html.toString("utf8").replace('<script src="/angular.js"></script>', '<script src="/jquery.js"></script><script src="/angular.js"></script>') : html);   // ?o1=1: jQuery ANTES de AngularJS (como el portal real)
 });
 await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
 console.log(`Navegador de pruebas: ${descripcionNavegador()} · páginas locales y simuladas; no se contacta con SAT\n`);
@@ -503,6 +505,88 @@ await caso("AUDITORÍA · AUTOGUARDADO TARDÍO (temporizador que dispara DESPUÉ
     assert.notEqual(c.r.status, 0, "el comando debe señalar la alerta tardía"); assert.match(c.salida, /ALERTA TARDÍA/); assert.match(c.salida, /autoguardado-tardio/);
     assert.deepEqual(posts, [], "ningún POST tardío debe llegar al servidor");
   } finally { await c.limpiar(); }
+});
+
+
+// ───────────────── O-1 · FRAGMENTO 4 DE CONSOLA (solo lectura) · SIMULACIÓN LOCAL ─────────────────
+const FRAG4 = fs.readFileSync(path.join(AQUI, "../consola/observar-consola-4.js"), "utf8");
+const TIPOS_EVENTO = ["click", "dblclick", "mousedown", "mouseup", "input", "change", "focus", "blur", "focusin", "focusout", "keydown", "keyup", "keypress", "submit", "paste", "copy", "cut", "scroll", "select", "reset"];
+async function correrO1(url, { conCli = true } = {}) {
+  const context = await browser.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: ["127.0.0.1"] }, registro);
+  const page = await context.newPage(), consola = [], peticiones = []; page.on("console", (m) => consola.push(m.text())); await page.goto(url); await page.locator('input[name="Cantidad0"]').waitFor();
+  await page.addInitScript(() => {}); await page.evaluate((tipos) => { window.__espia = []; for (const t of tipos) window.addEventListener(t, (e) => window.__espia.push(t), true); }, TIPOS_EVENTO);
+  const foto = () => page.evaluate(() => { const s = angular.element(document.body).scope(); return { dom: document.documentElement.outerHTML, modelo: JSON.stringify([s.datosGenerales, s.detalleFactura, s.resultadoNIT, s.vistaPrevia, s.modalImpuestos]), activo: document.activeElement?.outerHTML?.slice(0, 80) ?? null, y: window.scrollY, cookies: document.cookie }; });
+  page.on("request", (r) => peticiones.push(`${r.method()} ${r.url()}`)); const antes = await foto(), nPost = posts.length; peticiones.length = 0; consola.length = 0;
+  if (conCli) { const cdp = await context.newCDPSession(page); const r = await cdp.send("Runtime.evaluate", { expression: FRAG4, includeCommandLineAPI: true }); assert.ok(!r.exceptionDetails, JSON.stringify(r.exceptionDetails)); } else await page.evaluate(FRAG4);
+  const despues = await foto(), espia = await page.evaluate(() => window.__espia), linea = consola.find((x) => x.startsWith("NEXA-O1 ")); assert.ok(linea, consola.join("\n"));
+  const o1 = JSON.parse(linea.slice(8)); return { o1, linea, antes, despues, espia, peticiones, hechoPost: posts.length - nPost, context, page };
+}
+const ctl = (o1, f) => o1.controles.find(f);
+
+await caso("O-1 FRAGMENTO 4 · EN DEVTOOLS (getEventListeners + jQuery + AngularJS): identifica manejadores ng-*, jQuery, nativos, scopes y watchers", async () => {
+  posts.length = 0; const r = await correrO1(URL_BASE + "?o1=1&radio=nit");
+  try {
+    const o = r.o1; assert.equal(o.herramientas.getEventListeners, true); assert.ok(o.herramientas.jquery && o.herramientas.angular && o.herramientas.jquery_data, JSON.stringify(o.herramientas));
+    const dir = ctl(o, (c) => c.ng_model === "datosGenerales.direccionReceptor"), cant = ctl(o, (c) => c.name === "Cantidad0"), vp = ctl(o, (c) => c.id === "vp"), nit = ctl(o, (c) => c.ng_model === "datosGenerales.nitReceptor");
+    assert.deepEqual(dir.ng["ng-blur"].llama_a, ["alSalirDireccion"], "nombre de función de ng-blur, sin el literal"); assert.deepEqual(dir.ng["ng-focus"].llama_a, ["alEntrarDireccion"]);
+    assert.deepEqual(cant.ng["ng-change"].llama_a, ["calc"]); assert.equal(cant.ng_model, "det.Cantidad");
+    assert.ok(Object.keys(dir.nativos).some((t) => /blur|focus/.test(t)), "getEventListeners ve los manejadores nativos de blur/focus: " + Object.keys(dir.nativos));
+    assert.ok(vp.jquery.click?.some((h) => h.nombre === "previaJq" && h.llama_a.includes("fetch")), "jQuery: manejador de clic y su llamada a fetch: " + JSON.stringify(vp.jquery));
+    assert.ok(nit.nativos.keyup?.some((h) => h.nombre === "alTeclearNit" && h.llama_a.includes("navigator.sendBeacon")), "listener nativo y su llamada a sendBeacon");
+    assert.ok(o.globales.document.jquery.change?.some((h) => h.nombre === "delegadoCambio" && h.selector_delegado === "input"), "manejador delegado de jQuery en document"); assert.ok(o.globales.document.jquery.ajaxSend?.some((h) => h.nombre === "alEnviarAjax"), "ajaxSend global de jQuery");
+    assert.ok(o.angular.debug_info && o.angular.scopes.some((s) => s.funciones.includes("validarInformacion") && s.funciones.includes("guardarBorrador") && s.funciones.includes("emitir")), "nombres de funciones del scope");
+    const w = o.angular.watchers.find((x) => x.exp === "sentinela"); assert.ok(w && w.profundo && w.llama_a.includes("$http.post"), "watcher con $http.post identificado: " + JSON.stringify(o.angular.watchers.slice(0, 3))); assert.ok(o.angular.watchers_por_llamada["$http.post"] >= 1);
+    assert.equal(vp.titulo, "[REDACTADO]", "título con número largo redactado"); assert.equal(o.marco.en_iframe, false); assert.ok(o.totales.controles_listados > 15);
+    await r.context.close();
+  } catch (e) { await r.context.close(); throw e; }
+});
+await caso("O-1 FRAGMENTO 4 · NO LEE NI ESCRIBE NADA SENSIBLE: la salida no contiene valores, textos de opciones, literales ni números largos", async () => {
+  const r = await correrO1(URL_BASE + "?o1=1&radio=nit");
+  try { for (const x of ["PERSONAL", "1234567890", "99887766", "SECRETO", "1234567-8", "12345678", "OPCION", "DIRECCION"]) assert.ok(!r.linea.includes(x), `la salida no debe contener «${x}»`); assert.ok(r.o1.redactados >= 1); assert.ok(r.linea.length < 120000, `tamaño razonable (${r.linea.length})`); await r.context.close(); } catch (e) { await r.context.close(); throw e; }
+});
+await caso("O-1 FRAGMENTO 4 · PASIVO: no cambia el DOM ni los modelos AngularJS, no mueve el foco ni el scroll, no dispara NINGÚN evento, no hace NINGUNA petición, no deja variables globales", async () => {
+  posts.length = 0; const r = await correrO1(URL_BASE + "?o1=1&radio=nit");
+  try {
+    assert.equal(r.despues.dom, r.antes.dom, "DOM idéntico"); assert.equal(r.despues.modelo, r.antes.modelo, "modelos AngularJS idénticos"); assert.equal(r.despues.activo, r.antes.activo, "foco intacto"); assert.equal(r.despues.y, r.antes.y); assert.equal(r.despues.cookies, r.antes.cookies);
+    assert.deepEqual(r.espia, [], "ningún evento (ni artificial ni real) se produjo durante la ejecución: " + r.espia.join(",")); assert.deepEqual(r.peticiones, [], "ninguna petición de red: " + r.peticiones.join(", ")); assert.equal(r.hechoPost, 0);
+    const globales = await r.page.evaluate(() => Object.keys(window).filter((k) => /nexa|o1|__espia/i.test(k))); assert.deepEqual(globales, ["__espia"], "solo la variable del espía de la prueba");
+    assert.equal(await r.page.evaluate(() => { const s = angular.element(document.body).scope(); return [s.ultimoBlur, s.ultimoFoco, s.vistaPrevia, s.sentinela].join(","); }), ",,false,0", "ningún manejador de la página se ejecutó"); await r.context.close();
+  } catch (e) { await r.context.close(); throw e; }
+});
+await caso("O-1 FRAGMENTO 4 · SIN getEventListeners (fuera de DevTools) y SIN jQuery: degrada sin error y avisa", async () => {
+  const a = await correrO1(URL_BASE + "?o1=1&radio=nit", { conCli: false });
+  try { assert.equal(a.o1.herramientas.getEventListeners, false); assert.ok(a.o1.herramientas.jquery); assert.equal(ctl(a.o1, (c) => c.id === "vp").nativos, null); assert.ok(ctl(a.o1, (c) => c.id === "vp").jquery.click, "los datos de jQuery siguen disponibles"); assert.deepEqual(a.espia, []); await a.context.close(); } catch (e) { await a.context.close(); throw e; }
+  const b = await correrO1(URL_BASE + "?radio=nit");   // sin jQuery
+  try { assert.equal(b.o1.herramientas.jquery, null); assert.equal(b.o1.herramientas.jquery_data, false); assert.ok(b.o1.angular.debug_info); assert.deepEqual(b.peticiones, []); await b.context.close(); } catch (e) { await b.context.close(); throw e; }
+});
+await caso("O-1 FRAGMENTO 4 · EN EL IFRAME (como el portal): ejecutado dentro del marco del formulario describe ese marco y no toca el menú", async () => {
+  const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: ["felav.c.sat.gob.gt", "farm3.sat.gob.gt"] }, registro);
+  const page = await context.newPage(), consola = []; page.on("console", (m) => consola.push(m.text())); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf?o1=1&radio=nit`); await page.frameLocator("iframe").locator("body").waitFor();
+  const frame = page.frames().find((f) => f.url().includes("/fel-web/")); await frame.waitForFunction(() => window.angular && document.querySelector('input[name="Cantidad0"]'));
+  try { await frame.evaluate(FRAG4); const l = consola.find((x) => x.startsWith("NEXA-O1 ")); assert.ok(l, consola.join("|")); const o = JSON.parse(l.slice(8)); assert.equal(o.marco.host, "felav.c.sat.gob.gt"); assert.equal(o.marco.en_iframe, true); assert.ok(o.controles.some((c) => c.name === "Cantidad0")); } finally { await context.close(); }
+});
+
+await caso("O-1 CONTROL NEGATIVO: los detectores de la prueba SÍ saltan si un fragmento (malo) enfoca, dispara eventos o hace una petición", async () => {
+  const bueno = FRAG4, malo = FRAG4 + "\nconst e = document.querySelector('input[name=\"Cantidad0\"]'); e.focus(); e.dispatchEvent(new Event('input', { bubbles: true })); fetch('/api/control-negativo');";
+  const context = await browser.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: ["127.0.0.1"] }, registro);
+  const page = await context.newPage(), peticiones = []; await page.goto(URL_BASE + "?o1=1&radio=nit"); await page.locator('input[name="Cantidad0"]').waitFor();
+  await page.evaluate((tipos) => { window.__espia = []; for (const t of tipos) window.addEventListener(t, () => window.__espia.push(t), true); }, TIPOS_EVENTO); page.on("request", (r) => peticiones.push(r.url()));
+  const dom0 = await page.evaluate(() => document.activeElement?.outerHTML?.slice(0, 80)); await page.evaluate(malo); await new Promise((r) => setTimeout(r, 300));
+  try { assert.ok((await page.evaluate(() => window.__espia)).length > 0, "el espía de eventos detecta el evento artificial"); assert.ok(peticiones.some((u) => /control-negativo/.test(u)), "el detector de peticiones detecta el fetch"); assert.notEqual(await page.evaluate(() => document.activeElement?.outerHTML?.slice(0, 80)), dom0, "el detector de foco detecta el cambio"); } finally { await context.close(); }
+});
+
+await caso("O-1 ANALIZADOR (comando real): la salida del fragmento 4 sobre la página simulada con manejadores peligrosos da ROJO, nombra funciones y rutas sin datos sensibles", async () => {
+  const r = await correrO1(URL_BASE + "?o1=1&radio=nit"); const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-o1-")), f = path.join(tmp, "o1.txt");
+  try {
+    const o1m = structuredClone(r.o1); o1m.marco.host = "felav.c.sat.gob.gt";   // la página de prueba se sirve en localhost; el analizador exige el marco del formulario
+    fs.writeFileSync(f, "algún ruido de la consola\n" + "NEXA-O1 " + JSON.stringify(o1m) + "\n");
+    const a = await ejecutarAsync(process.execPath, ["bin/analizar-o1.mjs", `--entrada=${f}`, "--tramo=2B"], { cwd: path.join(AQUI, ".."), timeout: 30000 });
+    assert.equal(a.status, 1, a.stdout + a.stderr); assert.match(a.stdout, /VEREDICTO: ROJO/); assert.match(a.stdout, /navigator\.sendBeacon/); assert.match(a.stdout, /\$http\.post/); assert.match(a.stdout, /calc\[desconocida\]/);
+    for (const x of ["PERSONAL", "1234567890", "99887766", "SECRETO", "1234567-8"]) assert.ok(!a.stdout.includes(x), `el informe no debe contener «${x}»`);
+    const b = await ejecutarAsync(process.execPath, ["bin/analizar-o1.mjs", `--entrada=${f}`], { cwd: path.join(AQUI, ".."), timeout: 30000 });   // tramo 2A: el NIT (sendBeacon) no cuenta, pero el watcher con $http.post sí
+    assert.equal(b.status, 1); assert.match(b.stdout, /watcher «sentinela»/); assert.doesNotMatch(b.stdout.split("Manejadores por campo")[0], /alTeclearNit|sendBeacon/);
+    const c = await ejecutarAsync(process.execPath, ["bin/analizar-o1.mjs", `--entrada=${path.join(tmp, "no-existe.txt")}`], { cwd: path.join(AQUI, ".."), timeout: 30000 }); assert.notEqual(c.status, 0);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); await r.context.close(); }
 });
 
 await browser.close(); await browserHosts.close(); servidor.close();

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Prueba de viabilidad (NO es producci\u00f3n): automatizar el llenado del formulario FEL gratuito con Playwright, con sesi\u00f3n iniciada a mano, datos ficticios y parada obligatoria antes de emitir.",
+  "description": "Prueba de viabilidad (NO es producción): automatizar el llenado del formulario FEL gratuito con Playwright, con sesión iniciada a mano, datos ficticios y parada obligatoria antes de emitir.",
   "scripts": {
     "verificar:rapido": "node --test tests/guardia.test.mjs",
     "verificar": "node --test tests/guardia.test.mjs && node tests/autoprueba.mjs && node tests/simulacion-angular.mjs",
@@ -17,6 +17,7 @@
     "playwright": "1.49.1"
   },
   "devDependencies": {
-    "angular": "1.5.8"
+    "angular": "1.5.8",
+    "jquery": "3.7.1"
   }
 }

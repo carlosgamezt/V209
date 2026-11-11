@@ -16,7 +16,7 @@
   <input type="text" ng-model="resultadoNIT.nombre" disabled ng-show="resultadoNIT.nombre">
   <input type="text" name="nombre" ng-model="resultadoNIT.nombre" ng-show="false">
   <input type="text" name="nombre" ng-model="resultadoNIT.nombre" ng-show="false">
-  <input type="text" ng-model="datosGenerales.direccionReceptor" ng-required="true">
+  <input type="text" ng-model="datosGenerales.direccionReceptor" ng-required="true" ng-blur="alSalirDireccion('SECRETO-1234567-8')" ng-focus="alEntrarDireccion()">
 </fieldset>
 <fieldset>
   <table><tbody>
@@ -37,7 +37,7 @@
   <button type="button" id="agr" ng-click="agregarItem()">Agregar item</button>
 </fieldset>
 <button type="button" id="gb" ng-click="guardarBorrador()">Guardar borrador</button>
-<button type="button" id="vp" ng-click="validarInformacion()">Vista Previa</button>
+<button type="button" id="vp" ng-click="validarInformacion()" title="Vista Previa 12345678">Vista Previa</button>
 <div class="modal" ng-show="vistaPrevia"><p>Vista previa (simulada)</p><button type="button" id="emi" ng-click="emitir()">Emitir</button></div>
 <div class="modal" ng-show="modalImpuestos"><p>Impuestos (simulado)</p></div>
 <div id="login" hidden><h2>Sesión expirada (SIMULADA)</h2><label for="clave">Clave de acceso</label><input id="clave" type="password"></div>
@@ -53,8 +53,12 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   $scope.tipos = [{ nombre: "Factura de prueba A", dte: "FA" }, { nombre: "Factura de prueba B", dte: "FB" }];
   $scope.monedas = ["GTQ-Quetzal", "USD-Dólar estadounidense"]; $scope.bienes = ["Bien", "Servicio"];
   $scope.datosGenerales = { fechaEmision: "01/01/2026", tipoDte: null, moneda: null, tipoIdentificacion: null, nitReceptor: "", direccionReceptor: "" };
-  $scope.resultadoNIT = { nombre: "" }; $scope.detalleFactura = [nuevo()]; $scope.vistaPrevia = false; $scope.modalImpuestos = false;
+  $scope.resultadoNIT = { nombre: "" }; if (/[?&]o1=1/.test(location.search)) { $scope.datosGenerales.direccionReceptor = "DIRECCION PERSONAL 1234567890"; $scope.bienes = ["OPCION PERSONAL 99887766", "Servicio"]; } $scope.detalleFactura = [nuevo()]; $scope.vistaPrevia = false; $scope.modalImpuestos = false;
   $scope.noop = () => {};
+  $scope.alSalirDireccion = (x) => { $scope.ultimoBlur = 1; };   // inocuo en la simulación
+  $scope.alEntrarDireccion = () => { $scope.ultimoFoco = 1; };
+  $scope.sentinela = 0;
+  $scope.$watch("sentinela", (n, o) => { if (n !== o) { $http.post("/api/autoguardado-watch", {}); } }, true);   // watcher «peligroso» que NUNCA se dispara en la prueba (solo debe aparecer su llamada a $http.post en el análisis)
   const q = location.search, flag = (n) => new RegExp("[?&]" + n + "=1").test(q);
   if (/[?&]radio=nit/.test(q)) $scope.datosGenerales.tipoIdentificacion = "NIT";   // variante: el radio NIT ya viene marcado
   $scope.alCambiarRadio = () => { $scope.registroRadio = ($scope.registroRadio || 0) + 1; if ($scope.datosGenerales.tipoIdentificacion === "CUI") { $scope.datosGenerales.nitReceptor = ""; $scope.resultadoNIT.nombre = ""; } };   // el radio CUI limpia el receptor
@@ -84,5 +88,15 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   $scope.validarInformacion = () => $http.post("/api/vista-previa", $scope.detalleFactura).then(() => { $scope.vistaPrevia = true; }); // la vista previa pasa por el servidor
   $scope.emitir = () => $http.post("/api/emitir", {});
 });
+</script>
+<script>
+if (window.jQuery && /[?&]o1=1/.test(location.search)) {
+  window.jQuery(function () {
+    window.jQuery(document).on("change", "input", function delegadoCambio() { window.__noExiste && window.__noExiste("1234567-8"); });
+    window.jQuery("#vp").on("click", function previaJq() { fetch("/api/vista-previa-jq", { method: "POST" }); });   // NUNCA se ejecuta en la prueba
+    window.jQuery(document).ajaxSend(function alEnviarAjax() { });
+    document.querySelector('[ng-model="datosGenerales.nitReceptor"]').addEventListener("keyup", function alTeclearNit() { navigator.sendBeacon("/api/beacon", "x"); });   // NUNCA se ejecuta
+  });
+}
 </script>
 </body></html>

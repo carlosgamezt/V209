@@ -10,7 +10,7 @@ git archive HEAD fel/poc-sat $(for d in "${docs[@]}"; do echo "fel/docs/$d.md"; 
 # nada que no deba viajar
 if find "$raiz" \( -name node_modules -o -name observaciones -o -name registros -o -name perfiles -o -name '*.local.json' -o -name 'mapeo.local*' -o -name '.env*' -o -name 'consola.json' -o -name 'sat-2*.json' -o -name '*.har' \) | grep -q .; then echo "El paquete contiene archivos prohibidos"; exit 1; fi
 { echo "NEXA FEL — PoC del formulario FEL (rama $rama, commit $sha)"; echo "Generado: $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "ETAPA 0: sin SAT. Etapas 1 y 2 NO autorizadas."; echo; echo "SHA-256 de los fragmentos de consola (nº 2 retirado: no usar):"
-  for n in observar-consola.js observar-consola-2.js observar-consola-3.js; do echo "$n  $(sha256sum "$raiz/fel/poc-sat/consola/$n" | cut -d' ' -f1)"; done; } > "$raiz/VERSION.txt"
+  for n in observar-consola.js observar-consola-2.js observar-consola-3.js observar-consola-4.js; do echo "$n  $(sha256sum "$raiz/fel/poc-sat/consola/$n" | cut -d' ' -f1)"; done; } > "$raiz/VERSION.txt"
 printf 'NEXA FEL — PoC. Lee primero fel\\poc-sat\\INSTALAR-WINDOWS.md\r\nEtapa 0: todo es local y simulado; no se toca SAT.\r\n' > "$raiz/LEEME-PRIMERO.txt"
 (cd "$tmp" && zip -rq "$out/$nombre.zip" NEXA-FEL-PoC)
 echo "ZIP: $out/$nombre.zip"; sha256sum "$out/$nombre.zip"; unzip -l "$out/$nombre.zip" | tail -1

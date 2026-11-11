@@ -1,0 +1,3 @@
+# Registro O-2 (red en reposo, 5 minutos). UNA línea por solicitud de la pestaña Network. SOLO método, host y ruta SIN ?consulta: nada más.
+# Si en 300 s no hubo ninguna solicitud, deja esta línea:  # sin solicitudes en 300 s
+segundo,metodo,host,ruta,tipo
