@@ -18,7 +18,7 @@ Proyecto Supabase propio (multiempresa). Estado: **Fase 1.0 en desarrollo, rama 
 4. El administrador maestro administra empresas y regímenes; **no ve datos de negocio** de las empresas (clientes, conceptos, documentos).
 5. Las reglas fiscales no tienen valores por defecto. Nacen `sin_verificar`, se versionan y una versión verificada es inmutable.
 6. `serie`, `numero_fiscal` y `autorizacion_sat` permanecen vacíos salvo confirmación verificable de un certificador autorizado.
-7. No se guardan credenciales de la Agencia Virtual ni de la firma FEL. No hay automatización del portal del SAT.
+7. No se guardan credenciales de la Agencia Virtual ni de la firma FEL. **Se permite investigar y desarrollar la automatización del portal del SAT** (agente local, inicio de sesión manual, llenado asistido, solo en simulación); **su ejecución real contra el portal permanece bloqueada** hasta aclarar los permisos y las condiciones de SAT y contar con autorización escrita (ver `docs/saas-decisiones-arquitectura.md`).
 
 ## Autenticación (opción A)
 Supabase Auth del proyecto FEL, sin registro abierto. Invitaciones con `inviteUserByEmail` (nativo) y MFA TOTP (nativo).

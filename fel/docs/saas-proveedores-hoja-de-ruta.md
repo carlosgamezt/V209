@@ -2,7 +2,9 @@
 
 Rama `fel-proveedores-diseno`. Acompaña a `saas-proveedores-diseno.md` y `saas-proveedores-digifact-investigacion.md`. **Nada de esto está implementado ni autorizado.** Tamaños relativos: S (pequeño), M (mediano), L (grande); no son plazos.
 
-## 1. Decisiones pendientes (hay que tomarlas vosotros)
+> **Actualización:** D1, D2 y D3 fueron **aprobadas** (ver `saas-decisiones-arquitectura.md`); la secuencia de fases vigente es la de `saas-plan-implementacion.md`. Las demás siguen pendientes.
+
+## 1. Decisiones (D1–D3 aprobadas; D4–D12 pendientes)
 
 | ID | Decisión | Mi recomendación | Por qué importa |
 |---|---|---|---|

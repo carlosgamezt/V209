@@ -2,6 +2,8 @@
 
 Rama: `fel-proveedores-diseno` (parte de `fel-fase-1-0`; **no toca `main`** y **no modifica el prototipo Playwright** `fel/poc-sat/`). Estado: **DISEÑO PARA REVISIÓN. No se programó ninguna integración real, no se usaron credenciales, no se llamó a ningún endpoint, no se emitió ni se certificó nada.**
 
+**Decisiones aprobadas:** D1, D2, D3 y las prioridades (Playwright principal; certificadores secundarios; individual antes que masivo) están registradas en `saas-decisiones-arquitectura.md`, que prevalece sobre este texto si hay diferencias. El plan técnico está en `saas-plan-implementacion.md`.
+
 Documentos hermanos: `saas-proveedores-digifact-investigacion.md` (investigación y preguntas comerciales) y `saas-proveedores-hoja-de-ruta.md` (fases, decisiones pendientes y puertas de avance).
 
 ## 0. Prioridades y tres hechos que condicionan el diseño
@@ -10,7 +12,7 @@ Documentos hermanos: `saas-proveedores-digifact-investigacion.md` (investigació
 
 Tres hechos que conviene tener presentes antes de aprobar:
 
-1. **El principio 7 del proyecto actual dice «no hay automatización del portal del SAT»** (`fel/README.md`). Poner Playwright como canal principal **reemplaza ese principio**; hay que decidirlo expresamente (decisión D1 de la hoja de ruta).
+1. **El principio 7 original decía «no hay automatización del portal del SAT».** Con la decisión D1 (aprobada) pasa a permitir la **investigación y el desarrollo** de esa automatización manteniendo **bloqueada su ejecución real** hasta aclarar los permisos y las condiciones de SAT.
 2. **Las condiciones de uso de SAT siguen sin confirmar** respecto a automatizar el llenado (B1 de la auditoría 2A), y O-1/O-2/O-3 siguen pendientes. Hasta cerrarlas, el canal Playwright solo puede existir como **simulación y modo asistido de pruebas**, no como emisión real.
 3. **El prototipo se detiene a propósito antes de «Vista Previa», «Guardar», «Certificar» y «Emitir»** (guardias activas). Un canal que emita de verdad necesita el tramo posterior al formulario, que **nunca se ha observado** (qué ocurre tras Vista Previa, cómo se confirma la emisión y de dónde se obtiene serie, número, autorización, PDF y XML). Sin esa observación, el canal Playwright solo puede ser «llenado asistido + emisión por una persona».
 
