@@ -23,6 +23,11 @@ jobs:
         run: |
           deno check index.ts nucleo.ts acciones.ts lib/*.ts seguridad_test.ts
           deno test lib/ nucleo_test.ts seguridad_test.ts
+      - name: Proveedores de emisión (interfaz + mock, solo simulación)
+        working-directory: fel/proveedores
+        run: |
+          deno check src/mod.ts pruebas/*.ts
+          deno test pruebas/
 
   interfaz:
     name: Interfaz (modo demostración)

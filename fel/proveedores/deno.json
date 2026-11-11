@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "test": "deno test pruebas/",
+    "check": "deno check src/mod.ts pruebas/*.ts"
+  },
+  "lint": { "rules": { "exclude": ["no-explicit-any"] } }
+}
