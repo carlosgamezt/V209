@@ -12,6 +12,9 @@ No es una maqueta: la interfaz habla con un servidor local que usa **las mismas 
 En Linux/macOS: `cd fel/demo-facturacion && deno task demo`. Los datos viven solo en la memoria del programa: al cerrarlo, todo vuelve al estado inicial. Solo escucha en `127.0.0.1` (no es accesible desde la red).
 Nota: probada en Linux con Chromium; en Windows no la pude probar desde aquí (Deno y PGlite funcionan en Windows).
 
+## Pantallas (según las referencias aprobadas)
+Menú lateral: **Nueva factura** (3 pasos: Datos → Ítems → Vista previa, con resumen lateral), **Facturas**, **Clientes** (indicadores, búsqueda, filtros, paginación, alta/edición, CSV), **Conceptos** (catálogo que alimenta las líneas) y **Configuración** (Empresa, Establecimientos, Canal de emisión, Numeración, Impuestos, Preferencias). La campana lista lo que requiere atención (por verificar, alertas, envíos en curso). Decisiones respecto a las referencias: no hay usuario/contraseña de SAT ni «Conectado a SAT» (se muestra el estado real del canal simulado), el botón final dice «certificación simulada» y «Importar» clientes queda deshabilitado (fase posterior). Dirección, teléfono y correo de la empresa son ficticios.
+
 ## Recorrido sugerido (5 minutos)
 La demostración trae una **empresa y cuatro personas ficticias**; cambia de persona arriba a la derecha («Actuar como»):
 

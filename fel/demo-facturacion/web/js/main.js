@@ -1,20 +1,33 @@
-// Arranque de la demostración: estructura, usuario de la demostración, rutas (#/, #/nueva, #/f/<id>) y aviso permanente de simulación.
+// Arranque de la demostración: estructura (menú lateral + barra superior), persona de la demostración, rutas y aviso permanente de simulación.
+// Rutas: #/ (facturas), #/nueva, #/f/<id>, #/clientes, #/conceptos, #/config
 import { h, poner, toast, mensajeError } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { api, cambiarUsuario, usuarioActual } from "./api.js";
 import { pantallaLista } from "./lista.js";
 import { pantallaFactura } from "./factura.js";
+import { pantallaClientes } from "./clientes.js";
+import { pantallaConceptos } from "./conceptos.js";
+import { pantallaConfig } from "./config.js";
 
 const raiz = document.getElementById("app");
+const NAV = [
+  { ruta: "/nueva", titulo: "Nueva factura", icon: "plus", permiso: "borradores.crear" },
+  { ruta: "/", titulo: "Facturas", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
+  { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
+  { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
+  { ruta: "/config", titulo: "Configuración", icon: "building", permiso: "empresa.ver" },
+];
+const iniciales = (n) => n.split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
 
 async function iniciar() {
-  let estado = await api.estado();
-  const contenido = h("main", { class: "principal", tabindex: "-1" });
+  let estado = await api.estado(), pendientes = [];
+  const contenido = h("div", { class: "contenido", tabindex: "-1" });
   const selUsuario = h("select", { "aria-label": "Persona de la demostración", class: "sel-usuario", onchange: async (e) => {
     cambiarUsuario(e.target.value);
-    try { estado = await api.estado(); pintarCab(); pintar(); toast(`Ahora actúas como ${estado.usuario.nombre} (${estado.usuario.rol})`); } catch (x) { toast(mensajeError(x), "error"); }
+    try { estado = await api.estado(); await pintarTodo(); toast(`Ahora actúas como ${estado.usuario.nombre} (${estado.usuario.rol})`); } catch (x) { toast(mensajeError(x), "error"); }
   } });
-  const cab = h("header", { class: "cab-demo" });
+  const cab = h("header", { class: "cab-demo" }), nav = h("nav", { class: "nav", "aria-label": "Secciones" }), usuarioCard = h("div", { class: "usuario" }), movil = h("nav", { class: "nav-movil", "aria-label": "Secciones" });
+  const lateral = h("aside", { class: "lateral" }, h("a", { class: "marca", href: "#/", "aria-label": "Inicio" }, h("span", { class: "marca-logo" }, "N"), h("strong", {}, "Nexa")), h("p", { class: "lat-seccion" }, "FEL"), nav, usuarioCard);
   const ctx = {
     get estado() { return estado; },
     tiene: (p) => estado.permisos.includes(p),
@@ -22,26 +35,54 @@ async function iniciar() {
     recargarEstado: async () => { estado = await api.estado(); },
     repintar: () => pintar(),
   };
+  const rutaActual = () => location.hash.slice(1) || "/";
+  const activa = (n, r) => (n.exacta ? r === n.ruta || (n.tambien ?? []).some((t) => r.startsWith(t)) : r.startsWith(n.ruta));
+
+  async function cargarPendientes() {
+    try { const ds = await api.documentos(); pendientes = ds.filter((d) => d.estado_fiscal === "por_verificar" || d.alertas > 0 || (d.estado_fiscal === "pendiente_certificacion")); } catch { pendientes = []; }
+  }
+  function pintarMenu() {
+    const r = rutaActual(), items = NAV.filter((n) => ctx.tiene(n.permiso));
+    const enlaces = (clase) => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null }, icono(n.icon), h("span", {}, n.titulo)));
+    poner(nav, ...enlaces()); poner(movil, ...enlaces());
+    poner(usuarioCard, h("span", { class: "avatar" }, iniciales(estado.usuario.nombre)), h("div", {}, h("strong", {}, estado.usuario.nombre), h("small", {}, estado.usuario.rol)));
+  }
   function pintarCab() {
     poner(selUsuario, ...estado.usuarios.map((u) => h("option", { value: u.clave, selected: u.clave === estado.usuario.clave }, `${u.nombre} · ${u.rol}`)));
     selUsuario.value = usuarioActual();
+    const campana = h("div", { class: "campana" });
+    const panel = h("div", { class: "campana-panel", hidden: true, role: "region", "aria-label": "Pendientes" },
+      h("strong", {}, "Requieren atención"),
+      pendientes.length ? pendientes.map((d) => h("a", { href: `#/f/${d.id}`, onclick: () => { panel.hidden = true; } },
+        h("span", {}, `BR-${String(d.numero_borrador).padStart(4, "0")} · ${d.cliente_nombre ?? "Sin receptor"}`),
+        h("small", {}, d.alertas > 0 ? "Alerta fiscal abierta" : d.estado_fiscal === "por_verificar" ? "Por verificar con el proveedor" : "Envío en curso"))) : h("p", { class: "mut" }, "No hay nada pendiente."));
+    const btn = h("button", { type: "button", class: "icon-circ", "aria-label": `Pendientes: ${pendientes.length}`, "aria-expanded": "false", onclick: () => { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); } }, icono("info"), pendientes.length ? h("span", { class: "punto" }, String(pendientes.length)) : null);
+    poner(campana, btn, panel);
     poner(cab,
       h("div", { class: "cab-fila" },
-        h("a", { class: "marca", href: "#/", "aria-label": "Inicio" }, h("span", { class: "marca-logo" }, "N"), h("div", {}, h("strong", {}, "NEXA FEL"), h("small", {}, "Demostración · facturación individual"))),
-        h("div", { class: "cab-der" }, h("label", { class: "cab-usuario" }, h("span", { class: "mut" }, "Actuar como"), selUsuario))),
+        h("div", { class: "cab-tit" }, h("strong", {}, "Nexa FEL"), h("span", { class: "mut" }, "Facturación electrónica")),
+        h("div", { class: "cab-der" },
+          h("div", { class: "emp-sel", title: "Empresa ficticia de la demostración" }, icono("building"), h("strong", {}, estado.empresa.nombre_comercial.toUpperCase())),
+          campana,
+          h("label", { class: "cab-usuario" }, h("span", { class: "mut" }, "Actuar como"), selUsuario))),
       h("div", { class: "banda-simulado", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", {}, "No se conecta a SAT ni a ningún certificador; nada de lo que ves se emite de verdad.")));
   }
   function pintar() {
-    const ruta = location.hash.slice(1) || "/";
+    const ruta = rutaActual();
     let vista;
     if (ruta === "/nueva") vista = pantallaFactura(ctx, null);
     else if (ruta.startsWith("/f/")) vista = pantallaFactura(ctx, ruta.split("/")[2]);
+    else if (ruta === "/clientes") vista = pantallaClientes(ctx);
+    else if (ruta === "/conceptos") vista = pantallaConceptos(ctx);
+    else if (ruta === "/config") vista = pantallaConfig(ctx);
     else vista = pantallaLista(ctx);
-    poner(contenido, vista);
+    poner(contenido, vista); pintarMenu();
     document.title = `NEXA FEL · Demostración (SIMULADO)`;
+    cargarPendientes().then(pintarCab);
   }
+  async function pintarTodo() { pintarCab(); pintar(); }
   pintarCab();
-  poner(raiz, cab, contenido, h("footer", { class: "pie-demo" }, "Empresa y personas ficticias. Los datos viven solo en la memoria de este programa y se pierden al cerrarlo."));
+  poner(raiz, h("div", { class: "shell" }, lateral, h("main", { class: "principal" }, cab, contenido, h("footer", { class: "pie-demo" }, "Empresa y personas ficticias. Los datos viven solo en la memoria de este programa y se pierden al cerrarlo."))), movil);
   window.addEventListener("hashchange", () => { pintar(); contenido.focus({ preventScroll: true }); });
   pintar();
 }

@@ -18,6 +18,12 @@ export async function llamar(metodo, ruta, cuerpo) {
 }
 export const api = {
   estado: () => llamar("GET", "/api/estado"),
+  clientes: () => llamar("GET", "/api/clientes"),
+  guardarCliente: (c) => llamar("POST", "/api/clientes", c),
+  conceptos: () => llamar("GET", "/api/conceptos"),
+  guardarConcepto: (c) => llamar("POST", "/api/conceptos", c),
+  configuracion: () => llamar("GET", "/api/configuracion"),
+  guardarEstablecimiento: (e) => llamar("POST", "/api/establecimientos", e),
   documentos: () => llamar("GET", "/api/documentos"),
   documento: (id) => llamar("GET", `/api/documentos/${id}`),
   guardar: (d) => llamar("POST", "/api/documentos", d),

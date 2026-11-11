@@ -35,6 +35,7 @@ function arrancar() {
     await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
     await p.selectOption('select[aria-label="Receptor"]', { label: /Comercial Los Pinos/ }).catch(async () => { const v = await p.locator('select[aria-label="Receptor"] option', { hasText: "Comercial Los Pinos" }).getAttribute("value"); await p.selectOption('select[aria-label="Receptor"]', v); });
     const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Casa matriz" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
+    await p.click("#paso-siguiente");
     await p.fill('input[aria-label="Descripción de la línea 1"]', desc); await p.fill('input[aria-label="Cantidad de la línea 1"]', cant); await p.fill('input[aria-label="Precio de la línea 1"]', precio);
     await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); return p.url().split("/").pop();
   };
@@ -52,13 +53,15 @@ function arrancar() {
   await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
   assert.match(await p.locator(".totales").innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.match(await p.locator(".totales").innerText(), /dato.* por completar/);
   await p.click("#guardar"); await p.waitForSelector(".validacion"); assert.match(await p.locator(".validacion").innerText(), /Elige el receptor/); assert.match(await p.locator(".validacion").innerText(), /falta la descripción/);
-  await p.click('button:has-text("Agregar línea")'); assert.equal(await p.locator(".ln:not(.ln-cab)").count(), 2);
+  assert.equal(await p.locator("li.paso").count(), 3, "tres pasos: datos, ítems, vista previa"); await p.click("#paso-siguiente"); await p.waitForSelector('input[aria-label="Descripción de la línea 1"]');
+  await p.click('button:has-text("Agregar ítem")'); assert.equal(await p.locator(".ln:not(.ln-cab)").count(), 2);
   await p.fill('input[aria-label="Cantidad de la línea 2"]', "abc"); await p.click("#guardar"); assert.match(await p.locator(".validacion").innerText(), /Línea 2: la cantidad/);
   await p.click('button[aria-label="Quitar la línea 2"]'); assert.equal(await p.locator(".ln:not(.ln-cab)").count(), 1);
   await p.selectOption('select[aria-label="Tipo de descuento de la línea 1"]', "porcentaje"); await p.fill('input[aria-label="Valor del descuento de la línea 1"]', "150"); await p.click("#guardar"); assert.match(await p.locator(".validacion").innerText(), /no puede superar 100/);
   await p.fill('input[aria-label="Valor del descuento de la línea 1"]', "10");
   await p.fill('input[aria-label="Descripción de la línea 1"]', "Servicio de consultoría"); await p.fill('input[aria-label="Cantidad de la línea 1"]', "2"); await p.fill('input[aria-label="Precio de la línea 1"]', "100");
   assert.match(await p.locator(".totales").innerText(), /Q 180\.00/, "base imponible = 2 × 100 − 10 %");
+  await p.click('[data-ir-paso="1"]'); await p.waitForSelector('select[aria-label="Receptor"]');
   await p.check('input[aria-label="Receptor nuevo"]'); await p.selectOption('select[aria-label="Tipo de identificación"]', "NIT");
   await p.fill('input[aria-label="Identificación del receptor"]', "5550001-2"); await p.fill('input[aria-label="Nombre del receptor"]', "Cliente nuevo de prueba (ficticio)");
   const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Sucursal" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
@@ -67,7 +70,7 @@ function arrancar() {
   const idMarta = p.url().split("/").pop(); assert.match(await p.locator(".doc-cab h1").innerText(), /BR-0001/);
   assert.equal(await p.locator('button:has-text("Marcar como revisado")').count(), 0, "el emisor no revisa");
   assert.match(await p.locator("#motivo-sin-envio").innerText(), /revisado/);
-  await p.click('button:has-text("Vista previa")'); await p.waitForSelector('[data-vista="previa"]'); assert.match(await p.locator('[data-vista="previa"]').innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Cliente nuevo de prueba/);
+  await p.click('button:has-text("Vista previa")'); await p.waitForSelector('[data-vista="previa"]'); assert.match(await p.locator('[data-vista="previa"]').innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Observaciones/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Correo/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Cliente nuevo de prueba/);
   await foto("03-vista-previa.png"); await p.keyboard.press("Escape");
 
   // ============ 3. revisar y enviar con la propietaria; el contenido se congela
@@ -139,10 +142,32 @@ function arrancar() {
   assert.match(await p.locator('[data-estado="pendiente"]').innerText(), /persona/); await p.click("#completar-humana"); await p.waitForSelector('[data-estado="certificado"]');
   await foto("08-lista-final.png"); await p.goto(srv.url); await p.waitForSelector(".fila-fac"); assert.ok(await p.locator(".fila-fac").count() >= 8); await foto("09-lista.png");
 
+  // ============ 10b. clientes, conceptos y configuración (datos reales de la base; permisos por persona)
+  await como("ana"); await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores");
+  assert.match(await p.locator(".indicadores").innerText(), /Clientes registrados/); assert.ok(await p.locator('[data-cliente]').count() <= 5, "máximo 5 por página");
+  await p.fill('input[aria-label="Buscar clientes"]', "Tornillo"); assert.equal(await p.locator('[data-cliente]').count(), 1); await p.fill('input[aria-label="Buscar clientes"]', "");
+  assert.ok(await p.locator(".pag-b").count() >= 3, "hay paginación con más de 5 clientes"); await foto("10-clientes.png");
+  const [csv] = await Promise.all([p.waitForEvent("download"), p.click('button[aria-label="Descargar clientes en CSV"]')]); assert.match(fs.readFileSync(await csv.path(), "utf8"), /Comercial Los Pinos/);
+  await p.click("#nuevo-cliente"); await p.fill('input[aria-label="Identificación del cliente"]', "9990001-3"); await p.fill('input[aria-label="Nombre del cliente"]', "Cliente del catálogo (ficticio)"); await p.click("#guardar-cliente"); await toast("Cliente creado");
+  await p.fill('input[aria-label="Buscar clientes"]', "catálogo"); assert.equal(await p.locator('[data-cliente="9990001-3"]').count(), 1);
+  await p.click("#nuevo-cliente"); await p.fill('input[aria-label="Identificación del cliente"]', "9990001-3"); await p.fill('input[aria-label="Nombre del cliente"]', "Repetido"); await p.click("#guardar-cliente"); await p.waitForSelector(".modal .err:has-text('Ya existe')"); await p.keyboard.press("Escape");
+  await p.goto(`${srv.url}/#/conceptos`); await p.waitForSelector("[data-concepto]"); assert.ok(await p.locator("[data-concepto]").count() >= 4);
+  await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "SERV-900"); await p.fill('input[aria-label="Descripción del concepto"]', "Concepto de prueba"); await p.fill('input[aria-label="Precio sugerido"]', "77.5"); await p.click("#guardar-concepto"); await toast("Concepto creado");
+  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); await p.click("#paso-siguiente");
+  await p.selectOption('select[aria-label="Agregar un concepto del catálogo"]', await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).getAttribute("value")); assert.equal(await p.inputValue('input[aria-label="Descripción de la línea 1"]'), "Concepto de prueba"); assert.equal(await p.inputValue('input[aria-label="Precio de la línea 1"]'), "77.5");
+  await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tabs"); await p.waitForSelector(".tab-cuerpo .datos"); assert.match(await p.locator(".tab-cuerpo").innerText(), /Empresa activa/);
+  for (const t of ["establecimientos", "canal", "numeracion", "impuestos", "preferencias"]) { await p.click(`[data-tab="${t}"]`); await p.waitForTimeout(200); }
+  await p.click('[data-tab="canal"]'); const canales = await p.locator(".tab-cuerpo").innerText(); assert.match(canales, /Habilitado · simulado/); assert.match(canales, /No disponible todavía/); assert.equal(await p.locator("input[type=password], input[aria-label*=Contraseña i], button:has-text('Probar conexión')").count(), 0, "sin campos de credenciales de SAT ni «Probar conexión»"); await foto("11-config-canal.png");
+  await p.click('[data-tab="establecimientos"]'); await p.click("#nuevo-establecimiento"); await p.fill('input[aria-label="Código del establecimiento"]', "3"); await p.fill('input[aria-label="Nombre del establecimiento"]', "Bodega ficticia"); await p.click("#guardar-establecimiento"); await toast("Establecimiento creado"); await p.waitForSelector(`[data-establecimiento="3"]`);
+  await como("pedro"); await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores"); assert.equal(await p.locator("#nuevo-cliente").count(), 0, "el lector no crea clientes");
+  assert.equal(await p.locator('a.nv:has-text("Nueva factura")').count(), 0, "el lector no ve «Nueva factura»");
+  await p.goto(`${srv.url}/#/config`); await p.click('[data-tab="establecimientos"]'); assert.equal(await p.locator("#nuevo-establecimiento").count(), 0, "el lector no crea establecimientos");
+  await como("ana");
+
   // ============ 11. móvil: sin desborde horizontal, aviso visible, flujo utilizable
   const movil = await nav.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: "es-GT" });
   await movil.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); const m = await movil.newPage(); m.on("pageerror", (e) => errores.push(`pageerror(móvil): ${e.message}`));
-  for (const ruta of ["/", "/#/nueva", `/#/f/${id8}`, `/#/f/${idMarta}`]) { await m.goto(srv.url + ruta); await m.waitForSelector(".cab-demo"); await m.waitForTimeout(400); await banda(m);
+  for (const ruta of ["/", "/#/nueva", `/#/f/${id8}`, `/#/f/${idMarta}`, "/#/clientes", "/#/conceptos", "/#/config"]) { await m.goto(srv.url + ruta); await m.waitForSelector(".cab-demo"); await m.waitForTimeout(400); await banda(m);
     assert.equal(await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, `desborde horizontal en móvil: ${ruta}`); await foto(`m-${ruta.replace(/[^a-z0-9]/gi, "_")}.png`, m); }
   await movil.close();
 

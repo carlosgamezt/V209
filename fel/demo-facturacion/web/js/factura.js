@@ -4,7 +4,7 @@ import { icono } from "/app/js/icons.js";
 import { calcular } from "/app/js/calculo.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 import { api } from "./api.js";
-import { vistaPrevia } from "./vista_previa.js";
+import { vistaPrevia, papel } from "./vista_previa.js";
 import { panelProceso } from "./proceso.js";
 
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
@@ -26,9 +26,10 @@ export function pantallaFactura(ctx, id) {
       fecha: doc.fecha_emision_prevista ? String(doc.fecha_emision_prevista).slice(0, 10) : new Date().toISOString().slice(0, 10), observaciones: doc.observaciones ?? "",
       lineas: d?.lineas?.length ? d.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) })) : [linea()],
     });
-    let f = inicial(), sucio = !doc.id, intentoGuardar = false;
+    let f = inicial(), sucio = !doc.id, intentoGuardar = false, paso = 1;
     const editable = () => doc.estado_preparacion === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene(doc.id ? "borradores.editar" : "borradores.crear");
 
+    const pasosEl = h("ol", { class: "stepper", "aria-label": "Pasos de la factura" }), cardDatos = h("div", { class: "card", "data-paso": "1" }), cardItems = h("div", { class: "card", "data-paso": "2" }), cardPrev = h("div", { class: "card", "data-paso": "3" });
     const cab = h("div", { class: "doc-cab" }), err = h("p", { class: "err", role: "alert" });
     const cuerpoReceptor = h("div", { class: "form" }), cuerpoLineas = h("div", { class: "lineas-d" }), totales = h("aside", { class: "totales" }), barra = h("div", { class: "barra-acciones" }), proceso = h("div", { class: "proceso" });
 
@@ -63,6 +64,18 @@ export function pantallaFactura(ctx, id) {
       poner(cab, h("div", {}, h("h1", { class: "mono" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nueva factura"), h("p", { class: "mut" }, "Número interno de borrador · no es un número fiscal")),
         h("div", { class: "celda-tags" }, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, insignia("SIMULADO", "ambar")));
     }
+    const irPaso = (n) => { paso = n; todo(); };
+    function pintarPasos() {
+      const nombres = ["Datos", "Ítems", "Vista previa"];
+      poner(pasosEl, ...(editable() ? nombres.map((t, i) => h("li", { class: `paso${paso === i + 1 ? " on" : ""}${paso > i + 1 ? " hecho" : ""}` }, h("div", { role: "link", tabindex: "0", class: "paso-i", "aria-current": paso === i + 1 ? "step" : null, "data-ir-paso": String(i + 1), onclick: () => irPaso(i + 1), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); irPaso(i + 1); } } }, h("span", { class: "paso-n" }, String(i + 1)), h("span", {}, t)))) : []));
+    }
+    function pintarPrevia() {
+      if (!editable() || paso !== 3) return poner(cardPrev);
+      poner(cardPrev, h("h2", { class: "card-t" }, "Vista previa"), h("p", { class: "aviso aviso-azul" }, icono("info"), h("span", {}, "Revisa la información antes de continuar. Es una vista previa NO certificada, sin valor fiscal.")), papel({ ctx, doc, f, calc: calcularSeguro(), det: d }));
+    }
+    function mostrar() {
+      const ed = editable(); cardDatos.hidden = ed && paso !== 1; cardItems.hidden = ed && paso !== 2; cardPrev.hidden = !(ed && paso === 3);
+    }
     function pintarReceptor() {
       const ed = editable();
       const selCli = h("select", { "aria-label": "Receptor", disabled: !ed || f.nuevo, onchange: (e) => { f.cliente_id = e.target.value; sucio = true; pintarBarra(); pintarTotales(); } },
@@ -89,22 +102,22 @@ export function pantallaFactura(ctx, id) {
         const dt = h("select", { "aria-label": `Tipo de descuento de la línea ${i + 1}`, disabled: !ed, onchange: (e) => { l.descuento_tipo = e.target.value; if (l.descuento_tipo === "ninguno") l.descuento_valor = "0"; sucio = true; pintarLineas(); pintarBarra(); } },
           ...[["ninguno", "Sin descuento"], ["monto", "En quetzales"], ["porcentaje", "En porcentaje"]].map(([v, t]) => h("option", { value: v, selected: l.descuento_tipo === v }, t)));
         return h("div", { class: "ln", "data-linea": String(i + 1) },
-          h("div", { class: "ln-c ln-desc", "data-et": "Descripción" }, txt("descripcion", "Descripción", { maxlength: 300, placeholder: "Producto o servicio" })),
+          h("div", { class: "ln-c ln-desc", "data-et": "Descripción" }, txt("descripcion", "Descripción", { maxlength: 300, placeholder: "Escribe una descripción o selecciona un concepto…", list: "conceptos-dl", onchange: (e) => { const c = est.conceptos?.find((x) => x.descripcion === e.target.value); if (c && !l.precio_unitario) { l.precio_unitario = c.precio_unitario; sucio = true; pintarLineas(); pintarBarra(); } } })),
           h("div", { class: "ln-c", "data-et": "Cantidad" }, txt("cantidad", "Cantidad", { inputmode: "decimal" })),
           h("div", { class: "ln-c", "data-et": "Precio (Q)" }, txt("precio_unitario", "Precio", { inputmode: "decimal", placeholder: "0.00" })),
           h("div", { class: "ln-c", "data-et": "Descuento" }, dt, l.descuento_tipo !== "ninguno" ? txt("descuento_valor", "Valor del descuento", { inputmode: "decimal" }) : null),
           h("div", { class: "ln-c ln-neto num", "data-et": "Neto" }, h("span", { class: "neto" }, calc.ok ? quetzales(calc.r.lineas[i]?.neto) : "—"),
             ed && f.lineas.length > 1 ? h("button", { type: "button", class: "icon-btn", title: "Quitar línea", "aria-label": `Quitar la línea ${i + 1}`, onclick: () => { f.lineas.splice(i, 1); sucio = true; pintarLineas(); pintarBarra(); } }, icono("trash")) : null));
       });
-      poner(cuerpoLineas, h("div", { class: "ln ln-cab", "aria-hidden": "true" }, ...["Descripción", "Cantidad", "Precio (Q)", "Descuento", "Neto"].map((t) => h("span", {}, t))), ...filas,
-        ed ? boton("Agregar línea", { tipo: "sec", icon: "plus", onclick: () => { f.lineas.push(linea()); sucio = true; pintarLineas(); pintarBarra(); } }) : null);
+      poner(cuerpoLineas, h("div", { class: "ln ln-cab", "aria-hidden": "true" }, ...["Descripción", "Cantidad", "Precio (Q)", "Descuento", "Neto"].map((t) => h("span", {}, t))), ...filas, h("datalist", { id: "conceptos-dl" }, ...(est.conceptos ?? []).map((c) => h("option", { value: c.descripcion }))),
+        ed ? boton("Agregar ítem", { tipo: "sec", icon: "plus", onclick: () => { f.lineas.push(linea()); sucio = true; pintarLineas(); pintarBarra(); } }) : null);
       pintarTotales();
     }
     function refrescar() { const c = calcularSeguro(); cuerpoLineas.querySelectorAll(".ln:not(.ln-cab) .neto").forEach((el, i) => { el.textContent = c.ok ? quetzales(c.r.lineas[i]?.neto) : "—"; }); pintarTotales(); pintarBarra(); }
     function pintarTotales() {
       const c = calcularSeguro(), ps = problemas();
       const fila = (et, v, extra) => h("div", { class: `tot${extra ? " " + extra : ""}` }, h("span", {}, et), h("strong", { class: "num" }, v));
-      poner(totales,
+      poner(totales, h("h2", { class: "card-t" }, "Resumen"),
         h("div", { class: "sello" }, icono("lock"), h("div", {}, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, "Vista previa no certificada: sin serie, número ni autorización oficiales."))),
         ...(c.ok ? [fila("Subtotal", quetzales(c.r.subtotal)), fila("Descuentos", quetzales(c.r.descuento_total)), fila("Base imponible", quetzales(c.r.base_imponible), "tot-base")] : [h("p", { class: "mut" }, "Completa cantidad y precio de cada línea para ver los importes.")]),
         h("div", { class: "pend" }, icono("info"), h("div", {}, h("strong", {}, "Impuestos y total: pendientes"), h("small", {}, "Se calcularán cuando exista un régimen fiscal verificado con un contador. Hoy no se aplica ninguna fórmula fiscal."))),
@@ -113,8 +126,11 @@ export function pantallaFactura(ctx, id) {
     function pintarBarra() {
       const ed = editable(), prep = doc.estado_preparacion, btns = [];
       btns.push(boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") }));
-      btns.push(boton("Vista previa", { tipo: "sec", icon: "eye", onclick: () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d }) }));
-      if (ed) btns.push(boton(doc.id ? "Guardar cambios" : "Guardar borrador", { icon: "check", id: "guardar", onclick: guardar }));
+      if (ed && paso > 1) btns.push(boton("Atrás", { tipo: "sec", icon: "undo", id: "paso-atras", onclick: () => irPaso(paso - 1) }));
+      if (!ed) btns.push(boton("Vista previa", { tipo: "sec", icon: "eye", onclick: () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d }) }));
+      else if (paso < 3) btns.push(boton("Vista previa", { tipo: "sec", icon: "eye", id: "ver-previa", onclick: () => irPaso(3) }));
+      if (ed) btns.push(boton(doc.id ? "Guardar cambios" : "Guardar borrador", { tipo: paso === 3 ? "sec" : "sec", icon: "check", id: "guardar", onclick: guardar }));
+      if (ed && paso < 3) btns.push(boton("Continuar", { icon: "check", id: "paso-siguiente", onclick: () => irPaso(paso + 1) }));
       if (doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar")) btns.push(boton("Validar con el proveedor", { tipo: "sec", icon: "shield", disabled: sucio, title: sucio ? "Guarda los cambios antes de validar" : null, onclick: validar }),
         boton("Marcar como revisado", { tipo: "sec", icon: "circleCheck", disabled: sucio, title: sucio ? "Guarda los cambios antes de revisar" : null, onclick: () => cambiar("revisado") }));
       if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) btns.push(boton("Volver a borrador", { tipo: "sec", icon: "undo", onclick: () => cambiar("borrador") }));
@@ -153,12 +169,28 @@ export function pantallaFactura(ctx, id) {
     }
     async function archivar() { const m = await pedirMotivo({ titulo: "Archivar factura", texto: "Archivar es una decisión interna: no es una anulación fiscal.", confirmar: "Archivar" }); if (m) cambiar("archivado", m); }
 
-    function todo() { pintarCab(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso(); }
+    function todo() {
+      pintarCab(); pintarPasos(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
+      poner(cardDatos, h("h2", { class: "card-t" }, "Datos de la factura y del comprador"), cuerpoReceptor);
+      poner(cardItems, h("div", { class: "card-fila" }, h("h2", { class: "card-t" }, "Ítems de la factura"), cuerpoCatalogo()), cuerpoLineas);
+      pintarPrevia(); mostrar();
+    }
+    function cuerpoCatalogo() {
+      if (!editable() || !est.conceptos?.length) return null;
+      const sel = h("select", { "aria-label": "Agregar un concepto del catálogo", class: "sel-concepto", onchange: (e) => {
+        const c = est.conceptos.find((x) => x.id === e.target.value); e.target.value = ""; if (!c) return;
+        const vacia = f.lineas.length === 1 && !f.lineas[0].descripcion.trim() && !f.lineas[0].precio_unitario;
+        const nueva = { ...linea(), descripcion: c.descripcion, precio_unitario: c.precio_unitario }; if (vacia) f.lineas[0] = nueva; else f.lineas.push(nueva);
+        sucio = true; pintarLineas(); pintarBarra(); pintarPrevia(); } },
+        h("option", { value: "" }, "Buscar concepto…"), ...est.conceptos.map((c) => h("option", { value: c.id }, `${c.tipo === "bien" ? "Bien" : "Servicio"} · ${c.descripcion}`)));
+      return sel;
+    }
     todo();
     return h("div", {}, cab,
       !editable() && doc.id ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, doc.estado_fiscal !== "ninguno" ? "Este documento tiene vida fiscal (simulada) y su contenido ya no se puede editar." : doc.estado_preparacion === "borrador" ? "Tu rol no permite editar este borrador." : "El contenido está congelado porque fue revisado. Vuelve a borrador para editarlo.")) : null,
+      pasosEl,
       h("div", { class: "doc-grid" },
-        h("div", { class: "doc-main" }, h("div", { class: "card" }, h("h2", { class: "card-t" }, "Receptor y establecimiento"), cuerpoReceptor), h("div", { class: "card" }, h("h2", { class: "card-t" }, "Productos o servicios"), cuerpoLineas), err, proceso),
+        h("div", { class: "doc-main" }, cardDatos, cardItems, cardPrev, err, proceso),
         totales), barra);
   }
 }

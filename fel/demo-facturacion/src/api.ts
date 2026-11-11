@@ -26,6 +26,8 @@ const STATUS: Record<string, number> = { FEL_NO_AUTORIZADO: 403, FEL_NO_ENCONTRA
   FEL_ESPERA_TARDIA: 409, FEL_AUDITORIA_PENDIENTE: 409, FEL_YA_ENVIADA: 409, FEL_REGLA: 422 };
 const uuidOk = (x: unknown): x is string => typeof x === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
 const texto = (x: unknown, min: number, max: number, campo: string): string => { if (typeof x !== "string" || x.trim().length < min || x.length > max) throw new ErrorHttp(400, `${campo}: texto de ${min} a ${max} caracteres`, "entrada_invalida"); return x.trim(); };
+// Datos de contacto FICTICIOS del emisor (la tabla de empresas aún no guarda dirección, teléfono ni correo): solo para dibujar documentos y pantallas de la demostración.
+export const EMPRESA_DEMO = { id: EMPRESA, nombre: "Empresa Demo, S.A. (FICTICIA)", nombre_comercial: "Empresa Demo", nit: "7770001-0", telefono: "2200-0000", correo: "facturacion@empresa-demo.example", direccion: "Dirección ficticia 1, Ciudad" };
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
@@ -89,10 +91,42 @@ export function crearApi(bd: BdDemo, mundo: Sembrado) {
     if (m === "GET" && ruta === "/api/estado") {
       const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: EMPRESA, p_user: a.id }) as string[];
       const establecimientos = await bd.filas("select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [EMPRESA]);
-      const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre from public.clientes where empresa_id = $1 and activo order by nombre", [EMPRESA]);
+      const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono from public.clientes where empresa_id = $1 and activo order by nombre", [EMPRESA]);
+      const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [EMPRESA]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
-      return json({ empresa: { id: EMPRESA, nombre: "Empresa Demo, S.A. (FICTICIA)", nit: "7770001-0" }, usuario: { clave: a.clave, ...USUARIOS[a.clave] }, usuarios: Object.entries(USUARIOS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
-        permisos, establecimientos, clientes, canal: mundo.canal, escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+      return json({ empresa: EMPRESA_DEMO, usuario: { clave: a.clave, ...USUARIOS[a.clave] }, usuarios: Object.entries(USUARIOS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
+        permisos, establecimientos, clientes, conceptos, canal: mundo.canal, escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+    }
+    if (m === "GET" && ruta === "/api/clientes") {
+      return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [EMPRESA]));
+    }
+    if (m === "POST" && ruta === "/api/clientes") {
+      const b = await cuerpo(); const tipo = String(b.tipo_identificacion ?? "NIT"); if (!["NIT", "CUI", "EXT", "CF"].includes(tipo)) throw new ErrorHttp(400, "Tipo de identificación no válido", "entrada_invalida");
+      const num = tipo === "CF" ? "CF" : texto(b.numero_identificacion, 1, 30, "Identificación");
+      const opc = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : null);
+      const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: EMPRESA, p_id: uuidOk(b.id) ? b.id : null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? "Consumidor final" : texto(b.nombre, 1, 200, "Nombre"), p_direccion: opc(b.direccion, 300), p_email: opc(b.email, 200), p_telefono: opc(b.telefono, 40), p_version: b.id ? Number(b.version) : null });
+      return json(r);
+    }
+    if (m === "GET" && ruta === "/api/conceptos") return json(await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario, activo, version from public.conceptos where empresa_id = $1 order by descripcion", [EMPRESA]));
+    if (m === "POST" && ruta === "/api/conceptos") {
+      const b = await cuerpo(); if (!["bien", "servicio"].includes(String(b.tipo))) throw new ErrorHttp(400, "Tipo de concepto no válido", "entrada_invalida");
+      if (typeof b.precio_unitario !== "string" || !RE_MONTO.test(b.precio_unitario)) throw new ErrorHttp(400, "Precio no válido (número con hasta 6 decimales)", "entrada_invalida");
+      const r = await bd.rpc("fel_op_concepto_guardar", { p_actor: a.id, p_empresa: EMPRESA, p_id: uuidOk(b.id) ? b.id : null, p_codigo: texto(b.codigo, 1, 40, "Código"), p_descripcion: texto(b.descripcion, 1, 300, "Descripción"), p_tipo: b.tipo, p_unidad_medida: "UND", p_precio_unitario: b.precio_unitario, p_categoria_fiscal: null, p_version: b.id ? Number(b.version) : null });
+      return json(r);
+    }
+    if (m === "GET" && ruta === "/api/configuracion") {
+      const [emp] = await bd.filas("select e.razon_social, e.nombre_comercial, e.nit, e.estado, e.moneda, e.emision_real_habilitada, r.nombre as regimen, r.estado as regimen_estado from public.empresas e left join public.regimenes_fiscales r on r.id = e.regimen_id where e.id = $1", [EMPRESA]);
+      const establecimientos = await bd.filas("select id, codigo_sat, nombre, direccion, estado, (select count(*)::int from public.documentos d where d.establecimiento_id = x.id and d.empresa_id = x.empresa_id) as documentos from public.establecimientos x where x.empresa_id = $1 order by codigo_sat", [EMPRESA]);
+      const proveedores = await bd.filas("select id, nombre, ambientes, habilitado, nota from public.proveedores_emision order by case id when 'mock' then 0 when 'portal_playwright' then 1 else 2 end");
+      const canales = await bd.filas("select proveedor_id, ambiente, habilitado, prioridad from public.empresa_canales where empresa_id = $1", [EMPRESA]);
+      const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
+      const [cont] = await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [EMPRESA]);
+      return json({ empresa: { ...emp, ...EMPRESA_DEMO }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
+    }
+    if (m === "POST" && ruta === "/api/establecimientos") {
+      const b = await cuerpo(); const estado = b.estado === "inactivo" ? "inactivo" : "activo";
+      const r = await bd.rpc("fel_op_establecimiento_guardar", { p_actor: a.id, p_empresa: EMPRESA, p_id: uuidOk(b.id) ? b.id : null, p_codigo: texto(b.codigo_sat, 1, 10, "Código SAT"), p_nombre: texto(b.nombre, 1, 120, "Nombre"), p_direccion: typeof b.direccion === "string" && b.direccion.trim() ? b.direccion.trim().slice(0, 300) : null, p_estado: estado });
+      return json(r);
     }
     if (m === "GET" && ruta === "/api/documentos") {
       return json(await bd.filas("select d.id, d.numero_borrador, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [EMPRESA]));

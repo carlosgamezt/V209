@@ -27,8 +27,16 @@ export async function sembrar(bd: BdDemo): Promise<Sembrado> {
     est.push({ id: r[0].id, codigo_sat: codigo, nombre });
   }
   const canal = (await bd.filas<{ id: string }>("select (public.fel_op_canal_configurar($1, $2, null, 'mock', 'simulado', true)).id as id", [USUARIOS.ana.id, EMPRESA]))[0].id;
-  for (const [tipo, num, nombre] of [["NIT", "1234567-8", "Comercial Los Pinos, S.A. (ficticia)"], ["NIT", "7654321-4", "Ferretería El Tornillo (ficticia)"], ["CF", "CF", "Consumidor final"]]) {
-    await bd.filas("select (public.fel_op_cliente_guardar($1, $2, null, $3, $4, $5, null, null, null, null)).id", [USUARIOS.marta.id, EMPRESA, tipo, num, nombre]);
+  for (const [tipo, num, nombre, dir, mail, tel] of [
+    ["NIT", "1234567-8", "Comercial Los Pinos, S.A. (ficticia)", "Dirección ficticia 10, Ciudad", "contacto@lospinos.example", "2200-1000"],
+    ["NIT", "7654321-4", "Ferretería El Tornillo (ficticia)", "Dirección ficticia 11, Ciudad", "ventas@eltornillo.example", "2200-2000"],
+    ["NIT", "3214567-9", "Constructora El Roble, S.A. (ficticia)", "Dirección ficticia 12, Ciudad", "info@elroble.example", "2200-3000"],
+    ["NIT", "6547891-2", "Multiservicios del Norte (ficticia)", "Dirección ficticia 13, Ciudad", "msn@multiservicios.example", "2200-4000"],
+    ["CF", "CF", "Consumidor final", null, null, null]]) {
+    await bd.filas("select (public.fel_op_cliente_guardar($1, $2, null, $3, $4, $5, $6, $7, $8, null)).id", [USUARIOS.marta.id, EMPRESA, tipo, num, nombre, dir, mail, tel]);
+  }
+  for (const [codigo, desc, tipo, precio] of [["SERV-001", "Supervisión de obra", "servicio", "500"], ["SERV-002", "Instalación de equipo", "servicio", "350"], ["SERV-003", "Asesoría técnica", "servicio", "250"], ["BIEN-001", "Material de construcción", "bien", "120"]]) {
+    await bd.filas("select (public.fel_op_concepto_guardar($1, $2, null, $3, $4, $5, 'UND', $6::numeric, null, null)).id", [USUARIOS.marta.id, EMPRESA, codigo, desc, tipo, precio]);
   }
   // demostración: sin esperas para poder recorrer todo el proceso en minutos (los valores por defecto del producto son 120 / 1440 / 10 minutos)
   await db.query("update public.plataforma_parametros set valor = 0 where clave in ('espera_conciliacion_manual_min', 'ventana_tardia_min', 'umbral_recuperacion_min')");

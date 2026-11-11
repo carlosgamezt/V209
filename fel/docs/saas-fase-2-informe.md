@@ -45,6 +45,9 @@ Rama `fel-proveedores-diseno`. **Todo en simulación local: sin credenciales, si
 - En una base compartida (la de CI con restos de la prueba de concurrencia) la recuperación barría operaciones pendientes de otras empresas y las pruebas contaban resultados ajenos; ahora `recuperar`/`auditarFallidas`/`completarArtefactos` admiten un ámbito `empresaId` (un trabajo por empresa) y hay una prueba de regresión. No se debilitó ninguna aserción.
 - Los tiempos de eventos y resoluciones usaban el reloj de la transacción; ahora usan reloj real para que el orden entre ellos sea verificable.
 
+## 3b. Interfaz según las referencias (paneles)
+Se aplicó la estructura de las referencias aprobadas: menú lateral, barra superior con empresa, campana y persona, **Nueva factura en 3 pasos** con resumen, **Clientes**, **Conceptos**, **Configuración FEL** con pestañas y **vista previa** con la estructura más completa (la de emisor con correo, observaciones y hora/referencia; texto corregido). Duplicado detectado: las dos «Vista previa». Cambios deliberados frente a la referencia: sin credenciales ni «Conectado a SAT» (D2), envío rotulado como simulado, selector de establecimiento obligatorio y solo base imponible (impuestos pendientes). Pendiente: importación masiva de clientes, edición de datos de la empresa y numeración configurable.
+
 ## 4. Seguridad de la demostración
 Solo escucha en `127.0.0.1` y rechaza otros `Host` (contra DNS rebinding); las operaciones de escritura exigen una cabecera propia de la demostración; CSP restrictiva; todo texto de usuario se inserta como texto (nunca HTML); los errores internos no se muestran; los archivos descargados llevan la marca de simulación y `nosniff`. No hay autenticación real: la «persona» se elige en pantalla **solo para demostrar permisos y la regla de dos personas**.
 
