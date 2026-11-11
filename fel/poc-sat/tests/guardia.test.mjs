@@ -223,7 +223,7 @@ test("mapeo preliminar de SAT: no es ejecutable (solo falla por verificado=false
   const mp = JSON.parse(fs.readFileSync(new URL("../config/mapeo.sat-preliminar.json", import.meta.url), "utf8")), v = validarMapeo(mp);
   assert.equal(v.ok, false); assert.ok(v.errores.every((e) => /verificado no es true/.test(e)), v.errores.join("\n"));
   assert.ok(!mp.pasos.some((p) => p.tipo === "clic_seguro"), "ningún clic en el mapeo preliminar");
-  assert.deepEqual(mp.dominios_permitidos, ["felav.c.sat.gob.gt"]); assert.deepEqual(mp.permitir_post, []);
+  assert.deepEqual(mp.dominios_permitidos, ["felav.c.sat.gob.gt", "farm3.sat.gob.gt"]); assert.ok(mp.pasos.filter((x) => x.localizador).every((x) => x.localizador.marco?.url_contiene === "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"), "todos los localizadores apuntan al iframe"); assert.deepEqual(mp.permitir_post, []);
   for (const p of mp.pasos.filter((x) => x.localizador)) assert.ok(p.verificado === false && p.dato);
   const cl = JSON.parse(fs.readFileSync(new URL("../analisis/obs1/clasificacion.json", import.meta.url), "utf8")), c2 = JSON.parse(fs.readFileSync(new URL("../analisis/obs2a/clasificacion.json", import.meta.url), "utf8")), conocidos = new Set([...cl.filas, ...c2.filas].map((f) => f.mejor_localizador));
   for (const p of mp.pasos.filter((x) => x.localizador && x.localizador.estrategia !== "rol")) { const l = p.localizador, k = `${l.estrategia}${l.tag ? `[${l.tag}]` : ""}: ${l.valor}`; assert.ok(conocidos.has(k), `el localizador «${k}» no sale de la observación 1`); }

@@ -133,6 +133,7 @@ export function validarMapeo(m, { local = false } = {}) {
       if (!l || !ESTRATEGIAS.includes(l.estrategia) || !String(l.valor ?? "").trim()) e(`${ctx}: localizador incompleto (estrategia: ${ESTRATEGIAS.join("|")} y valor)`);
       else if (l.estrategia === "rol" && !l.rol) e(`${ctx}: la estrategia «rol» necesita el campo rol`);
       if (l?.estrategia === "clase" && !/^[A-Za-z0-9_-]+$/.test(String(l.valor))) e(`${ctx}: la estrategia «clase» solo admite un nombre de clase (letras, números, - y _)`);
+      if (l?.marco != null && !(typeof l.marco.url_contiene === "string" && l.marco.url_contiene.length >= 8 && !/[\s;]/.test(l.marco.url_contiene))) e(`${ctx}: marco.url_contiene debe ser un texto de al menos 8 caracteres (host y ruta del marco, p. ej. «felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf»)`);
       if (l?.visible != null && typeof l.visible !== "boolean") e(`${ctx}: visible debe ser true o false`);
       if (l?.tag != null && !TAGS_LOCALIZADOR.includes(l.tag)) e(`${ctx}: tag no permitido «${l.tag}» (${TAGS_LOCALIZADOR.join("|")})`);
       if (!local && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);

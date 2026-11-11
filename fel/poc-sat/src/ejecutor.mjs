@@ -3,7 +3,7 @@
 // Sesión SAT: si el portal pide iniciar sesión, se PAUSA (sin tocar nada), la persona se autentica en el portal oficial, se VERIFICA la sesión,
 // se RECONCILIA lo ya llenado (solo lectura) y solo entonces se reanuda. No se hace ninguna acción para evitar la expiración por inactividad.
 import { validarMapeo, validarDatos, valorDe, clasificarControl, hostPermitido } from "./guardia.mjs";
-import { resolver, construir } from "./localizar.mjs";
+import { resolver, construir, ErrorDominio } from "./localizar.mjs";
 import { planificarReanudacion, esIdempotente } from "./progreso.mjs";
 import { claveIdempotencia } from "./libro.mjs";
 
@@ -36,7 +36,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
     const t = reloj();
     try { const detalle = (await fn()) ?? ""; const ms = reloj() - t; registro.paso({ id: p.id, tipo: p.tipo, modo, ms, resultado: "ok", detalle }); if (modo === "auto" && p.tipo !== "detener" && !String(p.id).startsWith("p-")) registro.fase("llenado", ms); }
     catch (e) {
-      const guardia = e instanceof ErrorGuardia; let res = guardia ? "bloqueado" : "error";
+      const guardia = e instanceof ErrorGuardia || e instanceof ErrorDominio; let res = guardia ? "bloqueado" : "error";
       if (!guardia && sesion) { const ev = await sesion.evaluar(page).catch(() => null); if (ev?.estado === "requiere_login") { res = "sesion"; e.sesionPerdida = ev.razones; } }
       registro.paso({ id: p.id, tipo: p.tipo, modo, ms: reloj() - t, resultado: res, detalle: res === "sesion" ? "la sesión SAT se cerró durante el paso" : String(e.message ?? e).slice(0, 200) });
       throw e;
@@ -47,7 +47,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
   // ---- lectura pasiva de un paso de llenado ya hecho (no escribe nada)
   const verificarPaso = async (p) => {
     try {
-      const loc = await resolver(page, p.localizador, { timeout: 1500 }), v = valorDe(datos, p.dato);
+      const loc = await resolver(page, p.localizador, { timeout: 1500, dominios }), v = valorDe(datos, p.dato);
       if (p.tipo === "llenar") return (await loc.inputValue()) === String(v) ? "ok" : "distinto";
       if (p.tipo === "seleccionar") return (await loc.evaluate((el) => el.options?.[el.selectedIndex]?.label ?? "")) === String(v) ? "ok" : "distinto";
       return (await loc.isChecked()) === (v === true || v === "true") ? "ok" : "distinto";
@@ -125,12 +125,12 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
   async function ejecutarUno(p) {
     comprobarHost();
     if (p.tipo === "verificar_ausente") {   // detección de errores de validación: no debe haber ningún elemento VISIBLE que coincida (p. ej. clase ng-invalid o un mensaje de error)
-      const l = construir(page, p.localizador), fin = reloj() + (p.espera_ms ?? 400); let n = 0;
+      const l = construir(page, p.localizador, dominios), fin = reloj() + (p.espera_ms ?? 400); let n = 0;
       for (;;) { n = await l.evaluateAll((els) => els.filter((el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)).length); if (n === 0 || reloj() >= fin) break; await new Promise((r) => setTimeout(r, 80)); }   // sin .catch: un fallo de lectura es un error, nunca un «sin errores»
       if (n > 0) throw new Error(`hay ${n} elemento(s) visible(s) de error de validación (${p.localizador.estrategia}: ${p.localizador.valor})`);
       return "sin errores de validación visibles";
     }
-    const loc = await resolver(page, p.localizador, { timeout });
+    const loc = await resolver(page, p.localizador, { timeout, dominios });
     switch (p.tipo) {
       case "esperar_visible": await loc.waitFor({ state: "visible", timeout }); return "";
       case "llenar": {

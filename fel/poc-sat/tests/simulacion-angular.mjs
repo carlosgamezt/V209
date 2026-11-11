@@ -19,13 +19,20 @@ const pre = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-prel
 const datosBase = () => { const d = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios-lineas.json"), "utf8")); d.documento = { tipo_dte: "Factura de prueba A", moneda: "GTQ-Quetzal" }; d.lineas[0].descuento = "10"; d.lineas[0].total_esperado = "241.00"; d.receptor.nombre_esperado = "CONSUMIDOR FINAL DE PRUEBA"; return d; };
 
 const posts = [];
+let PUERTO = 0;
+const envoltorio = (src) => `<!doctype html><meta charset="utf-8"><title>Menú simulado (NO es SAT)</title><p>Página de menú SIMULADA con el formulario en un iframe.</p><iframe src="${src}" style="width:1100px;height:900px"></iframe>`;
 const servidor = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url.startsWith("/menu/portada.jsf")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://felav.c.sat.gob.gt:${PUERTO}/fel-web/privado/vistas/fel.jsf`)); }
+  if (req.method === "GET" && req.url.startsWith("/menu/hostil")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://evil.example.test:${PUERTO}/felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf`)); }
   if (req.method === "POST") { posts.push(`${req.method} ${req.url}`); req.resume(); res.writeHead(200, { "content-type": "application/json" }); return res.end("{}"); }
   if (req.url === "/angular.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(fs.readFileSync(ANGULAR)); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(html);
 });
 await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
-const URL_BASE = `http://127.0.0.1:${servidor.address().port}/`, browser = await chromium.launch({ headless: true });
+PUERTO = servidor.address().port;
+const URL_BASE = `http://127.0.0.1:${PUERTO}/`, browser = await chromium.launch({ headless: true });
+// Navegador SOLO para las pruebas con los nombres reales de host: los resuelve a 127.0.0.1 y NO resuelve ningún otro nombre (jamás se contacta a SAT).
+const browserHosts = await chromium.launch({ headless: true, args: ["--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP evil.example.test 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
 
 let fallos = 0, n = 0;
 const caso = async (nombre, fn) => { n++; try { await fn(); console.log(`OK     ${nombre}`); } catch (e) { fallos++; console.log(`FALLO  ${nombre}\n       ${String(e.message ?? e).split("\n").slice(0, 5).join("\n       ")}`); } };
@@ -33,8 +40,9 @@ const L = (estrategia, valor, extra = {}) => ({ estrategia, valor, ...extra });
 const paso = (id, tipo, localizador, dato, extra = {}) => ({ id, tipo, localizador, dato, verificado: true, ...extra });
 
 /** Plan = pasos del mapeo preliminar (idénticos) + pasos que la simulación permite añadir (tipo de documento, moneda, blur, lectura, validación). */
-function planSimulado({ conBlur = true, extraFinal = [] } = {}) {
-  const m = structuredClone(pre); m.dominios_permitidos = ["127.0.0.1"]; delete m.sesion;
+function planSimulado({ conBlur = true, extraFinal = [], conMarco = false } = {}) {
+  const m = structuredClone(pre); delete m.sesion;
+  if (!conMarco) { m.dominios_permitidos = ["127.0.0.1"]; for (const p of m.pasos) if (p.localizador) delete p.localizador.marco; }
   const por = Object.fromEntries(m.pasos.filter((p) => p.localizador).map((p) => [p.id, { ...p, verificado: true }]));
   const pasos = [
     m.pasos[0],
@@ -48,6 +56,7 @@ function planSimulado({ conBlur = true, extraFinal = [] } = {}) {
     paso("s110-sin-errores", "verificar_ausente", L("clase", "ng-invalid", { visible: true })),
     ...extraFinal, { id: "p999-detener", tipo: "detener" },
   ];
+  if (conMarco) for (const p of pasos) if (p.localizador && !p.localizador.marco) p.localizador.marco = pre.pasos[1].localizador.marco;   // los pasos añadidos por la simulación usan el mismo marco real
   return { ...m, pasos };
 }
 const modelo = (page) => page.evaluate(() => { const s = angular.element(document.body).scope(); return { tipo: s.datosGenerales.tipoDte?.nombre, moneda: s.datosGenerales.moneda, id: s.datosGenerales.tipoIdentificacion, nit: s.datosGenerales.nitReceptor, nombre: s.resultadoNIT.nombre, dir: s.datosGenerales.direccionReceptor, lineas: JSON.parse(angular.toJson(s.detalleFactura)), vistaPrevia: s.vistaPrevia }; });
@@ -62,7 +71,8 @@ const hits = () => posts.length;
 
 await caso("MAPEO: el plan de la simulación contiene los pasos del mapeo preliminar SIN modificar sus localizadores", async () => {
   const plan = planSimulado(), ids = pre.pasos.filter((p) => p.localizador).map((p) => p.id);
-  for (const id of ids) assert.deepEqual(plan.pasos.find((p) => p.id === id).localizador, pre.pasos.find((p) => p.id === id).localizador, id);
+  const sinMarco = (l) => { const { marco, ...r } = l; return r; };
+  for (const id of ids) assert.deepEqual(sinMarco(plan.pasos.find((p) => p.id === id).localizador), sinMarco(pre.pasos.find((p) => p.id === id).localizador), id);
   assert.ok(validarMapeo(plan, { local: true }).ok, validarMapeo(plan, { local: true }).errores.join("\n")); assert.equal(plan.pasos.at(-1).tipo, "detener");
 });
 
@@ -143,6 +153,48 @@ await caso("PRIVACIDAD: el registro de la ejecución no contiene valores de camp
   for (const x of ["SERVICIO DE PRUEBA", "CIUDAD DE PRUEBA", "CONSUMIDOR FINAL", "125.50", "241.00"]) assert.ok(!txt.includes(x), `el registro no debe contener «${x}»`); await r.context.close();
 });
 
-await browser.close(); servidor.close();
+// ======================================================================= IFRAME con los nombres de host reales (resueltos a localhost, jamás a SAT)
+async function correrIframe(plan, { url = "menu/portada.jsf", datos = datosBase(), guardia = true, timeout = 2500 } = {}) {
+  const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} });
+  if (guardia) await bloquearEscrituras(context, {}, registro);
+  const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/${url}`); await page.frameLocator("iframe").locator("body").waitFor();
+  const r = await ejecutarPlan({ page, plan, datos, registro, empresa: { alias: "empresa-prueba" }, local: false, timeout, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+  return { ...r, page, context, registro, frame: page.frames().find((f) => f.url().includes("/fel-web/")) };
+}
+const modeloF = (f) => f.evaluate(() => { const s = angular.element(document.body).scope(); return { tipo: s.datosGenerales.tipoDte?.nombre, moneda: s.datosGenerales.moneda, id: s.datosGenerales.tipoIdentificacion, nit: s.datosGenerales.nitReceptor, nombre: s.resultadoNIT.nombre, lineas: JSON.parse(angular.toJson(s.detalleFactura)), vistaPrevia: s.vistaPrevia }; });
+
+await caso("IFRAME: el mapeo REAL (hosts y marco de SAT, sin tocar) ejecuta el flujo dentro del iframe; la validación es la de producción (no local)", async () => {
+  posts.length = 0; const plan = planSimulado({ conMarco: true });
+  assert.deepEqual(plan.dominios_permitidos, ["felav.c.sat.gob.gt", "farm3.sat.gob.gt"]); assert.ok(validarMapeo(plan).ok, validarMapeo(plan).errores.join("\n"));
+  const r = await correrIframe(plan);
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); assert.ok(r.frame, "el formulario está en un marco distinto del de la página");
+  const m = await modeloF(r.frame); assert.deepEqual([m.tipo, m.moneda, m.id, m.nit, m.nombre, m.lineas[0].Cantidad, m.lineas[0].Total], ["Factura de prueba A", "GTQ-Quetzal", "NIT", "CF", "CONSUMIDOR FINAL DE PRUEBA", "2", "241.00"]);
+  assert.deepEqual(posts, []); await r.context.close();
+});
+await caso("IFRAME HOSTIL: un marco de otro host cuya URL contiene el texto esperado NO se acepta (el host del marco debe estar en dominios_permitidos)", async () => {
+  posts.length = 0; const r = await correrIframe(planSimulado({ conMarco: true }), { url: "menu/hostil" });
+  assert.equal(r.ok, false); assert.ok(r.resumen.bloqueos_de_guardia.some((b) => /no está en dominios_permitidos/.test(b.detalle)), JSON.stringify(r.resumen.bloqueos_de_guardia));
+  assert.equal(await r.frame?.locator('input[name="Cantidad0"]').inputValue().catch(() => ""), "", "no se escribió nada en el marco hostil"); assert.deepEqual(posts, []); await r.context.close();
+});
+await caso("IFRAME AUSENTE: si no existe el marco indicado, se detiene sin tocar la página del menú", async () => {
+  const plan = planSimulado({ conMarco: true }); for (const p of plan.pasos) if (p.localizador) p.localizador.marco = { url_contiene: "felav.c.sat.gob.gt/no-existe/xx" };
+  const r = await correrIframe(plan); assert.equal(r.ok, false); assert.match(r.resumen.errores[0].detalle, /no se encontró el marco/); await r.context.close();
+});
+await caso("IFRAME + RED: un clic desde dentro del iframe sobre Vista Previa/Guardar no envía nada (la guardia de red es del contexto); sin guardia sí envía", async () => {
+  posts.length = 0; const ctx = await browserHosts.newContext(), reg = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(ctx, {}, reg);
+  const pg = await ctx.newPage(); await pg.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await pg.frameLocator("iframe").locator("#vp").waitFor();
+  const f = pg.frames().find((x) => x.url().includes("/fel-web/")); await f.evaluate(() => { document.getElementById("vp").click(); document.getElementById("gb").click(); }); await pg.waitForTimeout(400);
+  assert.deepEqual(posts, []); assert.equal((await modeloF(f)).vistaPrevia, false); assert.ok(reg.eventos().filter((e) => e.evento === "solicitud_bloqueada").length >= 2); await ctx.close();
+  const libre = await browserHosts.newContext(), pl = await libre.newPage(); await pl.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await pl.frameLocator("iframe").locator("#vp").waitFor();
+  await pl.frames().find((x) => x.url().includes("/fel-web/")).evaluate(() => document.getElementById("vp").click()); await pl.waitForTimeout(400); assert.deepEqual(posts, ["POST /api/vista-previa"], "control negativo"); await libre.close(); posts.length = 0;
+});
+await caso("IFRAME + BLOQUEO: los clics a Vista Previa / Guardar / Eliminar dentro del iframe se rechazan aunque el plan apruebe ambigüedades", async () => {
+  posts.length = 0;
+  for (const id of ["vp", "gb", "el0"]) { const plan = planSimulado({ conMarco: true }); plan.pasos.splice(-1, 0, { id: "x-" + id, tipo: "clic_seguro", motivo: "abrir sección", localizador: { ...L("id", id), marco: pre.pasos[1].localizador.marco }, ambiguo_aprobado: true, permitir_envia_formulario: true, verificado: true });
+    const r = await correrIframe(plan); assert.equal(r.resumen.bloqueos_de_guardia.length, 1, id); assert.equal((await modeloF(r.frame)).vistaPrevia, false); await r.context.close(); }
+  assert.deepEqual(posts, []);
+});
+
+await browser.close(); await browserHosts.close(); servidor.close();
 console.log(`\n${n - fallos}/${n} casos OK${posts.length ? ` — POST residuales: ${posts.join(", ")}` : ""}`);
 process.exit(fallos ? 1 : 0);

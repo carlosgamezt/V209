@@ -28,13 +28,13 @@ export function evaluarSenales(obs, cfg = {}) {
 }
 
 /** Observación pasiva de la página: solo lecturas. Devuelve señales, no contenido. */
-export async function observarSenales(page, cfg, contadores) {
+export async function observarSenales(page, cfg, contadores, dominios = null) {
   let host = "", ruta = "";
   try { const u = new URL(page.url()); host = u.hostname; ruta = sanearRuta(u.pathname); } catch { /* about:blank, etc. */ }
   const visible = async (loc) => { try { return (await loc.count()) > 0 && (await loc.first().isVisible()); } catch { return false; } };
   let claveVisible = false;
   if (cfg.campo_clave_visible !== false) for (const f of page.frames()) { try { if ((await f.locator('input[type="password"]:visible').count()) > 0) { claveVisible = true; break; } } catch { /* marco inaccesible */ } }
-  const medir = async (lista, pfx) => { const r = []; for (const [i, ind] of (lista ?? []).entries()) r.push({ id: `${pfx}${i}`, presente: await visible(construir(page, ind.localizador)) }); return r; };
+  const medir = async (lista, pfx) => { const r = []; for (const [i, ind] of (lista ?? []).entries()) r.push({ id: `${pfx}${i}`, presente: await (async () => { try { return await visible(construir(page, ind.localizador, dominios)); } catch { return false; } })() }); return r; };
   return { host, ruta, claveVisible, activos: await medir(cfg.indicadores_sesion_activa, "a"), login: await medir(cfg.indicadores_login, "l"), respuestas401: contadores.n401 };
 }
 
@@ -50,7 +50,7 @@ export function crearMonitorSesion({ config = {}, dominios = [], reloj = () => D
     adjuntar(page) { page.on("response", (r) => { try { if (r.status() === 401 && hostPermitido(new URL(r.url()).hostname, dominios)) contadores.n401++; } catch { /* ignora */ } }); },
     reiniciarContadores() { contadores.n401 = 0; },
     /** Lectura pasiva → {estado, razones}. */
-    async evaluar(page) { return evaluarSenales(await observarSenales(page, config, contadores), config); },
+    async evaluar(page) { return evaluarSenales(await observarSenales(page, config, contadores, dominios), config); },
     /**
      * ¿Está activa la sesión? Con indicadores confirmados: automático. Sin indicadores: exige que NO haya señales de login y que una persona lo confirme.
      * Devuelve {activa, via, razones}.

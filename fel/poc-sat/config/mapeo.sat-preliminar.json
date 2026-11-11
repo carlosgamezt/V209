@@ -2,7 +2,8 @@
   "version": 1,
   "estado": "PRELIMINAR v2 (observaciones 1 y 2a, ambas del portal real). NO es ejecutable: verificado=false en todos los pasos hasta una prueba en seco aprobada. «confirmado_en_observacion» significa: existe, es único (comprobación CSS real) y su identificador parece estable.",
   "dominios_permitidos": [
-    "felav.c.sat.gob.gt"
+    "felav.c.sat.gob.gt",
+    "farm3.sat.gob.gt"
   ],
   "permitir_post": [],
   "sesion": {
@@ -12,7 +13,10 @@
         "localizador": {
           "estrategia": "rol",
           "rol": "tab",
-          "valor": "Datos Generales"
+          "valor": "Datos Generales",
+          "marco": {
+            "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+          }
         },
         "verificado": false
       }
@@ -35,7 +39,10 @@
       "localizador": {
         "estrategia": "etiqueta",
         "valor": "NIT",
-        "exacto": true
+        "exacto": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "receptor.identificar_con_nit",
       "verificado": false
@@ -49,7 +56,10 @@
         "estrategia": "ng_model",
         "valor": "datosGenerales.nitReceptor",
         "tag": "input",
-        "visible": true
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "receptor.nit",
       "verificado": false
@@ -63,7 +73,10 @@
         "estrategia": "ng_model",
         "valor": "datosGenerales.direccionReceptor",
         "tag": "input",
-        "visible": true
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "receptor.direccion",
       "verificado": false
@@ -76,7 +89,10 @@
       "localizador": {
         "estrategia": "nombre",
         "valor": "BienOServicio0",
-        "tag": "select"
+        "tag": "select",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "lineas.0.tipo",
       "verificado": false
@@ -89,7 +105,10 @@
       "localizador": {
         "estrategia": "nombre",
         "valor": "Cantidad0",
-        "tag": "input"
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "lineas.0.cantidad",
       "verificado": false
@@ -102,7 +121,10 @@
       "localizador": {
         "estrategia": "nombre",
         "valor": "Descripcion0",
-        "tag": "input"
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "lineas.0.descripcion",
       "verificado": false
@@ -115,7 +137,10 @@
       "localizador": {
         "estrategia": "nombre",
         "valor": "PrecioUnitario0",
-        "tag": "input"
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "lineas.0.precio",
       "verificado": false
@@ -128,7 +153,10 @@
       "localizador": {
         "estrategia": "nombre",
         "valor": "Descuento0",
-        "tag": "input"
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "dato": "lineas.0.descuento",
       "verificado": false
@@ -144,7 +172,10 @@
       "localizador": {
         "estrategia": "nombre",
         "valor": "Total0",
-        "tag": "input"
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "nota": "Deshabilitado, calculado por la página (ng-model det.Total, repetido por línea). Solo se lee.",
       "evidencia": "obs2a: CSS input[name=Total0] total=1, visibles=1"
@@ -155,7 +186,10 @@
         "estrategia": "ng_model",
         "valor": "resultadoNIT.nombre",
         "tag": "input",
-        "visible": true
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
       },
       "nota": "Nombre devuelto por la consulta de NIT. El mismo modelo está en 3 controles (1 deshabilitado c23 y 2 ocultos con name=nombre): hay que usar :visible y comprobar cuál se muestra según el tipo de identificación.",
       "evidencia": "obs2a: ng-model compartido por c23, c26, c29"
@@ -411,5 +445,6 @@
     "necesario_ahora": false,
     "razon": "Para una factura de UNA línea el mapeo ya está completo (NIT, dirección y línea 0 con CSS comprobados). La repetición es un ng-repeat «det in detalleFactura»; el patrón de varias líneas puede acotarse por fila o por el name con índice y se verificará con un conteo antes y después en la prueba controlada.",
     "cuando_si": "solo antes de implementar varias líneas"
-  }
+  },
+  "nota_marco": "El formulario real vive en un IFRAME (felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf) dentro de la página del menú (farm3.sat.gob.gt, dato dado por la persona; confirmar). Todos los localizadores llevan marco.url_contiene y el motor exige que el host del marco esté en dominios_permitidos."
 }

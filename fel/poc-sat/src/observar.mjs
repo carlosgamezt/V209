@@ -187,7 +187,7 @@ function extraV3Fuente() {
   let f = recogerExtra.toString();
   const reemplazar = (a, b) => { if (f.split(a).length !== 2) throw new Error(`no se pudo derivar la versión 3: ${a.slice(0, 40)}`); f = f.replace(a, b); };
   reemplazar("function recogerExtra({ css })", "function recogerExtra({ css, permitidas })");
-  reemplazar('?? "", 80);', '?? "", n === "ng-model" ? 200 : 80);');
+  reemplazar('const attr = (el, n) => txt(el.getAttribute(n) ?? el.getAttribute("data-" + n) ?? "", 80);', 'const attr = (el, n) => { const v = String(el.getAttribute(n) ?? el.getAttribute("data-" + n) ?? ""); return txt(n === "ng-model" ? v.slice(0, 200) : v.replace(/([\'"])[^\'"]{6,}\\1/g, "$1…$1"), n === "ng-model" ? 200 : 80); };   // los literales de texto de 6+ caracteres dentro de expresiones ng-* (posibles nombres o mensajes) salen como …');
   reemplazar('if (el.tagName === "SELECT" && el.options.length <= 30) o.opciones = [...el.options].map((x) => txt(x.textContent, 40));', 'if (el.tagName === "SELECT") { o.opciones_n = el.options.length; if ((permitidas || []).includes(o.ng.model)) o.opciones = [...el.options].slice(0, 30).map((x) => txt(x.textContent, 40)); }');
   return f;
 }
@@ -200,6 +200,7 @@ export function fuenteConsola({ extendido = false, css = [], version = 2, permit
 // No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Describe controles, lee atributos ng-* (nombres de
 // variables/acciones del código de la página) y cuenta cuántos elementos coinciden con una lista CERRADA de selectores CSS (CSS_A_COMPROBAR).
 // NO captura el texto de las opciones de las listas, salvo las de la lista OPCIONES_PERMITIDAS (por defecto vacía): esas opciones pueden contener datos personales.
+// Los literales de texto de 6 o más caracteres dentro de expresiones ng-* se sustituyen por … (podrían ser nombres o mensajes).
 // Lo único que "escribe" es el portapapeles de tu equipo (copy). Textos con números largos o correos salen como [REDACTADO].
 (() => {
   const CSS_A_COMPROBAR = ${JSON.stringify(css, null, 2)};

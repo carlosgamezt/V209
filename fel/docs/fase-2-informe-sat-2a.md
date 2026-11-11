@@ -8,7 +8,7 @@ El archivo `sat-2a.json` contiene **una opción de la lista del establecimiento 
 - **En el repositorio no se guardó** ese texto (búsqueda del nombre en todo el repo: 0 coincidencias); la clasificación guarda solo `opciones_n`, nunca el texto, y hay una prueba que lo exige.
 - El archivo ya está en el almacén de adjuntos de esta conversación; no puedo borrarlo desde aquí. Si te importa, bórralo de tu lado y **no reenvíes ese archivo**.
 - **Causa y corrección:** el fragmento 2 capturaba el texto de las opciones de las listas pequeñas. Se creó el **fragmento 3** (`consola/observar-consola-3.js`): **no captura el texto de ninguna opción** salvo las de una lista expresamente permitida (vacía por defecto) y no recorta el `ng-model`. **No vuelvas a usar el fragmento 2.**
-- Para la observación sat-2d usa solo el fragmento 3 (SHA-256 `723934b081e3c16d5f6d80c303a1213303162650fd5b0c06977c913f240032e2`).
+- Para la observación sat-2d usa solo el fragmento 3 (SHA-256 `b227b949ceeabb44cf088c6ee153e1b092d12ab34654377b64a74699bfd96408`).
 
 ## 1. Resultado frente a la observación 1
 | Medida | Resultado |

@@ -371,6 +371,7 @@ await caso("TERCERA observación (fragmento 3): sin texto de opciones salvo list
   assert.equal(disco3, f3, "consola/observar-consola-3.js desactualizado: ejecuta node bin/generar-consola.mjs");
   const h = (x) => createHash("sha256").update(x).digest("hex"), doc = fs.readFileSync(path.join(AQUI, "../../docs/fase-2-informe-sat-2a.md"), "utf8");
   assert.ok(doc.includes(h(disco3)), `el informe debe citar la huella del fragmento 3: ${h(disco3)}`);
+  assert.ok(fs.readFileSync(path.join(AQUI, "../../docs/fase-2-sat-2d-preparacion.md"), "utf8").includes(h(disco3)), "la guía de sat-2d debe citar la huella vigente del fragmento 3");
   assert.equal(h(fs.readFileSync(path.join(AQUI, "../consola/observar-consola-2.js"), "utf8")), "3f953dc0597b08da9b47a829483f204251b5f912da5e78c256b1cd29195c998e", "el fragmento 2 revisado no debe cambiar");
   assert.equal(h(fs.readFileSync(path.join(AQUI, "../consola/observar-consola.js"), "utf8")), "368a6a5dc32760fe1b85be87cdcc9c051c7c28966f4c32e3c61971eacea483a1", "el fragmento 1 revisado no debe cambiar");
   assert.equal(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|\.click\s*\(|\.submit\s*\(|\.value\s*=|setAttribute|dispatchEvent|\.focus\s*\(|localStorage|sessionStorage|document\.cookie|WebSocket|eval\s*\(|new Function|createElement|innerHTML\s*=/.test(f3), false);
@@ -380,6 +381,7 @@ await caso("TERCERA observación (fragmento 3): sin texto de opciones salvo list
   const raw = JSON.parse(json), ex = raw.frames[0].r.extra.extras, ctl = raw.frames[0].r.controles;
   assert.equal(raw.version, 3); assert.ok(ex.every((e) => !("opciones" in e)), "ningún texto de opciones"); assert.equal(ex[ctl.findIndex((c) => c.nombre === "BienOServicio0")].opciones_n, 3, "solo el conteo");
   assert.ok(!json.includes("Servicio\"") || !json.includes("\"Bien\""), "no aparece el texto de las opciones");
+  assert.ok(!json.includes("RECEPTOR DE PRUEBA LARGO"), "los literales de texto largos de ng-* se sustituyen por …"); assert.ok(json.includes("…") && json.includes("'FACT'"), "los códigos cortos se conservan");
   const largo = ex.find((e) => e.ng.model.startsWith("complementoNotasDC.")).ng.model; assert.ok(largo.length > 80 && largo.endsWith("DeDoscientosCaracteres"), "ng-model completo");
   const f3p = fuenteConsola({ extendido: true, css: [], version: 3, permitidas: ["item.tipo"] }); json = null; await page.evaluate(f3p);
   const ex2 = JSON.parse(json).frames[0].r.extra.extras; assert.deepEqual(ex2.find((e) => e.ng.model === "item.tipo").opciones, ["Seleccione", "Bien", "Servicio"], "con lista permitida sí");

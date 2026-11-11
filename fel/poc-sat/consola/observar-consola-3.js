@@ -2,6 +2,7 @@
 // No hace peticiones, no escribe en la página, no hace clic, no lee valores de campos, cookies ni tokens. Describe controles, lee atributos ng-* (nombres de
 // variables/acciones del código de la página) y cuenta cuántos elementos coinciden con una lista CERRADA de selectores CSS (CSS_A_COMPROBAR).
 // NO captura el texto de las opciones de las listas, salvo las de la lista OPCIONES_PERMITIDAS (por defecto vacía): esas opciones pueden contener datos personales.
+// Los literales de texto de 6 o más caracteres dentro de expresiones ng-* se sustituyen por … (podrían ser nombres o mensajes).
 // Lo único que "escribe" es el portapapeles de tu equipo (copy). Textos con números largos o correos salen como [REDACTADO].
 (() => {
   const CSS_A_COMPROBAR = [
@@ -112,7 +113,7 @@
   const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
   const SEL = "input,select,textarea,button,[role=button],[role=tab],[role=combobox],[role=checkbox],[role=radio],[role=switch],[role=textbox]";
   const els = [...document.querySelectorAll(SEL)].filter((el) => !(el.tagName === "INPUT" && (el.getAttribute("type") || "").toLowerCase() === "hidden"));
-  const attr = (el, n) => txt(el.getAttribute(n) ?? el.getAttribute("data-" + n) ?? "", n === "ng-model" ? 200 : 80);
+  const attr = (el, n) => { const v = String(el.getAttribute(n) ?? el.getAttribute("data-" + n) ?? ""); return txt(n === "ng-model" ? v.slice(0, 200) : v.replace(/(['"])[^'"]{6,}\1/g, "$1…$1"), n === "ng-model" ? 200 : 80); };   // los literales de texto de 6+ caracteres dentro de expresiones ng-* (posibles nombres o mensajes) salen como …
   const fieldsets = [...document.querySelectorAll("fieldset")];
   const extras = els.map((el) => {
     let ayuda = "", ayuda_nivel = 0, a = el.parentElement;
