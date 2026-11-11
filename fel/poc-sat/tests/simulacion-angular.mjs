@@ -16,14 +16,20 @@ const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const ANGULAR = (() => { try { return createRequire(import.meta.url).resolve("angular/angular.min.js"); } catch { const alt = process.env.ANGULAR_JS; if (alt && fs.existsSync(alt)) return alt; throw new Error("Falta AngularJS 1.5.8 para la simulación: ejecuta «npm install» en fel/poc-sat (o define ANGULAR_JS=ruta/angular.min.js)"); } })();
 const html = fs.readFileSync(path.join(AQUI, "fixture/sat-angular-simulado.html"));
 const pre = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/mapeo.sat-preliminar.json"), "utf8"));
-const datosBase = () => { const d = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios-lineas.json"), "utf8")); d.documento = { tipo_dte: "Factura de prueba A", moneda: "GTQ-Quetzal" }; d.lineas[0].descuento = "10"; d.lineas[0].total_esperado = "241.00"; d.receptor.nombre_esperado = "CONSUMIDOR FINAL DE PRUEBA"; return d; };
+const datosBase = () => { const d = JSON.parse(fs.readFileSync(path.join(AQUI, "../config/datos-ficticios-lineas.json"), "utf8")); d.documento = { tipo_dte: "Factura de prueba A", moneda: "GTQ-Quetzal" }; d.lineas[0].descuento = "10"; d.lineas[0].total_esperado = "241.00"; d.receptor.nombre_esperado = "CONSUMIDOR FINAL DE PRUEBA"; d.receptor.respuesta_consulta_cf = "CONSUMIDOR FINAL DE PRUEBA"; return d; };
 
-const posts = [];
+const posts = [], lecturas = [];   // lecturas: OPTIONS y GET que llegan al servidor de consulta simulado
 let PUERTO = 0;
-const envoltorio = (src) => `<!doctype html><meta charset="utf-8"><title>Menú simulado (NO es SAT)</title><p>Página de menú SIMULADA con el formulario en un iframe.</p><iframe src="${src}" style="width:1100px;height:900px"></iframe>`;
+const envoltorio = (src, red) => `${envoltorioBase(src + (red ? "?red=1" : ""))}`;
+const envoltorioBase = (src) => `<!doctype html><meta charset="utf-8"><title>Menú simulado (NO es SAT)</title><p>Página de menú SIMULADA con el formulario en un iframe.</p><iframe src="${src}" style="width:1100px;height:900px"></iframe>`;
 const servidor = http.createServer((req, res) => {
-  if (req.method === "GET" && req.url.startsWith("/menu/portada.jsf")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://felav.c.sat.gob.gt:${PUERTO}/fel-web/privado/vistas/fel.jsf`)); }
+  if (req.method === "GET" && req.url.startsWith("/menu/portada.jsf")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://felav.c.sat.gob.gt:${PUERTO}/fel-web/privado/vistas/fel.jsf`, req.url.includes("red=1"))); }
   if (req.method === "GET" && req.url.startsWith("/menu/hostil")) { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); return res.end(envoltorio(`http://evil.example.test:${PUERTO}/felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf`)); }
+  if (req.url.startsWith("/consulta/")) {
+    lecturas.push(`${req.method} ${req.url.split("?")[0]}`); const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "x-prueba", "access-control-allow-methods": "GET" };
+    if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
+    res.writeHead(200, { "content-type": "application/json", ...cors }); return res.end(JSON.stringify({ nombre: "CONSUMIDOR FINAL DE PRUEBA" }));
+  }
   if (req.method === "POST") { posts.push(`${req.method} ${req.url}`); req.resume(); res.writeHead(200, { "content-type": "application/json" }); return res.end("{}"); }
   if (req.url === "/angular.js") { res.writeHead(200, { "content-type": "text/javascript" }); return res.end(fs.readFileSync(ANGULAR)); }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(html);
@@ -32,7 +38,7 @@ await new Promise((ok) => servidor.listen(0, "127.0.0.1", ok));
 PUERTO = servidor.address().port;
 const URL_BASE = `http://127.0.0.1:${PUERTO}/`, browser = await chromium.launch({ headless: true });
 // Navegador SOLO para las pruebas con los nombres reales de host: los resuelve a 127.0.0.1 y NO resuelve ningún otro nombre (jamás se contacta a SAT).
-const browserHosts = await chromium.launch({ headless: true, args: ["--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP evil.example.test 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
+const browserHosts = await chromium.launch({ headless: true, args: ["--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP evil.example.test 127.0.0.1, MAP consulta.example.test 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
 
 let fallos = 0, n = 0;
 const caso = async (nombre, fn) => { n++; try { await fn(); console.log(`OK     ${nombre}`); } catch (e) { fallos++; console.log(`FALLO  ${nombre}\n       ${String(e.message ?? e).split("\n").slice(0, 5).join("\n       ")}`); } };
@@ -49,8 +55,7 @@ function planSimulado({ conBlur = true, extraFinal = [], conMarco = false } = {}
     paso("s010-tipo-documento", "seleccionar", L("ng_model", "datosGenerales.tipoDte", { tag: "select" }), "documento.tipo_dte"),
     paso("s020-moneda", "seleccionar", L("ng_model", "datosGenerales.moneda", { tag: "select" }), "documento.moneda"),
     por["p010-receptor-radio-nit"], por["p020-receptor-nit"],
-    ...(conBlur ? [paso("s030-salir-nit", "salir_del_campo", L("ng_model", "datosGenerales.nitReceptor", { tag: "input", visible: true })),
-                   paso("s040-leer-nombre", "leer", L("ng_model", "resultadoNIT.nombre", { tag: "input", visible: true }), "receptor.nombre_esperado")] : []),
+    ...(conBlur ? [por["p025-receptor-salir-nit"], por["p026-receptor-leer-respuesta"]] : []),
     por["p030-receptor-direccion"], por["p100-linea0-tipo"], por["p110-linea0-cantidad"], por["p120-linea0-descripcion"], por["p130-linea0-precio"], por["p140-linea0-descuento"],
     paso("s100-leer-total", "leer", L("nombre", "Total0", { tag: "input" }), "lineas.0.total_esperado", { espera_ms: 2000 }),
     paso("s110-sin-errores", "verificar_ausente", L("clase", "ng-invalid", { visible: true })),
@@ -193,6 +198,39 @@ await caso("IFRAME + BLOQUEO: los clics a Vista Previa / Guardar / Eliminar dent
   for (const id of ["vp", "gb", "el0"]) { const plan = planSimulado({ conMarco: true }); plan.pasos.splice(-1, 0, { id: "x-" + id, tipo: "clic_seguro", motivo: "abrir sección", localizador: { ...L("id", id), marco: pre.pasos[1].localizador.marco }, ambiguo_aprobado: true, permitir_envia_formulario: true, verificado: true });
     const r = await correrIframe(plan); assert.equal(r.resumen.bloqueos_de_guardia.length, 1, id); assert.equal((await modeloF(r.frame)).vistaPrevia, false); await r.context.close(); }
   assert.deepEqual(posts, []);
+});
+
+await caso("CONSULTA GET + PREFLIGHT: con la guardia activa el GET entre orígenes (con OPTIONS previo) pasa, el nombre aparece y la lectura solo registra método+host+ruta", async () => {
+  posts.length = 0; lecturas.length = 0;
+  const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} }); await bloquearEscrituras(context, {}, registro);
+  const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf?red=1`); await page.frameLocator("iframe").locator("body").waitFor();
+  const r = await ejecutarPlan({ page, plan: planSimulado({ conMarco: true }), datos: datosBase(), registro, empresa: { alias: "empresa-prueba" }, local: false, timeout: 2500, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia));
+  assert.ok(lecturas.includes("GET /consulta/receptor/CF"), `el GET llegó al servidor: ${lecturas}`);
+  assert.ok(!lecturas.includes("OPTIONS /consulta/receptor/CF"), "HALLAZGO: con la interceptación activa Playwright responde el preflight por su cuenta; al servidor solo llega el GET");
+  assert.deepEqual(r.resumen.lecturas_xhr, ["GET consulta.example.test/consulta/receptor/CF"]); assert.deepEqual(r.resumen.solicitudes_bloqueadas, []); assert.deepEqual(posts, []);
+  const txt = JSON.stringify(registro.eventos()); assert.ok(!txt.includes("X-Prueba") && !txt.includes("CONSUMIDOR FINAL DE PRUEBA"), "no se registran cabeceras ni cuerpos"); await context.close();
+});
+await caso("GET SENSIBLES: una lectura dinámica con ruta de emisión/guardado se bloquea y se registra; una ruta con un NIT largo se registra enmascarada", async () => {
+  lecturas.length = 0; const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, {}, registro);
+  const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await page.frameLocator("iframe").locator("body").waitFor();
+  const f = page.frames().find((x) => x.url().includes("/fel-web/")), base = `http://consulta.example.test:${PUERTO}`;
+  const probar = (ruta) => f.evaluate(async (u) => { try { await fetch(u, { method: "GET" }); return "llegó"; } catch { return "bloqueado"; } }, base + ruta);
+  for (const ruta of ["/consulta/emitir/documento", "/consulta/guardar/borrador", "/consulta/certificar", "/consulta/anular/1", "/consulta/Firma/x"]) assert.equal(await probar(ruta), "bloqueado", ruta);
+  assert.equal(await probar("/consulta/receptor/1234567890"), "llegó");
+  assert.ok(lecturas.every((l) => !/emitir|guardar|certificar|anular|firma/i.test(l) || l.startsWith("OPTIONS")), `ningún GET sensible llegó al servidor: ${lecturas}`);
+  const res = registro.resumen({}); assert.deepEqual(res.lecturas_xhr, ["GET consulta.example.test/consulta/receptor/:id"], "el NIT largo sale enmascarado"); assert.ok(res.solicitudes_bloqueadas.length >= 5); await context.close();
+});
+await caso("SOLO COMPROBAR: resuelve y comprueba todos los localizadores del mapeo SIN escribir, elegir, marcar, salir de campos ni pulsar nada", async () => {
+  posts.length = 0; const { context, page, registro } = await (async () => { const c = await browser.newContext(), reg = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(c, {}, reg); const p = await c.newPage(); await p.goto(URL_BASE); return { context: c, page: p, registro: reg }; })();
+  const plan = planSimulado({ extraFinal: [{ id: "x-clic", tipo: "clic_seguro", motivo: "abrir sección", localizador: L("id", "agr"), ambiguo_aprobado: true, verificado: true }] });
+  const antes = await modelo(page), r = await ejecutarPlan({ page, plan, datos: datosBase(), registro, empresa: { alias: "empresa-prueba" }, local: true, soloComprobar: true, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); assert.deepEqual(await modelo(page), antes, "el modelo de AngularJS no cambió");
+  assert.equal(await page.locator('input[name="Cantidad0"]').inputValue(), ""); assert.equal(await page.locator('input[name^="Cantidad"]').count(), 1, "no se pulsó «Agregar item»");
+  const det = registro.eventos().filter((e) => e.evento === "paso").map((e) => e.detalle).join("|"); assert.match(det, /comprobado sin escribir/); assert.match(det, /NO se pulsa/); assert.deepEqual(posts, []);
+  const mal = planSimulado(); mal.pasos.find((p) => p.id === "p110-linea0-cantidad").localizador = L("nombre", "NoExiste9", { tag: "input" });   // y detecta localizadores rotos sin tocar nada
+  const r2 = await ejecutarPlan({ page, plan: mal, datos: datosBase(), registro: crearRegistro({ empresa: "x", salida: () => {} }), empresa: { alias: "e" }, local: true, soloComprobar: true, esperarUsuario: async () => "si", salida: () => {}, timeout: 600 });
+  assert.equal(r2.ok, false); assert.match(r2.resumen.errores[0].detalle, /ningún elemento/); await context.close();
 });
 
 await browser.close(); await browserHosts.close(); servidor.close();

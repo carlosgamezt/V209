@@ -14,7 +14,7 @@ export function estabilidad(c, todos = []) {
     if (mismos.length === 1) return "estable_ng_model";
     if (c.ng.repeat) return "estable_ng_model_en_fila (acotar por fila o usar name con índice)";
     if (c.type === "radio" && k.some((x) => x.estrategia === "etiqueta" && x.unico)) return "estable_etiqueta (ng-model compartido por el grupo)";
-    if (mismos.filter((x) => x.visible).length === 1) return "estable_ng_model_solo_visible (usar :visible)";
+    if (c.visible && mismos.filter((x) => x.visible).length === 1) return "estable_ng_model_solo_visible (usar :visible)";
     return "ng_model_repetido";
   }
   if (c.rol === "tab") return k.some((x) => x.estrategia === "rol" && x.unico) ? "estable_rol_texto" : "ambiguo";
@@ -62,9 +62,10 @@ export function analizar(inv, cfg) {
     else if (c.tag === "button" && c.marcador === "dd/mm/aaaa") accion = "BLOQUEADA (calendario: requiere diseño aparte)";
     else if (c.tag === "button" || (c.rol === "button")) accion = cl.nivel === "ambiguo" || !c.texto ? "BLOQUEADA (ambigua/sin texto: requiere aprobación humana)" : "revisar";
     else if (c.rol === "tab") accion = "clic_seguro (solo navegación, con verificación)";
+    else if ((cfg.solo_lectura_modelos ?? []).includes(c.ng?.model)) accion = "solo lectura (la PoC no escribe aquí)";
     else if (c.soloLectura || c.deshabilitado) accion = calculado ? "solo lectura (valor calculado)" : "solo lectura / deshabilitado";
     else accion = c.visible ? "llenar/seleccionar/marcar (tras confirmar localizador)" : "dinámico: aparece tras una acción manual";
-    const mejor = c.mejor ? `${c.mejor.estrategia}${c.mejor.tag ? `[${c.mejor.tag}]` : ""}: ${c.mejor.valor}` : "";
+    const mejor = c.mejor ? `${c.mejor.estrategia}${c.mejor.tag ? `[${c.mejor.tag}]` : ""}: ${c.mejor.valor}${c.mejor.visible ? " (:visible)" : ""}` : "";
     filas.push({ idx: i, n: c.n, seccion, subseccion: sub, visible: c.visible, tag: c.tag, tipo: c.type || c.rol, requerido: c.requerido, funcion, confianza_funcion: confianza, categoria, estabilidad: estabilidad(c, C), modelo: c.ng?.model ?? "", ng_click: c.ng?.click ?? "", ng_repeat: c.ng?.repeat ?? "", mejor_localizador: mejor, opciones_n: c.opciones_n ?? null, accion, nombre: c.nombre ?? "", clasificacion_guardia: cl.nivel });
   });
   // campos repetidos con sufijo numérico

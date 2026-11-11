@@ -137,7 +137,8 @@ export function construirInventario({ pagina, frames, origen = "playwright" }) {
       const mismo = (x, tag) => r.controles.filter((y) => y.nombre === x && (!tag || y.tag === tag)).length;
       let cand = c.candidatos.filter((k) => k.estrategia !== "nombre").map((k) => k);
       if (c.nombre && !c.nombre.includes("[REDACTADO]")) cand.push({ estrategia: "nombre", valor: c.nombre, tag: c.tag, unico: mismo(c.nombre, c.tag) === 1, estable: !/^\d+$/.test(c.nombre) });   // nombre solo numérico = id interno de Angular: inestable
-      if (ex.ng?.model) cand.push({ estrategia: "ng_model", valor: ex.ng.model, tag: c.tag, unico: r.extra.extras.filter((y, j) => y.ng.model === ex.ng.model && r.controles[j].tag === c.tag).length === 1, estable: true });
+      if (ex.ng?.model) { const mismos = r.extra.extras.map((y, j) => ({ y, j })).filter(({ y, j }) => y.ng.model === ex.ng.model && r.controles[j].tag === c.tag), nVis = mismos.filter(({ j }) => r.controles[j].visible).length;
+        cand.push({ estrategia: "ng_model", valor: ex.ng.model, tag: c.tag, unico: mismos.length === 1 || (c.visible && nVis === 1), ...(mismos.length > 1 && c.visible && nVis === 1 ? { visible: true } : {}), estable: true }); }
       cand = cand.map((k) => (f.principal ? k : { ...k, marco: { url_contiene: u.host + u.ruta } }));
       controles.push({ n: `c${String(++n).padStart(3, "0")}`, marco: f.indice, ...cta, candidatos: cand, mejor: cand.find((k) => k.unico && k.estable !== false) ?? null, clasificacion: cl.nivel, envia_formulario: cl.envia_formulario, razones: cl.razones });
     }

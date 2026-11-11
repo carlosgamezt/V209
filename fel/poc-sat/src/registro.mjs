@@ -19,6 +19,8 @@ export function crearRegistro({ dir = null, empresa = "sin-alias", reloj = () =>
     /** Cambio de estado de la sesión SAT: solo estado y códigos de razón (nunca URLs completas, cookies ni credenciales). */
     sesion({ estado, razones = [], via = "" }) { guardar({ evento: "sesion_sat", estado, razones, via }); },
     solicitudBloqueada({ metodo, host, ruta, razon }) { guardar({ evento: "solicitud_bloqueada", metodo, host, ruta: sanearRuta(ruta), razon }); },
+    /** Lectura dinámica permitida (fetch/XHR): solo método, host y ruta saneada; nunca parámetros, cabeceras ni cuerpos. */
+    lecturaXhr({ metodo, host, ruta }) { guardar({ evento: "lectura_xhr", metodo, host, ruta: sanearRuta(ruta) }); },
     navegacion({ host, ruta }) { guardar({ evento: "navegacion", host, ruta: sanearRuta(ruta) }); },
     nota(texto) { guardar({ evento: "nota", texto }); },
     resumen({ detenidoAntesDeEmitir, estadoFinal = null }) {
@@ -31,6 +33,7 @@ export function crearRegistro({ dir = null, empresa = "sin-alias", reloj = () =>
         fases, interrupciones_de_sesion: ev.filter((x) => x.evento === "sesion_sat" && x.estado === "requiere_login").length, estado_final: estadoFinal,
         errores: pasos.filter((x) => x.resultado === "error").map((x) => ({ id: x.id, tipo: x.tipo, detalle: x.detalle })),
         bloqueos_de_guardia: pasos.filter((x) => x.resultado === "bloqueado").map((x) => ({ id: x.id, detalle: x.detalle })),
+        lecturas_xhr: [...new Set(ev.filter((x) => x.evento === "lectura_xhr").map((x) => `${x.metodo} ${x.host}${x.ruta}`))].slice(0, 50),
         solicitudes_bloqueadas: ev.filter((x) => x.evento === "solicitud_bloqueada").map((x) => `${x.metodo} ${x.host}${x.ruta}`),
         duracion_total_ms: reloj() - t0, detenido_antes_de_emitir: !!detenidoAntesDeEmitir, emitio: false,
       };

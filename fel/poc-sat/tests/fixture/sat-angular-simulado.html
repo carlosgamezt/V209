@@ -49,7 +49,8 @@ angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) 
   $scope.datosGenerales = { fechaEmision: "01/01/2026", tipoDte: null, moneda: null, tipoIdentificacion: null, nitReceptor: "", direccionReceptor: "" };
   $scope.resultadoNIT = { nombre: "" }; $scope.detalleFactura = [nuevo()]; $scope.vistaPrevia = false; $scope.modalImpuestos = false;
   $scope.noop = () => {};
-  $scope.consultarNit = () => { const n = $scope.datosGenerales.nitReceptor; if (n) $timeout(() => { $scope.resultadoNIT.nombre = n === "CF" ? "CONSUMIDOR FINAL DE PRUEBA" : "RECEPTOR DE PRUEBA SIMULADO"; }, 120); };   // consulta SIMULADA local (sin red)
+  const conRed = /[?&]red=1/.test(location.search);   // variante con consulta GET entre orígenes (con preflight) hacia un host «de consulta» simulado
+  $scope.consultarNit = () => { const n = $scope.datosGenerales.nitReceptor; if (n && conRed) { $http.get("http://consulta.example.test:" + location.port + "/consulta/receptor/" + encodeURIComponent(n), { headers: { "X-Prueba": "1" } }).then((r) => { $scope.resultadoNIT.nombre = r.data.nombre; }); return; } if (n) $timeout(() => { $scope.resultadoNIT.nombre = n === "CF" ? "CONSUMIDOR FINAL DE PRUEBA" : "RECEPTOR DE PRUEBA SIMULADO"; }, 120); };   // consulta SIMULADA local (sin red)
   const num = (v) => (v === "" || v == null ? 0 : Number(v));
   $scope.calc = (d) => {
     d.errorCantidad = d.errorDescuento = "";

@@ -43,8 +43,8 @@ export async function conectar(empresa, { lanzar = {} } = {}) {
 /** Instala la política de red de solo lectura en TODO el contexto (incluye pestañas nuevas). */
 export async function bloquearEscrituras(context, politica, registro) {
   await context.route("**/*", async (route) => {
-    const r = route.request(), d = evaluarSolicitud({ metodo: r.method(), url: r.url() }, politica);
-    if (d.permitir) return route.continue();
+    const r = route.request(), tipo = r.resourceType(), d = evaluarSolicitud({ metodo: r.method(), url: r.url(), tipoRecurso: tipo }, politica);
+    if (d.permitir) { if (tipo === "fetch" || tipo === "xhr") { try { const u = new URL(r.url()); registro.lecturaXhr({ metodo: r.method(), host: u.hostname, ruta: u.pathname }); } catch { /* ignora */ } } return route.continue(); }
     let u; try { u = new URL(r.url()); } catch { u = { hostname: "?", pathname: "?" }; }
     registro.solicitudBloqueada({ metodo: r.method(), host: u.hostname, ruta: u.pathname, razon: d.razon });
     return route.abort("blockedbyclient");

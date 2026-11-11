@@ -17,7 +17,7 @@ const CAMPOS = new Set(["llenar", "seleccionar", "marcar"]);
  *   sesion (monitor de sesión SAT, opcional), progreso (checkpoint, opcional), libro + (claveDoc se calcula) (anti-duplicados, opcional),
  *   reanudar (continuar una ejecución interrumpida), hooks.antesDePaso (solo pruebas), salida
  */
-export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, hooks = {}, salida = (s) => console.log(s) }) {
+export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, soloComprobar = false, hooks = {}, salida = (s) => console.log(s) }) {
   const vm = validarMapeo(plan, { local }), vd = validarDatos(datos), errVal = [...vm.errores, ...vd.errores];
   const claveDoc = claveIdempotencia(empresa.alias, datos);
   if (!errVal.length && libro) { const pe = libro.puedeEjecutar(claveDoc); if (!pe.permitir) errVal.push(pe.razon); }
@@ -28,6 +28,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
   page.on("framenavigated", (f) => { if (f === page.mainFrame()) registro.navegacion({ host: hostDe(f.url()), ruta: rutaDe(f.url()) }); });
   page.on("dialog", (d) => { registro.nota(`diálogo ${d.type()} descartado`); d.dismiss().catch(() => {}); });   // descartar = cancelar: nunca se acepta nada
   sesion?.adjuntar(page);
+  if (soloComprobar) registro.nota("modo solo-comprobar: se resuelven y comprueban los localizadores; NO se escribe, ni se pulsa, ni se sale de ningún campo");
 
   let detenido = false, ok = true, estadoFinal = "interrumpido";
   const hechos = new Set();   // pasos ya aplicados (en una reanudación se cargan del progreso)
@@ -124,12 +125,14 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
 
   async function ejecutarUno(p) {
     comprobarHost();
+    if (soloComprobar && p.tipo === "verificar_ausente") return "omitido en modo comprobación (los campos vacíos aún no son válidos)";
     if (p.tipo === "verificar_ausente") {   // detección de errores de validación: no debe haber ningún elemento VISIBLE que coincida (p. ej. clase ng-invalid o un mensaje de error)
       const l = construir(page, p.localizador, dominios), fin = reloj() + (p.espera_ms ?? 400); let n = 0;
       for (;;) { n = await l.evaluateAll((els) => els.filter((el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)).length); if (n === 0 || reloj() >= fin) break; await new Promise((r) => setTimeout(r, 80)); }   // sin .catch: un fallo de lectura es un error, nunca un «sin errores»
       if (n > 0) throw new Error(`hay ${n} elemento(s) visible(s) de error de validación (${p.localizador.estrategia}: ${p.localizador.valor})`);
       return "sin errores de validación visibles";
     }
+    if (soloComprobar && p.aparece_tras && (await construir(page, p.localizador, dominios).count()) === 0) return `no comprobable en frío: el campo aparece tras «${p.aparece_tras}»`;
     const loc = await resolver(page, p.localizador, { timeout, dominios });
     switch (p.tipo) {
       case "esperar_visible": await loc.waitFor({ state: "visible", timeout }); return "";
@@ -138,6 +141,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
         const info = await loc.evaluate((el) => ({ type: (el.getAttribute("type") || "").toLowerCase(), ac: (el.getAttribute("autocomplete") || "").toLowerCase() }));
         if (info.type === "password" || /(current-password|new-password|one-time-code)/.test(info.ac)) throw new ErrorGuardia("campo de credenciales: nunca se automatiza (la persona se autentica en el portal oficial)");
         if (!(await loc.isVisible()) || !(await loc.isEnabled()) || !(await loc.isEditable())) throw new Error("el campo no está visible, habilitado y editable");
+        if (soloComprobar) return `comprobado sin escribir (${p.dato})`;
         await loc.fill(String(v));
         if (p.verificar !== false && (await loc.inputValue()) !== String(v)) throw new Error("el campo no conservó el valor escrito (el portal lo modificó o lo rechazó)");
         return `campo llenado (${p.dato})`;
@@ -145,11 +149,13 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
       case "seleccionar": {
         const v = valorDe(datos, p.dato); if (v == null) throw new Error(`el dato «${p.dato}» no existe`);
         if ((await loc.evaluate((el) => el.tagName)) !== "SELECT") throw new Error("no es un <select> nativo (los desplegables personalizados necesitan observación aparte)");
+        if (soloComprobar) { if (!(await loc.evaluate((el, l) => [...el.options].some((o) => o.label === l), String(v)))) throw new Error("la opción pedida no existe en la lista"); return `comprobado sin elegir (${p.dato})`; }
         await loc.selectOption({ label: String(v) }); return `opción elegida (${p.dato})`;
       }
-      case "salir_del_campo": await loc.blur(); return "se salió del campo (evento blur)";
-      case "marcar": { const v = valorDe(datos, p.dato); await loc.setChecked(v === true || v === "true"); return `casilla (${p.dato})`; }
+      case "salir_del_campo": if (soloComprobar) return "comprobado sin salir del campo"; await loc.blur(); return "se salió del campo (evento blur)";
+      case "marcar": { if (soloComprobar) return `comprobado sin marcar (${p.dato})`; const v = valorDe(datos, p.dato); await loc.setChecked(v === true || v === "true"); return `casilla (${p.dato})`; }
       case "leer": {
+        if (soloComprobar) return "comprobado: el campo es legible (no se compara el valor)";
         const v = valorDe(datos, p.dato), leerValor = () => loc.evaluate((el) => ("value" in el && el.value !== "" ? el.value : el.textContent) ?? "");
         let real = await leerValor(); const fin = reloj() + (p.espera_ms ?? 1500);   // valores calculados de forma asíncrona (AngularJS/debounce): se reintenta la LECTURA hasta el límite
         while (String(real).trim() !== String(v) && reloj() < fin) { await new Promise((r) => setTimeout(r, 80)); real = await leerValor(); }
@@ -162,6 +168,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
         if (c.nivel === "prohibido") throw new ErrorGuardia(`clic RECHAZADO: el control ${c.razones.join("; ")}`);
         if (c.envia_formulario && p.permitir_envia_formulario !== true) throw new ErrorGuardia("clic RECHAZADO: el control puede enviar un formulario");
         if (c.nivel === "ambiguo" && !c.envia_formulario && p.ambiguo_aprobado !== true) throw new ErrorGuardia(`clic RECHAZADO: control ambiguo (${c.razones.join("; ")}) sin ambiguo_aprobado`);
+        if (soloComprobar) return "clasificado como permitido; NO se pulsa en modo comprobación";
         await loc.click({ timeout }); return `clic: ${p.motivo}`;
       }
       default: throw new Error(`tipo sin implementar: ${p.tipo}`);

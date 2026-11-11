@@ -224,8 +224,8 @@ test("mapeo preliminar de SAT: no es ejecutable (solo falla por verificado=false
   assert.equal(v.ok, false); assert.ok(v.errores.every((e) => /verificado no es true/.test(e)), v.errores.join("\n"));
   assert.ok(!mp.pasos.some((p) => p.tipo === "clic_seguro"), "ningún clic en el mapeo preliminar");
   assert.deepEqual(mp.dominios_permitidos, ["felav.c.sat.gob.gt", "farm3.sat.gob.gt"]); assert.ok(mp.pasos.filter((x) => x.localizador).every((x) => x.localizador.marco?.url_contiene === "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"), "todos los localizadores apuntan al iframe"); assert.deepEqual(mp.permitir_post, []);
-  for (const p of mp.pasos.filter((x) => x.localizador)) assert.ok(p.verificado === false && p.dato);
-  const cl = JSON.parse(fs.readFileSync(new URL("../analisis/obs1/clasificacion.json", import.meta.url), "utf8")), c2 = JSON.parse(fs.readFileSync(new URL("../analisis/obs2a/clasificacion.json", import.meta.url), "utf8")), conocidos = new Set([...cl.filas, ...c2.filas].map((f) => f.mejor_localizador));
+  for (const p of mp.pasos.filter((x) => x.localizador)) assert.ok(p.verificado === false && (p.dato || ["salir_del_campo", "verificar_ausente"].includes(p.tipo)));
+  const cl = JSON.parse(fs.readFileSync(new URL("../analisis/obs1/clasificacion.json", import.meta.url), "utf8")), c2 = JSON.parse(fs.readFileSync(new URL("../analisis/obs2a/clasificacion.json", import.meta.url), "utf8")), c3 = JSON.parse(fs.readFileSync(new URL("../analisis/obs2d/clasificacion.json", import.meta.url), "utf8")), conocidos = new Set([...cl.filas, ...c2.filas, ...c3.filas].map((f) => f.mejor_localizador.replace(" (:visible)", "")));
   for (const p of mp.pasos.filter((x) => x.localizador && x.localizador.estrategia !== "rol")) { const l = p.localizador, k = `${l.estrategia}${l.tag ? `[${l.tag}]` : ""}: ${l.valor}`; assert.ok(conocidos.has(k), `el localizador «${k}» no sale de la observación 1`); }
   assert.equal(cl.total, 211); assert.equal(cl.visibles, 31); assert.equal(c2.total, 211); assert.equal(c2.visibles, 30);
   assert.ok(c2.filas.filter((f) => f.estabilidad === "sin_identificador").length <= 11 && c2.filas.every((f) => !("opciones" in f)), "la clasificación 2a no guarda el texto de las opciones de las listas (pueden llevar datos personales)");
@@ -247,4 +247,13 @@ test("pasos nuevos (salir_del_campo, verificar_ausente, estrategia clase): váli
   assert.equal(clasificarControl({ tag: "button", type: "button", texto: "Aceptar", ngclick: "validarInformacion()" }).nivel, "prohibido", "ng-click validar… = vista previa");
   assert.equal(clasificarControl({ tag: "button", type: "button", titulo: "x", ngclick: "eliminarItem($index,1)" }).nivel, "prohibido");
   assert.equal(clasificarControl({ tag: "button", type: "button", texto: "Siguiente", ngclick: "guardarBorrador()" }).nivel, "prohibido");
+});
+
+test("aparece_tras: solo puede referirse a un paso anterior; y GET dinámicos con ruta de emisión/guardado se bloquean (los demás pasan)", () => {
+  const mk = (ref) => { const m = mapeoOk(); m.pasos.splice(2, 0, { id: "n1", tipo: "leer", dato: "a.b", verificado: true, aparece_tras: ref, localizador: { estrategia: "ng_model", valor: "x.y", tag: "input" } }); return validarMapeo(m); };
+  assert.ok(mk("b").ok); assert.ok(!mk("zz").ok); assert.ok(!mk("n1").ok, "no a sí mismo ni a uno posterior");
+  const ev = (u, tipo, m = "GET") => evaluarSolicitud({ metodo: m, url: u, tipoRecurso: tipo });
+  for (const r of ["/consulta/emitir/x", "/a/guardar", "/x/Certificar", "/api/anular/3", "/doc/firma", "/api/envio", "/x/transmitir"]) { assert.equal(ev("https://p.gt" + r, "fetch").permitir, false, r); assert.equal(ev("https://p.gt" + r, "xhr", "HEAD").permitir, false, r); }
+  for (const r of ["/consulta/receptor/CF", "/catalogos/monedas", "/menu/portada.jsf", "/fel-web/privado/vistas/fel.jsf"]) assert.equal(ev("https://p.gt" + r, "fetch").permitir, true, r);
+  assert.equal(ev("https://p.gt/js/emision.js", "script").permitir, true, "los recursos estáticos no se filtran por nombre"); assert.equal(ev("https://p.gt/api/emitir", "fetch", "OPTIONS").permitir, true, "OPTIONS (preflight) no lleva efectos");
 });

@@ -1,6 +1,7 @@
 # Prueba de viabilidad: Playwright + portal FEL gratuito de SAT Guatemala
 
-> **Estado:** mecanismo construido y probado **solo contra una página de ejemplo local** (`fel/poc-sat/tests/fixture`, que NO es el portal de la SAT). **No se ha abierto el portal real**, no se conoce su estructura y no hay ni un selector del portal en el código. Todo lo que dependa del portal real está en la sección 6 y requiere Chrome en una computadora.
+> **Actualización (fase 2):** ya existen observaciones reales del formulario (solo estructura, hechas por una persona). Estado y veredicto actuales: **`docs/informe-viabilidad-fase-2.md`**; procedimiento propuesto de la primera prueba en seco (pendiente de autorización): `docs/fase-3-procedimiento-llenado-en-seco.md`. Lo que sigue describe el estado inicial de la PoC.
+> **Estado inicial:** mecanismo construido y probado **solo contra una página de ejemplo local** (`fel/poc-sat/tests/fixture`, que NO es el portal de la SAT). **No se ha abierto el portal real**, no se conoce su estructura y no hay ni un selector del portal en el código. Todo lo que dependa del portal real está en la sección 6 y requiere Chrome en una computadora.
 > Pausados por instrucción: Fase 1.5 (Supabase alojado) y certificadores privados. Esta prueba **no usa Supabase**, no despliega, no toca `main` y **no emite documentos fiscales**.
 
 ## 1. Qué se quiere saber

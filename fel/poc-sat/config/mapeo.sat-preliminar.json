@@ -65,6 +65,41 @@
       "verificado": false
     },
     {
+      "id": "p025-receptor-salir-nit",
+      "tipo": "salir_del_campo",
+      "comentario": "La consulta del receptor se dispara al salir del campo NIT (GET con preflight observado con CF). El blur la provoca antes de leer.",
+      "evidencia": "sat-2d: tras CF + Tab, c23 pasa a visible y el portal respondió GET+preflight 200",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "datosGenerales.nitReceptor",
+        "tag": "input",
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "verificado": false
+    },
+    {
+      "id": "p026-receptor-leer-respuesta",
+      "tipo": "leer",
+      "comentario": "Respuesta de la consulta con CF. El valor esperado lo dio la persona (texto exacto por confirmar: mayúsculas/acentos).",
+      "evidencia": "sat-2d: c23 (resultadoNIT.nombre) visible; 3 controles comparten el modelo, solo 1 visible",
+      "localizador": {
+        "estrategia": "ng_model",
+        "valor": "resultadoNIT.nombre",
+        "tag": "input",
+        "visible": true,
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "receptor.respuesta_consulta_cf",
+      "espera_ms": 3000,
+      "verificado": false,
+      "aparece_tras": "p025-receptor-salir-nit"
+    },
+    {
       "id": "p030-receptor-direccion",
       "tipo": "llenar",
       "comentario": "Campo visible de dirección.",
@@ -178,7 +213,7 @@
         }
       },
       "nota": "Deshabilitado, calculado por la página (ng-model det.Total, repetido por línea). Solo se lee.",
-      "evidencia": "obs2a: CSS input[name=Total0] total=1, visibles=1"
+      "evidencia": "sat-2d: 1 visible entre 3"
     },
     {
       "id": "l-receptor-nombre",
@@ -191,11 +226,16 @@
           "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
         }
       },
-      "nota": "Nombre devuelto por la consulta de NIT. El mismo modelo está en 3 controles (1 deshabilitado c23 y 2 ocultos con name=nombre): hay que usar :visible y comprobar cuál se muestra según el tipo de identificación.",
-      "evidencia": "obs2a: ng-model compartido por c23, c26, c29"
+      "nota": "Con CF el campo (c23) pasa a visible y EDITABLE (ng-disabled: nitReceptor.toUpperCase() !== CONSTANTE.CF) y el portal devolvió «Consumidor Final». Se lee, no se escribe. Los otros 2 controles con el mismo modelo siguen ocultos.",
+      "evidencia": "sat-2d: 1 visible entre 3"
     }
   ],
   "pendientes_localizador": [
+    {
+      "campo": "Consulta del NIT con un NIT real (no CF)",
+      "motivo": "solo se observó CF: GET + preflight, 200. Falta host y ruta (enmascarada) de esa petición y qué pasa con un NIT real",
+      "necesita": "ruta enmascarada y host de la petición observada; decidir si se prueba un NIT propio"
+    },
     {
       "campo": "Fecha de emisión (c1 input solo lectura + c2 botón calendario; ng-model datosGenerales.fechaEmision)",
       "motivo": "se llena con un calendario; no admite fill",
@@ -205,11 +245,6 @@
       "campo": "Tipo de documento (datosGenerales.tipoDte)",
       "motivo": "decisión de negocio: la lista depende de la cuenta y cambia las secciones visibles",
       "necesita": "que la persona indique qué opción se usará en la prueba"
-    },
-    {
-      "campo": "Consulta del NIT (resultadoNIT.nombre ×3)",
-      "motivo": "escribir el NIT dispara una consulta (probable red); el nombre aparece en 3 controles con el mismo modelo",
-      "necesita": "observación sat-2d + medición de red (método y ruta)"
     },
     {
       "campo": "Impuestos",
@@ -446,5 +481,10 @@
     "razon": "Para una factura de UNA línea el mapeo ya está completo (NIT, dirección y línea 0 con CSS comprobados). La repetición es un ng-repeat «det in detalleFactura»; el patrón de varias líneas puede acotarse por fila o por el name con índice y se verificará con un conteo antes y después en la prueba controlada.",
     "cuando_si": "solo antes de implementar varias líneas"
   },
-  "nota_marco": "El formulario real vive en un IFRAME (felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf) dentro de la página del menú (farm3.sat.gob.gt, dato dado por la persona; confirmar). Todos los localizadores llevan marco.url_contiene y el motor exige que el host del marco esté en dominios_permitidos."
+  "nota_marco": "El formulario real vive en un IFRAME (felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf) dentro de la página del menú (farm3.sat.gob.gt, dato dado por la persona; confirmar). Todos los localizadores llevan marco.url_contiene y el motor exige que el host del marco esté en dominios_permitidos.",
+  "red_observada_sat2d": {
+    "con_cf": "GET + preflight (OPTIONS), estado 200; el portal devolvió «Consumidor Final» (dato aportado por la persona)",
+    "guardia": "los GET y OPTIONS ya pasan; los GET dinámicos con palabras de emisión/guardado en la ruta se bloquean; las lecturas fetch/XHR se registran (método+host+ruta saneada)",
+    "falta": "host y ruta de la petición (no se aportaron)"
+  }
 }

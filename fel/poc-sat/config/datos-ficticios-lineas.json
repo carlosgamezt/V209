@@ -6,7 +6,8 @@
     "nit": "CF",
     "nombre": "RECEPTOR DE PRUEBA",
     "direccion": "CIUDAD DE PRUEBA",
-    "identificar_con_nit": true
+    "identificar_con_nit": true,
+    "respuesta_consulta_cf": "Consumidor Final"
   },
   "lineas": [
     {

@@ -85,13 +85,19 @@ export function rutaDentroDe(ruta, raiz) {
 
 // ---------------------------------------------------------------- red: solo lectura
 export const METODOS_LECTURA = new Set(["GET", "HEAD", "OPTIONS"]);
+/** Un GET no debería cambiar nada, pero «debería» no basta: las lecturas dinámicas (fetch/XHR/documentos) cuya ruta contiene palabras de emisión o guardado también se bloquean. */
+export const RUTA_LECTURA_PROHIBIDA = /(emit|emisi|certific|firma|guardar|anular|anulac|enviar|envio|transmit)/i;
+const TIPOS_DINAMICOS = new Set(["fetch", "xhr", "document", "other", undefined, null]);
 /**
  * Política de red: se bloquea TODA petición que no sea de lectura (POST, PUT, PATCH, DELETE…) salvo las que una persona permitió
  * explícitamente en «permitir_post» ({metodo, host, ruta_prefijo}) y cuya ruta no contenga palabras de emisión.
  */
-export function evaluarSolicitud({ metodo, url }, politica = {}) {
+export function evaluarSolicitud({ metodo, url, tipoRecurso }, politica = {}) {
   const m = String(metodo ?? "").toUpperCase();
-  if (METODOS_LECTURA.has(m)) return { permitir: true, razon: "lectura" };
+  if (METODOS_LECTURA.has(m)) {
+    if (m !== "OPTIONS" && TIPOS_DINAMICOS.has(tipoRecurso)) { let ruta = ""; try { ruta = decodeURIComponent(new URL(url).pathname); } catch { /* URL rara: se deja pasar solo si no es dinámica */ } if (RUTA_LECTURA_PROHIBIDA.test(ruta)) return { permitir: false, razon: `${m} bloqueado: la ruta parece de emisión o guardado` }; }
+    return { permitir: true, razon: "lectura" };
+  }
   let u; try { u = new URL(url); } catch { return { permitir: false, razon: "URL no válida" }; }
   if (u.protocol === "data:" || u.protocol === "blob:") return { permitir: true, razon: "local" };
   const regla = (politica.permitir_post ?? []).find((r) => r.metodo?.toUpperCase() === m && r.host?.toLowerCase() === u.hostname.toLowerCase() && u.pathname.startsWith(r.ruta_prefijo ?? "/\u0000"));
@@ -139,6 +145,7 @@ export function validarMapeo(m, { local = false } = {}) {
       if (!local && p.verificado !== true) e(`${ctx}: verificado no es true — un localizador no confirmado por una persona contra el portal real no se ejecuta`);
       if (l?.estrategia === "texto" && p.tipo !== "clic_seguro" && p.tipo !== "esperar_visible" && p.tipo !== "verificar_ausente") e(`${ctx}: la estrategia «texto» solo sirve para clic_seguro, esperar_visible o verificar_ausente`);
     }
+    if (p.aparece_tras != null && !m.pasos.slice(0, i).some((q) => q?.id === p.aparece_tras)) e(`${ctx}: aparece_tras debe ser el id de un paso anterior`);
     if (p.idempotente != null && typeof p.idempotente !== "boolean") e(`${ctx}: idempotente debe ser true o false`);
     if (necesitaDato.has(p.tipo) && !(typeof p.dato === "string" && p.dato.trim())) e(`${ctx}: falta «dato» (ruta en el archivo de datos ficticios, p. ej. cliente.nombre)`);
     if (p.tipo === "clic_seguro") {
