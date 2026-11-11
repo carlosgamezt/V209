@@ -1,7 +1,8 @@
 {
   "tasks": {
     "test": "deno test pruebas/",
-    "check": "deno check src/mod.ts pruebas/*.ts"
+    "test:db": "deno test -A pruebas_db/",
+    "check": "deno check src/mod.ts src/repo_pg.ts pruebas/*.ts pruebas_db/*.ts"
   },
   "lint": { "rules": { "exclude": ["no-explicit-any"] } }
 }

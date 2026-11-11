@@ -32,7 +32,8 @@ revoke all on public.plataforma_parametros from public, anon, authenticated, ser
 insert into public.plataforma_parametros (clave, valor, descripcion) values
   ('espera_conciliacion_manual_min', 120,  'Minutos mínimos desde el envío antes de poder proponer una conciliación manual'),
   ('ventana_tardia_min',             1440, 'Minutos tras una conciliación manual «fallida» durante los cuales NO se permite reintentar (respuestas tardías)'),
-  ('umbral_recuperacion_min',        10,   'Minutos sin resultado tras los cuales una operación iniciada se somete a recuperación');
+  ('umbral_recuperacion_min',        10,   'Minutos sin resultado tras los cuales una operación iniciada se somete a recuperación'),
+  ('ventana_auditoria_min',          10080,'Minutos tras una conciliación manual «fallida» durante los cuales se sigue auditando al proveedor por respuestas tardías (7 días)');
 create or replace function public.fel__parametro(p_clave text) returns numeric
 language sql stable security definer set search_path = '' as $$ select valor from public.plataforma_parametros where clave = p_clave $$;
 
@@ -622,7 +623,7 @@ language sql stable security definer set search_path = '' as $$
   select o.id, o.empresa_id, o.documento_id, o.clave_idempotencia, o.ambiente
     from public.operaciones_fiscales o
    where o.tipo = 'certificacion' and o.estado = 'confirmada_fallida' and o.resolucion = 'conciliacion_manual'
-     and o.resuelta_en >= now() - make_interval(mins => (public.fel__parametro('ventana_tardia_min')::integer * 4))
+     and o.resuelta_en >= clock_timestamp() - make_interval(mins => public.fel__parametro('ventana_auditoria_min')::integer)
 $$;
 -- Certificaciones exitosas a las que aún les faltan artefactos (caída entre certificar y guardar PDF/XML).
 create or replace function public.fel_sys_artefactos_faltantes()
