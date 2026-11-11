@@ -26,8 +26,7 @@ const STATUS: Record<string, number> = { FEL_NO_AUTORIZADO: 403, FEL_NO_ENCONTRA
   FEL_ESPERA_TARDIA: 409, FEL_AUDITORIA_PENDIENTE: 409, FEL_YA_ENVIADA: 409, FEL_REGLA: 422 };
 const uuidOk = (x: unknown): x is string => typeof x === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
 const texto = (x: unknown, min: number, max: number, campo: string): string => { if (typeof x !== "string" || x.trim().length < min || x.length > max) throw new ErrorHttp(400, `${campo}: texto de ${min} a ${max} caracteres`, "entrada_invalida"); return x.trim(); };
-// Datos de contacto FICTICIOS del emisor (la tabla de empresas aún no guarda dirección, teléfono ni correo): solo para dibujar documentos y pantallas de la demostración.
-export const EMPRESA_DEMO = { id: EMPRESA, nombre: "Empresa Demo, S.A. (FICTICIA)", nombre_comercial: "Empresa Demo", nit: "7770001-0", telefono: "2200-0000", correo: "facturacion@empresa-demo.example", direccion: "Dirección ficticia 1, Ciudad" };
+// (Ahora los datos de contacto viven en la tabla de empresas y se editan con fel_op_empresa_datos_guardar.)
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
@@ -39,6 +38,12 @@ export function crearApi(bd: BdDemo, mundo: Sembrado) {
     const c = (req.headers.get("x-demo-usuario") ?? "ana") as ClaveUsuario; if (!(c in USUARIOS)) throw new ErrorHttp(400, "Usuario de la demostración no válido", "entrada_invalida");
     return { clave: c, id: USUARIOS[c].id };
   };
+
+  async function empresaDatos() {
+    const [e] = await bd.filas<Obj>("select id, razon_social as nombre, nombre_comercial, nit, direccion_fiscal as direccion, telefono, correo_facturacion as correo from public.empresas where id = $1", [EMPRESA]);
+    return e;
+  }
+  const permisosDe = async (a: { id: string }) => await bd.rpc("fel_permisos_efectivos", { p_empresa: EMPRESA, p_user: a.id }) as string[];
 
   async function detalle(docId: string) {
     const [d] = await bd.filas<Obj>("select d.*, c.nombre as cliente_nombre, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, EMPRESA]);
@@ -86,19 +91,19 @@ export function crearApi(bd: BdDemo, mundo: Sembrado) {
     const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
     const cuerpo = async (): Promise<Obj> => { if (req.headers.get("x-demo") !== "1") throw new ErrorHttp(403, "Falta la cabecera de la demostración", "no_autorizado"); const t = await req.text(); if (t.length > 262144) throw new ErrorHttp(413, "Cuerpo demasiado grande"); try { const o = t ? JSON.parse(t) : {}; if (o === null || typeof o !== "object" || Array.isArray(o)) throw 0; return o as Obj; } catch { throw new ErrorHttp(400, "JSON no válido", "entrada_invalida"); } };
     const id = (p: string) => { const x = p; if (!uuidOk(x)) throw new ErrorHttp(400, "Identificador no válido", "entrada_invalida"); return x; };
-    const a = actor(req);
+    const a = actor(req); let r: RegExpExecArray | null;
 
     if (m === "GET" && ruta === "/api/estado") {
       const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: EMPRESA, p_user: a.id }) as string[];
       const establecimientos = await bd.filas("select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [EMPRESA]);
-      const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono from public.clientes where empresa_id = $1 and activo order by nombre", [EMPRESA]);
+      const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [EMPRESA]);
       const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [EMPRESA]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
-      return json({ empresa: EMPRESA_DEMO, usuario: { clave: a.clave, ...USUARIOS[a.clave] }, usuarios: Object.entries(USUARIOS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
+      return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...USUARIOS[a.clave] }, usuarios: Object.entries(USUARIOS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
         permisos, establecimientos, clientes, conceptos, canal: mundo.canal, escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
-      return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [EMPRESA]));
+      return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, c.frecuente, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [EMPRESA]));
     }
     if (m === "POST" && ruta === "/api/clientes") {
       const b = await cuerpo(); const tipo = String(b.tipo_identificacion ?? "NIT"); if (!["NIT", "CUI", "EXT", "CF"].includes(tipo)) throw new ErrorHttp(400, "Tipo de identificación no válido", "entrada_invalida");
@@ -121,17 +126,30 @@ export function crearApi(bd: BdDemo, mundo: Sembrado) {
       const canales = await bd.filas("select proveedor_id, ambiente, habilitado, prioridad from public.empresa_canales where empresa_id = $1", [EMPRESA]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
       const [cont] = await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [EMPRESA]);
-      return json({ empresa: { ...emp, ...EMPRESA_DEMO }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
+      return json({ empresa: { ...emp, ...(await empresaDatos()) }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
     }
     if (m === "POST" && ruta === "/api/establecimientos") {
       const b = await cuerpo(); const estado = b.estado === "inactivo" ? "inactivo" : "activo";
       const r = await bd.rpc("fel_op_establecimiento_guardar", { p_actor: a.id, p_empresa: EMPRESA, p_id: uuidOk(b.id) ? b.id : null, p_codigo: texto(b.codigo_sat, 1, 10, "Código SAT"), p_nombre: texto(b.nombre, 1, 120, "Nombre"), p_direccion: typeof b.direccion === "string" && b.direccion.trim() ? b.direccion.trim().slice(0, 300) : null, p_estado: estado });
       return json(r);
     }
-    if (m === "GET" && ruta === "/api/documentos") {
-      return json(await bd.filas("select d.id, d.numero_borrador, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [EMPRESA]));
+    if (m === "POST" && ruta === "/api/empresa") {
+      const b = await cuerpo(); const opc = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : null);
+      await bd.rpc("fel_op_empresa_datos_guardar", { p_actor: a.id, p_empresa: EMPRESA, p_nombre_comercial: texto(b.nombre_comercial, 1, 120, "Nombre comercial"), p_direccion: opc(b.direccion, 300), p_telefono: opc(b.telefono, 40), p_correo: opc(b.correo, 200) });
+      return json(await empresaDatos());
     }
-    let r;
+    if (m === "POST" && (r = /^\/api\/clientes\/([^/]+)\/(frecuente|estado)$/.exec(ruta))) {
+      const b = await cuerpo(); const cid = id(r[1]);
+      if (r[2] === "frecuente") await bd.rpc("fel_op_cliente_frecuente", { p_actor: a.id, p_empresa: EMPRESA, p_id: cid, p_frecuente: b.frecuente === true });
+      else await bd.rpc("fel_op_cliente_estado", { p_actor: a.id, p_empresa: EMPRESA, p_id: cid, p_activo: b.activo === true });
+      return json({ ok: true });
+    }
+    if (m === "POST" && (r = /^\/api\/conceptos\/([^/]+)\/estado$/.exec(ruta))) {
+      const b = await cuerpo(); await bd.rpc("fel_op_concepto_estado", { p_actor: a.id, p_empresa: EMPRESA, p_id: id(r[1]), p_activo: b.activo === true }); return json({ ok: true });
+    }
+    if (m === "GET" && ruta === "/api/documentos") {
+      return json(await bd.filas("select d.id, d.numero_borrador, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [EMPRESA]));
+    }
     if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)$/.exec(ruta))) return json(await detalle(id(r[1])));
     if (m === "GET" && (r = /^\/api\/artefactos\/([^/]+)$/.exec(ruta))) {
       const [x] = await bd.filas<{ nombre: string; mime: string; contenido: Uint8Array; tipo: string }>("select nombre, mime, contenido, tipo from public.artefactos_documento where id = $1 and empresa_id = $2", [id(r[1]), EMPRESA]);

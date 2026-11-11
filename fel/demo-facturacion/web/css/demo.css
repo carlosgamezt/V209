@@ -138,3 +138,20 @@ body{min-height:100vh}
 .lateral .marca{text-decoration:none;color:var(--txt)}.lateral .marca strong{font-size:22px;font-weight:800}
 @media(max-width:900px){.barra-acciones{bottom:66px}}
 @media(max-width:600px){.stepper{gap:4px}.paso+.paso::before{display:none}.paso-i{padding:6px 10px}}
+
+/* ajustes de interfaz de la Fase 2 */
+.indicador{padding:10px 14px;gap:12px}.indicador strong{font-size:22px}.indicador small{font-size:12.5px}.ind-ik{width:40px;height:40px;border-radius:12px}
+@media(max-width:900px){.indicador{padding:8px 10px}.indicador strong{font-size:19px}}
+.estrella{border:0;background:transparent;padding:4px;cursor:pointer;border-radius:8px}.estrella:disabled{cursor:default;opacity:.55}.estrella:not(:disabled):hover{background:var(--soft)}
+.fila.inactivo{opacity:.6}
+.barra-compacta{gap:10px}.barra-compacta .buscador{min-width:200px;height:42px}.barra-compacta .sel-tipo{min-height:42px}.resumen-lista{margin-left:auto;font-size:13px}
+.fila-fac-cab,.fila-fac{grid-template-columns:2.1fr .9fr 1fr 1.9fr 1.3fr 1.9fr;align-items:center;padding:12px 18px;border-radius:0;border:0;border-bottom:1px solid var(--line);background:transparent;box-shadow:none}
+.fila-fac:hover{background:color-mix(in srgb,var(--soft) 45%,transparent);border-color:var(--line);box-shadow:none}
+.fila-fac-cab{padding-top:10px;padding-bottom:10px}
+.acciones-fac{flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center}
+.btn-mini{min-height:32px;padding:0 10px;font-size:12.5px;border-radius:10px;gap:6px;text-decoration:none}.btn-mini .i{width:15px;height:15px}
+.tag-sim{background:var(--warn-bg);color:var(--warn);border:1px dashed color-mix(in srgb,var(--warn) 55%,transparent)}
+.tag-actual{background:var(--soft);color:var(--pri);box-shadow:inset 0 0 0 1.5px var(--pri)}
+.estados-agente{display:flex;gap:8px;flex-wrap:wrap}
+.card+.aviso,.lista+.card,.aviso+.lista{margin-top:14px}
+@media(max-width:900px){.fila-fac,.fila-fac-cab{grid-template-columns:1fr auto}.acciones-fac{justify-content:flex-start}.resumen-lista{margin-left:0;width:100%}}

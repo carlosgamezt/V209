@@ -26,6 +26,7 @@ export async function sembrar(bd: BdDemo): Promise<Sembrado> {
     const r = await bd.filas<{ id: string }>("select (public.fel_op_establecimiento_guardar($1, $2, null, $3, $4, $5, 'activo')).id as id", [USUARIOS.ana.id, EMPRESA, codigo, nombre, dir]);
     est.push({ id: r[0].id, codigo_sat: codigo, nombre });
   }
+  await bd.filas("select public.fel_op_empresa_datos_guardar($1, $2, 'Empresa Demo', 'Dirección ficticia 1, Ciudad', '2200-0000', 'facturacion@empresa-demo.example')", [USUARIOS.ana.id, EMPRESA]);
   const canal = (await bd.filas<{ id: string }>("select (public.fel_op_canal_configurar($1, $2, null, 'mock', 'simulado', true)).id as id", [USUARIOS.ana.id, EMPRESA]))[0].id;
   for (const [tipo, num, nombre, dir, mail, tel] of [
     ["NIT", "1234567-8", "Comercial Los Pinos, S.A. (ficticia)", "Dirección ficticia 10, Ciudad", "contacto@lospinos.example", "2200-1000"],
@@ -35,6 +36,7 @@ export async function sembrar(bd: BdDemo): Promise<Sembrado> {
     ["CF", "CF", "Consumidor final", null, null, null]]) {
     await bd.filas("select (public.fel_op_cliente_guardar($1, $2, null, $3, $4, $5, $6, $7, $8, null)).id", [USUARIOS.marta.id, EMPRESA, tipo, num, nombre, dir, mail, tel]);
   }
+  for (const nit of ["1234567-8", "3214567-9"]) { const [c] = await bd.filas<{ id: string }>("select id from public.clientes where empresa_id = $1 and numero_identificacion = $2", [EMPRESA, nit]); await bd.filas("select public.fel_op_cliente_frecuente($1, $2, $3, true)", [USUARIOS.marta.id, EMPRESA, c.id]); }
   for (const [codigo, desc, tipo, precio] of [["SERV-001", "Supervisión de obra", "servicio", "500"], ["SERV-002", "Instalación de equipo", "servicio", "350"], ["SERV-003", "Asesoría técnica", "servicio", "250"], ["BIEN-001", "Material de construcción", "bien", "120"]]) {
     await bd.filas("select (public.fel_op_concepto_guardar($1, $2, null, $3, $4, $5, 'UND', $6::numeric, null, null)).id", [USUARIOS.marta.id, EMPRESA, codigo, desc, tipo, precio]);
   }
