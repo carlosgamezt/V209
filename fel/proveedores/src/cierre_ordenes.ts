@@ -12,12 +12,19 @@ export async function cerrarOrdenes(rpc: Rpc, orq: OrquestadorDb, opciones: { em
   const lista = await rpc("fel_sys_ordenes_para_cerrar", {}) as { orden_id: string; empresa_id: string; operacion_id: string; estado: string; serie: string | null; numero: string | null; autorizacion: string | null }[];
   for (const o of lista) {
     if (opciones.empresaId && o.empresa_id !== opciones.empresaId) continue;
-    if (o.estado === "completada") {
-      await orq.resolverAccionHumana(o.empresa_id, o.operacion_id, { tipo: "certificado", serie: o.serie!, numero: o.numero!, autorizacion: o.autorizacion!, fechaCertificacion: (opciones.ahora?.() ?? new Date()).toISOString().slice(0, 10), artefactos: [] });
-      r.certificadas++;
-    } else if (o.estado === "descartada" || o.estado === "fallida") {
-      await orq.resolverAccionHumana(o.empresa_id, o.operacion_id, { tipo: "rechazado_confirmado", codigo: o.estado === "descartada" ? "DESCARTADO_EN_EL_SIMULADOR" : "ERROR_ANTES_DE_PRESENTAR", mensaje: "El agente probó que no se emitió ningún documento" });
-      r.rechazadas++;
+    if (o.estado === "cancelada") continue;
+    if (await rpc("fel_sys_orden_cierre_reservar", { p_orden: o.orden_id, p_segundos: 60 }) !== true) continue;   // otro cierre ya tiene esta orden: no se procesa dos veces
+    try {
+      if (o.estado === "completada") {
+        await orq.resolverAccionHumana(o.empresa_id, o.operacion_id, { tipo: "certificado", serie: o.serie!, numero: o.numero!, autorizacion: o.autorizacion!, fechaCertificacion: (opciones.ahora?.() ?? new Date()).toISOString().slice(0, 10), artefactos: [] });
+        r.certificadas++;
+      } else if (o.estado === "descartada" || o.estado === "fallida") {
+        await orq.resolverAccionHumana(o.empresa_id, o.operacion_id, { tipo: "rechazado_confirmado", codigo: o.estado === "descartada" ? "DESCARTADO_EN_EL_SIMULADOR" : "ERROR_ANTES_DE_PRESENTAR", mensaje: "El agente probó que no se emitió ningún documento" });
+        r.rechazadas++;
+      }
+    } catch (e) {
+      // Otro cierre (otro supervisor o una ejecución manual) se adelantó con ESTA orden: la operación ya no espera a una persona. No es un fallo: se sigue con las demás.
+      if (!/FEL_REGLA|FEL_CONFLICTO/.test(String((e as { codigo?: string }).codigo ?? "") + String((e as Error).message))) { await rpc("fel_sys_orden_cierre_liberar", { p_orden: o.orden_id }); throw e; }   // fallo inesperado: se libera para que el siguiente ciclo reintente
     }
   }
   return r;

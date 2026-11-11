@@ -67,6 +67,8 @@ jobs:
         run: node fel/demo-facturacion/tests/e2e.cjs
       - name: Servidor de la demostración con el plano de control del agente (firma Ed25519 por HTTP, supervisor periódico y cierre ordenado; simulado y local)
         run: deno test -A fel/demo-facturacion/tests/agente_servidor_test.ts
+      - name: Simulador FEL del agente local (núcleo, servidor 127.0.0.1 y formulario en Chromium; confirmación solo humana, interrupciones, duplicados; sin SAT ni credenciales)
+        run: node --test "fel/agente-local/pruebas/*.test.mjs"
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)

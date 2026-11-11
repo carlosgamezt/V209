@@ -181,4 +181,36 @@ T("SUPERVISOR: las órdenes vencidas cambian solas de estado aunque NINGÚN agen
   assert.equal((await estadoDoc(cx, a.doc)).estado_fiscal, "por_verificar");
 });
 
+T("SUPERVISORES y cierres SIMULTÁNEOS: la misma orden no se procesa dos veces (una certificación; vencimientos aplicados una sola vez)", async () => {
+  const equipos: Equipo[] = []; const docs: string[] = [], completadas: string[] = [];
+  for (let i = 0; i < 3; i++) {                                                         // tres órdenes completadas, listas para cerrar
+    const e = await nuevoEquipo(`concurrente ${i}`); equipos.push(e); const { doc, op } = await ordenPendiente(e); docs.push(doc); completadas.push(op);
+    const o = (await firmada(e, "reclamar")).json.orden as { orden: string; token: number };
+    await firmada(e, "progreso", { orden: o.orden, token: o.token, fase: "detenido_en_vista_previa" });
+    assert.equal((await firmada(e, "resultado", { orden: o.orden, token: o.token, tipo: "emitido_simulado", serie: "SIMA", numero: String(i + 1).padStart(8, "0"), autorizacion: `SIM-CONC-${i}-${crypto.randomUUID()}` })).status, 200);
+  }
+  const eV = await nuevoEquipo("vencerá"); const v = await ordenPendiente(eV);         // además, una presentada y vencida: debe volverse incierta UNA vez
+  const oV = (await firmada(eV, "reclamar")).json.orden as { orden: string; token: number };
+  await firmada(eV, "progreso", { orden: oV.orden, token: oV.token, fase: "detenido_en_vista_previa" });
+  await cx.sql.unsafe("update public.ordenes_emision set lease_hasta = clock_timestamp() - interval '1 second' where operacion_id = $1", [v.op]);
+  const orq = orqPortal();
+  const sups = [1, 2, 3].map(() => crearSupervisor({ rpc: cx.rpc, cerrar: () => cerrarOrdenes(cx.rpc, orq), intervaloMs: 50 }));
+  sups.forEach((x) => x.iniciar());
+  const directos = Promise.allSettled(Array.from({ length: 6 }, () => cerrarOrdenes(cx.rpc, orq)));   // cierres manuales a la vez que los supervisores
+  const limite = Date.now() + 10000; const todas = () => cx.sql.unsafe("select count(*)::int as n from public.documentos where id = any($1::uuid[]) and estado_fiscal = 'certificado'", [docs]).then((r) => r[0].n as number);
+  while (Date.now() < limite && (await todas() < 3 || await estadoOrden(v.op) !== "incierta")) await dormir(50);
+  const resultados = await directos; await Promise.all(sups.map((x) => x.detener()));
+  assert.equal(await todas(), 3, "las tres órdenes completadas se certificaron");
+  assert.ok(resultados.every((r) => r.status === "fulfilled" || /FEL_/.test(String((r as PromiseRejectedResult).reason?.codigo ?? "")) ), "los cierres perdedores, si fallan, lo hacen con un error controlado: " + JSON.stringify(resultados.filter((r) => r.status === "rejected")));
+  const total = resultados.reduce((a, r) => a + (r.status === "fulfilled" ? r.value.certificadas : 0), 0);
+  assert.ok(total <= 3, "los cierres manuales no certifican más de lo que existe");
+  const ops = (await cx.sql.unsafe("select documento_id, count(*)::int as n, count(*) filter (where estado = 'confirmada_exitosa')::int as ok from public.operaciones_fiscales where documento_id = any($1::uuid[]) group by 1", [docs])) as { n: number; ok: number }[];
+  const ev = (await cx.sql.unsafe("select operacion_id, count(*)::int as n from public.eventos_proveedor where resultado = 'certificado' and operacion_id in (select id from public.operaciones_fiscales where documento_id = any($1::uuid[])) group by 1", [docs])) as { n: number }[];
+  assert.ok(ev.length === 3 && ev.every((x) => x.n === 1), "un solo evento «certificado» por operación (sin eventos duplicados por cierres simultáneos): " + JSON.stringify(ev));
+  assert.equal(ops.length, 3); assert.ok(ops.every((o) => o.n === 1 && o.ok === 1), "una sola operación y una sola certificación por documento: " + JSON.stringify(ops));
+  assert.equal(await estadoOrden(v.op), "incierta"); assert.equal((await estadoDoc(cx, v.doc)).estado_fiscal, "por_verificar");
+  assert.equal((await cx.sql.unsafe("select count(*)::int as n from public.ordenes_emision where operacion_id = $1", [v.op]))[0].n, 1, "la orden vencida no se duplicó ni se reasignó");
+  assert.equal((await cx.sql.unsafe("select count(*)::int as n from public.operaciones_fiscales where documento_id = $1", [v.doc]))[0].n, 1, "sin segunda operación para el documento por verificar");
+});
+
 T("cierre de conexión", async () => { await cx.cerrar(); });

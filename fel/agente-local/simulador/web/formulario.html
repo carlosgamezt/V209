@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Emisión FEL — simulador</title><link rel="stylesheet" href="/estilo.css"></head>
+<body>
+<div class="banner" role="note">SIMULADO - SIN VALOR FISCAL · Este no es el portal de SAT: no se emite ningún documento real.</div>
+<main>
+  <h1>Formulario de factura (simulador)</h1>
+  <p id="estado-sesion" class="estado" aria-live="polite"></p>
+  <div id="errores" class="errores" role="alert" hidden></div>
+
+  <section id="seccion-edicion">
+    <form id="formulario" novalidate>
+      <fieldset><legend>Documento</legend>
+        <label>Tipo de documento <select id="tipo_documento"><option value="">— elegir —</option><option value="FACT-SIM">Factura (simulada)</option></select></label>
+        <label>Fecha <input id="fecha" type="text" inputmode="numeric" placeholder="AAAA-MM-DD"></label>
+        <label>Moneda <select id="moneda"><option value="GTQ">GTQ</option></select></label>
+        <label>Establecimiento (código) <input id="establecimiento_codigo" type="text" maxlength="10"></label>
+      </fieldset>
+      <fieldset><legend>Receptor</legend>
+        <label>Tipo de identificación <select id="receptor_tipo"><option value="">— elegir —</option><option>NIT</option><option>CUI</option><option>EXT</option><option>CF</option></select></label>
+        <label>Identificación <input id="receptor_id" type="text" maxlength="30"></label>
+        <label>Nombre <input id="receptor_nombre" type="text" maxlength="200"></label>
+        <label>Dirección <input id="receptor_direccion" type="text" maxlength="300"></label>
+      </fieldset>
+      <fieldset><legend>Conceptos</legend>
+        <div id="lineas"></div>
+        <button type="button" id="btn-agregar">Agregar concepto</button>
+      </fieldset>
+      <fieldset><legend>Observaciones</legend>
+        <label>Observaciones <textarea id="observaciones" maxlength="500" rows="2"></textarea></label>
+      </fieldset>
+      <button type="submit" id="btn-previa" class="primario">Vista previa</button>
+    </form>
+  </section>
+
+  <section id="seccion-previa" hidden>
+    <h2>Vista previa</h2>
+    <div class="marca" aria-hidden="true">SIMULADO - SIN VALOR FISCAL</div>
+    <dl id="previa-datos"></dl>
+    <table id="previa-tabla"><thead><tr><th>#</th><th>Tipo</th><th>Descripción</th><th>Cant.</th><th>Precio</th><th>Importe</th><th>Desc.</th><th>Neto</th></tr></thead><tbody></tbody></table>
+    <p class="totales">Subtotal <b id="previa-subtotal"></b> · Descuentos <b id="previa-descuentos"></b> · Total <b id="previa-total"></b></p>
+    <p class="aviso">Revise los datos. Solo una persona puede confirmar.</p>
+    <button type="button" id="btn-editar">Volver a editar</button>
+    <button type="button" id="btn-descartar">Descartar</button>
+    <button type="button" id="btn-confirmar" class="primario">Confirmar emisión simulada</button>
+  </section>
+
+  <section id="seccion-resultado" hidden>
+    <h2 id="resultado-titulo"></h2>
+    <p id="resultado-detalle"></p>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body></html>
