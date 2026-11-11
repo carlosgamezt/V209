@@ -195,7 +195,7 @@ test("ÓRDENES VENCIDAS: con el arrendamiento vencido NEXA rechaza al agente (fe
   // aun si el supervisor la pasa a incierta, nada puede emitirse
   await hasta(orden, "incierta"); assert.equal((await per.autorizar(orden)).status, 409);
   const i = await pulsarConfirmar(pag); assert.equal(i.resultado, null); assert.equal((await libro(orden)).length, 0);
-  ag.detener(); await ag.ejecutor; await dormir(10); corrida.catch(() => {});
+  await ag.detener(); await conLimite(corrida).catch(() => {});
 });
 
 test("CONCURRENCIA Y FENCING: dos equipos y una orden ⇒ solo uno la atiende; el que perdió el arrendamiento (token viejo) no puede informar ni emitir", async () => {

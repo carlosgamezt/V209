@@ -1,0 +1,15 @@
+{
+  "name": "nexa-fel-agente-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agente local de NEXA FEL (Fase 4). Solo simulador: sin SAT, sin certificadores, sin credenciales.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "agente": "node lanzador/panel.mjs",
+    "prueba:unitarias": "node --test pruebas/proteccion.test.mjs pruebas/nucleo.test.mjs pruebas/servidor.test.mjs pruebas/concesion.test.mjs",
+    "prueba:navegador": "node --test pruebas/navegador.test.mjs",
+    "prueba:agente": "node --test --test-concurrency=1 pruebas/agente.test.mjs pruebas/panel.test.mjs"
+  },
+  "dependencies": { "playwright": "1.49.1" }
+}

@@ -71,7 +71,7 @@ export async function nuevoAgente(nexa, sim, { nombre = "PC de prueba", config =
   const cod = (await nexa.api("ana", "POST", "/api/agentes/codigo", {})).json.codigo;
   const v = await vincular({ nexa: nexa.base, codigo: cod, estado: dir, nombre });
   const agente = crearAgente({ estado: dir, simulador: sim.url, tokenSimulador: sim.tokenControl, ganchos, config: { sondeoMs: 30, renovarMs: 150, esperaMaxMs: 30000, ciclosMs: 40, demoraCierreMs: 1500, headless: true, ...config } });
-  return { ...agente, id: v.agente_id, dir, limpiar: () => rmSync(dir, { recursive: true, force: true }) };
+  return { ...agente, id: v.agente_id, dir, limpiar: () => rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }) };
 }
 export const persona = (nexa) => ({
   vistaPrevia: (orden, u = "ana") => nexa.api(u, "GET", `/api/ordenes/${orden}/vista-previa`),

@@ -69,9 +69,14 @@ jobs:
         run: deno test -A fel/demo-facturacion/tests/agente_servidor_test.ts
       - name: Simulador FEL del agente local (núcleo, servidor 127.0.0.1 y formulario en Chromium; confirmación solo humana, interrupciones, duplicados; sin SAT ni credenciales)
         run: node --test "fel/agente-local/pruebas/nucleo.test.mjs" "fel/agente-local/pruebas/servidor.test.mjs" "fel/agente-local/pruebas/concesion.test.mjs" "fel/agente-local/pruebas/navegador.test.mjs"
+      - name: Protección de la clave del agente (contrato de DPAPI; DPAPI real solo en el trabajo de Windows)
+        run: node --test fel/agente-local/pruebas/proteccion.test.mjs
       - name: Agente local con Playwright (Chromium 131 exigido) contra NEXA de prueba y el simulador; autorización humana separada, desconexiones, revocación, aislamiento, fencing y recuperación (todo local y simulado)
         timeout-minutes: 15
         run: node --test --test-concurrency=1 fel/agente-local/pruebas/agente.test.mjs
+      - name: Panel y arranque del agente (vinculación desde la página, pausa, cierre ordenado y recuperación tras matar el proceso)
+        timeout-minutes: 10
+        run: node --test --test-concurrency=1 fel/agente-local/pruebas/panel.test.mjs
       - name: Guardia del script de integración (rechaza proyectos no autorizados)
         run: node --test fel/tools/integracion-local/guardia.test.mjs
       - name: PoC de viabilidad del portal FEL (guardia + autoprueba con Chrome contra página de ejemplo local; no toca ningún sistema real)
@@ -178,3 +183,39 @@ jobs:
       - name: Detener
         if: always()
         run: supabase --workdir fel stop --no-backup
+
+  agente-windows:
+    name: Agente local en Windows (DPAPI, arranque, Chromium 131, cierre y recuperación)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.6
+      - name: Instalar dependencias del agente (Playwright 1.49.1 fijado por package-lock) y Chromium
+        working-directory: fel/agente-local
+        run: |
+          npm ci
+          npx playwright install chromium
+      - name: Comprobar versiones (Node 22, Playwright 1.49.1, Chromium 131) y arranque del navegador
+        working-directory: fel/agente-local
+        run: |
+          node -e "if (Number(process.versions.node.split('.')[0]) !== 22) { console.error('Se esperaba Node 22 y hay ' + process.versions.node); process.exit(1); }"
+          node -e "const v = require('playwright/package.json').version; if (v !== '1.49.1') { console.error('Playwright ' + v); process.exit(1); } require('playwright').chromium.launch().then(async b => { const m = b.version(); console.log('Chromium', m); await b.close(); if (!/^131[.]/.test(m)) { console.error('Se esperaba Chromium 131 y se obtuvo ' + m); process.exit(1); } })"
+      - name: Protección de la clave con DPAPI real (ida y vuelta, datos alterados, entropía distinta, sin PEM en disco)
+        run: node --test fel/agente-local/pruebas/proteccion.test.mjs
+      - name: Simulador FEL (núcleo, servidor, concesiones y formulario en Chromium)
+        run: node --test "fel/agente-local/pruebas/nucleo.test.mjs" "fel/agente-local/pruebas/servidor.test.mjs" "fel/agente-local/pruebas/concesion.test.mjs" "fel/agente-local/pruebas/navegador.test.mjs"
+      - name: Agente local contra NEXA de prueba y el simulador (autorización humana, desconexiones, revocación, fencing, aislamiento, recuperación)
+        timeout-minutes: 20
+        run: node --test --test-concurrency=1 fel/agente-local/pruebas/agente.test.mjs
+      - name: Panel y arranque del agente (vinculación desde la página, pausa, cierre ordenado, matar el proceso y recuperar)
+        timeout-minutes: 15
+        run: node --test --test-concurrency=1 fel/agente-local/pruebas/panel.test.mjs

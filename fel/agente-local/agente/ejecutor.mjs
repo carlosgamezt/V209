@@ -20,7 +20,7 @@ export function decidirDesdeLibro(sesion, libro, sesionId) {
 }
 
 export function crearEjecutor(dep) {
-  const { nexa, sim, almacen, config, log = () => {}, abrirNavegador, reloj = () => Date.now(), dormir = dormirReal, ganchos = {} } = dep;   // «ganchos»: solo pruebas
+  const { nexa, sim, almacen, config, log = () => {}, abrirNavegador, reloj = () => Date.now(), dormir = dormirReal, ganchos = {}, cierreSolicitado = () => false } = dep;   // «ganchos»: solo pruebas
   const guardar = (o, extra) => almacen.guardarDiario({ orden: o.orden, token: o.token, referencia: o.orden, t: new Date().toISOString(), ...extra });
   const seguro = async (f) => { try { return await f(); } catch (e) { log("aviso", String(e?.codigo ?? e?.message ?? e)); return null; } };
 
@@ -47,6 +47,7 @@ export function crearEjecutor(dep) {
   async function esperar(o, sesion) {
     const inicio = reloj(); let ultimoRenovar = inicio, fallos = 0;
     for (;;) {
+      if (cierreSolicitado()) { log("cierre", "cierre ordenado con la vista previa abierta: se cierra la sesión y se resuelve con el libro"); return recuperarPresentada(o, sesion.id); }   // nunca queda una confirmación posible sin agente
       if (reloj() - inicio > config.esperaMaxMs) {
         await seguro(() => sim.interrumpir(sesion.id));
         const [s, libro] = await Promise.all([sim.sesion(sesion.id), sim.libro(o.orden)]);

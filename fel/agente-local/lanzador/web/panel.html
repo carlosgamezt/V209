@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agente NEXA FEL</title><link rel="stylesheet" href="panel.css"></head>
+<body>
+<header><h1>Agente NEXA FEL</h1><span class="sello">SIMULADO · sin valor fiscal</span></header>
+<main>
+  <section id="paso-vincular" hidden aria-labelledby="t1">
+    <h2 id="t1">Paso único: vincula este equipo con tu empresa</h2>
+    <p>En NEXA, entra a <b>Configuración → Agente local</b> y pulsa <b>Generar código</b>. Escríbelo aquí:</p>
+    <label for="codigo">Código de vinculación</label>
+    <input id="codigo" type="text" inputmode="text" autocomplete="off" maxlength="14" placeholder="1A2B-3C4D-5E6F">
+    <button id="btn-vincular" class="primario">Vincular este equipo</button>
+    <p id="error-vincular" class="error" role="alert" hidden></p>
+  </section>
+  <section id="paso-estado" hidden aria-labelledby="t2">
+    <h2 id="t2">Estado del agente</h2>
+    <p id="estado" class="estado" aria-live="polite"><span id="punto" class="punto"></span><span id="mensaje"></span></p>
+    <div class="botones">
+      <button id="btn-pausar">Pausar</button>
+      <button id="btn-reanudar" hidden>Reanudar</button>
+      <button id="btn-cerrar" class="peligro">Cerrar el agente</button>
+    </div>
+    <h3>Lo último que pasó</h3>
+    <ul id="eventos" class="eventos"></ul>
+    <p class="nota">La factura solo se emite cuando una persona autorizada la aprueba en NEXA y confirma en la ventana del navegador. Este agente nunca confirma por sí solo.</p>
+  </section>
+  <section id="paso-cerrado" hidden><h2>Agente cerrado</h2><p>Ya puedes cerrar esta pestaña. Para volver a empezar, abre «Iniciar agente NEXA».</p></section>
+</main>
+<script src="panel.js"></script>
+</body></html>
