@@ -58,3 +58,55 @@ export function ejecutarSuiteContrato(nombre: string, fabrica: () => ArnesAdapta
   });
   T("salud no tiene efectos", async () => { const a = fabrica(); assert.equal((await a.proveedor.salud(CTX)).ok, true); assert.equal(a.certificacionesDe("d1"), 0); });
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// SUITE DE CONTRATO PARA ADAPTADORES ASISTIDOS (emiteSinHumano = false): «enviar» nunca certifica; crea una orden y exige acción humana.
+export interface ArnesAsistido {
+  proveedor: EmissionProvider;
+  ordenesCreadas(): number;
+  /** Fija el estado de la orden de una operación en el doble de pruebas (como si el agente hubiera avanzado). */
+  fijarOrden(operacionId: string, estado: string, datos?: { serie: string; numero: string; autorizacion: string }): void;
+}
+export function ejecutarSuiteContratoAsistido(nombre: string, fabrica: () => ArnesAsistido) {
+  const T = (t: string, f: () => Promise<void> | void) => Deno.test(`contrato-asistido[${nombre}] ${t}`, f);
+  const ref = (s: SolicitudCertificacion) => ({ empresaId: s.empresaId, documentoId: s.documentoId, operacionId: s.operacionId, claveIdempotencia: s.claveIdempotencia, ambiente: s.ambiente });
+  T("capacidades: solo ambiente simulado y la emisión final la hace una persona", () => {
+    const c = fabrica().proveedor.capacidades; assert.equal(c.emiteSinHumano, false); assert.deepEqual(c.ambientes, ["simulado"]); assert.ok(c.tiempoMaximoMs > 0);
+  });
+  T("validar acepta un documento válido y rechaza uno inválido sin crear órdenes", async () => {
+    const a = fabrica(); assert.equal((await a.proveedor.validar(documento("d1"), CTX)).ok, true);
+    assert.equal((await a.proveedor.validar(documento("d2", { lineas: [], total: "0.000000" }), CTX)).ok, false); assert.equal(a.ordenesCreadas(), 0);
+  });
+  T("enviar NUNCA certifica: crea exactamente una orden y devuelve requiere_accion_humana", async () => {
+    const a = fabrica(); const r = await a.proveedor.enviar(sol(documento("d1"), 1), CTX);
+    assert.equal(r.tipo, "requiere_accion_humana"); if (r.tipo !== "requiere_accion_humana") return;
+    assert.ok(r.ordenId.length > 0 && r.instruccion.length > 0); assert.equal(a.ordenesCreadas(), 1);
+  });
+  T("una segunda orden para la misma operación se rechaza (sin duplicar)", async () => {
+    const a = fabrica(); const s = sol(documento("d1"), 1); await a.proveedor.enviar(s, CTX);
+    await assert.rejects(() => a.proveedor.enviar(s, CTX)); assert.equal(a.ordenesCreadas(), 1);
+  });
+  T("ambientes no simulados se rechazan con NO_SOPORTADO ANTES de crear nada", async () => {
+    for (const amb of ["pruebas", "produccion"] as const) {
+      const a = fabrica();
+      await assert.rejects(() => a.proveedor.enviar(sol(documento("d1"), 1, amb), { ...CTX, ambiente: amb }), (e: unknown) => e instanceof ErrorProveedor && e.codigo === "NO_SOPORTADO");
+      await assert.rejects(() => a.proveedor.enviar(sol(documento("d1"), 1, amb), CTX), (e: unknown) => e instanceof ErrorProveedor && e.codigo === "NO_SOPORTADO");   // solicitud de otro ambiente en contexto simulado
+      await assert.rejects(() => a.proveedor.conciliar({ ...ref(sol(documento("d1"), 1, amb)) }, CTX), (e: unknown) => e instanceof ErrorProveedor && e.codigo === "NO_SOPORTADO");
+      assert.equal(a.ordenesCreadas(), 0);
+    }
+  });
+  T("conciliar es solo lectura y refleja lo que la orden PRUEBA", async () => {
+    const mapa: [string, string][] = [["pendiente", "indeterminado"], ["reclamada", "indeterminado"], ["llenada", "indeterminado"], ["incierta", "indeterminado"], ["descartada", "no_existe_confirmado"], ["fallida", "no_existe_confirmado"], ["cancelada", "no_existe_confirmado"]];
+    for (const [estado, esperado] of mapa) {
+      const a = fabrica(); const s = sol(documento("d1"), 1); await a.proveedor.enviar(s, CTX); a.fijarOrden(s.operacionId, estado);
+      const antes = a.ordenesCreadas(); assert.equal((await a.proveedor.conciliar(ref(s), CTX)).tipo, esperado, estado); assert.equal(a.ordenesCreadas(), antes);
+    }
+    const a = fabrica(); const s = sol(documento("d1"), 1); await a.proveedor.enviar(s, CTX); a.fijarOrden(s.operacionId, "completada", { serie: "SIMA", numero: "00000001", autorizacion: "SIM-ABC" });
+    const c = await a.proveedor.conciliar(ref(s), CTX); assert.equal(c.tipo, "certificado"); if (c.tipo === "certificado") assert.match(c.autorizacion, /^SIM-/);
+    a.fijarOrden(s.operacionId, "completada"); assert.equal((await a.proveedor.conciliar(ref(s), CTX)).tipo, "indeterminado", "completada sin datos fiscales no se acepta");
+  });
+  T("sin orden alguna: «no existe» confirmado (nada pudo presentarse)", async () => {
+    const a = fabrica(); assert.equal((await a.proveedor.conciliar({ empresaId: "empresa-prueba-1", documentoId: "d1", operacionId: "op-sin-orden", claveIdempotencia: "clave-sin-orden-0001", ambiente: "simulado" }, CTX)).tipo, "no_existe_confirmado");
+  });
+  T("artefactos y salud sin efectos", async () => { const a = fabrica(); assert.deepEqual(await a.proveedor.obtenerArtefactos({ empresaId: "e", documentoId: "d", operacionId: "o", claveIdempotencia: "clave-de-prueba-000001", ambiente: "simulado" }, CTX), []); assert.equal((await a.proveedor.salud(CTX)).ok, true); assert.equal(a.ordenesCreadas(), 0); });
+}

@@ -5,7 +5,7 @@ import { ErrorBd, type Rpc } from "./rpc.ts";
 export interface ConexionPg { rpc: Rpc; sql: ReturnType<typeof postgres>; cerrar(): Promise<void> }
 
 /** Funciones que devuelven varias filas (conjuntos): se devuelven siempre como lista. */
-const DEVUELVEN_LISTA = new Set(["fel_sys_operaciones_pendientes", "fel_sys_fallidas_manuales_recientes", "fel_sys_artefactos_faltantes"]);
+const DEVUELVEN_LISTA = new Set(["fel_sys_operaciones_pendientes", "fel_sys_fallidas_manuales_recientes", "fel_sys_artefactos_faltantes", "fel_sys_ordenes_para_cerrar", "fel_op_agentes_listar"]);
 
 export function conectarPg(opciones: { host: string; port: number; user: string; password?: string; database: string }): ConexionPg {
   const destino = opciones.host.startsWith("/") ? { path: `${opciones.host}/.s.PGSQL.${opciones.port}` } : { host: opciones.host, port: opciones.port };   // socket de Unix o TCP
