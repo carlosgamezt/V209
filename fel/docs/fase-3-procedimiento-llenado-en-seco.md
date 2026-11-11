@@ -2,7 +2,8 @@
 
 > **ESTADO: PROPUESTA. NO AUTORIZADA. Nada de esto se ejecuta hasta que la persona responsable lo autorice por escrito, etapa por etapa.** No se usa Playwright contra SAT, no se pulsa Vista Previa, no se guarda ni se emite. `main` no se toca.
 
-> **Etapa 0: autorizada (preparación local, sin SAT).** Entregables: ZIP de la PoC, guía de instalación en Windows y verificación solo con páginas simuladas. Las etapas 1 y 2 **siguen sin autorizar**.
+> **Etapa 1 (solo comprobar): autorizada, procedimiento en `docs/fase-3-etapa-1-procedimiento.md`, pendiente de revisión conjunta antes de ejecutar. Etapa 2: BLOQUEADA.**
+> **Etapa 0: completada en Windows con Chrome (27/27, 32/32, 18/18 en su momento).** Entregables: ZIP de la PoC, guía de instalación en Windows y verificación solo con páginas simuladas. Las etapas 1 y 2 **siguen sin autorizar**.
 
 ## 1. Qué falta antes de poder empezar (bloqueos reales)
 | # | Falta | Quién | Nota |

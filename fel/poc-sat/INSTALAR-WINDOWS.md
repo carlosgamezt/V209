@@ -37,20 +37,20 @@ npm.cmd install
 ## 4. Verificar la instalación (solo páginas simuladas)
 ```powershell
 npm.cmd run huellas            # confirma que los fragmentos de consola son los revisados (todos «OK»; el nº 2 está RETIRADO: no usar)
-npm.cmd run verificar:rapido   # pruebas de reglas, sin navegador: debe terminar con «pass 27» y «fail 0»
+npm.cmd run verificar:rapido   # pruebas de reglas, sin navegador: debe terminar con «pass 28» y «fail 0»
 npm.cmd run verificar:chrome   # VERIFICACIÓN COMPLETA con tu Google Chrome instalado (opción A)
 npm.cmd run verificar          # lo mismo con el Chromium de Playwright (opción B)
 ```
 **Comando exacto de la verificación completa en Windows con Chrome:** `npm.cmd run verificar:chrome`
 (equivale a `$env:FEL_NAVEGADOR = "chrome"; npm.cmd run verificar`; si tu Chrome está en una ruta poco habitual: `node bin\verificar.mjs --navegador=chrome --ruta="C:\ruta\a\chrome.exe"`).
-**Resultado esperado:** al inicio de cada batería verás `Navegador de pruebas: Google Chrome instalado (channel «chrome»)`; luego `# pass 27 · # fail 0`, **`32/32 casos OK`**, **`18/18 casos OK`** y `RESULTADO: las 3 baterías pasaron`.
+**Resultado esperado:** al inicio de cada batería verás `Navegador de pruebas: Google Chrome instalado (channel «chrome»)`; luego `# pass 28 · # fail 0`, **`32/32 casos OK`**, **`25/25 casos OK`** y `RESULTADO: las 3 baterías pasaron`.
 - Qué hace: abre un navegador **invisible** (Chrome o Chromium) contra páginas locales (`127.0.0.1`). Para probar los nombres de host de SAT, **los resuelve a tu propio equipo y no resuelve ningún otro nombre**: es imposible que contacte con SAT.
 - No deja archivos: borra lo que crea. No escribe nada fuera de la carpeta temporal.
 - Si el firewall de Windows pregunta algo, es por el puerto local de pruebas: **«Cancelar» o permitir solo redes privadas** (nada sale a Internet).
 - Si algún caso falla, copia **toda** la salida (no contiene datos) y me la envías.
 
-## 5. Comando de «solo comprobar» — SOLO DOCUMENTADO, **NO EJECUTAR TODAVÍA**
-Este comando es de la **Etapa 1** (no autorizada). Se conectaría a un Chrome tuyo con sesión SAT iniciada por ti, **resolvería los localizadores sin escribir, elegir, marcar, salir de campos ni pulsar nada**, y se detendría. Para correr contra el portal real el programa **exige una autorización explícita por etapa**; sin ella **se niega**:
+## 5. Comando de «solo comprobar» — Etapa 1 AUTORIZADA, pero **NO EJECUTAR hasta revisar el procedimiento juntos**
+El procedimiento completo, paso a paso (Chrome de prueba, qué se registra, cuándo se detiene) está en **`fel\docs\fase-3-etapa-1-procedimiento.md`**. Resumen: este comando es de la **Etapa 1**. Se conectaría a un Chrome tuyo con sesión SAT iniciada por ti, **resolvería los localizadores sin escribir, elegir, marcar, salir de campos ni pulsar nada**, y se detendría. Para correr contra el portal real el programa **exige una autorización explícita por etapa**; sin ella **se niega**:
 ```powershell
 # NO EJECUTAR hasta que se autorice la Etapa 1
 $env:FEL_AUTORIZACION_SAT = "si"; $env:FEL_ETAPA_AUTORIZADA = "etapa1"

@@ -197,6 +197,23 @@
       "verificado": false
     },
     {
+      "id": "p150-linea0-leer-total",
+      "tipo": "leer",
+      "comentario": "Total calculado de la línea 0 (deshabilitado). Solo se lee; en --solo-comprobar solo se verifica que el campo exista y sea legible.",
+      "evidencia": "obs2a: CSS input[name=Total0] total=1, visible",
+      "localizador": {
+        "estrategia": "nombre",
+        "valor": "Total0",
+        "tag": "input",
+        "marco": {
+          "url_contiene": "felav.c.sat.gob.gt/fel-web/privado/vistas/fel.jsf"
+        }
+      },
+      "dato": "lineas.0.total_esperado",
+      "espera_ms": 2500,
+      "verificado": false
+    },
+    {
       "id": "p999-detener",
       "tipo": "detener"
     }

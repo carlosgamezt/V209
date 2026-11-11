@@ -300,3 +300,12 @@ test("navegador de las pruebas: Chromium por defecto; Chrome solo con FEL_NAVEGA
   const fuentes = ["src", "bin"].flatMap((d) => fs.readdirSync(new URL(`../${d}/`, import.meta.url)).filter((f) => f.endsWith(".mjs") && f !== "verificar.mjs").map((f) => fs.readFileSync(new URL(`../${d}/${f}`, import.meta.url), "utf8")));
   assert.ok(fuentes.every((c) => !/FEL_NAVEGADOR/.test(c)), "el motor real (src/ y bin/ salvo verificar) no depende de FEL_NAVEGADOR");
 });
+
+test("ejecutor: toda acción que modifica la página (fill, selectOption, setChecked, blur, click) está precedida por su salida de solo-comprobar", () => {
+  const src = fs.readFileSync(new URL("../src/ejecutor.mjs", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const acciones = [...src.matchAll(/\.(fill|selectOption|setChecked|blur|click)\s*\(/g)];
+  assert.ok(acciones.length >= 5, `acciones encontradas: ${acciones.length}`);
+  for (const m of acciones) { const antes = src.slice(Math.max(0, m.index - 420), m.index); assert.ok(/soloComprobar/.test(antes), `.${m[1]}( no está protegida por soloComprobar: …${antes.slice(-120).replace(/\s+/g, " ")}`); }
+  assert.ok(/if \(soloComprobar\) \{ progreso = null; libro = null; reanudar = false; \}/.test(src), "comprobar no deja progreso ni libro");
+  assert.ok(!/\.(press|pressSequentially|check|dispatchEvent|hover|dblclick|setInputFiles|dragTo)\s*\(|\.type\s*\(\s*[^)\s]/.test(src), "el ejecutor no usa otras acciones de interacción (.type() sin argumentos es solo el tipo del diálogo)");
+});

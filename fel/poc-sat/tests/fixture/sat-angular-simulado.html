@@ -40,6 +40,12 @@
 <button type="button" id="vp" ng-click="validarInformacion()">Vista Previa</button>
 <div class="modal" ng-show="vistaPrevia"><p>Vista previa (simulada)</p><button type="button" id="emi" ng-click="emitir()">Emitir</button></div>
 <div class="modal" ng-show="modalImpuestos"><p>Impuestos (simulado)</p></div>
+<div id="login" hidden><h2>Sesión expirada (SIMULADA)</h2><label for="clave">Clave de acceso</label><input id="clave" type="password"></div>
+<script>
+// Simulación de sesión caducada: oculta todo salvo el panel de inicio de sesión (con su campo de contraseña). No existe en el portal real.
+window.__expirar = () => { document.getElementById("login").hidden = false; for (const e of Array.from(document.body.children)) if (e.id !== "login" && e.tagName !== "SCRIPT") e.style.display = "none"; };
+window.__iniciarSesion = () => { document.getElementById("login").hidden = true; for (const e of Array.from(document.body.children)) if (e.id !== "login") e.style.display = ""; };
+</script>
 <script src="/angular.js"></script>
 <script>
 angular.module("sim", []).controller("Ctrl", function ($scope, $http, $timeout) {

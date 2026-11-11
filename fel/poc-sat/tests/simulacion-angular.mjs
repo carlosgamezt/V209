@@ -3,14 +3,21 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { lanzar, lanzarPersistente, descripcionNavegador } from "./navegador.mjs";
+const ejecutarAsync = (cmd, args, o, entrada) => new Promise((ok) => { const h = execFile(cmd, args, o, (e, stdout, stderr) => ok({ status: e ? (e.code ?? 1) : 0, stdout, stderr })); if (entrada != null) { h.stdin.write(entrada); h.stdin.end(); } });
 import { crearRegistro } from "../src/registro.mjs";
 import { ejecutarPlan } from "../src/ejecutor.mjs";
 import { bloquearEscrituras } from "../src/conexion.mjs";
 import { validarMapeo } from "../src/guardia.mjs";
+import { crearMonitorSesion } from "../src/sesion.mjs";
+import { crearProgreso } from "../src/progreso.mjs";
+import { crearLibro } from "../src/libro.mjs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const ANGULAR = (() => { try { return createRequire(import.meta.url).resolve("angular/angular.min.js"); } catch { const alt = process.env.ANGULAR_JS; if (alt && fs.existsSync(alt)) return alt; throw new Error("Falta AngularJS 1.5.8 para la simulación: ejecuta «npm install» en fel/poc-sat (o define ANGULAR_JS=ruta/angular.min.js)"); } })();
@@ -60,7 +67,7 @@ function planSimulado({ conBlur = true, extraFinal = [], conMarco = false } = {}
     por["p010-receptor-radio-nit"], por["p020-receptor-nit"],
     ...(conBlur ? [por["p025-receptor-salir-nit"], por["p026-receptor-leer-respuesta"]] : []),
     por["p030-receptor-direccion"], por["p100-linea0-tipo"], por["p110-linea0-cantidad"], por["p120-linea0-descripcion"], por["p130-linea0-precio"], por["p140-linea0-descuento"],
-    paso("s100-leer-total", "leer", L("nombre", "Total0", { tag: "input" }), "lineas.0.total_esperado", { espera_ms: 2000 }),
+    por["p150-linea0-leer-total"],
     paso("s110-sin-errores", "verificar_ausente", L("clase", "ng-invalid", { visible: true })),
     ...extraFinal, { id: "p999-detener", tipo: "detener" },
   ];
@@ -93,21 +100,21 @@ await caso("1-5 FLUJO COMPLETO: tipo de documento y moneda, receptor, línea 0, 
   assert.equal(await r.page.locator('input[name="Total0"]').inputValue(), "241.00"); assert.equal(await r.page.locator('input[name="Cantidad0"]').evaluate((e) => e.classList.contains("ng-dirty")), true, "AngularJS marcó el campo como modificado (ng-dirty)");
   assert.equal(await r.page.locator(".ng-invalid:visible").count(), 0, "ningún campo visible inválido"); assert.equal(m.vistaPrevia, false);
   const s = r.resumen; assert.equal(s.errores.length, 0); assert.equal(s.bloqueos_de_guardia.length, 0); assert.ok(s.fases.llenado.ms > 0); assert.deepEqual(posts, [], "ninguna petición de escritura llegó al servidor");
-  assert.ok(r.registro.eventos().some((e) => e.id === "s100-leer-total" && /coincide/.test(e.detalle)) && r.registro.eventos().some((e) => e.id === "s110-sin-errores" && e.resultado === "ok"));
+  assert.ok(r.registro.eventos().some((e) => e.id === "p150-linea0-leer-total" && /coincide/.test(e.detalle)) && r.registro.eventos().some((e) => e.id === "s110-sin-errores" && e.resultado === "ok"));
   await r.context.close();
 });
 
 await caso("LECTURA ASÍNCRONA (determinista): el total llega al modelo con un retraso EXPLÍCITO; con espera la lectura reintenta y pasa; sin espera falla, sea cual sea la velocidad del equipo", async () => {
   // El retraso lo fija la página (?retardo=ms), no la velocidad de la máquina ni del navegador.
-  const conEspera = planSimulado({ conBlur: false }); conEspera.pasos.find((p) => p.id === "s100-leer-total").espera_ms = 12000;
+  const conEspera = planSimulado({ conBlur: false }); conEspera.pasos.find((p) => p.id === "p150-linea0-leer-total").espera_ms = 12000;
   const r = await correr(conEspera, { url: URL_BASE + "?retardo=4000" }); assert.equal(r.ok, true, JSON.stringify(r.resumen.errores));
-  const lectura = r.registro.eventos().find((e) => e.evento === "paso" && e.id === "s100-leer-total");
+  const lectura = r.registro.eventos().find((e) => e.evento === "paso" && e.id === "p150-linea0-leer-total");
   assert.ok(lectura.resultado === "ok" && lectura.ms >= 300, `la lectura tuvo que ESPERAR al modelo asíncrono (tardó ${lectura.ms} ms)`);
   assert.equal(await r.page.locator('input[name="Total0"]').inputValue(), "241.00");
-  const sinEspera = planSimulado({ conBlur: false }); sinEspera.pasos.find((p) => p.id === "s100-leer-total").espera_ms = 0;   // sin reintento: la primera lectura llega antes que el modelo
+  const sinEspera = planSimulado({ conBlur: false }); sinEspera.pasos.find((p) => p.id === "p150-linea0-leer-total").espera_ms = 0;   // sin reintento: la primera lectura llega antes que el modelo
   const r2 = await correr(sinEspera, { url: URL_BASE + "?retardo=6000" });
   assert.equal(r2.ok, false, "con el modelo retrasado y sin tiempo de espera la lectura del total calculado de forma asíncrona falla (por eso leer reintenta)"); assert.match(r2.resumen.errores[0]?.detalle ?? "", /no coincide/);
-  assert.equal(r2.resumen.errores[0].id, "s100-leer-total");
+  assert.equal(r2.resumen.errores[0].id, "p150-linea0-leer-total");
   await r.context.close(); await r2.context.close();
 });
 
@@ -123,16 +130,16 @@ await caso("6 VALIDACIÓN: una cantidad inválida se detecta (mensaje visible y 
   const r = await correr(planSimulado(), { datos: d });
   if (process.env.DEBUG_SIM) console.log(JSON.stringify([r.ok, r.estado, r.resumen.errores, r.resumen.bloqueos_de_guardia, r.registro.eventos().filter((e) => e.evento === "paso").map((e) => [e.id, e.resultado, e.detalle])]));
   assert.equal(r.ok, false); assert.equal(r.estado, "interrumpido");
-  const falla = r.resumen.errores.find((e) => e.id === "s100-leer-total" || e.id === "s110-sin-errores"); assert.ok(falla, JSON.stringify(r.resumen.errores));
+  const falla = r.resumen.errores.find((e) => e.id === "p150-linea0-leer-total" || e.id === "s110-sin-errores"); assert.ok(falla, JSON.stringify(r.resumen.errores));
   assert.equal(await r.page.getByText("Cantidad no válida").isVisible(), true, "el mensaje de validación de la página es visible"); assert.equal(await r.page.locator('input[name="Cantidad0"]').evaluate((e) => e.classList.contains("ng-invalid")), true);
   assert.deepEqual(posts.filter((x) => /emitir|vista|guardar/.test(x)), []); await r.context.close();
   // el paso verificar_ausente por sí solo reporta cuántos campos inválidos hay
-  const solo = planSimulado(); solo.pasos = solo.pasos.filter((p) => !/s100|p999/.test(p.id)); solo.pasos.push({ id: "p999-detener", tipo: "detener" });
+  const solo = planSimulado(); solo.pasos = solo.pasos.filter((p) => !/p150|p999/.test(p.id)); solo.pasos.push({ id: "p999-detener", tipo: "detener" });
   const r2 = await correr(solo, { datos: d }); if (process.env.DEBUG_SIM) console.log("R2", JSON.stringify([r2.ok, r2.resumen.errores, solo.pasos.map((p) => p.id), await r2.page.locator(".ng-invalid:visible").count()])); assert.match(r2.resumen.errores[0].detalle, /error(es)? de validación/); await r2.context.close();
 });
 await caso("6 VALIDACIÓN: descuento mayor que el subtotal → mensaje de error y total vacío; esperar_visible puede exigir el mensaje", async () => {
   const d = datosBase(); d.lineas[0].descuento = "999";
-  const plan = planSimulado(); plan.pasos = plan.pasos.filter((p) => !/s100|s110|p999/.test(p.id));
+  const plan = planSimulado(); plan.pasos = plan.pasos.filter((p) => !/p150|s110|p999/.test(p.id));
   plan.pasos.push({ id: "s120-esperar-mensaje", tipo: "esperar_visible", localizador: L("texto", "El descuento supera el subtotal", { exacto: true }), verificado: true }, { id: "p999-detener", tipo: "detener" });
   const r = await correr(plan, { datos: d }); assert.equal(r.ok, true, JSON.stringify(r.resumen.errores)); assert.equal(await r.page.locator('input[name="Total0"]').inputValue(), "", "total vacío ante descuento inválido"); await r.context.close();
 });
@@ -252,6 +259,87 @@ await caso("SOLO COMPROBAR: resuelve y comprueba todos los localizadores del map
   const mal = planSimulado(); mal.pasos.find((p) => p.id === "p110-linea0-cantidad").localizador = L("nombre", "NoExiste9", { tag: "input" });   // y detecta localizadores rotos sin tocar nada
   const r2 = await ejecutarPlan({ page, plan: mal, datos: datosBase(), registro: crearRegistro({ empresa: "x", salida: () => {} }), empresa: { alias: "e" }, local: true, soloComprobar: true, esperarUsuario: async () => "si", salida: () => {}, timeout: 600 });
   assert.equal(r2.ok, false); assert.match(r2.resumen.errores[0].detalle, /ningún elemento/); await context.close();
+});
+
+// ======================================================================= ETAPA 1 (solo comprobar): ensayo con el mapeo REAL, sin tocar, contra la simulación en iframe
+async function etapa1Iframe({ hooksDe = () => ({}) } = {}) {
+  const plan = structuredClone(pre), datos = datosBase();   // el mapeo REAL tal cual (verificado:false) y los dominios reales
+  const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "empresa-prueba", salida: () => {} });
+  await bloquearEscrituras(context, { permitir_post: [], permitir_get: [], dominios: plan.dominios_permitidos }, registro);
+  const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await page.frameLocator("iframe").locator("body").waitFor();
+  const frame = () => page.frames().find((f) => f.url().includes("/fel-web/")), sesion = crearMonitorSesion({ config: plan.sesion, dominios: plan.dominios_permitidos, salida: () => {} });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fel-e1-")), preguntas = [], t0 = Date.now();
+  const detenerSi = () => { const b = registro.eventos().find((e) => e.evento === "solicitud_bloqueada"); return b ? `solicitud bloqueada durante la comprobación (${b.metodo} ${b.host}${b.ruta}): ${b.razon}` : null; };
+  const antes = await modeloF(frame());
+  const r = await ejecutarPlan({ page, plan, datos, registro, empresa: { alias: "empresa-prueba" }, local: false, soloComprobar: true, sesion, progreso: crearProgreso({ dir, plan, datos }), libro: crearLibro({ dir }), detenerSi, hooks: hooksDe(frame), timeout: 2500,
+    esperarUsuario: async (q) => { preguntas.push(q); return /empresa/.test(q) ? "si" : ""; }, salida: () => {} });
+  return { ...r, page, context, registro, frame, dir, preguntas, antes, ms: Date.now() - t0 };
+}
+const sinCambios = async (r) => { const f = r.frame(); assert.deepEqual(await modeloF(f), r.antes, "el modelo de AngularJS no cambió"); assert.equal(await f.locator(".ng-dirty").count(), 0, "ningún campo fue modificado (ng-dirty)"); assert.equal(await f.locator('input[name="Cantidad0"]').inputValue(), ""); assert.equal(await f.locator('input[name^="Cantidad"]').count(), 1); };
+
+await caso("ETAPA 1 · ENSAYO: el plan REAL (mapeo sin tocar, hosts y marco de SAT) en solo-comprobar: todo comprobado, nada escrito, ninguna petición bloqueada ni de escritura, sin progreso ni libro", async () => {
+  posts.length = 0; const r = await etapa1Iframe();
+  assert.equal(r.ok, true, JSON.stringify(r.resumen.errores) + JSON.stringify(r.resumen.bloqueos_de_guardia)); await sinCambios(r);
+  const det = r.registro.eventos().filter((e) => e.evento === "paso").map((e) => `${e.id}:${e.detalle}`).join("\n");
+  for (const id of ["p010-receptor-radio-nit", "p020-receptor-nit", "p025-receptor-salir-nit", "p030-receptor-direccion", "p100-linea0-tipo", "p110-linea0-cantidad", "p120-linea0-descripcion", "p130-linea0-precio", "p140-linea0-descuento", "p150-linea0-leer-total"]) assert.match(det, new RegExp(`${id}:(comprobado|clasificado)`), id);
+  assert.match(det, /p026-receptor-leer-respuesta:no comprobable en frío/, "el nombre aparece tras escribir CF: en frío no se puede comprobar y se dice");
+  assert.ok(!/elegida|llenado|marcad[ao]\b|se salió/.test(det.replace(/sin (elegir|marcar|salir|escribir)[^|\n]*/g, "")), "ningún detalle indica una acción real");
+  assert.deepEqual(r.resumen.solicitudes_bloqueadas, []); assert.deepEqual(r.resumen.lecturas_xhr, []); assert.deepEqual(posts, []); assert.equal(r.resumen.emitio, false); assert.equal(r.resumen.errores.length, 0);
+  assert.deepEqual(r.preguntas.map((q) => /empresa/.test(q) ? "identidad" : "manual"), ["identidad", "manual"], "solo la confirmación de identidad y la apertura manual del formulario");
+  assert.deepEqual(fs.readdirSync(r.dir), [], "no se escribió progreso ni libro"); assert.ok(r.registro.eventos().some((e) => e.evento === "sesion_sat" && e.estado === "activa"), "sesión comprobada como activa por el indicador de pestaña");
+  const txt = JSON.stringify(r.registro.eventos()); for (const x of ["SERVICIO DE PRUEBA", "CIUDAD DE PRUEBA", "RECEPTOR DE PRUEBA", "125.50", "251.00", "Consumidor Final"]) assert.ok(!txt.includes(x), `el registro no debe contener «${x}»`);
+  await r.context.close();
+});
+await caso("ETAPA 1 · SESIÓN PERDIDA: la comprobación SE DETIENE (no espera ni reanuda) y no pide nada al usuario", async () => {
+  const r = await etapa1Iframe({ hooksDe: (frame) => ({ antesDeEjecutar: async (p) => { if (p.id === "p110-linea0-cantidad") await frame().evaluate(() => window.__expirar("overlay")); } }) });
+  assert.equal(r.ok, false); assert.equal(r.estado, "sesion_perdida"); assert.ok(r.ms < 6000, `se detuvo enseguida (${r.ms} ms), sin esperar el inicio de sesión`);
+  assert.ok(r.registro.eventos().some((e) => e.id === "p-sesion" && e.resultado === "bloqueado"), "queda registrado"); assert.equal(r.preguntas.length, 2, "no pidió nada más (ni «escribe si cuando termines»)");
+  assert.equal(r.resumen.fases.autenticacion?.ms ?? 0, 0); assert.deepEqual(fs.readdirSync(r.dir), []); assert.equal(await r.frame().locator(".ng-dirty").count(), 0); await r.context.close();
+});
+await caso("ETAPA 1 · SIN SESIÓN AL EMPEZAR: se detiene antes de comprobar ningún localizador", async () => {
+  const plan = structuredClone(pre), context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: plan.dominios_permitidos }, registro);
+  const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await page.frameLocator("iframe").locator("body").waitFor();
+  const f = page.frames().find((x) => x.url().includes("/fel-web/")); await f.evaluate(() => window.__expirar("overlay"));
+  const rr = await ejecutarPlan({ page, plan, datos: datosBase(), registro, empresa: { alias: "x" }, local: false, soloComprobar: true, sesion: crearMonitorSesion({ config: plan.sesion, dominios: plan.dominios_permitidos, salida: () => {} }), esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} });
+  assert.equal(rr.ok, false); assert.equal(rr.estado, "sesion_perdida"); assert.equal(rr.resumen.pasos <= 3, true, "ningún localizador se comprobó"); await context.close();
+});
+await caso("ETAPA 1 · PETICIÓN INESPERADA: si el portal intenta escribir (POST) durante la comprobación, la guardia la aborta y la comprobación SE DETIENE", async () => {
+  posts.length = 0; const r = await etapa1Iframe({ hooksDe: (frame) => ({ antesDePaso: async (p) => { if (p.id === "p100-linea0-tipo") { await frame().evaluate(() => { fetch("/api/guardar", { method: "POST", body: "x" }).catch(() => {}); }); await new Promise((ok) => setTimeout(ok, 300)); } } }) });
+  assert.equal(r.ok, false); assert.equal(r.estado, "detenido_por_alerta"); assert.match(r.resumen.bloqueos_de_guardia.at(-1).detalle, /POST/); assert.deepEqual(posts, [], "el POST no llegó al servidor");
+  assert.ok(!r.registro.eventos().some((e) => e.id === "p110-linea0-cantidad"), "no se comprobó nada después de la alerta"); await r.context.close();
+});
+await caso("ETAPA 1 · DIÁLOGO INESPERADO: un aviso del portal detiene la comprobación (se descarta, nunca se acepta)", async () => {
+  const r = await etapa1Iframe({ hooksDe: (frame) => ({ antesDePaso: async (p) => { if (p.id === "p100-linea0-tipo") { await frame().evaluate(() => { setTimeout(() => alert("aviso"), 20); }); await new Promise((ok) => setTimeout(ok, 400)); } } }) });
+  assert.equal(r.ok, false); assert.equal(r.estado, "detenido_por_alerta"); assert.ok(r.registro.eventos().some((e) => e.evento === "nota" && /diálogo alert descartado/.test(e.texto))); await r.context.close();
+});
+await caso("ETAPA 1 · LOCALIZADOR AUSENTE O AMBIGUO: se detiene en el primero, sin tocar nada", async () => {
+  const mk = async (loc) => { const plan = structuredClone(pre); plan.pasos.find((p) => p.id === "p110-linea0-cantidad").localizador = { ...loc, marco: pre.pasos[1].localizador.marco };
+    const context = await browserHosts.newContext(), registro = crearRegistro({ empresa: "x", salida: () => {} }); await bloquearEscrituras(context, { dominios: plan.dominios_permitidos }, registro);
+    const page = await context.newPage(); await page.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await page.frameLocator("iframe").locator("body").waitFor();
+    const r = await ejecutarPlan({ page, plan, datos: datosBase(), registro, empresa: { alias: "x" }, local: false, soloComprobar: true, timeout: 700, esperarUsuario: async (q) => (/empresa/.test(q) ? "si" : ""), salida: () => {} }); return { r, registro, context, page }; };
+  const a = await mk({ estrategia: "nombre", valor: "NoExiste0", tag: "input" }); assert.equal(a.r.ok, false); assert.match(a.r.resumen.errores[0].detalle, /ningún elemento/); assert.ok(!a.registro.eventos().some((e) => e.id === "p120-linea0-descripcion"), "no siguió"); await a.context.close();
+  const b = await mk({ estrategia: "nombre", valor: "Descripcion0" });   // sin tag: coincide con el input y con el select ocultos assert.match(b.r.resumen.errores[0].detalle, /ambiguo/); await b.context.close();
+});
+await caso("ETAPA 1 · ENSAYO GENERAL DEL COMANDO EXACTO: node bin/ejecutar.mjs … --solo-comprobar con el mapeo real, la autorización por entorno y un Chrome con puerto de depuración local (sesión «ya iniciada» simulada)", async () => {
+  posts.length = 0; const puerto = 9700 + Math.floor(Math.random() * 90), tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fel-cli1-")), perfil = path.join(tmp, "perfil");
+  const ctx = await lanzarPersistente(perfil, { headless: true, args: [`--remote-debugging-port=${puerto}`, "--host-resolver-rules=MAP felav.c.sat.gob.gt 127.0.0.1, MAP farm3.sat.gob.gt 127.0.0.1, MAP * ~NOTFOUND , EXCLUDE 127.0.0.1"] });
+  const empresa = path.join(tmp, "empresa.local.json"); fs.writeFileSync(empresa, JSON.stringify({ alias: "empresa-e1", modo: "cdp", cdp: `http://127.0.0.1:${puerto}`, identidad: { confirmacion_manual: true } }));
+  try {
+    const pg = ctx.pages()[0] ?? await ctx.newPage(); await pg.goto(`http://farm3.sat.gob.gt:${PUERTO}/menu/portada.jsf`); await pg.frameLocator("iframe").locator("body").waitFor();
+    const fr = () => pg.frames().find((f) => f.url().includes("/fel-web/")), antes = await modeloF(fr());
+    const env = { ...process.env, FEL_AUTORIZACION_SAT: "si", FEL_ETAPA_AUTORIZADA: "etapa1" }, cwd = path.join(AQUI, "..");
+    const r = await ejecutarAsync(process.execPath, ["bin/ejecutar.mjs", `--empresa=${empresa}`, "--mapeo=config/mapeo.sat-preliminar.json", "--datos=config/datos-ficticios-lineas.json", "--solo-comprobar"], { cwd, env, timeout: 90000 }, "si\n\n");
+    if (process.env.FEL_MOSTRAR_SALIDA) console.log("----- SALIDA DEL ENSAYO -----\n" + r.stdout + "-----------------------------");
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, /COMPROBACIÓN \(solo lectura\)/); assert.match(r.stdout, /no comprobable en frío/); assert.match(r.stdout, /emitió: NO/); assert.doesNotMatch(r.stdout, /ERROR|BLOQUEO|SESIÓN /);
+    assert.deepEqual(await modeloF(fr()), antes, "el modelo no cambió"); assert.equal(await fr().locator(".ng-dirty").count(), 0); assert.deepEqual(posts, []);
+    const dirReg = path.join(cwd, "registros", "empresa-e1"), archivos = fs.readdirSync(dirReg).sort(); assert.ok(archivos.some((x) => x.endsWith(".jsonl")) && archivos.some((x) => x.endsWith(".resumen.json")), archivos.join(","));
+    assert.ok(!archivos.some((x) => /progreso|libro/.test(x)), `no deja progreso ni libro: ${archivos}`);
+    const res = JSON.parse(fs.readFileSync(path.join(dirReg, archivos.find((x) => x.endsWith(".resumen.json"))), "utf8")); assert.equal(res.errores.length, 0); assert.deepEqual(res.solicitudes_bloqueadas, []); assert.equal(res.emitio, false);
+    const todo = archivos.map((x) => fs.readFileSync(path.join(dirReg, x), "utf8")).join("\n"); for (const x of ["PRUEBA", "125.50", "251.00", "Consumidor Final", "cookie", "token"]) assert.ok(!todo.includes(x), `el registro no debe contener «${x}»`);
+    // y sin la autorización por etapa el mismo comando se niega
+    const sin = await ejecutarAsync(process.execPath, ["bin/ejecutar.mjs", `--empresa=${empresa}`, "--mapeo=config/mapeo.sat-preliminar.json", "--datos=config/datos-ficticios-lineas.json", "--solo-comprobar"], { cwd, env: { ...process.env, FEL_AUTORIZACION_SAT: "", FEL_ETAPA_AUTORIZADA: "" }, timeout: 30000 }, "");
+    assert.equal(sin.status, 2); assert.match(sin.stderr, /Se niega a correr/);
+  } finally { await ctx.close(); fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(path.join(AQUI, "..", "registros"), { recursive: true, force: true }); }
 });
 
 await browser.close(); await browserHosts.close(); servidor.close();

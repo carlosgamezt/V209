@@ -17,7 +17,8 @@ const CAMPOS = new Set(["llenar", "seleccionar", "marcar"]);
  *   sesion (monitor de sesión SAT, opcional), progreso (checkpoint, opcional), libro + (claveDoc se calcula) (anti-duplicados, opcional),
  *   reanudar (continuar una ejecución interrumpida), hooks.antesDePaso (solo pruebas), salida
  */
-export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, soloComprobar = false, hooks = {}, salida = (s) => console.log(s) }) {
+export async function ejecutarPlan({ page, plan, datos, registro, empresa = { alias: "sin-alias" }, esperarUsuario, local = false, reloj = () => Date.now(), timeout = 5000, sesion = null, progreso = null, libro = null, reanudar = false, soloComprobar = false, detenerSi = null, hooks = {}, salida = (s) => console.log(s) }) {
+  if (soloComprobar) { progreso = null; libro = null; reanudar = false; }   // comprobar no deja estado: ni progreso, ni libro, ni reanudación
   const vm = validarMapeo(plan, { local, soloComprobar }), vd = validarDatos(datos), errVal = [...vm.errores, ...vd.errores];
   const claveDoc = claveIdempotencia(empresa.alias, datos);
   if (!errVal.length && libro) { const pe = libro.puedeEjecutar(claveDoc); if (!pe.permitir) errVal.push(pe.razon); }
@@ -26,7 +27,8 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
   const dominios = plan.dominios_permitidos;
   const comprobarHost = () => { const h = hostDe(page.url()); if (!hostPermitido(h, dominios)) throw new ErrorGuardia(`la pestaña está en «${h || "?"}», que no está en dominios_permitidos`); };
   page.on("framenavigated", (f) => { if (f === page.mainFrame()) registro.navegacion({ host: hostDe(f.url()), ruta: rutaDe(f.url()) }); });
-  page.on("dialog", (d) => { registro.nota(`diálogo ${d.type()} descartado`); d.dismiss().catch(() => {}); });   // descartar = cancelar: nunca se acepta nada
+  let dialogos = 0;
+  page.on("dialog", (d) => { dialogos++; registro.nota(`diálogo ${d.type()} descartado`); d.dismiss().catch(() => {}); });   // descartar = cancelar: nunca se acepta nada
   sesion?.adjuntar(page);
   if (soloComprobar) registro.nota("modo solo-comprobar: se resuelven y comprueban los localizadores; NO se escribe, ni se pulsa, ni se sale de ningún campo");
 
@@ -67,9 +69,17 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
     });
   };
   // ---- pausa por cierre de sesión: esperar a la persona, verificar, volver al formulario, reconciliar
+  // En solo-comprobar cualquier señal inesperada DETIENE la comprobación (nunca se espera ni se reanuda).
+  const vigilar = () => {
+    if (!soloComprobar) return;
+    const alerta = dialogos > 0 ? "el portal abrió un diálogo (descartado): acción no prevista" : detenerSi?.();
+    if (alerta) { registro.paso({ id: "p-vigilancia", tipo: "leer", modo: "auto", ms: 0, resultado: "bloqueado", detalle: String(alerta).slice(0, 200) }); estadoFinal = "detenido_por_alerta"; throw new ErrorGuardia(alerta); }
+  };
   const pausarPorSesion = async (razones) => {
     const t0 = reloj();
-    registro.sesion({ estado: "requiere_login", razones }); progreso?.pausaPorSesion();
+    registro.sesion({ estado: "requiere_login", razones });
+    if (soloComprobar) { registro.paso({ id: "p-sesion", tipo: "leer", modo: "auto", ms: 0, resultado: "bloqueado", detalle: "la sesión SAT no está activa o se perdió: la comprobación se detiene (no se espera ni se reanuda)" }); estadoFinal = "sesion_perdida"; throw new ErrorGuardia("la sesión SAT no está activa o se perdió"); }
+    progreso?.pausaPorSesion();
     const r = await sesion.esperarSesionActiva(page, { esperarUsuario, salida });
     registro.sesion({ estado: "activa", via: r.via });
     await esperarUsuario(plan.sesion?.reanudar_instruccion ?? "Vuelve TÚ al formulario donde estabas (sin emitir) y pulsa Enter.");
@@ -101,7 +111,9 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
     } else if (sesion) { const ev = await sesion.evaluar(page); registro.sesion({ estado: ev.estado, razones: ev.razones, via: "inicial" }); if (ev.estado === "requiere_login") await pausarPorSesion(ev.razones); }
 
     const reintentos = {};   // un solo reintento por paso tras un cierre de sesión
-    for (let p; (p = plan.pasos.find((x) => !hechos.has(x.id))); ) {   // siempre el primer paso pendiente: si una reconciliación obliga a re-llenar, se hace en orden
+    vigilar();
+    for (let p; (p = plan.pasos.find((x) => !hechos.has(x.id))); ) {
+      vigilar();   // siempre el primer paso pendiente: si una reconciliación obliga a re-llenar, se hace en orden
       if (p.tipo === "manual") { await espera(p, p.instruccion); marcar(p); continue; }
       if (p.tipo === "detener") {
         await paso(p, "auto", async () => { detenido = true; return "DETENIDO: la prueba termina aquí. No se emitió, certificó ni envió nada."; });
@@ -118,6 +130,7 @@ export async function ejecutarPlan({ page, plan, datos, registro, empresa = { al
         if (!esIdempotente(p)) { estadoFinal = "requiere_decision_manual"; throw new ErrorGuardia(`el paso «${p.id}» no es repetible y la sesión se cerró durante él: revisa a mano en el portal si se aplicó y reinicia`); }
       }
     }
+    vigilar();   // última mirada: si durante la comprobación se bloqueó algo, no se da por buena
     if (detenido) { estadoFinal = "detenido"; libro?.registrar(claveDoc, "detenido_antes_de_emitir"); }
   } catch (e) { ok = false; if (process.env.FEL_POC_DEBUG) console.error(e); /* el detalle ya quedó en el registro; se termina sin seguir */ }
   progreso?.estado(ok && detenido ? "detenido" : estadoFinal);

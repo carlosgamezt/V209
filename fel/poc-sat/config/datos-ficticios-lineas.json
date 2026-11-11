@@ -15,7 +15,8 @@
       "cantidad": "2",
       "descripcion": "SERVICIO DE PRUEBA UNO - NO EMITIR",
       "precio": "125.50",
-      "descuento": "0"
+      "descuento": "0",
+      "total_esperado": "251.00"
     },
     {
       "tipo": "Bien",
