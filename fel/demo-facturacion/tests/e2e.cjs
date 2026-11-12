@@ -8,7 +8,7 @@ if (capturas) fs.mkdirSync(capturas, { recursive: true });
 function arrancar() {
   if (process.env.FEL_DEMO_URL) return Promise.resolve({ url: process.env.FEL_DEMO_URL, parar() {} });
   const puerto = 9300 + Math.floor(Math.random() * 500);
-  const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"] });
+  const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "0" } });
   return new Promise((ok, mal) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); mal(new Error("el servidor no arrancó a tiempo:\n" + salida)); }, 120000);
     const alLeer = (d) => { salida += d; if (salida.includes("Abre:")) { clearTimeout(t); ok({ url: `http://127.0.0.1:${puerto}`, parar() { hijo.kill(); } }); } };
@@ -227,7 +227,7 @@ function arrancar() {
   assert.match(await p.locator('[data-canal="portal_playwright"]').innerText(), /Principal previsto/); assert.match(await p.locator('[data-canal="portal_playwright"]').innerText(), /Bloqueado en esta fase/); assert.match(await p.locator('[data-canal="digifact"]').innerText(), /Secundario previsto/); assert.match(await p.locator('[data-canal="mock"]').innerText(), /Habilitado · simulado/);
   assert.equal(await p.locator("[data-panel=agente] [data-estado-agente]").innerText(), "No registrado"); assert.equal(await p.locator("[data-panel=agente] .tag").count(), 1, "solo el estado actual; los futuros no se muestran"); assert.doesNotMatch(await p.locator("[data-panel=agente]").innerText(), /Conectado|Sin conexión|Sesión/, "sin estados de conexión simulados");
   assert.equal(await p.locator("#registrar-agente").isDisabled(), true); assert.equal(await p.locator("#activar-canal-real").isDisabled(), true); await foto("13-canales-agente.png");
-  assert.equal((await api("GET", "/api/configuracion")).canales.filter((c) => c.habilitado && c.proveedor_id !== "mock").length, 0, "ningún canal real habilitado");
+  assert.equal((await api("GET", "/api/configuracion")).canales.filter((c) => c.habilitado && c.ambiente !== "simulado").length, 0, "ningún canal que no sea simulado habilitado");
 
   // ============ 11. móvil: sin desborde horizontal, aviso visible, flujo utilizable
   const movil = await nav.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: "es-GT" });

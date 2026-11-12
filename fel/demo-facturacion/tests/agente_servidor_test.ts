@@ -9,7 +9,7 @@ const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 Deno.test({ name: "servidor de la demostración: plano de control del agente, supervisor y cierre ordenado", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const puerto = 9600 + Math.floor(Math.random() * 300);
-  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { FEL_AGENTE_SUPERVISOR_MS: "100" }, stdout: "piped", stderr: "piped" }).spawn();
+  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { FEL_AGENTE_SUPERVISOR_MS: "100", FEL_DEMO_LOGIN: "0" }, stdout: "piped", stderr: "piped" }).spawn();
   let salida = ""; const dec = new TextDecoder();
   const leer = async (s: ReadableStream<Uint8Array>) => { for await (const t of s) salida += dec.decode(t); };
   const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
