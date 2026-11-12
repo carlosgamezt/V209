@@ -15,7 +15,7 @@ Instala **Deno** (https://deno.com), **Node.js** y la **CLI de Supabase** (https
 
 ## Paso 1 · Proyecto Supabase NUEVO (no el principal de NEXA)
 1. En supabase.com crea un proyecto nuevo llamado, p. ej., `nexa-demo` (plan Free). **No uses el proyecto principal.**
-2. Anota (en un bloc de notas, no en el chat): la **referencia** (las 20 letras de `https://<referencia>.supabase.co`), la **contraseña de base de datos** que elegiste, y desde *Project Settings → API*: la **URL** y la clave **service_role**.
+2. Anota (en un bloc de notas, no en el chat): la **referencia** (las 20 letras de `https://<referencia>.supabase.co`), la **contraseña de base de datos** que elegiste, y desde *Project Settings → API*: la **URL** y la clave **service_role** (la larga que empieza por `eyJ`; si tu panel solo muestra claves nuevas, usa la «secret key» que empieza por `sb_secret_`).
 3. En *Project Settings → Database → Connection string* copia la cadena del **Transaction pooler** (puerto 6543).
 
 ## Paso 2 · Aplicar la estructura de datos
@@ -44,7 +44,7 @@ export FEL_DEMO_CLAVES='<la línea generada>'
 export FEL_DEMO_MFA_SEMILLAS='<la línea generada>'
 deno run -A demo-facturacion/nube/aprovisionar.ts
 ```
-El programa se niega si la referencia no coincide con la conexión (protección contra equivocarse de proyecto) o si la base ya tiene empresas ajenas. Los usuarios se crean con la API oficial de Supabase Auth.
+El programa se niega si la referencia no coincide con la conexión (protección contra equivocarse de proyecto) o si la base ya tiene empresas ajenas. Los usuarios se crean con la API oficial de Supabase Auth (el CI lo comprueba contra Auth local real).
 
 ## Paso 5 · Publicar la función de Supabase
 ```
