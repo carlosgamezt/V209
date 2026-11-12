@@ -27,7 +27,7 @@ Una sola aplicación (contenedor) con la demostración: PC y teléfono por naveg
 GitHub (CI y contenedor de prueba): sin costo adicional. **Total esperado: ≈ US$5–8 al mes con la opción A, sin dominio.** Cancelar el servicio detiene el cobro; no hay compromisos de plazo.
 
 ## 4. Riesgos y límites que debes aceptar
-- **No es producción:** datos en memoria, una sola instancia, sin respaldo; cualquier reinicio borra lo creado y cierra sesiones.
+- **No es producción:** ahora los datos persisten en PostgreSQL (ver `demostracion-infraestructura-y-persistencia.md`), pero sin respaldo garantizado en el plan gratuito; sigue siendo una demostración simulada.
 - **Acceso:** cualquiera que conozca la dirección verá la pantalla de inicio de sesión (no el contenido). La protección son las contraseñas largas, el MFA y los límites de intentos; para ocultarla aún más, usar el extra de Cloudflare Access.
 - **La IP del cliente** para los límites se toma de las cabeceras del proxy del proveedor (válido detrás de Fly/Cloud Run/Render; no usar el modo publicado sin proxy).
 - **Sigue siendo simulación:** nada de lo que se muestre tiene valor fiscal.

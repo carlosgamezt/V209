@@ -4,7 +4,6 @@
 // Uso:  deno run -A servidor.ts [--puerto=8787]
 import { fileURLToPath } from "node:url";
 import { crearBdPg } from "./src/bd.ts";
-import { crearBd } from "./src/bd_memoria.ts";
 import { AlmacenMemoria, AlmacenPg } from "./src/almacen.ts";
 import { sembrar, mundoExistente } from "./src/mundo_demo.ts";
 import { CLAVE_DEMO, PERSONAS, sembrarPractico } from "./src/mundo_practico.ts";
@@ -35,7 +34,7 @@ const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fon
 
 // BASE DE DATOS: sin FEL_DEMO_BD_URL, PostgreSQL en memoria (PGlite; se pierde al cerrar). Con ella, la base REAL (Supabase/PostgreSQL) con las migraciones del proyecto aplicadas: todo persiste.
 const BD_URL = Deno.env.get("FEL_DEMO_BD_URL");
-const bd = BD_URL ? crearBdPg(BD_URL) : await crearBd();
+const bd = BD_URL ? crearBdPg(BD_URL) : await (await import("./src/bd_memoria.ts")).crearBd();   // PGlite solo se carga en modo memoria
 let mundo;
 if (bd.tipo === "pg") {
   try { await bd.filas("select 1 from public.demo_entorno limit 1"); } catch { console.error("La base no tiene las migraciones del proyecto (falta public.demo_entorno). Aplícalas primero (supabase db push); este programa no crea el esquema."); Deno.exit(1); }
