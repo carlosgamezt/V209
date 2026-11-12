@@ -5,7 +5,7 @@ import { registroSimulado } from "../../proveedores/src/registro.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
-import { PERSONAS, EXTRA, esMaestro } from "./mundo_practico.ts";
+import { EXTRA, esMaestro } from "./mundo_practico.ts";
 import { Sesiones } from "./sesiones.ts";
 import { pdfDemo } from "./pdf_demo.ts";
 import { verificar as verificarTotp } from "./totp.ts";
@@ -86,21 +86,21 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     async rutasSesion(req: Request, url: URL): Promise<Response | null> {
       const S = d.sesiones; if (!S || !url.pathname.startsWith("/api/sesion")) return null;
       if (req.method === "GET" && url.pathname === "/api/sesion") {
-        const s = S.validar(Sesiones.idDeCookie(req));
-        return json(s ? { autenticado: true, usuario: s.usuario, nombre: PERSONAS[s.usuario].nombre } : { autenticado: false, usuarios: Object.entries(PERSONAS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })), clave_demo: S.claveDemoPublica });
+        const s = await S.validar(Sesiones.idDeCookie(req)), p = s ? await S.persona(s.usuario) : undefined;
+        return json(s && p ? { autenticado: true, usuario: s.usuario, nombre: p.nombre } : { autenticado: false, usuarios: (await S.almacen.cuentas()).map((c) => ({ clave: c.usuario, nombre: c.persona.nombre, rol: c.persona.rol, descripcion: c.persona.descripcion })), clave_demo: S.claveDemoPublica });
       }
       if (req.method === "POST" && url.pathname === "/api/sesion/entrar") {
         const b = await leer(req); const usuario = String(b.usuario ?? "").toLowerCase().trim();
         const segundo = d.mfa ? async (u: string) => { const sem = d.mfa!.get(u); if (!sem) return "ok" as const; const c = String(b.codigo ?? "").trim(); return c === "" ? "falta" as const : (await verificarTotp(sem, c)) ? "ok" as const : "mal" as const; } : undefined;
-        const r = await S.entrar(usuario in PERSONAS ? usuario : "-", String(b.clave ?? ""), b.recordar === true, segundo);
+        const r = await S.entrar(usuario, String(b.clave ?? ""), b.recordar === true, segundo);
         if (r.mfa === "falta") return json({ codigo: "mfa_requerido", mensaje: "Escribe el código de 6 dígitos de tu aplicación de autenticación." }, 401);
         if (r.mfa === "mal") return json({ codigo: "mfa_incorrecto", mensaje: "El código no es correcto o venció. Inténtalo con el siguiente." }, 401);
         if (r.bloqueado) return json({ codigo: "bloqueado", mensaje: "Demasiados intentos. Espera un minuto e inténtalo de nuevo." }, 429);
         if (!r.sesion) return json({ codigo: "credenciales", mensaje: "Usuario o contraseña incorrectos." }, 401);
-        return new Response(JSON.stringify({ autenticado: true, usuario: r.sesion.usuario, nombre: PERSONAS[r.sesion.usuario].nombre }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(r.sesion, seguro(req)) } });
+        return new Response(JSON.stringify({ autenticado: true, usuario: r.sesion.usuario, nombre: (await S.persona(r.sesion.usuario))?.nombre }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(r.sesion, seguro(req)) } });
       }
       if (req.method === "POST" && url.pathname === "/api/sesion/salir") {
-        await leer(req); S.salir(Sesiones.idDeCookie(req));
+        await leer(req); await S.salir(Sesiones.idDeCookie(req));
         return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(null, seguro(req)) } });
       }
       throw new ErrorPr(404, "Ruta no encontrada", "no_encontrado");
@@ -122,18 +122,18 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const invitaciones = await bd.filas<Obj>("select id, email, rol, estado, expira_en from public.invitaciones where empresa_id = $1 and estado = 'pendiente' order by creado_en desc", [E]);
         const roles = await bd.filas<Obj>("select rol, array_agg(permiso order by permiso) as permisos from public.rol_permisos group by rol order by case rol when 'propietario' then 0 when 'administrador' then 1 when 'emisor' then 2 else 3 end");
         const catalogo = await bd.filas<Obj>("select codigo, descripcion from public.permisos_catalogo order by codigo");
-        const claveDe = (uid: unknown) => Object.entries(PERSONAS).find(([, p]) => p.id === uid)?.[0] ?? null;
+        const cuentasU = d.sesiones ? await d.sesiones.almacen.cuentas() : [], claveDe = (uid: unknown) => cuentasU.find((c) => c.persona.id === uid)?.usuario ?? null;
         return c.json({ miembros: miembros.map((x) => ({ ...x, usuario: claveDe(x.user_id) })), invitaciones, roles, catalogo, puedeGestionar: permisos.includes("usuarios.gestionar"), yo: a.id });
       }
       if (m === "POST" && ruta === "/api/usuarios") {   // alta de una persona de la demostración: invitación real (con su chequeo de jerarquía) + cuenta + aceptación
         const b = await c.cuerpo(); const usuario = texto(b.usuario, 3, 20, "Usuario").toLowerCase(), nombre = texto(b.nombre, 3, 80, "Nombre"), clave = texto(b.clave, 8, 80, "Contraseña"), rol = String(b.rol);
         if (!/^[a-z][a-z0-9_]{2,19}$/.test(usuario)) throw new ErrorPr(400, "Usuario: letras minúsculas, números o guion bajo (3 a 20)", "entrada_invalida");
         if (!["administrador", "emisor", "lector"].includes(rol)) throw new ErrorPr(400, "Rol no válido", "entrada_invalida");
-        if (usuario in PERSONAS) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const email = `${usuario}@demo.example`;
+        if (!d.sesiones) throw new ErrorPr(404, "No disponible en este modo", "no_disponible"); if (await d.sesiones.persona(usuario)) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const email = `${usuario}@demo.example`;
         await bd.rpc("fel_op_invitacion_registrar", { p_actor: a.id, p_empresa: E, p_email: email, p_rol: rol, p_permisos_extra: [] });   // aquí se valida que quien invita puede dar ese rol
-        const uid = crypto.randomUUID(); await bd.db.query("insert into auth.users (id, email, email_confirmed_at) values ($1, $2, now())", [uid, email]); await bd.db.query("insert into public.perfiles (user_id, nombre) values ($1, $2) on conflict (user_id) do update set nombre = excluded.nombre", [uid, nombre]);
+        const uid = crypto.randomUUID(); await bd.ejecutar("insert into auth.users (id, email, email_confirmed_at) values ($1, $2, now())", [uid, email]); await bd.ejecutar("insert into public.perfiles (user_id, nombre) values ($1, $2) on conflict (user_id) do update set nombre = excluded.nombre", [uid, nombre]);
         await bd.rpc("fel_op_invitacion_aceptar", { p_user: uid, p_email: email });
-        PERSONAS[usuario] = { id: uid, nombre, rol, descripcion: `${rol} de la empresa`, empresa: E }; await d.sesiones?.registrar(usuario, clave);
+        await d.sesiones.registrar(usuario, clave, { id: uid, nombre, rol, descripcion: `${rol} de la empresa`, empresa: E });
         return c.json({ ok: true, usuario });
       }
       if (m === "POST" && (r = /^\/api\/usuarios\/([^/]+)\/actualizar$/.exec(ruta))) {
@@ -212,7 +212,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     // ---------------------------------------------------------------- administrador de la plataforma
     async rutasMaestro(req: Request, url: URL, a: { clave: string; id: string }): Promise<Response> {
       const ruta = url.pathname, m = req.method; let r: RegExpExecArray | null; const M = a.id;
-      if (m === "GET" && ruta === "/api/estado") return json({ usuario: { clave: a.clave, ...PERSONAS[a.clave] }, esMaestro: true, login: true, practico: true, permisos: [], aviso: "SIMULADO - SIN VALOR FISCAL" });
+      if (m === "GET" && ruta === "/api/estado") return json({ usuario: { clave: a.clave, ...(await d.sesiones?.persona(a.clave)) }, esMaestro: true, login: true, practico: true, permisos: [], aviso: "SIMULADO - SIN VALOR FISCAL" });
       if (m === "GET" && ruta === "/api/plataforma/resumen") {
         const empresas = await bd.filas<Obj>(`select e.id, e.nombre_comercial, e.razon_social, e.nit, e.estado,
             (select pl.nombre from public.contratos_plan ct join public.plan_versiones pv on pv.id = ct.plan_version_id join public.planes pl on pl.codigo = pv.plan_codigo where ct.empresa_id = e.id and ct.hasta is null limit 1) as plan,
@@ -269,16 +269,15 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       }
       if (m === "POST" && ruta === "/api/plataforma/empresas") {
         const b = await leer(req); const usuario = texto(b.propietario_usuario, 3, 20, "Usuario del propietario").toLowerCase(); if (!/^[a-z][a-z0-9_]{2,19}$/.test(usuario)) throw new ErrorPr(400, "Usuario: letras minúsculas, números o guion bajo (3 a 20)", "entrada_invalida");
-        if (usuario in PERSONAS) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const clave = texto(b.propietario_clave, 8, 80, "Contraseña del propietario");
+        if (await d.sesiones?.persona(usuario)) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const clave = texto(b.propietario_clave, 8, 80, "Contraseña del propietario");
         const [reg] = await bd.filas<{ id: string }>("select id from public.regimenes_fiscales where codigo = $1", [typeof b.regimen === "string" ? b.regimen : "general"]); if (!reg) throw new ErrorPr(422, "Régimen no encontrado", "regla");
         const empresa = await bd.rpc("fel_admin_empresa_crear", { p_actor: M, p_nombre_comercial: texto(b.nombre_comercial, 1, 120, "Nombre comercial"), p_razon_social: texto(b.razon_social, 1, 200, "Razón social"), p_nit: texto(b.nit, 3, 20, "NIT"), p_regimen_id: reg.id }) as string;
         await bd.rpc("fel_admin_empresa_estado", { p_actor: M, p_empresa: empresa, p_estado: "habilitada", p_motivo: "Alta de la empresa en la demostración" });
         const uid = crypto.randomUUID(), nombre = texto(b.propietario_nombre, 3, 80, "Nombre del propietario");
-        await bd.db.query("insert into auth.users (id, email) values ($1, $2)", [uid, `${usuario}@demo.example`]); await bd.db.query("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [uid]);
-        await bd.db.query("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, 'propietario')", [empresa, uid]);
+        await bd.ejecutar("insert into auth.users (id, email) values ($1, $2)", [uid, `${usuario}@demo.example`]); await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [uid]);
+        await bd.ejecutar("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, 'propietario')", [empresa, uid]);
         for (const p of ["mock", ...ids]) await bd.filas("select public.fel_op_canal_configurar($1, $2, null, $3, 'simulado', true)", [uid, empresa, p]);
-        PERSONAS[usuario] = { id: uid, nombre, rol: "propietario", descripcion: `Propietario de ${texto(b.nombre_comercial, 1, 120, "Nombre comercial")}`, empresa };
-        await d.sesiones?.registrar(usuario, clave);
+        await d.sesiones?.registrar(usuario, clave, { id: uid, nombre, rol: "propietario", descripcion: `Propietario de ${texto(b.nombre_comercial, 1, 120, "Nombre comercial")}`, empresa });
         return json({ empresa, usuario, aviso: "Empresa habilitada con canal simulado y Digifact simulado. Asígnale un plan y registra un pago simulado para que pueda certificar." });
       }
       if (m === "GET" && ruta === "/api/plataforma/bolson") {
@@ -311,7 +310,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
             r.accion, r.motivo as resolucion_motivo, r.unidades::text as resolucion_unidades, re.nombre_comercial as resolucion_empresa
           from public.bolson_conciliacion_partidas p left join public.empresas e on e.id = p.empresa_id left join public.bolson_partida_resoluciones r on r.partida_id = p.id left join public.empresas re on re.id = r.empresa_id
           order by p.clasificacion = 'coincide', p.referencia`);
-        return json({ extractos, conciliaciones, partidas, yo: M, nombres: Object.fromEntries(Object.values(PERSONAS).map((u) => [u.id, u.nombre])), empresas: await bd.filas("select id, nombre_comercial from public.empresas order by nombre_comercial") });
+        return json({ extractos, conciliaciones, partidas, yo: M, nombres: Object.fromEntries((d.sesiones ? await d.sesiones.almacen.cuentas() : []).map((c) => [c.persona.id, c.persona.nombre])), empresas: await bd.filas("select id, nombre_comercial from public.empresas order by nombre_comercial") });
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/extractos/importar") {
         const b = await leer(req); const cuenta = uuidOk(b.cuenta) ? b.cuenta : null; if (!cuenta) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");

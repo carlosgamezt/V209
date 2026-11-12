@@ -1,6 +1,7 @@
 // Recorrido PRÁCTICO por la API real de la demostración (inicio de sesión + Digifact simulado + plan/saldo + plataforma). Servidor real, PostgreSQL real (PGlite), todo simulado y local.
 // Uso: deno test -A tests/practico_api_test.ts
 import assert from "node:assert/strict";
+import { baseDePrueba } from "./bd_prueba.ts";
 import { codigo as codigoTotp } from "../src/totp.ts";
 
 const RAIZ = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -9,7 +10,8 @@ type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 
 Deno.test({ name: "versión práctica: login, empresas, factura con varios ítems, Digifact simulado, anulación, plan y saldo, plataforma, aislamiento", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const puerto = 9900 + Math.floor(Math.random() * 90);
-  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { FEL_AGENTE_SUPERVISOR_MS: "60000" }, stdout: "piped", stderr: "piped" }).spawn();
+  const bdp = await baseDePrueba();
+  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { ...bdp.env, FEL_AGENTE_SUPERVISOR_MS: "60000" }, stdout: "piped", stderr: "piped" }).spawn();
   let salida = ""; const dec = new TextDecoder(); const leer = async (s: ReadableStream<Uint8Array>) => { for await (const t of s) salida += dec.decode(t); }; const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
   try {
     const limite = Date.now() + 120_000; while (!salida.includes("Supervisor de órdenes iniciado") && Date.now() < limite) await dormir(100);
@@ -207,12 +209,13 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     // ---- 8. cerrar sesión
     assert.equal((await ana.llamar("POST", "/api/sesion/salir", {})).status, 200); const tras = await fetch(base + "/api/estado", { headers: { "x-demo": "1", cookie: ana.cookie } }); assert.equal(tras.status, 401, "la sesión cerrada ya no sirve");
   } catch (e) { console.log("--- salida del servidor ---\n" + salida.slice(-3500)); throw e;
-  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
+  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } await bdp.limpiar(); }
 } });
 
 Deno.test({ name: "acceso remoto: contraseñas ALEATORIAS por sesión (la pública no sirve), solo se muestran en la ventana del programa y la lista no las revela", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const puerto = 9800 + Math.floor(Math.random() * 90);
-  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { FEL_AGENTE_SUPERVISOR_MS: "60000", FEL_DEMO_CLAVE_ALEATORIA: "1" }, stdout: "piped", stderr: "piped" }).spawn();
+  const bdp = await baseDePrueba();
+  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { ...bdp.env, FEL_AGENTE_SUPERVISOR_MS: "60000", FEL_DEMO_CLAVE_ALEATORIA: "1" }, stdout: "piped", stderr: "piped" }).spawn();
   let salida = ""; const dec = new TextDecoder(); const leer = async (s: ReadableStream<Uint8Array>) => { for await (const x of s) salida += dec.decode(x); }; const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
   try {
     const limite = Date.now() + 120_000; while (!salida.includes("Supervisor de órdenes iniciado") && Date.now() < limite) await dormir(100);
@@ -234,12 +237,13 @@ Deno.test({ name: "acceso remoto: contraseñas ALEATORIAS por sesión (la públi
     const con2 = (c: string) => fetch(base + "/api/sesion/entrar", { method: "POST", headers: cab, body: JSON.stringify({ usuario: "maestro2", clave: m2[1], codigo: c }) });
     for (let i = 0; i < 5; i++) assert.equal((await con2("00000" + i)).status, 401);
     assert.equal((await con2(await codigoTotp(sem2[1]))).status, 429, "bloqueado: el código correcto tampoco entra");
-  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
+  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } await bdp.limpiar(); }
 } });
 
 Deno.test({ name: "seguridad: cookies manipuladas, falsificación entre sitios, entradas hostiles, escalada de privilegios y rutas estáticas", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const puerto = 9700 + Math.floor(Math.random() * 90);
-  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { FEL_AGENTE_SUPERVISOR_MS: "60000" }, stdout: "piped", stderr: "piped" }).spawn();
+  const bdp = await baseDePrueba();
+  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { ...bdp.env, FEL_AGENTE_SUPERVISOR_MS: "60000" }, stdout: "piped", stderr: "piped" }).spawn();
   let salida = ""; const dec = new TextDecoder(); const leer = async (s: ReadableStream<Uint8Array>) => { for await (const x of s) salida += dec.decode(x); }; const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
   try {
     const limite = Date.now() + 120_000; while (!salida.includes("Supervisor de órdenes iniciado") && Date.now() < limite) await dormir(100);
@@ -278,5 +282,5 @@ Deno.test({ name: "seguridad: cookies manipuladas, falsificación entre sitios, 
     for (const ruta of ["/web/../servidor.ts", "/web/%2e%2e/servidor.ts", "/app/js/../../servidor.ts", "/app/js/%2e%2e/%2e%2e/servidor.ts", "/web/js/..%2f..%2fservidor.ts", "/servidor.ts", "/src/api.ts", "/tests/practico_api_test.ts"]) { const st = (await fetch(base + ruta)).status; assert.ok([403, 404].includes(st), `${ruta} → ${st}`); }
     // --- la sesión de pedro no sirve para el panel de otra empresa y cerrar sesión la invalida en el servidor (la cookie robada ya no sirve)
     assert.equal((await j(pedro, "POST", "/api/sesion/salir", {})).status, 200); assert.equal((await j(pedro, "GET", "/api/estado")).status, 401, "la cookie del lector murió en el servidor");
-  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
+  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } await bdp.limpiar(); }
 } });

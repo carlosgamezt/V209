@@ -81,6 +81,6 @@ const servidor = Deno.serve({ hostname: "127.0.0.1", port: PUERTO, ...tls, onLis
 });
 agente.supervisor.iniciar();
 let cerrando = false;
-async function cierre() { if (cerrando) return; cerrando = true; await agente.supervisor.detener(); await servidor.shutdown(); await bd.db.close().catch(() => {}); Deno.exit(0); }
+async function cierre() { if (cerrando) return; cerrando = true; await agente.supervisor.detener(); await servidor.shutdown(); await bd.cerrar(); Deno.exit(0); }
 for (const s of ["SIGINT", "SIGTERM"] as const) { try { Deno.addSignalListener(s, () => { void cierre(); }); } catch { /* sin señal */ } }
 await servidor.finished;

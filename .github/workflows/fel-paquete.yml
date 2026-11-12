@@ -3,7 +3,7 @@ name: NEXA FEL · paquete de la demostración
 on:
   push:
     branches: [fel-proveedores-diseno]
-    paths: ["fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
+    paths: ["fel/tools/test-demo-pg.sh", "fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -92,3 +92,33 @@ jobs:
       - name: Registro del contenedor si algo falla
         if: failure()
         run: docker logs nexa 2>&1 | tail -60
+  persistencia:
+    name: Persistencia en PostgreSQL real (API, seguridad, reinicios y E2E con datos persistentes)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      FEL_PG_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Pruebas de la demostración contra PostgreSQL real (incluye persistencia y protección de la base)
+        run: bash fel/tools/test-demo-pg.sh
+      - name: Navegador (Chromium)
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+      - name: E2E completo sobre datos persistentes (PC y teléfono)
+        run: bash fel/tools/test-demo-pg.sh --e2e

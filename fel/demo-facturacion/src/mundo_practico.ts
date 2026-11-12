@@ -20,16 +20,16 @@ export const esMaestro = (clave: string) => clave === "maestro" || clave === "ma
 export interface MundoPractico { cuentaBolson: string; planes: { prepago: string; mensual: string; suscripcion: string } }
 
 export async function sembrarPractico(bd: BdDemo): Promise<MundoPractico> {
-  const { db } = bd, M = EXTRA.maestro.id, S = EXTRA.sofia.id;
+  const M = EXTRA.maestro.id, S = EXTRA.sofia.id;
   for (const u of Object.values(EXTRA)) {
-    await db.query("insert into auth.users (id, email) values ($1, $2)", [u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`]);
-    await db.query("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
+    await bd.ejecutar("insert into auth.users (id, email) values ($1, $2)", [u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`]);
+    await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
   }
-  await db.query("insert into public.plataforma_admins (user_id) values ($1), ($2)", [M, EXTRA.maestro2.id]);
+  await bd.ejecutar("insert into public.plataforma_admins (user_id) values ($1), ($2)", [M, EXTRA.maestro2.id]);
   // segunda empresa: creada por el maestro con las funciones reales y habilitada
   const [reg] = await bd.filas<{ id: string }>("select id from public.regimenes_fiscales where codigo = 'general'");
-  await db.query("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) values ($1, 'Servicios Aguilar', 'Servicios Aguilar, S.A. (FICTICIA)', '8880002-5', $2, 'habilitada')", [EMPRESA2, reg.id]);
-  await db.query("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, 'propietario')", [EMPRESA2, S]);
+  await bd.ejecutar("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) values ($1, 'Servicios Aguilar', 'Servicios Aguilar, S.A. (FICTICIA)', '8880002-5', $2, 'habilitada')", [EMPRESA2, reg.id]);
+  await bd.ejecutar("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, 'propietario')", [EMPRESA2, S]);
   const est = await bd.filas<{ id: string }>("select (public.fel_op_establecimiento_guardar($1, $2, null, '1', 'Oficina central', 'Dirección ficticia 20', 'activo')).id as id", [S, EMPRESA2]);
   await bd.filas("select public.fel_op_empresa_datos_guardar($1, $2, 'Servicios Aguilar', 'Dirección ficticia 20, Ciudad', '2300-0000', 'facturacion@aguilar.example')", [S, EMPRESA2]);
   void est;
@@ -47,7 +47,7 @@ export async function sembrarPractico(bd: BdDemo): Promise<MundoPractico> {
   await bd.filas("select public.fel_admin_bolson_lote_registrar($1, $2, 5000, 2500, 'LOTE-SIM-1')", [M, cuenta]);
   const cuentaB = (await bd.filas<{ id: string }>("select (public.fel_admin_bolson_cuenta_crear($1, 'certificador_b', 'simulado', 'SIM-DEMO-B')).id as id", [M]))[0].id;
   await bd.filas("select public.fel_admin_bolson_lote_registrar($1, $2, 5000, 3000, 'LOTE-SIM-B1')", [M, cuentaB]);
-  const tar = (precio: string) => JSON.stringify([{ evento: "certificacion", precio, cargable: true }, { evento: "anulacion", precio: "0", cargable: false }, { evento: "rechazo_proveedor", precio: "0", cargable: false }, { evento: "consulta", precio: "0", cargable: false }]);
+  const tar = (precio: string) => [{ evento: "certificacion", precio, cargable: true }, { evento: "anulacion", precio: "0", cargable: false }, { evento: "rechazo_proveedor", precio: "0", cargable: false }, { evento: "consulta", precio: "0", cargable: false }];
   const plan = async (codigo: string, nombre: string, mod: string, cuota: string, incl: string, sob: boolean, lim: string, precio: string) => {
     await bd.filas("select public.fel_admin_plan_crear($1, $2, $3, $4)", [M, codigo, nombre, mod]);
     return (await bd.filas<{ id: string }>("select (public.fel_admin_plan_version_crear($1, $2, current_date - 1, $3::numeric, $4::numeric, $5, $6::numeric, $7::jsonb)).id as id", [M, codigo, cuota, incl, sob, lim, tar(precio)]))[0].id;

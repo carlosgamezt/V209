@@ -3,8 +3,9 @@
 // Solo escucha en 127.0.0.1. No usa credenciales, no se conecta a SAT ni a ningún certificador y no emite nada: todo lleva «SIMULADO - SIN VALOR FISCAL».
 // Uso:  deno run -A servidor.ts [--puerto=8787]
 import { fileURLToPath } from "node:url";
-import { crearBd } from "./src/bd.ts";
-import { sembrar } from "./src/mundo_demo.ts";
+import { crearBd, crearBdPg } from "./src/bd.ts";
+import { AlmacenMemoria, AlmacenPg } from "./src/almacen.ts";
+import { sembrar, mundoExistente } from "./src/mundo_demo.ts";
 import { CLAVE_DEMO, PERSONAS, sembrarPractico } from "./src/mundo_practico.ts";
 import { Sesiones } from "./src/sesiones.ts";
 import { semillaNueva, uriOtp } from "./src/totp.ts";
@@ -30,17 +31,30 @@ const AQUI = fileURLToPath(new URL(".", import.meta.url));
 const TIPOS: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json; charset=utf-8", ".ico": "image/x-icon" };
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-const bd = await crearBd();
-const mundo = await sembrar(bd);
-await sembrarPractico(bd);
+// BASE DE DATOS: sin FEL_DEMO_BD_URL, PostgreSQL en memoria (PGlite; se pierde al cerrar). Con ella, la base REAL (Supabase/PostgreSQL) con las migraciones del proyecto aplicadas: todo persiste.
+const BD_URL = Deno.env.get("FEL_DEMO_BD_URL");
+const bd = BD_URL ? crearBdPg(BD_URL) : await crearBd();
+let mundo;
+if (bd.tipo === "pg") {
+  try { await bd.filas("select 1 from public.demo_entorno limit 1"); } catch { console.error("La base no tiene las migraciones del proyecto (falta public.demo_entorno). Aplícalas primero (supabase db push); este programa no crea el esquema."); Deno.exit(1); }
+  if ((await bd.filas("select 1 from public.demo_entorno")).length) mundo = await mundoExistente(bd);   // reinicio: se conserva todo
+  else {
+    const [{ n }] = await bd.filas<{ n: number }>("select count(*)::int as n from public.empresas");
+    if (n > 0) { console.error(`La base ya contiene ${n} empresa(s) que no son de la demostración. Por seguridad NO se siembra ni se usa: apunta FEL_DEMO_BD_URL a una base exclusiva de la demostración.`); Deno.exit(1); }
+    mundo = await sembrar(bd); await sembrarPractico(bd); await bd.ejecutar("insert into public.demo_entorno default values");
+    console.log("  Base de la demostración sembrada por primera vez.");
+  }
+} else { mundo = await sembrar(bd); await sembrarPractico(bd); }
 const ALEATORIAS = !PUBLICADO && (LAN || Deno.env.get("FEL_DEMO_CLAVE_ALEATORIA") === "1");   // acceso desde otros equipos / remoto: nunca contraseñas públicas
-const sesiones = LOGIN ? new Sesiones() : undefined;
+const sesiones = LOGIN ? new Sesiones(undefined, bd.tipo === "pg" ? new AlmacenPg(bd) : new AlmacenMemoria(PERSONAS)) : undefined;
+// auditoría de la autenticación en el registro de auditoría de NEXA FEL (nunca contraseñas ni códigos)
+if (sesiones) sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch (e) { console.error("auditoría:", (e as Error).message); } };
 const CLAVES: Record<string, string> = {};
 const aleatoria = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => "abcdefghjkmnpqrstuvwxyz23456789"[x % 31]).join("");
 if (sesiones) {
   sesiones.claveDemoPublica = ALEATORIAS || PUBLICADO ? null : CLAVE_DEMO; sesiones.forzarSeguro = PUBLICADO;
-  if (PUBLICADO) { for (const [u, c] of Object.entries(CONFIG_PUB!.claves)) await sesiones.registrar(u, c); }   // solo las cuentas con contraseña configurada pueden entrar
-  else for (const k of Object.keys(PERSONAS)) { CLAVES[k] = ALEATORIAS ? aleatoria() : CLAVE_DEMO; await sesiones.registrar(k, CLAVES[k]); }
+  if (PUBLICADO) { for (const [u, c] of Object.entries(CONFIG_PUB!.claves)) await sesiones.registrar(u, c, PERSONAS[u]); }   // solo las cuentas con contraseña configurada pueden entrar
+  else for (const k of Object.keys(PERSONAS)) { if (bd.tipo === "pg" && await sesiones.persona(k)) continue; CLAVES[k] = ALEATORIAS ? aleatoria() : CLAVE_DEMO; await sesiones.registrar(k, CLAVES[k], PERSONAS[k]); }   // con base persistente no se pisan las contraseñas que las personas ya cambiaron
 }
 const agente = montarAgente(bd, { intervaloMs: intervaloDesdeEntorno(Deno.env.get("FEL_AGENTE_SUPERVISOR_MS")) });   // intervalo configurable (50 ms – 1 h; 15 s por defecto)
 // Verificación en dos pasos (TOTP) del administrador de la plataforma: obligatoria en modo remoto o con FEL_DEMO_MFA=1 (semillas fijas opcionales: FEL_DEMO_MFA_SEMILLAS="maestro=BASE32,maestro2=BASE32")
@@ -107,7 +121,7 @@ async function cierre(senal: string) {
   console.log(`\n  Cerrando (${senal})…`);
   await agente.supervisor.detener();
   await servidor.shutdown();
-  await bd.db.close().catch(() => {});
+  await bd.cerrar();
   console.log("  Cierre ordenado completado.");
   Deno.exit(0);
 }

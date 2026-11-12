@@ -1,6 +1,7 @@
 // El servidor en MODO PUBLICADO (lo que se alojaría en línea) probado como lo vería un atacante: sin configuración no arranca, solo el nombre configurado, solo HTTPS, cabeceras estrictas,
 // solo las cuentas con contraseña propia, MFA obligatoria para la plataforma, límite de intentos por IP, sin plano del agente y sin credenciales en el registro. Servidor real, TCP crudo.
 import assert from "node:assert/strict";
+import { baseDePrueba } from "./bd_prueba.ts";
 import { codigo } from "../src/totp.ts";
 import { PREFIJO_AGENTE } from "../../proveedores/src/plano_control_agente.ts";
 
@@ -31,7 +32,8 @@ Deno.test({ name: "modo publicado: no arranca con configuración ausente, débil
 
 Deno.test({ name: "modo publicado: superficie de ataque (host, HTTPS, cabeceras, cuentas, MFA, límite de intentos, agente, registro)", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const puerto = 9500 + Math.floor(Math.random() * 90);
-  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts"], cwd: RAIZ, env: { ...ENV, PORT: String(puerto) }, stdout: "piped", stderr: "piped" }).spawn();
+  const bdp = await baseDePrueba();
+  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts"], cwd: RAIZ, env: { ...bdp.env, ...ENV, PORT: String(puerto) }, stdout: "piped", stderr: "piped" }).spawn();
   let salida = ""; const dec = new TextDecoder(); const leer = async (s: ReadableStream<Uint8Array>) => { for await (const x of s) salida += dec.decode(x); }; const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
   try {
     const limite = Date.now() + 120_000; while (!salida.includes("Escuchando en el puerto") && Date.now() < limite) await dormir(100);
@@ -60,5 +62,5 @@ Deno.test({ name: "modo publicado: superficie de ataque (host, HTTPS, cabeceras,
     assert.equal(est.h.get("access-control-allow-origin") ?? null, null);
     for (const secreto of [...Object.values(CLAVES), SEM, SEM2]) assert.ok(!salida.includes(secreto), "el registro del servicio no contiene credenciales");
     assert.match(salida, /Sin credenciales en este registro/);
-  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
+  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } await bdp.limpiar(); }
 } });

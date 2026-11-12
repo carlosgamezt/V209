@@ -11,6 +11,7 @@ import { ProveedorEnrutado } from "../../proveedores/src/proveedor_enrutado.ts";
 import type { BdDemo } from "./bd.ts";
 import { Sesiones } from "./sesiones.ts";
 import { PERSONAS, esMaestro } from "./mundo_practico.ts";
+import type { Persona } from "./almacen.ts";
 import { crearPractico, ErrorPr } from "./api_practico.ts";
 import { EMPRESA, type Sembrado } from "./mundo_demo.ts";
 
@@ -53,10 +54,14 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     return c.id;
   };
   const canalBase = async () => (pr ? await canalDe("mock") : mundo.canal);   // sin la versión práctica (pruebas del agente) el canal es el sembrado; con ella, el de la empresa de la petición
-  const actor = (req: Request): { clave: string; id: string } => {
+  /** Persona de una cuenta: con inicio de sesión sale del almacén (memoria o base de datos); en el modo de pruebas, del mundo sembrado. */
+  const personaDe = async (clave: string): Promise<Persona | undefined> => extras.sesiones ? await extras.sesiones.persona(clave) : PERSONAS[clave];
+  const todasPersonas = async (): Promise<Record<string, Persona>> => extras.sesiones ? Object.fromEntries((await extras.sesiones.almacen.cuentas()).map((c) => [c.usuario, c.persona])) : personas();
+  const actor = async (req: Request): Promise<{ clave: string; id: string }> => {
     if (extras.sesiones) {
-      const s = extras.sesiones.validar(Sesiones.idDeCookie(req)); if (!s) throw new ErrorHttp(401, "Inicia sesión para continuar", "no_sesion");
-      return { clave: s.usuario, id: PERSONAS[s.usuario].id };
+      const s = await extras.sesiones.validar(Sesiones.idDeCookie(req)); if (!s) throw new ErrorHttp(401, "Inicia sesión para continuar", "no_sesion");
+      const p = await personaDe(s.usuario); if (!p) throw new ErrorHttp(401, "Inicia sesión para continuar", "no_sesion");
+      return { clave: s.usuario, id: p.id };
     }
     const c = req.headers.get("x-demo-usuario") ?? "ana"; if (!(c in personas())) throw new ErrorHttp(400, "Usuario de la demostración no válido", "entrada_invalida");
     return { clave: c, id: PERSONAS[c].id };
@@ -80,7 +85,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     const artefactos = await bd.filas("select id, operacion_id, tipo, nombre, mime, sha256, tamano from public.artefactos_documento where documento_id = $1 order by tipo", [docId]);
     let instantanea: unknown = null;
     if (d.establecimiento_id) { try { instantanea = await bd.rpc("fel_sys_documento_instantanea", { p_empresa: emp(), p_doc: docId }); } catch { instantanea = null; } }
-    const nombresUsuario = Object.fromEntries(Object.values(PERSONAS).map((u) => [u.id, u.nombre]));
+    const nombresUsuario = Object.fromEntries(Object.values(await todasPersonas()).map((u) => [u.id, u.nombre]));
     return { documento: d, lineas, operaciones, eventos, conciliaciones, alertas, artefactos, instantanea, escenario: mock.escenarioDeDocumento(docId), nombresUsuario, ...(pr ? await pr.detalleExtra(docId) : {}) };
   }
 
@@ -114,7 +119,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
     const cuerpo = async (): Promise<Obj> => { if (req.headers.get("x-demo") !== "1") throw new ErrorHttp(403, "Falta la cabecera de la demostración", "no_autorizado"); const t = await req.text(); if (t.length > 262144) throw new ErrorHttp(413, "Cuerpo demasiado grande"); try { const o = t ? JSON.parse(t) : {}; if (o === null || typeof o !== "object" || Array.isArray(o)) throw 0; return o as Obj; } catch { throw new ErrorHttp(400, "JSON no válido", "entrada_invalida"); } };
     const id = (p: string) => { const x = p; if (!uuidOk(x)) throw new ErrorHttp(400, "Identificador no válido", "entrada_invalida"); return x; };
-    const a = actor(req); let r: RegExpExecArray | null;
+    const a = await actor(req); let r: RegExpExecArray | null;
 
     if (m === "GET" && ruta === "/api/estado") {
       const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[];
@@ -122,7 +127,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]);
       const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
-      return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...PERSONAS[a.clave] }, login: !!extras.sesiones, practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
+      return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
         permisos, establecimientos, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
@@ -269,9 +274,9 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     try {
       const url = new URL(req.url);
       if (pr) { const s = await pr.rutasSesion(req, url); if (s) return s; }   // inicio y cierre de sesión (no requieren sesión previa)
-      const a = actor(req);
+      const a = await actor(req);
       if (pr && esMaestro(a.clave)) return await pr.rutasMaestro(req, url, a);   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
-      return await alcance.run({ empresa: PERSONAS[a.clave]?.empresa ?? EMPRESA }, () => manejar(req, url));
+      return await alcance.run({ empresa: (await personaDe(a.clave))?.empresa ?? EMPRESA }, () => manejar(req, url));
     }
     catch (e) {
       const cab = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
