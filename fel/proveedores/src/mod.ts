@@ -10,3 +10,5 @@ export * from "./firma_agente.ts";
 export * from "./plano_control_agente.ts";
 export * from "./supervisor_ordenes.ts";
 export * from "./autorizacion_humana.ts";
+export * from "./digifact.ts";
+export * from "./digifact_simulador.ts";

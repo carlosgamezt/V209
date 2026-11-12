@@ -70,7 +70,9 @@ begin
   -- SEPARACIÓN: el consumo del proveedor no contiene ni referencia nada comercial
   assert (select count(*) from information_schema.columns where table_schema = 'public' and table_name in ('consumos','bolson_movimientos','bolson_alertas')
           and column_name ~* '(precio|tarifa|monto|cargo|cobro|pago|monedero|plan|factur|importe|total|costo)') = 0, 'las tablas de consumo no pueden contener nada comercial';
-  assert (select count(*) from pg_tables where schemaname = 'public' and tablename ~* '(cargo|cobro|pago|monedero|tarifa|plan)') = 0, 'no deben existir tablas comerciales hasta D2-3';
+  -- (D2-3) la capa comercial existe, pero las tablas de consumo del proveedor NO la referencian en ningún sentido (la referencia va de lo comercial hacia el consumo, nunca al revés)
+  assert not exists (select 1 from pg_constraint c join pg_class tc on tc.oid = c.conrelid join pg_class rc on rc.oid = c.confrelid
+                      where c.contype = 'f' and tc.relname in ('consumos','bolson_movimientos','bolson_alertas') and rc.relname ~* '(cargo|cobro|pago|monedero|tarifa|plan|contrato|cuenta_comercial)'), 'el consumo del proveedor no puede depender de lo comercial';
   assert (select count(*) from pg_constraint where conrelid = 'public.consumos'::regclass and contype = 'f') = 9, 'claves foráneas de consumos (cuenta, empresa, evento, regla, resuelto_por, extracto, y 3 compuestas)';
   assert (select count(*) from pg_constraint where conrelid = 'public.bolson_movimientos'::regclass and contype = 'f' and pg_get_constraintdef(oid) ~ '\(consumo_id, (cuenta_id|empresa_id)\)') = 2, 'FK compuestas del libro hacia consumos';
   assert exists (select 1 from pg_indexes where indexname = 'consumos_unico_por_operacion'), 'un consumo de certificación/anulación por operación';
@@ -511,7 +513,10 @@ do $$ begin assert (select count(*) from public.consumos) = 0, 'el lector (sin c
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c4","role":"authenticated"}', true) as _cfg \gset
-do $$ begin assert (select count(*) from public.consumos) = 0, 'el administrador sin consumo.ver ve consumos'; end $$;
+do $$ begin   -- (D2-3) el rol administrador recibe consumo.ver: ve los consumos de SU empresa y nada de otras ni del bolsón
+  assert (select count(*) from public.consumos) > 5 and (select count(*) from public.consumos where empresa_id <> '10000000-0000-0000-0000-00000000000a') = 0, 'el administrador ve los consumos de su empresa y solo de ella';
+  assert (select count(*) from public.bolson_movimientos) = 0 and (select count(*) from public.bolson_cuentas) = 0, 'el administrador no ve el bolsón';
+end $$;
 reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000e1","role":"authenticated"}', true) as _cfg \gset
