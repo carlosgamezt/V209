@@ -18,12 +18,12 @@ Requisito de partida: el servidor es **Deno** (HTTP + HTML estático + API), usa
 |---|---|---|---|---|
 | **A · Contenedor (Fly.io) + Supabase Postgres** | Total: imagen y `fly.toml` listos, probados en CI | Ninguno | Fly ≈ US$5–8/mes; Supabase Free US$0 | **Lista hoy.** Mínimo mantenimiento. Único gasto |
 | **B · Deno Deploy + Supabase Postgres** | Es Deno nativo; `servidor.ts` ya lee `PORT`, no escribe a disco y no carga PGlite en este modo | Verificar en una prueba real: lectura de archivos estáticos desplegados, conexiones TCP salientes y temporizadores (supervisor) | Plan gratuito (confirmar límites) | **Mejor opción de costo cero** con el menor trabajo adicional; requiere una prueba que yo no puedo hacer sin tu cuenta |
-| C · Cloudflare Pages (estático) + Worker proxy + Supabase Edge Function (Deno) + Postgres | La función corre Deno, pero no sirve HTML ni tiene disco, y su CPU por petición es corta (PBKDF2 debe medirse) | Construir: función de entrada, `dist-pages` con `_headers`, proxy con secreto compartido y reenvío de IP/host, scripts de despliegue y una cadena de pruebas (proxy → función → base) | US$0 | Viable, pero **más piezas y más mantenimiento**; solo si quieres todo dentro de tus cuentas actuales |
+| **C · Cloudflare Pages (estático) + Pages Function (intermediario) + Supabase Edge Function (Deno) + Postgres de Supabase** | **Implementada y probada localmente** de punta a punta (construcción, aprovisionamiento, intermediario, función, base real, E2E en PC y teléfono). La función corre Deno; el inicio de sesión (PBKDF2) tarda ≈ 12 ms de CPU frente a un límite de ~2 s | Ninguno pendiente en el código; falta solo la prueba en los servicios reales (requiere tus cuentas) | **US$0** | **Recomendada**: usa tus cuentas de Cloudflare y Supabase, sin servidor propio que mantener |
 | D · Cloudflare Workers solo | **No**: Workers no es Deno, el plan gratuito da ~10 ms de CPU (PBKDF2 no cabe) y habría que reescribir el servidor | Reescritura | US$0–5 | Descartada |
 | E · Google Cloud Run / Render de pago | Compatible con la imagen | Ninguno | US$7–25/mes | Sin ventaja frente a A |
 Base de datos en todas: **un proyecto Supabase exclusivo de la demostración** (Free: 500 MB; el plan Free **pausa** el proyecto tras ~1 semana sin actividad —se reactiva a mano— y no incluye copias de seguridad). Conexión por el agrupador (pooler) en modo transacción (`prepare:false` ya configurado).
 
-**Recomendación:** (1) **B** si quieres costo cero: pruebo con tu cuenta en una sesión corta y, si algo falla, caemos a **A** sin tocar código. (2) **A** si prefieres lo ya probado y aceptas ≈ US$5–8/mes. C solo si exiges Cloudflare+Supabase de punta a punta; no la construí para no sumar mantenimiento sin una ventaja clara.
+**Recomendación:** **C** (Cloudflare Pages + función de Supabase + Postgres de Supabase), porque aprovecha tus cuentas, cuesta US$0 y no depende de ningún equipo encendido. Respaldo: **A** (contenedor en Fly.io, ≈ US$5–8/mes), que ya existe y se prueba en CI, si la prueba real de C diera problemas con los límites de Supabase. **B** queda como alternativa de costo cero sin Cloudflare.
 
 ## 3. Seguridad (resumen; detalle en `demostracion-en-linea-seguridad-y-costos.md`)
 Contraseñas largas aleatorias y MFA TOTP para los administradores de la plataforma (de variables de entorno, nunca del repositorio ni de la imagen); cookies `HttpOnly; Secure; SameSite=Strict`; bloqueo tras 5 intentos; límites por IP; solo HTTPS; lista de nombres permitidos; cabeceras estrictas; sin plano del agente; sin credenciales de demostración públicas; aislamiento entre empresas por RLS y funciones con actor; auditoría; la base solo la toca el servidor (las tablas de la demostración están cerradas a `anon`/`authenticated`). **La clave de conexión a la base (rol privilegiado) vive solo en el secreto de la plataforma de alojamiento; nada de Supabase llega al navegador.**
@@ -34,23 +34,31 @@ Brecha conocida: la demostración tiene su propio inicio de sesión; la **produc
 |---|---|---|
 | GitHub (repositorio, CI, imagen de prueba) | ✔ | — |
 | Supabase Postgres (proyecto exclusivo) | ✔ Free (se pausa por inactividad; sin respaldos) | Pro ≈ US$25 si quieres sin pausa y con respaldos |
+| Cloudflare Pages + Pages Function (opción C) | ✔ (confirmar límites del plan Free) | — |
+| Supabase Edge Functions (opción C) | ✔ (confirmar cuota mensual de invocaciones del plan Free) | — |
 | Alojamiento B (Deno Deploy) | ✔ (confirmar límites) | — |
 | Alojamiento A (Fly.io) | — | ≈ US$5–8 |
 | Dominio propio (opcional) | — | ≈ US$10–15 **al año** |
 | Cloudflare Access como puerta previa (opcional, requiere dominio) | ✔ hasta 50 usuarios | — |
-**Total esperado:** US$0 con B + Supabase Free; ≈ US$5–8 con A + Supabase Free; ≈ US$30–33 con A + Supabase Pro.
+**Total esperado:** **US$0 con C (Cloudflare + Supabase Free)**; US$0 con B + Supabase Free; ≈ US$5–8 con A + Supabase Free; ≈ US$30–33 con A + Supabase Pro.
 
-## 5. Pasos exactos para autorizar la publicación
-1. Decir por escrito **cuál opción (A o B)** y el **tope mensual** autorizado.
-2. Crear (con tu cuenta y tu método de pago si aplica) un **proyecto Supabase nuevo y exclusivo**; copiar la cadena de conexión del *pooler* (modo transacción). **No me la pegues**: se carga como secreto en el alojamiento.
-3. Aplicar las migraciones al proyecto: `supabase link` + `supabase db push` desde tu equipo (o pídeme el comando exacto).
-4. Generar los secretos: `deno run demo-facturacion/src/generar_secretos.ts`; guardar las contraseñas y registrar el MFA de `maestro`/`maestro2` en tu teléfono.
-5. Crear la cuenta del alojamiento elegido y cargar como secretos: `FEL_DEMO_BD_URL`, claves, semillas MFA y `FEL_DEMO_HOSTS` (nombre público). `FEL_DEMO_PUBLICADO=1`.
-6. Autorizarme a desplegar. Hago la prueba de humo remota (inicio de sesión + MFA, factura simulada, reinicio y verificación de que los datos siguen) y te entrego la dirección.
-La primera vez que arranca sobre la base vacía **siembra** el mundo simulado; después nunca resiembra ni pisa contraseñas.
+## 5. Pasos exactos para autorizar y habilitar el acceso privado (opción C)
+Qué hace cada comando está en `demo-facturacion/nube/`. **Nada de esto está hecho todavía; yo no publico sin tu autorización.**
+1. **Decidir:** responde «autorizo la opción C» (o A/B) y el tope mensual (C debería ser US$0).
+2. **Supabase:** crea un proyecto **nuevo y exclusivo** (plan Free). Anota: la cadena de conexión del *pooler en modo transacción* (puerto 6543) y la URL del proyecto. No me las pegues.
+3. **Migraciones:** desde tu equipo, `supabase link --project-ref <ref>` y `supabase db push` dentro de `fel/` (aplica las migraciones del proyecto; son aditivas).
+4. **Secretos:** `deno run demo-facturacion/src/generar_secretos.ts` → guarda las contraseñas y registra el MFA de `maestro`/`maestro2` en tu teléfono. Genera también un secreto largo para el intermediario (`openssl rand -hex 32`).
+5. **Aprovisionar la base** (siembra el mundo simulado y guarda solo el hash de las contraseñas): `FEL_DEMO_BD_URL=… FEL_DEMO_CLAVES=… FEL_DEMO_MFA_SEMILLAS=… FEL_DEMO_HOSTS=<tu-dominio-pages> deno run -A demo-facturacion/nube/aprovisionar.ts`.
+6. **Construir:** `deno run -A demo-facturacion/nube/construir.ts` → crea `fel/dist/nube/` (no se versiona).
+7. **Función de Supabase:** `supabase secrets set FEL_DEMO_BD_URL=… FEL_DEMO_HOSTS=<tu-dominio-pages> FEL_DEMO_MFA_SEMILLAS=… FEL_PROXY_SECRETO=…` y `supabase functions deploy nexa-demo --workdir fel/dist/nube/funcion --no-verify-jwt`.
+8. **Cloudflare Pages:** proyecto nuevo (subida directa) con la carpeta `fel/dist/nube/pagina`; variables del proyecto **cifradas**: `FUNCION_URL=https://<ref>.supabase.co/functions/v1/nexa-demo` y `PROXY_SECRETO=<el mismo secreto>`. El dominio `*.pages.dev` basta.
+9. **Prueba de humo** (la hago yo con tu autorización, o tú): abrir la dirección en el teléfono, entrar con MFA, crear una factura simulada, descargar el PDF, cerrar sesión, volver a entrar y comprobar que todo sigue.
+Opcional y gratuito: Cloudflare Access (puerta previa por correo) sobre el dominio de Pages, y reglas de limitación de tasa de Cloudflare.
 
 ## 6. Riesgos y limitaciones pendientes
-- **Alojamiento real sin probar:** ni Deno Deploy, ni Fly, ni Supabase se ejecutaron desde aquí (sin cuentas ni gasto); se validó la imagen en CI y todo contra PostgreSQL local equivalente.
+- **Servicios reales sin probar:** Cloudflare Pages y las Edge Functions de Supabase no se ejecutaron desde aquí (sin cuentas ni gasto). Se probó la cadena completa en local y contra PostgreSQL real, con el código que se despliega. Puede haber diferencias del empaquetado en el despliegue real (se resuelven en la prueba de humo; el respaldo es la opción A).
+- **Límites por IP** de la función viven en memoria de cada instancia: son una primera barrera; el bloqueo por usuario (5 intentos) sí es persistente. Cloudflare puede añadir su propia limitación gratuita.
+- **Cambiar la contraseña de un usuario por aprovisionamiento** la sobrescribe (útil para rotar); las que cada persona cambia en la aplicación se conservan hasta entonces.
 - **Supabase Free:** pausa por inactividad y sin respaldos; no guardes nada que no puedas recrear. Los datos son simulados.
 - **Estado de simuladores en una fila de texto por certificador:** adecuado para demostración; se serializan las escrituras (una a la vez). No es el diseño de producción (un certificador real guarda su propio estado).
 - **Autenticación propia de la demostración**, no Supabase Auth.
