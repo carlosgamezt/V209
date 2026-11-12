@@ -14,7 +14,8 @@ Deno.test({ name: "servidor de la demostración: plano de control del agente, su
   const leer = async (s: ReadableStream<Uint8Array>) => { for await (const t of s) salida += dec.decode(t); };
   const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
   try {
-    const limite = Date.now() + 120_000; while (!salida.includes("Abre:") && Date.now() < limite) await dormir(100);
+    // stdout y stderr se leen por separado: se espera (con límite) a que AMBOS mensajes de arranque hayan llegado, en lugar de suponer su orden
+    const limite = Date.now() + 120_000; while (!(salida.includes("Abre:") && /Supervisor de órdenes iniciado/.test(salida)) && Date.now() < limite) await dormir(100);
     assert.ok(salida.includes("Abre:"), "el servidor no arrancó:\n" + salida);
     assert.match(salida, /Supervisor de órdenes iniciado \(100 ms\)/, "el intervalo del supervisor se configura por entorno");
     const base = `http://127.0.0.1:${puerto}`, persona = (u: string) => ({ "x-demo": "1", "x-demo-usuario": u, "content-type": "application/json" });
