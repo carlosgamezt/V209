@@ -133,8 +133,9 @@ const accion = (url, ruta, c = {}) => fetch(new URL(`api/${ruta}`, url), { metho
 const estadoPanel = (url) => fetch(new URL("api/estado", url)).then((r) => r.json());
 
 test("PROCESO REAL: arranca con doble clic (sin comandos), se vincula desde la página, se mata el proceso con una orden presentada y al volver RECUPERA con el libro sin repetir; después sigue trabajando y cierra con código 0", async () => {
-  sim = sim ?? await arrancarSimulador(nexa); const estado = temp();
-  const p1 = lanzarProceso(estado, sim); const url1 = await p1.listo;
+  sim = sim ?? await arrancarSimulador(nexa); const estado = temp(); const vivos = [];
+  try {
+  const p1 = lanzarProceso(estado, sim); vivos.push(p1); const url1 = await p1.listo;
   assert.equal((await estadoPanel(url1)).vinculado, false);
   assert.equal((await accion(url1, "vincular", { codigo: await codigoNuevo() })).status, 200);
   await esperar(async () => (await estadoPanel(url1)).fase === "esperando", { que: "esperando una factura" });
@@ -143,16 +144,19 @@ test("PROCESO REAL: arranca con doble clic (sin comandos), se vincula desde la p
   assert.ok(abrirAlmacen(estado).diario()?.fase === "presentada", "el diario guarda lo presentado");
   p1.hijo.kill("SIGKILL"); await p1.salio;                                            // «caída»: el proceso desaparece con la vista previa abierta
   assert.equal((await ordenDe(nexa, orden)).estado, "llenada", "NEXA aún no sabe nada");
-  const p2 = lanzarProceso(estado, sim); const url2 = await p2.listo;                 // el usuario vuelve a hacer doble clic
+  const p2 = lanzarProceso(estado, sim); vivos.push(p2); const url2 = await p2.listo;                 // el usuario vuelve a hacer doble clic
   await esperar(async () => (await ordenDe(nexa, orden)).estado === "descartada", { ms: 60000, que: "recuperación: orden descartada con prueba del libro" });
   const l = await ctl(sim.url, sim.tokenControl, "GET", `/control/emisiones?empresa=${nexa.info.empresa}&referencia=${orden}`); assert.equal(l.json.length, 0, "no se emitió nada");
   assert.equal((await ctl(sim.url, sim.tokenControl, "GET", `/control/eventos?empresa=${nexa.info.empresa}`)).json.filter((e) => e.evento === "sesion_creada").length, sesionesAntes, "no se repitió la operación");
+  // el agente descarta la orden y DESPUÉS vacía su diario: se espera a que lo termine (antes se leía en medio y fallaba de forma intermitente)
+  await esperar(async () => abrirAlmacen(estado).diario() === null, { ms: 20000, que: "diario vaciado tras la recuperación" });
   assert.equal(abrirAlmacen(estado).diario(), null);
   // sigue trabajando con el mismo perfil de Chromium (el bloqueo del perfil no quedó colgado)
   const o2 = await nuevaOrden(nexa); await esperar(async () => (await ordenDe(nexa, o2.orden))?.estado === "llenada", { ms: 60000, que: "segunda factura tras recuperar" });
   assert.equal((await accion(url2, "cerrar")).status, 200); const fin = await conLimite(p2.salio, 40000);
   assert.equal(fin.codigo, 0, `salida limpia:\n${p2.salida()}`); assert.equal((await ordenDe(nexa, o2.orden)).estado, "descartada"); assert.equal(abrirAlmacen(estado).diario(), null);
   assert.ok(!existsSync(join(estado, "panel.json")), "marca de instancia borrada");
+  } finally { for (const p of vivos) { try { p.hijo.kill("SIGKILL"); } catch { /* ya terminó */ } } }
 });
 
 test("una sola instancia: abrir el agente dos veces vuelve a mostrar el panel en lugar de iniciar otro agente", async () => {
