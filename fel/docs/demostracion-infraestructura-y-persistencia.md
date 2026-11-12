@@ -57,6 +57,7 @@ Opcional y gratuito: Cloudflare Access (puerta previa por correo) sobre el domin
 
 ## 6. Riesgos y limitaciones pendientes
 - **Servicios reales sin probar:** Cloudflare Pages y las Edge Functions de Supabase no se ejecutaron desde aquí (sin cuentas ni gasto). Se probó la cadena completa en local y contra PostgreSQL real, con el código que se despliega. Puede haber diferencias del empaquetado en el despliegue real (se resuelven en la prueba de humo; el respaldo es la opción A).
+- **Siembra en Supabase real:** el mundo simulado crea sus usuarios insertando en `auth.users` con el rol de la cadena de conexión (en local equivale a Supabase local y PostgreSQL con el esquema `auth` simulado). Si el proyecto hospedado rechazara algún campo, el aprovisionamiento falla de forma visible y sin dejar la base a medias marcada como lista (el marcador se escribe al final).
 - **Límites por IP** de la función viven en memoria de cada instancia: son una primera barrera; el bloqueo por usuario (5 intentos) sí es persistente. Cloudflare puede añadir su propia limitación gratuita.
 - **Cambiar la contraseña de un usuario por aprovisionamiento** la sobrescribe (útil para rotar); las que cada persona cambia en la aplicación se conservan hasta entonces.
 - **Supabase Free:** pausa por inactividad y sin respaldos; no guardes nada que no puedas recrear. Los datos son simulados.
