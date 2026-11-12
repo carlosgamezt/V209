@@ -26,7 +26,7 @@ export function pantallaConceptos(ctx) {
       err.textContent = ""; if (!f.codigo.trim() || !f.descripcion.trim()) { err.textContent = "El código y la descripción son obligatorios."; return; }
       if (!RE_MONTO.test(f.precio)) { err.textContent = "El precio debe ser un número (hasta 6 decimales)."; return; }
       guardar.disabled = true;
-      try { await api.guardarConcepto({ id: c?.id, version: c?.version, codigo: f.codigo, descripcion: f.descripcion, tipo: f.tipo, precio_unitario: f.precio }); m.cerrar(); toast(c ? "Concepto actualizado" : "Concepto creado"); await ctx.recargarEstado(); await cargar(); }
+      try { await api.guardarConcepto({ id: c?.id, version: c?.version, codigo: f.codigo, descripcion: f.descripcion, tipo: f.tipo, precio_unitario: f.precio }); await ctx.recargarEstado(); m.cerrar(); toast(c ? "Concepto actualizado" : "Concepto creado"); await cargar(); }
       catch (e) { err.textContent = mensajeError(e); guardar.disabled = false; }
     } });
     m = modal({ titulo: c ? "Editar concepto" : "Nuevo concepto", contenido: h("div", { class: "form" },
@@ -34,7 +34,7 @@ export function pantallaConceptos(ctx) {
         campo("Tipo", h("select", { "aria-label": "Tipo de concepto", onchange: (e) => { f.tipo = e.target.value; } }, ...[["servicio", "Servicio"], ["bien", "Bien"]].map(([v, t]) => h("option", { value: v, selected: f.tipo === v }, t))))),
       campo("Descripción", h("input", { value: f.descripcion, maxlength: 300, "aria-label": "Descripción del concepto", oninput: (e) => { f.descripcion = e.target.value; } })),
       campo("Precio sugerido (Q)", h("input", { value: f.precio, inputmode: "decimal", "aria-label": "Precio sugerido", oninput: (e) => { f.precio = e.target.value; } }), { ayuda: "Sin impuestos: las reglas fiscales siguen pendientes de verificación." }), err),
-      pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-concepto", onclick: async () => { try { await api.estadoConcepto(c.id, !c.activo); m.cerrar(); toast(c.activo ? "Concepto desactivado" : "Concepto reactivado"); await ctx.recargarEstado(); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,
+      pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-concepto", onclick: async () => { try { await api.estadoConcepto(c.id, !c.activo); await ctx.recargarEstado(); m.cerrar(); toast(c.activo ? "Concepto desactivado" : "Concepto reactivado"); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,
         boton("Cancelar", { tipo: "sec", onclick: () => m.cerrar() }), guardar] });
   }
   async function cargar() { try { datos = await api.conceptos(); pintar(); } catch (e) { poner(lista, h("p", { class: "err", role: "alert" }, mensajeError(e))); } }

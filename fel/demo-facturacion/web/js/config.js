@@ -22,7 +22,7 @@ export function pantallaConfig(ctx) {
     const guardar = boton("Guardar", { id: "guardar-establecimiento", onclick: async () => {
       err.textContent = ""; if (!f.codigo.trim() || !f.nombre.trim()) { err.textContent = "El código y el nombre son obligatorios."; return; }
       guardar.disabled = true;
-      try { await api.guardarEstablecimiento({ id: e?.id, codigo_sat: f.codigo, nombre: f.nombre, direccion: f.direccion, estado: f.estado }); m.cerrar(); toast(e ? "Establecimiento actualizado" : "Establecimiento creado"); await ctx.recargarEstado(); await cargar(); }
+      try { await api.guardarEstablecimiento({ id: e?.id, codigo_sat: f.codigo, nombre: f.nombre, direccion: f.direccion, estado: f.estado }); await ctx.recargarEstado(); m.cerrar(); toast(e ? "Establecimiento actualizado" : "Establecimiento creado"); await cargar(); }
       catch (x) { err.textContent = mensajeError(x); guardar.disabled = false; }
     } });
     m = modal({ titulo: e ? "Editar establecimiento" : "Nuevo establecimiento", contenido: h("div", { class: "form" },

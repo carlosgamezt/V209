@@ -65,7 +65,7 @@ export function pantallaClientes(ctx) {
       if (!/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) { err.textContent = "La identificación solo admite letras, números y guion."; return; }
       if (f.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) { err.textContent = "El correo no es válido."; return; }
       guardar.disabled = true;
-      try { await api.guardarCliente({ id: c?.id, version: c?.version, tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre, direccion: f.direccion, email: f.email, telefono: f.telefono }); m.cerrar(); toast(c ? "Cliente actualizado" : "Cliente creado"); await ctx.recargarEstado(); await cargar(); }
+      try { await api.guardarCliente({ id: c?.id, version: c?.version, tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre, direccion: f.direccion, email: f.email, telefono: f.telefono }); await ctx.recargarEstado(); m.cerrar(); toast(c ? "Cliente actualizado" : "Cliente creado"); await cargar(); }
       catch (e) { err.textContent = mensajeError(e); guardar.disabled = false; }
     } });
     m = modal({ titulo: c ? "Editar cliente" : "Nuevo cliente", contenido: h("div", { class: "form" },
@@ -73,7 +73,7 @@ export function pantallaClientes(ctx) {
         campo("Identificación", inp("numero", "Identificación del cliente", { maxlength: 30, disabled: !!c }))),
       campo("Nombre o razón social", inp("nombre", "Nombre del cliente", { maxlength: 200 })), campo("Dirección", inp("direccion", "Dirección del cliente", { maxlength: 300 })),
       h("div", { class: "grid2" }, campo("Teléfono", inp("telefono", "Teléfono del cliente", { maxlength: 40 })), campo("Correo", inp("email", "Correo del cliente", { maxlength: 200, type: "email" }))), err),
-      pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-cliente", onclick: async () => { try { await api.estadoCliente(c.id, !c.activo); m.cerrar(); toast(c.activo ? "Cliente desactivado" : "Cliente reactivado"); await ctx.recargarEstado(); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,
+      pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-cliente", onclick: async () => { try { await api.estadoCliente(c.id, !c.activo); await ctx.recargarEstado(); m.cerrar(); toast(c.activo ? "Cliente desactivado" : "Cliente reactivado"); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,
         boton("Cancelar", { tipo: "sec", onclick: () => m.cerrar() }), guardar] });
   }
   async function cargar() { try { datos = await api.clientes(); pintarIndicadores(); pintarTabla(); } catch (e) { poner(tabla, h("p", { class: "err", role: "alert" }, mensajeError(e))); } }
