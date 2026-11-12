@@ -8,6 +8,7 @@ export function h(tag, attrs = {}, ...hijos) {
     if (k === "class") e.className = v;
     else if (k.startsWith("on") && typeof v === "function") e.addEventListener(k.slice(2), v);
     else if (k === "value") e.value = v;
+    else if (k === "style") e.style.cssText = v;   // por CSSOM: la política de seguridad (style-src sin 'unsafe-inline') bloquea el atributo escrito con setAttribute en WebKit
     else e.setAttribute(k, v === true ? "" : v);
   }
   for (const c of hijos.flat()) {
