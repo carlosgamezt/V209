@@ -22,7 +22,7 @@ export interface MundoPractico { cuentaBolson: string; planes: { prepago: string
 export async function sembrarPractico(bd: BdDemo): Promise<MundoPractico> {
   const M = EXTRA.maestro.id, S = EXTRA.sofia.id;
   for (const u of Object.values(EXTRA)) {
-    await bd.ejecutar("insert into auth.users (id, email) values ($1, $2)", [u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`]);
+    await bd.crearUsuario(u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`);
     await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
   }
   await bd.ejecutar("insert into public.plataforma_admins (user_id) values ($1), ($2)", [M, EXTRA.maestro2.id]);

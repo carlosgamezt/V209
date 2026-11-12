@@ -16,7 +16,7 @@ export interface Sembrado { empresa: string; canal: string; establecimientos: { 
 export async function sembrar(bd: BdDemo): Promise<Sembrado> {
   
   for (const u of Object.values(USUARIOS)) {
-    await bd.ejecutar("insert into auth.users (id, email) values ($1, $2)", [u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`]);
+    await bd.crearUsuario(u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`);
     await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
   }
   await bd.ejecutar("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) select $1, 'Empresa Demo', 'Empresa Demo, S.A. (FICTICIA)', '7770001-0', id, 'habilitada' from public.regimenes_fiscales where codigo = 'general'", [EMPRESA]);

@@ -42,23 +42,13 @@ Brecha conocida: la demostración tiene su propio inicio de sesión; la **produc
 | Cloudflare Access como puerta previa (opcional, requiere dominio) | ✔ hasta 50 usuarios | — |
 **Total esperado:** **US$0 con C (Cloudflare + Supabase Free)**; US$0 con B + Supabase Free; ≈ US$5–8 con A + Supabase Free; ≈ US$30–33 con A + Supabase Pro.
 
-## 5. Pasos exactos para autorizar y habilitar el acceso privado (opción C)
-Qué hace cada comando está en `demo-facturacion/nube/`. **Nada de esto está hecho todavía; yo no publico sin tu autorización.**
-1. **Decidir:** responde «autorizo la opción C» (o A/B) y el tope mensual (C debería ser US$0).
-2. **Supabase:** crea un proyecto **nuevo y exclusivo** (plan Free). Anota: la cadena de conexión del *pooler en modo transacción* (puerto 6543) y la URL del proyecto. No me las pegues.
-3. **Migraciones:** desde tu equipo, `supabase link --project-ref <ref>` y `supabase db push` dentro de `fel/` (aplica las migraciones del proyecto; son aditivas).
-4. **Secretos:** `deno run demo-facturacion/src/generar_secretos.ts` → guarda las contraseñas y registra el MFA de `maestro`/`maestro2` en tu teléfono. Genera también un secreto largo para el intermediario (`openssl rand -hex 32`).
-5. **Aprovisionar la base** (siembra el mundo simulado y guarda solo el hash de las contraseñas): `FEL_DEMO_BD_URL=… FEL_DEMO_CLAVES=… FEL_DEMO_MFA_SEMILLAS=… FEL_DEMO_HOSTS=<tu-dominio-pages> deno run -A demo-facturacion/nube/aprovisionar.ts`.
-6. **Construir:** `deno run -A demo-facturacion/nube/construir.ts` → crea `fel/dist/nube/` (no se versiona).
-7. **Función de Supabase:** `supabase secrets set FEL_DEMO_BD_URL=… FEL_DEMO_HOSTS=<tu-dominio-pages> FEL_DEMO_MFA_SEMILLAS=… FEL_PROXY_SECRETO=…` y `supabase functions deploy nexa-demo --workdir fel/dist/nube/funcion --no-verify-jwt`.
-8. **Cloudflare Pages:** proyecto nuevo (subida directa) con la carpeta `fel/dist/nube/pagina`; variables del proyecto **cifradas**: `FUNCION_URL=https://<ref>.supabase.co/functions/v1/nexa-demo` y `PROXY_SECRETO=<el mismo secreto>`. El dominio `*.pages.dev` basta.
-9. **Prueba de humo** (la hago yo con tu autorización, o tú): abrir la dirección en el teléfono, entrar con MFA, crear una factura simulada, descargar el PDF, cerrar sesión, volver a entrar y comprobar que todo sigue.
-Opcional y gratuito: Cloudflare Access (puerta previa por correo) sobre el dominio de Pages, y reglas de limitación de tasa de Cloudflare.
+## 5. Pasos para habilitar el acceso privado
+Ver la guía paso a paso **`guia-publicar-demostracion.md`** (qué haces tú, comandos exactos y prueba de humo). Resumen: autorizar → proyecto Supabase nuevo → migraciones → contraseñas y MFA → aprovisionar → función → página en Cloudflare → prueba desde el teléfono.
 
 ## 6. Riesgos y limitaciones pendientes
 - **Servicios reales sin probar:** Cloudflare Pages y las Edge Functions de Supabase no se ejecutaron desde aquí (sin cuentas ni gasto). Se probó la cadena completa en local y contra PostgreSQL real, con el código que se despliega. Puede haber diferencias del empaquetado en el despliegue real (se resuelven en la prueba de humo; el respaldo es la opción A).
-- **Siembra en Supabase real:** el mundo simulado crea sus usuarios insertando en `auth.users` con el rol de la cadena de conexión (en local equivale a Supabase local y PostgreSQL con el esquema `auth` simulado). Si el proyecto hospedado rechazara algún campo, el aprovisionamiento falla de forma visible y sin dejar la base a medias marcada como lista (el marcador se escribe al final).
-- **Límites por IP** de la función viven en memoria de cada instancia: son una primera barrera; el bloqueo por usuario (5 intentos) sí es persistente. Cloudflare puede añadir su propia limitación gratuita.
+- **Usuarios en Supabase hospedado:** se crean con la API de administración de Supabase Auth (no insertando en `auth.users`); la prueba lo verifica con una base que **prohíbe** escribir directamente en `auth.users`. Supuesto no verificable sin tu proyecto: que la API respete el `id` indicado (si no, el aprovisionamiento se detiene con un mensaje claro y sin dejar nada sembrado).
+- **Límite de intentos de inicio de sesión por IP:** compartido entre instancias en PostgreSQL (probado con dos instancias); el límite general de la API es por instancia, y el bloqueo por usuario (5 intentos) es persistente. Cloudflare puede añadir su propia limitación gratuita.
 - **Cambiar la contraseña de un usuario por aprovisionamiento** la sobrescribe (útil para rotar); las que cada persona cambia en la aplicación se conservan hasta entonces.
 - **Supabase Free:** pausa por inactividad y sin respaldos; no guardes nada que no puedas recrear. Los datos son simulados.
 - **Estado de simuladores en una fila de texto por certificador:** adecuado para demostración; se serializan las escrituras (una a la vez). No es el diseño de producción (un certificador real guarda su propio estado).

@@ -83,7 +83,7 @@ const servidor = Deno.serve({ hostname: LAN || PUBLICADO ? "0.0.0.0" : "127.0.0.
   else console.log(`\n  NEXA FEL · demostración de facturación individual SIMULADA\n  Abre:  http://127.0.0.1:${port}/\n${LAN ? "  En la red local: http://<IP de este equipo>:" + port + "/  (modo --lan: solo con inicio de sesión)\n" : ""}${LOGIN ? (ALEATORIAS ? `  Contraseñas ALEATORIAS de esta sesión (solo se muestran aquí):\n${Object.entries(CLAVES).map(([u, c]) => `    ${u.padEnd(9)} ${c}`).join("\n")}\n` : `  Usuarios ficticios: maestro, maestro2, ana, luis, marta, pedro, sofia · contraseña: ${CLAVE_DEMO}\n`) : "  Modo de pruebas: selector de personas, sin contraseña\n"}  (todo es simulado: SIN VALOR FISCAL; no se conecta a SAT ni a ningún certificador; Ctrl+C para salir)\n`);
   if (!PUBLICADO && Deno.args.includes("--abrir")) { try { const url = `http://127.0.0.1:${port}/`; const [cmd, ...args] = Deno.build.os === "windows" ? ["cmd", "/c", "start", "", url] : Deno.build.os === "darwin" ? ["open", url] : ["xdg-open", url]; new Deno.Command(cmd, { args, stdout: "null", stderr: "null" }).spawn().unref(); } catch { /* sin navegador predeterminado: se abre a mano */ } }
 } }, async (req) => {
-  const previo = endurecer.previo(req); if (previo) return previo;
+  const previo = await endurecer.previo(req); if (previo) return previo;
   const url = new URL(req.url);
   if (url.pathname.startsWith(PREFIJO_AGENTE)) return PUBLICADO ? endurecer.asegurar(new Response("No encontrado", { status: 404 })) : agente.plano(req);   // plano de control del agente local (firmado); NO se ofrece en línea
   return endurecer.asegurar(url.pathname.startsWith("/api/") ? await api(req) : await estatico(url.pathname));

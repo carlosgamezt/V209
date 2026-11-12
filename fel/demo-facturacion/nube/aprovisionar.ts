@@ -2,7 +2,7 @@
 //   FEL_DEMO_BD_URL=… FEL_DEMO_CLAVES=… FEL_DEMO_MFA_SEMILLAS=… FEL_DEMO_HOSTS=… deno run -A nube/aprovisionar.ts
 // Verifica las migraciones, siembra el mundo simulado si la base está vacía (se niega ante empresas ajenas), y registra las contraseñas (hash PBKDF2 con sal) de las cuentas configuradas.
 // No imprime contraseñas, semillas ni la cadena de conexión.
-import { crearBdPg } from "../src/bd.ts";
+import { bdDeEntorno, verificarProyecto } from "./bd_entorno.ts";
 import { AlmacenPg } from "../src/almacen.ts";
 import { prepararBase, ErrorAprovisionar } from "../src/aprovisionar.ts";
 import { PERSONAS } from "../src/mundo_practico.ts";
@@ -12,7 +12,8 @@ import { leerConfigPublicada } from "../src/publicado.ts";
 const url = Deno.env.get("FEL_DEMO_BD_URL");
 if (!url) { console.error("Falta FEL_DEMO_BD_URL (la cadena de conexión de la base exclusiva de la demostración)."); Deno.exit(1); }
 let cfg; try { cfg = leerConfigPublicada((k) => Deno.env.get(k), Object.keys(PERSONAS)); } catch (e) { console.error(`Configuración no válida: ${(e as Error).message}`); Deno.exit(1); }
-const bd = crearBdPg(url);
+const rechazo = verificarProyecto((k) => Deno.env.get(k)); if (rechazo) { console.error(rechazo); Deno.exit(1); }
+const bd = bdDeEntorno((k) => Deno.env.get(k));
 try {
   await prepararBase(bd, { sembrar: true, aviso: (m) => console.log(`  ${m}`) });
   const sesiones = new Sesiones(undefined, new AlmacenPg(bd));

@@ -1,4 +1,5 @@
 // Base de datos en MEMORIA de la demostración local: PostgreSQL real (PGlite, WebAssembly) con las MISMAS migraciones del proyecto. Nada se guarda en disco; al reiniciar vuelve a los datos de ejemplo.
+import { creadorSql } from "./usuarios_auth.ts";
 import { PGlite } from "npm:@electric-sql/pglite@0.2.17";
 import { fileURLToPath } from "node:url";
 import { ErrorBd, type Rpc } from "../../proveedores/src/rpc.ts";
@@ -23,5 +24,5 @@ export async function crearBd(): Promise<BdDemo> {
       return columnas.length === 1 && columnas[0] === fn ? (primera[fn] ?? null) : primera;
     } catch (e) { const x = e as { message?: string; code?: string }; throw new ErrorBd(x.message ?? String(e), x.code); }
   };
-  return { tipo: "pglite", db, rpc, filas: async <T,>(sql: string, params: unknown[] = []) => (await db.query<T>(sql, params)).rows, ejecutar: async (sql: string, params: unknown[] = []) => { await db.query(sql, params); }, cerrar: async () => { try { await db.close(); } catch { /* ya cerrada */ } } };
+  return { tipo: "pglite", crearUsuario: (id, email) => creadorSql(async (sql, params = []) => { await db.query(sql, params); }).crear(id, email), db, rpc, filas: async <T,>(sql: string, params: unknown[] = []) => (await db.query<T>(sql, params)).rows, ejecutar: async (sql: string, params: unknown[] = []) => { await db.query(sql, params); }, cerrar: async () => { try { await db.close(); } catch { /* ya cerrada */ } } };
 }

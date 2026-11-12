@@ -131,7 +131,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         if (!["administrador", "emisor", "lector"].includes(rol)) throw new ErrorPr(400, "Rol no válido", "entrada_invalida");
         if (!d.sesiones) throw new ErrorPr(404, "No disponible en este modo", "no_disponible"); if (await d.sesiones.persona(usuario)) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const email = `${usuario}@demo.example`;
         await bd.rpc("fel_op_invitacion_registrar", { p_actor: a.id, p_empresa: E, p_email: email, p_rol: rol, p_permisos_extra: [] });   // aquí se valida que quien invita puede dar ese rol
-        const uid = crypto.randomUUID(); await bd.ejecutar("insert into auth.users (id, email, email_confirmed_at) values ($1, $2, now())", [uid, email]); await bd.ejecutar("insert into public.perfiles (user_id, nombre) values ($1, $2) on conflict (user_id) do update set nombre = excluded.nombre", [uid, nombre]);
+        const uid = crypto.randomUUID(); await bd.crearUsuario(uid, email); await bd.ejecutar("insert into public.perfiles (user_id, nombre) values ($1, $2) on conflict (user_id) do update set nombre = excluded.nombre", [uid, nombre]);
         await bd.rpc("fel_op_invitacion_aceptar", { p_user: uid, p_email: email });
         await d.sesiones.registrar(usuario, clave, { id: uid, nombre, rol, descripcion: `${rol} de la empresa`, empresa: E });
         return c.json({ ok: true, usuario });
@@ -274,7 +274,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const empresa = await bd.rpc("fel_admin_empresa_crear", { p_actor: M, p_nombre_comercial: texto(b.nombre_comercial, 1, 120, "Nombre comercial"), p_razon_social: texto(b.razon_social, 1, 200, "Razón social"), p_nit: texto(b.nit, 3, 20, "NIT"), p_regimen_id: reg.id }) as string;
         await bd.rpc("fel_admin_empresa_estado", { p_actor: M, p_empresa: empresa, p_estado: "habilitada", p_motivo: "Alta de la empresa en la demostración" });
         const uid = crypto.randomUUID(), nombre = texto(b.propietario_nombre, 3, 80, "Nombre del propietario");
-        await bd.ejecutar("insert into auth.users (id, email) values ($1, $2)", [uid, `${usuario}@demo.example`]); await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [uid]);
+        await bd.crearUsuario(uid, `${usuario}@demo.example`); await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [uid]);
         await bd.ejecutar("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, 'propietario')", [empresa, uid]);
         for (const p of ["mock", ...ids]) await bd.filas("select public.fel_op_canal_configurar($1, $2, null, $3, 'simulado', true)", [uid, empresa, p]);
         await d.sesiones?.registrar(usuario, clave, { id: uid, nombre, rol: "propietario", descripcion: `Propietario de ${texto(b.nombre_comercial, 1, 120, "Nombre comercial")}`, empresa });

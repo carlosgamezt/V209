@@ -1,10 +1,11 @@
 // Endurecimiento HTTP común de la demostración publicada: lo usan el servidor Deno (contenedor) y la función de nube (Supabase Edge Function detrás de Cloudflare).
 //  · /salud sin datos · nombre (Host) permitido · solo HTTPS · robots · límites por IP · cabeceras estrictas (HSTS, sin indexación, sin permisos de dispositivo).
+type Limite = { permitir(clave: string): { ok: boolean; reintentarEnS: number } | Promise<{ ok: boolean; reintentarEnS: number }> };
 import { LimiteTasa } from "./limite.ts";
 
 export interface OpcionesEndurecimiento {
   publicado: boolean; hosts: string[]; lan?: boolean;
-  limiteLogin?: LimiteTasa; limiteApi?: LimiteTasa;
+  limiteLogin?: Limite; limiteApi?: Limite;
   /** Nombre público con el que el visitante llegó (por defecto, la cabecera Host; detrás de un proxy, el que este reenvía). */
   hostDe?: (req: Request) => string;
   /** IP del visitante (solo es de fiar detrás de un proxy propio o de la plataforma, que sobrescribe estas cabeceras). */
@@ -24,7 +25,7 @@ export function crearEndurecimiento(o: OpcionesEndurecimiento) {
     return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
   }
   /** Comprobaciones previas: devuelve una respuesta si la petición no debe llegar a la aplicación; nulo si puede seguir. */
-  function previo(req: Request): Response | null {
+  async function previo(req: Request): Promise<Response | null> {
     const url = new URL(req.url);
     if (url.pathname === "/salud") return asegurar(json({ ok: true }));   // comprobación de estado para la plataforma: sin datos y sin sesión
     const host = hostDe(req);
@@ -33,7 +34,7 @@ export function crearEndurecimiento(o: OpcionesEndurecimiento) {
     if (!o.publicado) return null;
     if (req.headers.get("x-forwarded-proto") === "http") return asegurar(new Response(null, { status: 308, headers: { location: `https://${host}${url.pathname}${url.search}` } }));   // solo HTTPS
     if (url.pathname === "/robots.txt") return asegurar(new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } }));
-    const login = url.pathname === "/api/sesion/entrar", l = (login ? limiteLogin : limiteApi).permitir(`${login ? "login" : "api"}:${ipDe(req)}`);
+    const login = url.pathname === "/api/sesion/entrar", l = await (login ? limiteLogin : limiteApi).permitir(`${login ? "login" : "api"}:${ipDe(req)}`);
     if (!l.ok) return asegurar(json({ codigo: "limite", mensaje: "Demasiadas solicitudes. Espera un momento." }, 429, { "retry-after": String(l.reintentarEnS) }));
     return null;
   }

@@ -64,6 +64,11 @@ Deno.test({ name: "nube: intermediario → función → base; secreto compartido
     // 9) límite de intentos por IP (la IP real la pone el intermediario; un visitante no puede cambiarla con cabeceras)
     const atacante = new Cli("198.51.100.5"); let limitado = 0; for (let i = 0; i < 9; i++) { const r = await atacante.ll("POST", "/api/sesion/entrar", { usuario: "luis", clave: "mala-" + i }, { "x-nexa-ip": `9.9.9.${i}`, "x-forwarded-for": `8.8.8.${i}` }); if (r.status === 429) limitado++; }
     assert.ok(limitado >= 1, "tras varios intentos desde la misma IP se limita, aunque cambie cabeceras");
+    // 9b) el límite se comparte ENTRE instancias (PostgreSQL): 3 intentos en cada una suman 6; el séptimo, en cualquiera, ya se limita aunque esa instancia solo haya visto 4
+    { const A = crearManejador({ get: (k) => env[k] }), B = crearManejador({ get: (k) => env[k] }); let k = 0; const intento = async (m: (r: Request) => Promise<Response>, ip: string) => (await reenviar(new Request(`https://${HOST}/api/sesion/entrar`, { method: "POST", headers: { "x-demo": "1", "content-type": "application/json", "cf-connecting-ip": ip }, body: JSON.stringify({ usuario: `fantasma${k++}`, clave: "mala" }) }), entorno, (i, o) => m(new Request(String(i), o as RequestInit)))).status;
+      const ip = "198.51.100.77"; for (let i = 0; i < 3; i++) { const sa = await intento(A, ip), sb = await intento(B, ip); assert.ok(sa !== 429 && sb !== 429, `i=${i} A=${sa} B=${sb}`); }
+      assert.equal(await intento(A, ip), 429, "la instancia A limita por lo que vieron A y B juntas"); assert.equal(await intento(B, ip), 429);
+      assert.notEqual(await intento(A, "198.51.100.78"), 429, "otra IP no se ve afectada"); }
     // 10) la función no escribe contraseñas ni secretos en sus registros (no hay credenciales en las respuestas)
     for (const s of [...Object.values(claves), ...Object.values(semillas), SECRETO]) assert.ok(!cert.texto.includes(s) && !est.texto.includes(s));
   } finally { await bdp.limpiar(); }
