@@ -27,10 +27,14 @@ const MFA_E2E = Object.fromEntries((process.env.FEL_E2E_MFA ?? "").split(",").fi
 const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
 (async () => {
   const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await motor.launch({ args: NAV === "chromium" ? (process.env.FEL_E2E_CHROMIUM_ARGS ?? "").split(";").filter(Boolean) : [] });
-  const nuevoCtx = async (opciones) => { const c = await nav.newContext({ locale: "es-GT", acceptDownloads: true, ...opciones }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); const p = await c.newPage();
+  const nuevoCtx = async (opciones) => { const c = await nav.newContext({ locale: "es-GT", acceptDownloads: true, ...opciones }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: r.request().url().includes("googleapis") ? "text/css" : "font/woff2", body: "" })); const p = await c.newPage();
     p.on("pageerror", (e) => errores.push(`pageerror: ${e.message}`)); p.on("console", (m) => { if (m.type() === "error" && !/fonts\.|Failed to load resource/.test(m.text())) errores.push(`console: ${m.text()}`); }); return { c, p }; };
   const foto = async (p, nombre) => { assert.doesNotMatch(await p.locator("body").innerText(), /\bnull\b|\bundefined\b|\[object /, `texto interno visible en ${nombre}`); if (capturas) await p.screenshot({ path: path.join(capturas, nombre) }); };
-  const sinDesborde = async (p, donde) => { const [ancho, vista] = await p.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]); assert.ok(ancho <= vista + 1, `desborde horizontal en ${donde}: ${ancho} > ${vista}`); };
+  const sinDesborde = async (p, donde) => {
+    const [ancho, vista] = await p.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+    if (ancho > vista + 1) { const culpables = await p.evaluate((v) => [...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > v + 1).slice(0, 8).map((e) => `${e.tagName.toLowerCase()}.${String(e.className).slice(0, 40)} ancho=${Math.round(e.getBoundingClientRect().width)} der=${Math.round(e.getBoundingClientRect().right)}`), vista); console.error("Elementos que sobresalen:", culpables); }
+    assert.ok(ancho <= vista + 1, `desborde horizontal en ${donde}: ${ancho} > ${vista}`);
+  };
   const entrar = async (p, usuario, clave = CLAVE(usuario), recordar = false) => {
     await p.goto(srv.url); await p.waitForSelector("#login-usuario"); await p.selectOption("#login-usuario", usuario); await p.fill("#login-clave", clave); if (recordar) await p.check("#login-recordar"); await p.click("#login-entrar");
     if (MFA_E2E[usuario] && clave === CLAVE(usuario)) { await p.waitForSelector("#login-codigo", { state: "visible" }); await p.fill("#login-codigo", totp(MFA_E2E[usuario])); await p.click("#login-entrar"); }   // segundo factor

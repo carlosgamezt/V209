@@ -180,6 +180,8 @@ correr "select public.fel_sys_ordenes_vencer('$E')" 13a &
 correr "select public.fel_sys_orden_resultado('$AG3','$ORD13',$T13,'emitido_simulado','SIMA','00000013','SIM-CONC-0013',null)" 13b &
 wait
 est=$(q "select estado from public.ordenes_emision where id='$ORD13'")
+# Si el barrido saltó la fila porque el resultado la tenía bloqueada (skip locked), el resultado se RECHAZÓ igualmente y la orden queda vencida sin aceptar nada; el siguiente barrido del supervisor la pasa a incierta.
+[ "$est" = llenada ] && { q "select public.fel_sys_ordenes_vencer('$E')" >/dev/null; est=$(q "select estado from public.ordenes_emision where id='$ORD13'"); }
 case "$est" in
   incierta) [ "$(q "select estado from public.operaciones_fiscales where id='$OP13'")" = desconocida ] || fallar "orden incierta pero la operación no está por verificar";;
   *) fallar "con el arrendamiento vencido el resultado no debía aceptarse (estado: $est)";;
