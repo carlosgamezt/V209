@@ -2,7 +2,10 @@
 // plan y consumo, plataforma y PWA. Servidor real + PostgreSQL (PGlite). Sin credenciales, sin red externa, sin SAT.
 // Uso: node e2e_practico.cjs [carpeta-de-capturas]   (FEL_DEMO_URL=http://127.0.0.1:8787 para usar un servidor ya iniciado en modo con inicio de sesión)
 const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), assert = require("assert/strict");
-const { chromium, devices } = require("playwright");
+const pw = require("playwright"), { devices } = pw;
+// Navegador a probar: chromium (por defecto), firefox o webkit (FEL_E2E_NAVEGADOR). Firefox no admite «isMobile»: el teléfono se emula con la pantalla y el tacto.
+const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV];
+const movil = () => NAV === "webkit" ? { ...devices["iPhone 14"] } : NAV === "firefox" ? { viewport: { width: 412, height: 915 }, hasTouch: true, deviceScaleFactor: 2.625, userAgent: "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0" } : { ...devices["Pixel 7"] };
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null; if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
 function arrancar(extra = {}) {
@@ -23,7 +26,7 @@ const CLAVES_E2E = Object.fromEntries((process.env.FEL_E2E_CLAVES ?? "").split("
 const MFA_E2E = Object.fromEntries((process.env.FEL_E2E_MFA ?? "").split(",").filter(Boolean).map((x) => x.split("=")));
 const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
 (async () => {
-  const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await chromium.launch({ args: (process.env.FEL_E2E_CHROMIUM_ARGS ?? "").split(";").filter(Boolean) });
+  const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await motor.launch({ args: NAV === "chromium" ? (process.env.FEL_E2E_CHROMIUM_ARGS ?? "").split(";").filter(Boolean) : [] });
   const nuevoCtx = async (opciones) => { const c = await nav.newContext({ locale: "es-GT", acceptDownloads: true, ...opciones }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); const p = await c.newPage();
     p.on("pageerror", (e) => errores.push(`pageerror: ${e.message}`)); p.on("console", (m) => { if (m.type() === "error" && !/fonts\.|Failed to load resource/.test(m.text())) errores.push(`console: ${m.text()}`); }); return { c, p }; };
   const foto = async (p, nombre) => { assert.doesNotMatch(await p.locator("body").innerText(), /\bnull\b|\bundefined\b|\[object /, `texto interno visible en ${nombre}`); if (capturas) await p.screenshot({ path: path.join(capturas, nombre) }); };
@@ -117,7 +120,7 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
   await cPc.close();
 
   // ====================================================== TELÉFONO (emulación de Chrome en Android)
-  const { c: cMov, p: m } = await nuevoCtx({ ...devices["Pixel 7"] });
+  const { c: cMov, p: m } = await nuevoCtx(movil());
   await m.goto(srv.url); await m.waitForSelector("#login-usuario"); await foto(m, "mov-01-login.png"); await sinDesborde(m, "login");
   assert.ok(await m.locator("#login-clave").evaluate((e) => parseFloat(getComputedStyle(e).fontSize) >= 16), "campos de 16 px o más");
   await entrar(m, "ana"); await m.waitForSelector(".cab-demo"); await foto(m, "mov-02-facturas.png"); await sinDesborde(m, "facturas");
@@ -133,7 +136,7 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
   await m.goto(`${srv.url}/#/nueva`); await m.waitForSelector('select[aria-label="Receptor"]'); await foto(m, "mov-03-nueva.png"); await sinDesborde(m, "nueva factura");
   for (const [ruta, sel, nombre] of [["/panel", '[data-panel="indicadores"]', "panel"], ["/usuarios", '[data-panel="usuarios"]', "usuarios"], ["/plan", '[data-panel="consumos"]', "plan"], ["/clientes", ".lista", "clientes"], ["/config", ".tabs", "config"]]) { await m.goto(`${srv.url}/#${ruta}`); await m.waitForSelector(sel); await foto(m, `mov-04-${nombre}.png`); await sinDesborde(m, nombre); }
   await m.click("#cerrar-sesion-cab"); await m.waitForSelector("#login-usuario");   // en el teléfono se sale desde la barra superior
-  const { c: cMov2, p: m2 } = await nuevoCtx({ ...devices["Pixel 7"] });   // otra persona en otro teléfono: el administrador de la plataforma
+  const { c: cMov2, p: m2 } = await nuevoCtx(movil());   // otra persona en otro teléfono: el administrador de la plataforma
   await entrar(m2, "maestro"); await m2.waitForSelector('[data-panel="empresas"]'); await foto(m2, "mov-05-plataforma.png"); await sinDesborde(m2, "plataforma");
   for (const [ruta, sel, nombre] of [["/planes", '[data-plan="prepago_basico"]', "planes"], ["/bolson", '[data-panel="conciliacion-bolson"]', "bolson"]]) { await m2.goto(`${srv.url}/#${ruta}`); await m2.waitForSelector(sel); await foto(m2, `mov-06-${nombre}.png`); await sinDesborde(m2, nombre); }
   await cMov2.close(); await cMov.close();

@@ -1,0 +1,31 @@
+name: NEXA FEL · navegadores (Firefox y WebKit)
+# Recorrido E2E completo de la demostración SIMULADA (PC y teléfono emulado) en Firefox y WebKit; Chromium ya se prueba en «pruebas» y «paquete».
+on:
+  push:
+    branches: [fel-proveedores-diseno]
+    paths: ["fel/demo-facturacion/**", "fel/app/**", "fel/proveedores/src/**", ".github/workflows/fel-navegadores.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  navegador:
+    name: E2E en ${{ matrix.navegador }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        navegador: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Playwright ${{ matrix.navegador }}
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps ${{ matrix.navegador }}
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+      - name: E2E completo
+        env:
+          FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
+        run: node fel/demo-facturacion/tests/e2e_practico.cjs
