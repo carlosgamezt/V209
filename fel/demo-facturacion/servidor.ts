@@ -25,8 +25,11 @@ const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fon
 const bd = await crearBd();
 const mundo = await sembrar(bd);
 await sembrarPractico(bd);
+const ALEATORIAS = LAN || Deno.env.get("FEL_DEMO_CLAVE_ALEATORIA") === "1";   // acceso desde otros equipos / remoto: nunca contraseñas públicas
 const sesiones = LOGIN ? new Sesiones() : undefined;
-if (sesiones) for (const k of Object.keys(PERSONAS)) await sesiones.registrar(k, CLAVE_DEMO);
+const CLAVES: Record<string, string> = {};
+const aleatoria = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => "abcdefghjkmnpqrstuvwxyz23456789"[x % 31]).join("");
+if (sesiones) { sesiones.claveDemoPublica = ALEATORIAS ? null : CLAVE_DEMO; for (const k of Object.keys(PERSONAS)) { CLAVES[k] = ALEATORIAS ? aleatoria() : CLAVE_DEMO; await sesiones.registrar(k, CLAVES[k]); } }
 const agente = montarAgente(bd, { intervaloMs: intervaloDesdeEntorno(Deno.env.get("FEL_AGENTE_SUPERVISOR_MS")) });   // intervalo configurable (50 ms – 1 h; 15 s por defecto)
 const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true });
 
@@ -46,7 +49,7 @@ async function estatico(ruta: string): Promise<Response> {
 }
 
 const servidor = Deno.serve({ hostname: LAN ? "0.0.0.0" : "127.0.0.1", port: PUERTO, onListen: ({ port }) => {
-  console.log(`\n  NEXA FEL · demostración de facturación individual SIMULADA\n  Abre:  http://127.0.0.1:${port}/\n${LAN ? "  En la red local: http://<IP de este equipo>:" + port + "/  (modo --lan: solo con inicio de sesión)\n" : ""}${LOGIN ? `  Usuarios ficticios: maestro, ana, luis, marta, pedro, sofia · contraseña: ${CLAVE_DEMO}\n` : "  Modo de pruebas: selector de personas, sin contraseña\n"}  (todo es simulado: SIN VALOR FISCAL; no se conecta a SAT ni a ningún certificador; Ctrl+C para salir)\n`);
+  console.log(`\n  NEXA FEL · demostración de facturación individual SIMULADA\n  Abre:  http://127.0.0.1:${port}/\n${LAN ? "  En la red local: http://<IP de este equipo>:" + port + "/  (modo --lan: solo con inicio de sesión)\n" : ""}${LOGIN ? (ALEATORIAS ? `  Contraseñas ALEATORIAS de esta sesión (solo se muestran aquí):\n${Object.entries(CLAVES).map(([u, c]) => `    ${u.padEnd(9)} ${c}`).join("\n")}\n` : `  Usuarios ficticios: maestro, maestro2, ana, luis, marta, pedro, sofia · contraseña: ${CLAVE_DEMO}\n`) : "  Modo de pruebas: selector de personas, sin contraseña\n"}  (todo es simulado: SIN VALOR FISCAL; no se conecta a SAT ni a ningún certificador; Ctrl+C para salir)\n`);
 } }, (req) => {
   const host = (req.headers.get("host") ?? "").split(":")[0];
   const permitido = host === "127.0.0.1" || host === "localhost" || (LAN && (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || HOSTS_EXTRA.includes(host.toLowerCase())));

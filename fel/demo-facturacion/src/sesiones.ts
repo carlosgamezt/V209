@@ -16,6 +16,8 @@ async function derivar(clave: string, sal: Uint8Array): Promise<string> {
 function iguales(a: string, b: string) { if (a.length !== b.length) return false; let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; }
 
 export class Sesiones {
+  /** Contraseña de demostración que la pantalla de inicio puede mostrar; nula cuando las contraseñas son aleatorias (modo remoto). */
+  claveDemoPublica: string | null = null;
   private cuentas = new Map<string, { sal: Uint8Array; hash: string }>();
   private sesiones = new Map<string, Sesion>();
   private fallos = new Map<string, { n: number; hasta: number }>();

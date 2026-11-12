@@ -27,6 +27,7 @@ export function pantallaLogin(raiz, sesion, alEntrar) {
     campo("Usuario", usuario, {}), ayuda, campo("Contraseña", clave, {}),
     h("label", { class: "login-recordar" }, recordar, h("span", {}, "Recordar este dispositivo"), h("small", { class: "mut" }, "Mantiene la sesión hasta 7 días sin actividad (14 como máximo). No lo uses en equipos compartidos.")),
     err, b,
-    h("p", { class: "aviso aviso-azul login-demo" }, icono("info"), h("span", {}, "Demostración con personas ficticias. Contraseña de todos los usuarios: ", h("strong", { class: "mono" }, sesion.clave_demo))))));
+    h("p", { class: "aviso aviso-azul login-demo" }, icono("info"), sesion.clave_demo ? h("span", {}, "Demostración con personas ficticias. Contraseña de todos los usuarios: ", h("strong", { class: "mono" }, sesion.clave_demo))
+      : h("span", {}, "Demostración con personas ficticias. Las contraseñas de esta sesión las muestra el programa en su ventana al iniciarse.")))));
   clave.focus();
 }

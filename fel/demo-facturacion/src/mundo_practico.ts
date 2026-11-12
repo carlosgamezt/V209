@@ -7,6 +7,7 @@ export const EMPRESA2 = "10000000-0000-0000-0000-0000000000d1";
 export const CLAVE_DEMO = "demo1234";   // contraseña de TODOS los usuarios ficticios (solo demostración local)
 export const EXTRA = {
   maestro: { id: "00000000-0000-0000-0000-00000000a010", nombre: "Mario Maestro", rol: "maestro", descripcion: "Administrador de la plataforma: empresas, planes, pagos simulados y bolsón", empresa: null as string | null },
+  maestro2: { id: "00000000-0000-0000-0000-00000000a012", nombre: "Nora Maestra", rol: "maestro", descripcion: "Segunda persona de la plataforma: aprueba las conciliaciones del bolsón", empresa: null as string | null },
   sofia: { id: "00000000-0000-0000-0000-00000000a011", nombre: "Sofía Aguilar", rol: "propietario", descripcion: "Propietaria de Servicios Aguilar (segunda empresa ficticia)", empresa: EMPRESA2 as string | null },
 } as const;
 export type Persona = { id: string; nombre: string; rol: string; descripcion: string; empresa: string | null };
@@ -14,7 +15,7 @@ export const PERSONAS: Record<string, Persona> = {
   ...Object.fromEntries(Object.entries(USUARIOS).map(([k, u]) => [k, { ...u, empresa: EMPRESA } as Persona])),
   ...EXTRA,
 };
-export const esMaestro = (clave: string) => clave === "maestro";
+export const esMaestro = (clave: string) => clave === "maestro" || clave === "maestro2";
 
 export interface MundoPractico { cuentaBolson: string; planes: { prepago: string; mensual: string; suscripcion: string } }
 
@@ -24,7 +25,7 @@ export async function sembrarPractico(bd: BdDemo): Promise<MundoPractico> {
     await db.query("insert into auth.users (id, email) values ($1, $2)", [u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`]);
     await db.query("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
   }
-  await db.query("insert into public.plataforma_admins (user_id) values ($1)", [M]);
+  await db.query("insert into public.plataforma_admins (user_id) values ($1), ($2)", [M, EXTRA.maestro2.id]);
   // segunda empresa: creada por el maestro con las funciones reales y habilitada
   const [reg] = await bd.filas<{ id: string }>("select id from public.regimenes_fiscales where codigo = 'general'");
   await db.query("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) values ($1, 'Servicios Aguilar', 'Servicios Aguilar, S.A. (FICTICIA)', '8880002-5', $2, 'habilitada')", [EMPRESA2, reg.id]);

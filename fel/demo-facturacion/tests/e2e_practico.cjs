@@ -17,7 +17,7 @@ function arrancar() {
 }
 
 (async () => {
-  const srv = await arrancar(), errores = [], nav = await chromium.launch();
+  const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await chromium.launch();
   const nuevoCtx = async (opciones) => { const c = await nav.newContext({ locale: "es-GT", acceptDownloads: true, ...opciones }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); const p = await c.newPage();
     p.on("pageerror", (e) => errores.push(`pageerror: ${e.message}`)); p.on("console", (m) => { if (m.type() === "error" && !/fonts\.|Failed to load resource/.test(m.text())) errores.push(`console: ${m.text()}`); }); return { c, p }; };
   const foto = async (p, nombre) => { assert.doesNotMatch(await p.locator("body").innerText(), /\bnull\b|\bundefined\b|\[object /, `texto interno visible en ${nombre}`); if (capturas) await p.screenshot({ path: path.join(capturas, nombre) }); };
@@ -80,6 +80,15 @@ function arrancar() {
   await p.click("#registrar-pago"); await p.fill('input[aria-label="Monto"]', "10"); await p.fill('input[aria-label="Referencia del pago"]', "PAGO-RITA-1"); await p.click("#guardar-formulario"); await p.waitForSelector('[data-panel="plan-resumen"] >> text=Q 10.00'); await foto(p, "pc-11-empresa.png");
   await p.goto(`${srv.url}/#/planes`); await p.waitForSelector('[data-plan="prepago_basico"]'); await foto(p, "pc-12-planes.png");
   await p.goto(`${srv.url}/#/bolson`); await p.waitForSelector('[data-panel="bolson-cuentas"]'); assert.match(await p.locator("body").innerText(), /Bolsón SIMULADO de Digifact/); assert.match(await p.locator('[data-panel="bolson-empresas"]').innerText(), /Empresa Demo/); await foto(p, "pc-13-bolson.png");
+  // conciliación del bolsón (D2-4): extracto del proveedor simulado, diferencia, aprobación por OTRA persona y ajuste
+  await p.click('[data-panel="conciliacion-bolson"] summary'); await p.click("#sim-ajeno"); await toast(p, "Consumo ajeno simulado");
+  await p.click("#importar-extracto"); await toast(p, "Extracto importado"); await p.click("[data-extracto]"); await toast(p, "Conciliación propuesta"); await p.waitForSelector('[data-conciliacion="propuesta"]');
+  assert.equal(await p.locator("#aprobar-conciliacion").isDisabled(), true, "quien propone no aprueba"); await foto(p, "pc-14-conciliacion.png");
+  await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
+  await entrar(p, "maestro2"); await p.waitForSelector('[data-panel="empresas"]'); await p.goto(`${srv.url}/#/bolson`); await p.waitForSelector('[data-conciliacion="propuesta"]');
+  await p.click("#aprobar-conciliacion"); await p.fill('textarea[aria-label="Motivo"]', "Revisada contra el extracto"); await p.getByRole("button", { name: "Aprobar", exact: true }).last().click(); await toast(p, "Conciliación aprobada");
+  await p.waitForSelector('[data-conciliacion="aprobada"] [data-resolver]'); await p.click('[data-conciliacion="aprobada"] [data-resolver]');
+  await p.fill('input[aria-label="Motivo de la resolución"]', "Consumo extraordinario informado por el proveedor"); await p.click("#guardar-formulario"); await toast(p, "Partida resuelta"); await foto(p, "pc-15-conciliacion-resuelta.png");
   await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
   // la propietaria recién creada entra y ve su empresa
   await entrar(p, "rita", "clave-rita-1234"); await p.waitForSelector(".cab-demo"); assert.match(await p.locator(".emp-sel").innerText(), /TALLER RIVERA/);
@@ -106,4 +115,4 @@ function arrancar() {
   await nav.close(); srv.parar();
   assert.deepEqual(errores, [], "errores de consola o de página:\n" + errores.join("\n"));
   console.log("PRÁCTICA E2E OK");
-})().catch((e) => { console.error(e); process.exit(1); });
+})().catch((e) => { console.error(e); if (globalThis.__errores?.length) console.error("errores de la página:\n" + globalThis.__errores.join("\n")); process.exit(1); });

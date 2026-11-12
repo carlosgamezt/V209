@@ -7,7 +7,7 @@ import { ServicioDigifact } from "../../proveedores/src/servicio_digifact.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
-import { CLAVE_DEMO, PERSONAS, EXTRA, esMaestro } from "./mundo_practico.ts";
+import { PERSONAS, EXTRA, esMaestro } from "./mundo_practico.ts";
 import { Sesiones } from "./sesiones.ts";
 
 export class ErrorPr extends Error { constructor(public status: number, mensaje: string, public codigo = "error") { super(mensaje); } }
@@ -100,7 +100,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       const S = d.sesiones; if (!S || !url.pathname.startsWith("/api/sesion")) return null;
       if (req.method === "GET" && url.pathname === "/api/sesion") {
         const s = S.validar(Sesiones.idDeCookie(req));
-        return json(s ? { autenticado: true, usuario: s.usuario, nombre: PERSONAS[s.usuario].nombre } : { autenticado: false, usuarios: Object.entries(PERSONAS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })), clave_demo: CLAVE_DEMO });
+        return json(s ? { autenticado: true, usuario: s.usuario, nombre: PERSONAS[s.usuario].nombre } : { autenticado: false, usuarios: Object.entries(PERSONAS).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })), clave_demo: S.claveDemoPublica });
       }
       if (req.method === "POST" && url.pathname === "/api/sesion/entrar") {
         const b = await leer(req); const usuario = String(b.usuario ?? "").toLowerCase().trim();
@@ -236,6 +236,36 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       if (m === "POST" && (r = /^\/api\/plataforma\/bolson\/alertas\/([^/]+)\/resolver$/.exec(ruta))) {
         const b = await leer(req); if (!uuidOk(r[1])) throw new ErrorPr(400, "Alerta no válida", "entrada_invalida");
         await bd.rpc("fel_admin_bolson_alerta_resolver", { p_actor: M, p_alerta: r[1], p_nota: texto(b.nota, 3, 300, "Nota") }); return json({ ok: true });
+      }
+      if (m === "GET" && ruta === "/api/plataforma/bolson/conciliaciones") {
+        const extractos = await bd.filas<Obj>("select x.id, x.periodo_desde, x.periodo_hasta, x.saldo_final::text as saldo_final, x.importado_en, (select count(*)::int from public.bolson_extracto_lineas l where l.extracto_id = x.id) as lineas, c.id as conciliacion_id from public.bolson_extractos x left join public.bolson_conciliaciones c on c.extracto_id = x.id order by x.importado_en desc limit 20");
+        const conciliaciones = await bd.filas<Obj>("select id, extracto_id, estado, propuesta_por, propuesta_en, decidida_por, decidida_en, nota, resumen from public.bolson_conciliaciones order by propuesta_en desc limit 20");
+        const partidas = await bd.filas<Obj>(`select p.id, p.conciliacion_id, p.clasificacion, p.referencia, p.unidades_extracto::text as unidades_extracto, p.unidades_nexa::text as unidades_nexa, p.diferencia::text as diferencia, e.nombre_comercial,
+            r.accion, r.motivo as resolucion_motivo, r.unidades::text as resolucion_unidades, re.nombre_comercial as resolucion_empresa
+          from public.bolson_conciliacion_partidas p left join public.empresas e on e.id = p.empresa_id left join public.bolson_partida_resoluciones r on r.partida_id = p.id left join public.empresas re on re.id = r.empresa_id
+          order by p.clasificacion = 'coincide', p.referencia`);
+        return json({ extractos, conciliaciones, partidas, yo: M, nombres: Object.fromEntries(Object.values(PERSONAS).map((u) => [u.id, u.nombre])), empresas: await bd.filas("select id, nombre_comercial from public.empresas order by nombre_comercial") });
+      }
+      if (m === "POST" && ruta === "/api/plataforma/bolson/extractos/importar") {
+        const b = await leer(req); const cuenta = uuidOk(b.cuenta) ? b.cuenta : null; if (!cuenta) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");
+        const hoy = new Date(), ayer = new Date(hoy.getTime() - 86_400_000), f = (x: Date) => x.toISOString().slice(0, 10);
+        return json(await servicio.importarExtracto({ actor: M, cuenta, desde: f(ayer), hasta: f(hoy), saldoFinal: sim.saldo }));
+      }
+      if (m === "POST" && ruta === "/api/plataforma/bolson/conciliaciones/proponer") { const b = await leer(req); if (!uuidOk(b.extracto)) throw new ErrorPr(400, "Extracto no válido", "entrada_invalida"); return json(await bd.rpc("fel_admin_bolson_conciliar_proponer", { p_actor: M, p_extracto: b.extracto })); }
+      if (m === "POST" && (r = /^\/api\/plataforma\/bolson\/conciliaciones\/([^/]+)\/decidir$/.exec(ruta))) {
+        const b = await leer(req); if (!uuidOk(r[1])) throw new ErrorPr(400, "Conciliación no válida", "entrada_invalida");
+        return json(await bd.rpc("fel_admin_bolson_conciliar_decidir", { p_actor: M, p_conciliacion: r[1], p_aprobar: b.aprobar === true, p_nota: texto(b.nota, 5, 300, "Nota") }));
+      }
+      if (m === "POST" && (r = /^\/api\/plataforma\/bolson\/partidas\/([^/]+)\/resolver$/.exec(ruta))) {
+        const b = await leer(req); if (!uuidOk(r[1])) throw new ErrorPr(400, "Partida no válida", "entrada_invalida");
+        return json(await bd.rpc("fel_admin_bolson_partida_resolver", { p_actor: M, p_partida: r[1], p_accion: String(b.accion), p_empresa: uuidOk(b.empresa) ? b.empresa : null, p_motivo: texto(b.motivo, 10, 300, "Motivo") }));
+      }
+      if (m === "POST" && ruta === "/api/plataforma/bolson/simulador") {   // controles de la DEMOSTRACIÓN: reproducen lo que en la realidad hace el proveedor por su cuenta
+        const b = await leer(req);
+        if (b.accion === "consumo_ajeno") sim.inyectarConsumoAjeno(`AJENO-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, "1.000000");
+        else if (b.accion === "omitir_ultimo") { const ult = [...sim.consumos].reverse().find((c) => c.evento === "CERTIFICACION"); if (!ult) throw new ErrorPr(422, "No hay consumos que omitir", "regla"); sim.omitirConsumo(ult.referencia); }
+        else throw new ErrorPr(400, "Acción no válida", "entrada_invalida");
+        return json({ ok: true });
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/revisar") { await leer(req); await bd.rpc("fel_sys_bolson_revisar", {}); return json({ verificacion: await this.verificacion() }); }
       throw new ErrorPr(403, "Esta función no está disponible para el administrador de la plataforma", "no_autorizado");

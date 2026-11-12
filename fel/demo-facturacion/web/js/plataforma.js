@@ -1,6 +1,6 @@
 // Panel del ADMINISTRADOR DE LA PLATAFORMA (demostración): empresas, planes y tarifas, contratos, pagos simulados, cobros y bolsón global.
 // Todo simulado: no hay pasarela de pago ni conexión con Digifact; el bolsón es el de un simulador local.
-import { h, boton, insignia, vacio, cabecera, campo, modal, toast, mensajeError, poner } from "/app/js/ui.js";
+import { h, boton, insignia, vacio, cabecera, campo, modal, toast, mensajeError, poner, pedirMotivo } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { quetzales } from "./dinero.js";
 import { api } from "./api.js";
@@ -144,8 +144,40 @@ export function pantallaBolson(ctx) {
           h("p", { class: "mut" }, "Todo evento sin regla se trata como que consume (prudencia). Las reglas reales de Digifact se cargarán con su documentación oficial.")),
         h("div", { class: "card", "data-panel": "bolson-lotes" }, h("h2", { class: "card-t" }, "Lotes comprados"), tablaSimple([["Fecha"], ["Referencia"], ["Unidades", "der"], ["Costo", "der"]], b.lotes.map((l) => [fechaHora(l.registrado_en), l.referencia_proveedor, num(l.unidades), quetzales(l.costo_total)]))),
         h("div", { class: "card", "data-panel": "bolson-alertas" }, h("div", { class: "barra" }, h("h2", { class: "card-t" }, "Alertas"), boton("Revisar ahora", { tipo: "sec", id: "revisar-bolson", onclick: async () => { try { await api.pl.revisar(); toast("Revisión hecha"); await cargar(); } catch (e) { toast(mensajeError(e), "error"); } } })),
-          b.alertas.length ? tablaSimple([["Fecha"], ["Tipo"], ["Empresa"], ["Estado"]], b.alertas.map((a) => [fechaHora(a.creada_en), a.tipo.replaceAll("_", " "), a.nombre_comercial ?? "—", a.resuelta_en ? insignia("Resuelta", "verde") : insignia("Abierta", "rojo")])) : h("p", { class: "mut" }, "Sin alertas.")));
+          b.alertas.length ? tablaSimple([["Fecha"], ["Tipo"], ["Empresa"], ["Estado"], [""]], b.alertas.map((a) => [fechaHora(a.creada_en), a.tipo.replaceAll("_", " "), a.nombre_comercial ?? "—", a.resuelta_en ? insignia("Resuelta", "verde") : insignia("Abierta", "rojo"),
+            a.resuelta_en ? "" : boton("Resolver", { tipo: "sec", "data-alerta": a.tipo, onclick: async () => { const n = await pedirMotivo({ titulo: "Resolver la alerta", texto: "Anota qué se hizo (mínimo 5 caracteres).", confirmar: "Resolver" }); if (n) { try { await api.pl.resolverAlerta(a.id, n); toast("Alerta resuelta"); await cargar(); } catch (e) { toast(mensajeError(e), "error"); } } } })])) : h("p", { class: "mut" }, "Sin alertas.")));
+      const cc = await api.pl.conciliaciones(); cuerpo.append(tarjetaConciliacion(b, cc));
     } catch (e) { poner(cuerpo, h("p", { class: "err", role: "alert" }, mensajeError(e))); }
+  }
+  const CLASE = { coincide: ["Coincide", "verde"], faltante_en_nexa: ["El proveedor cobró y NEXA no lo midió", "rojo"], sobrante_en_nexa: ["NEXA lo midió y el proveedor no lo informa", "ambar"], diferencia_unidades: ["Diferencia de unidades", "ambar"] };
+  const ACCION = { ajustar_saldo: "Ajuste de saldo", atribuir_empresa: "Consumo extraordinario atribuido", justificar: "Justificada sin ajuste" };
+  function tarjetaConciliacion(b, cc) {
+    const cuenta = b.cuentas[0], nom = (id) => cc.nombres[id] ?? "otra persona", act = async (f, ok) => { try { await f(); if (ok) toast(ok); await cargar(); } catch (e) { toast(mensajeError(e), "error"); } };
+    const resolver = (pa) => { const f = { accion: pa.clasificacion === "faltante_en_nexa" ? "atribuir_empresa" : "ajustar_saldo", empresa: cc.empresas[0]?.id, motivo: "" };
+      const selE = h("select", { "aria-label": "Empresa a la que se atribuye", onchange: (x) => { f.empresa = x.target.value; } }, ...cc.empresas.map((e) => h("option", { value: e.id }, e.nombre_comercial))); const campoE = campo("Empresa", selE); campoE.hidden = f.accion !== "atribuir_empresa";
+      const opciones = [["ajustar_saldo", "Ajustar el saldo de NEXA al del proveedor"], ...(pa.clasificacion !== "sobrante_en_nexa" ? [["atribuir_empresa", "Atribuir a una empresa (consumo extraordinario)"]] : []), ["justificar", "Justificar sin ajustar"]];
+      formulario({ titulo: `Resolver ${pa.referencia ?? "partida"}`, textoBoton: "Resolver", campos: [h("p", { class: "mut" }, `${CLASE[pa.clasificacion][0]}: extracto ${num(pa.unidades_extracto)} · NEXA ${num(pa.unidades_nexa)}. Una partida se resuelve una sola vez y deja un movimiento en el libro.`),
+        campo("Qué hacer", h("select", { "aria-label": "Acción", onchange: (x) => { f.accion = x.target.value; campoE.hidden = f.accion !== "atribuir_empresa"; } }, ...opciones.map(([v, t]) => h("option", { value: v, selected: v === f.accion }, t)))), campoE,
+        campo("Motivo (mínimo 10 caracteres)", input({ "aria-label": "Motivo de la resolución", maxlength: 300, oninput: (x) => { f.motivo = x.target.value; } }))],
+        accion: async () => { await api.pl.resolverPartida(pa.id, f.accion, f.accion === "atribuir_empresa" ? f.empresa : undefined, f.motivo); toast("Partida resuelta"); await cargar(); } }); };
+    const concs = cc.conciliaciones.map((c) => {
+      const ps = cc.partidas.filter((x) => x.conciliacion_id === c.id), mia = c.propuesta_por === cc.yo, r = c.resumen ?? {};
+      const [et, tono] = { propuesta: ["Propuesta", "ambar"], aprobada: ["Aprobada", "verde"], rechazada: ["Rechazada", "rojo"] }[c.estado];
+      return h("div", { class: "op", "data-conciliacion": c.estado }, h("div", { class: "barra" }, h("strong", {}, `Conciliación · ${fechaHora(c.propuesta_en)}`), insignia(et, tono)),
+        h("p", { class: "mut" }, `Proveedor: ${num(r.unidades_extracto)} unidades · NEXA: ${num(r.unidades_nexa)} · coinciden ${r.coinciden} · diferencias ${r.faltantes_en_nexa + r.sobrantes_en_nexa + r.diferencias_unidades} · propuesta de ${nom(c.propuesta_por)}${c.decidida_por ? ` · ${c.estado} por ${nom(c.decidida_por)}` : ""}`),
+        c.estado === "propuesta" ? h("div", { class: "acciones-fila" }, boton("Aprobar", { id: "aprobar-conciliacion", icon: "check", disabled: mia, title: mia ? "La decide otra persona: entra como Nora Maestra" : null, onclick: async () => { const n = await pedirMotivo({ titulo: "Aprobar la conciliación", texto: "Escribe la nota de revisión.", confirmar: "Aprobar" }); if (n) act(() => api.pl.decidir(c.id, true, n), "Conciliación aprobada"); } }),
+          boton("Rechazar", { tipo: "peligro", disabled: mia, onclick: async () => { const n = await pedirMotivo({ titulo: "Rechazar la conciliación", texto: "Escribe el motivo.", confirmar: "Rechazar" }); if (n) act(() => api.pl.decidir(c.id, false, n), "Conciliación rechazada"); } }), mia ? h("small", { class: "mut" }, "La decide otra persona: entra como Nora Maestra (usuario maestro2).") : null) : null,
+        tablaSimple([["Referencia"], ["Situación"], ["Empresa"], ["Extracto", "der"], ["NEXA", "der"], ["Resolución"]], ps.filter((x) => x.clasificacion !== "coincide").map((x) => [x.referencia ?? "—", insignia(...CLASE[x.clasificacion]), x.nombre_comercial ?? "—", num(x.unidades_extracto), num(x.unidades_nexa),
+          x.accion ? `${ACCION[x.accion]}${x.resolucion_empresa ? ` · ${x.resolucion_empresa}` : ""}` : c.estado === "aprobada" ? boton("Resolver", { tipo: "sec", "data-resolver": x.referencia ?? "", onclick: () => resolver(x) }) : "Pendiente"]), "Sin diferencias: todo coincide."));
+    });
+    return h("div", { class: "card", "data-panel": "conciliacion-bolson" }, h("div", { class: "barra" }, h("h2", { class: "card-t" }, "Conciliación con el proveedor"),
+      h("div", { class: "acciones-fila" }, cuenta ? boton("Importar extracto de Digifact (simulado)", { icon: "file", id: "importar-extracto", onclick: () => act(() => api.pl.importarExtracto(cuenta.id), "Extracto importado") }) : null)),
+      h("p", { class: "mut" }, "Compara lo que informa el proveedor con lo que midió NEXA. Las diferencias no se corrigen solas: una persona propone, OTRA aprueba y cada resolución deja un ajuste auditable."),
+      cc.extractos.length ? tablaSimple([["Extracto"], ["Líneas", "der"], ["Saldo del proveedor", "der"], [""]], cc.extractos.map((x) => [`${fechaCorta(x.periodo_desde)} – ${fechaCorta(x.periodo_hasta)}`, String(x.lineas), num(x.saldo_final),
+        x.conciliacion_id ? insignia("Con conciliación", "gris") : boton("Proponer conciliación", { tipo: "sec", "data-extracto": x.id, onclick: () => act(() => api.pl.proponer(x.id), "Conciliación propuesta") })])) : h("p", { class: "mut" }, "Todavía no hay extractos."),
+      ...concs,
+      h("details", { class: "demo-controles" }, h("summary", {}, icono("shield"), h("strong", {}, " Controles de la demostración")), h("p", { class: "mut" }, "Reproducen lo que en la realidad hace el proveedor por su cuenta."),
+        h("div", { class: "acciones-fila" }, boton("El proveedor consume por su cuenta", { tipo: "sec", id: "sim-ajeno", onclick: () => act(() => api.pl.simulador("consumo_ajeno"), "Consumo ajeno simulado") }), boton("El proveedor no informa el último consumo", { tipo: "sec", id: "sim-omitir", onclick: () => act(() => api.pl.simulador("omitir_ultimo"), "Consumo omitido del reporte") }))));
   }
   const lote = (cuenta) => { const f = { unidades: "", costo: "0", ref: "" };
     formulario({ titulo: "Registrar lote comprado (simulado)", textoBoton: "Registrar", campos: [campo("Unidades", input({ "aria-label": "Unidades del lote", inputmode: "decimal", oninput: (x) => { f.unidades = x.target.value; } })), campo("Costo total (Q)", input({ "aria-label": "Costo del lote", inputmode: "decimal", value: "0", oninput: (x) => { f.costo = x.target.value; } })),

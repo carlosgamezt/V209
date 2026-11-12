@@ -118,7 +118,7 @@ export class DigifactSimulador {
       const cert = this.porReferencia(ref); if (!cert) return ok({ estado: "RECHAZADO", codigo: "NO_EXISTE_DTE", mensaje: "No existe el documento a anular" }, 422);
       const e = this.escenariosAnulacion[doc] ?? "exito";
       const aplicar = () => {
-        if (!cert.anulado) { cert.anulado = { fecha: this.ahora().toISOString(), motivo: String(c.motivo ?? "") }; this.consumos.push({ referencia: `${cert.autorizacion}:ANULACION`, evento: "ANULACION", unidades: "0.000000", fecha: cert.anulado.fecha }); }
+        if (!cert.anulado) { cert.anulado = { fecha: this.ahora().toISOString(), motivo: String(c.motivo ?? "") }; this.consumos.push({ referencia: `${cert.autorizacion}:ANULACION`, evento: "ANULACION", unidades: "1.000000", fecha: cert.anulado.fecha }); this.saldo -= 1; }
         this.anulacionesPorReferencia.set(refAnu, ref);
       };
       switch (e) {

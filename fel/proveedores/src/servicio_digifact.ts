@@ -85,6 +85,14 @@ export class ServicioDigifact {
     return { resultado: r.tipo, estado: String((await this.operacion(p.empresa, p.operacion)).estado) };
   }
 
+  /** Importa el extracto de consumos que informa Digifact (simulado) para el periodo dado. Idempotente por contenido; no cambia saldos (eso lo hace la conciliación aprobada). */
+  async importarExtracto(p: { actor: string; cuenta: string; desde: string; hasta: string; saldoFinal: number }): Promise<Record<string, unknown>> {
+    const lineas = await this.proveedor.obtenerConsumos(p.desde, p.hasta, this.ctx);
+    const total = lineas.reduce((s, l) => s + Number(l.unidades), 0);
+    return await this.rpc("fel_admin_bolson_extracto_importar", { p_actor: p.actor, p_cuenta: p.cuenta, p_desde: p.desde, p_hasta: p.hasta, p_fuente: "api", p_saldo_inicial: p.saldoFinal + total, p_saldo_final: p.saldoFinal,
+      p_lineas: lineas.map((l) => ({ referencia: l.referencia, evento: l.evento, unidades: l.unidades, ocurrido_en: l.fecha })) }) as Record<string, unknown>;
+  }
+
   private async aplicar(empresa: string, id: string, r: Awaited<ReturnType<ProveedorAnulacion["anular"]>>): Promise<void> {
     if (r.tipo === "anulado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: empresa, p_op: id, p_exitosa: true, p_evidencia: { fuente: "digifact_simulado", fecha_anulacion: r.fechaAnulacion } });
     else if (r.tipo === "rechazado_confirmado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: empresa, p_op: id, p_exitosa: false, p_evidencia: { fuente: "digifact_simulado", codigo: r.codigo.slice(0, 60) } });
