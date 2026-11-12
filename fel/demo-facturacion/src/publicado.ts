@@ -4,9 +4,10 @@ export interface ConfigPublicada { claves: Record<string, string>; semillas: Rec
 const lista = (s: string | undefined) => (s ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 const pares = (s: string | undefined, donde: string): Record<string, string> => Object.fromEntries(lista(s).map((p) => { const i = p.indexOf("="); if (i < 1) throw new Error(`${donde}: formato «usuario=valor» no válido`); return [p.slice(0, i).trim().toLowerCase(), p.slice(i + 1).trim()] as [string, string]; }));
 
-export function leerConfigPublicada(env: (k: string) => string | undefined, usuarios: string[]): ConfigPublicada {
+/** `exigirClaves: false` (función de nube): las contraseñas NO viajan a la función; las registra el aprovisionamiento una sola vez en la base. */
+export function leerConfigPublicada(env: (k: string) => string | undefined, usuarios: string[], o: { exigirClaves?: boolean } = {}): ConfigPublicada {
   const claves = pares(env("FEL_DEMO_CLAVES"), "FEL_DEMO_CLAVES"), semillas = pares(env("FEL_DEMO_MFA_SEMILLAS"), "FEL_DEMO_MFA_SEMILLAS"), hosts = lista(env("FEL_DEMO_HOSTS")).map((h) => h.toLowerCase());
-  for (const u of ["maestro", "maestro2"]) { if (!claves[u]) throw new Error(`falta la contraseña de «${u}» en FEL_DEMO_CLAVES`); if (!semillas[u]) throw new Error(`falta la semilla MFA de «${u}» en FEL_DEMO_MFA_SEMILLAS (la verificación en dos pasos es obligatoria para la plataforma)`); }
+  for (const u of ["maestro", "maestro2"]) { if (o.exigirClaves !== false && !claves[u]) throw new Error(`falta la contraseña de «${u}» en FEL_DEMO_CLAVES`); if (!semillas[u]) throw new Error(`falta la semilla MFA de «${u}» en FEL_DEMO_MFA_SEMILLAS (la verificación en dos pasos es obligatoria para la plataforma)`); }
   const vistas = new Set<string>();
   for (const [u, c] of Object.entries(claves)) {
     if (!usuarios.includes(u)) throw new Error(`FEL_DEMO_CLAVES: usuario desconocido «${u}»`);

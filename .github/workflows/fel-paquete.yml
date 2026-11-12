@@ -3,7 +3,7 @@ name: NEXA FEL · paquete de la demostración
 on:
   push:
     branches: [fel-proveedores-diseno]
-    paths: ["fel/tools/test-demo-pg.sh", "fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
+    paths: ["fel/tools/test-demo-pg.sh", "fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/tools/test-nube-local.sh", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -122,3 +122,5 @@ jobs:
           echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
       - name: E2E completo sobre datos persistentes (PC y teléfono)
         run: bash fel/tools/test-demo-pg.sh --e2e
+      - name: Cadena de la nube (página estática + intermediario de Cloudflare + función de Supabase + base real) · construcción, aprovisionamiento y E2E (PC y teléfono)
+        run: bash fel/tools/test-nube-local.sh

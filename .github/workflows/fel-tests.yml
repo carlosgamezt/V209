@@ -30,7 +30,7 @@ jobs:
           deno test --allow-net=127.0.0.1 pruebas/
       - name: Demostración de facturación simulada (tipos)
         working-directory: fel/demo-facturacion
-        run: deno check servidor.ts src/*.ts tests/*.ts
+        run: deno check servidor.ts src/*.ts tests/*.ts nube/proxy.ts nube/funcion.ts nube/funcion_entrada.ts nube/aprovisionar.ts nube/construir.ts
       - name: Motor fiscal D1-A (recursos oficiales verificados por hash, aritmética decimal exacta, validación estructural y bloqueo de escenarios no aprobados; no calcula ni certifica)
         working-directory: fel/fiscal
         run: |

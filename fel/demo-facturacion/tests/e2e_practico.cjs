@@ -58,6 +58,13 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
   assert.equal((await p.evaluate(() => fetch("/api/estado", { headers: { "x-demo": "1" } }).then((r) => r.status))), 401, "sin sesión no hay datos");
   await entrar(p, "ana", "incorrecta"); await p.waitForSelector("text=Usuario o contraseña incorrectos."); await foto(p, "pc-02-login-error.png");
   await entrar(p, "ana", CLAVE("ana"), true); await p.waitForSelector(".cab-demo"); assert.equal(await p.locator("#usuario-actual").innerText(), "Ana Torres");
+  // clientes y conceptos creados desde la pantalla: se guardan (no se pierden al recargar ni al salir y volver a entrar)
+  await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector("#nuevo-cliente"); await p.click("#nuevo-cliente"); await p.fill('input[aria-label="Identificación del cliente"]', "7770001-9"); await p.fill('input[aria-label="Nombre del cliente"]', "Cliente de recorrido (ficticio)"); await p.click("#guardar-cliente"); await toast(p, "Cliente creado");
+  await p.goto(`${srv.url}/#/conceptos`); await p.waitForSelector("#nuevo-concepto"); await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "REC-001"); await p.fill('input[aria-label="Descripción del concepto"]', "Concepto de recorrido"); await p.fill('input[aria-label="Precio sugerido"]', "12.5"); await p.click("#guardar-concepto"); await toast(p, "Concepto creado");
+  await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario"); await entrar(p, "ana"); await p.waitForSelector(".cab-demo");
+  await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector('input[aria-label="Buscar clientes"]'); await p.fill('input[aria-label="Buscar clientes"]', "recorrido"); await p.waitForSelector('[data-cliente]'); assert.equal(await p.locator('[data-cliente]').count(), 1, "el cliente creado sigue ahí tras salir y volver a entrar");
+  await p.goto(`${srv.url}/#/conceptos`); await p.waitForSelector("[data-concepto]"); assert.ok((await p.locator("body").innerText()).includes("REC-001"), "el concepto creado sigue ahí");
+
   const ck = (await cPc.cookies()).find((x) => x.name === "fel_sid"); assert.ok(ck && ck.httpOnly && ck.sameSite === "Strict", "cookie HttpOnly y SameSite=Strict");
   assert.doesNotMatch(await p.evaluate(() => document.cookie), /fel_sid/, "JavaScript no puede leer la sesión");
   assert.equal(await p.locator('select[aria-label="Persona de la demostración"]').count(), 0, "con inicio de sesión no hay selector de personas");

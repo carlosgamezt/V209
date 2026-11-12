@@ -5,7 +5,7 @@
 import { fileURLToPath } from "node:url";
 import { crearBdPg } from "./src/bd.ts";
 import { AlmacenMemoria, AlmacenPg } from "./src/almacen.ts";
-import { sembrar, mundoExistente } from "./src/mundo_demo.ts";
+import { prepararBase, ErrorAprovisionar } from "./src/aprovisionar.ts";
 import { CLAVE_DEMO, PERSONAS, sembrarPractico } from "./src/mundo_practico.ts";
 import { Sesiones } from "./src/sesiones.ts";
 import { semillaNueva, uriOtp } from "./src/totp.ts";
@@ -36,16 +36,8 @@ const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fon
 const BD_URL = Deno.env.get("FEL_DEMO_BD_URL");
 const bd = BD_URL ? crearBdPg(BD_URL) : await (await import("./src/bd_memoria.ts")).crearBd();   // PGlite solo se carga en modo memoria
 let mundo;
-if (bd.tipo === "pg") {
-  try { await bd.filas("select 1 from public.demo_entorno limit 1"); } catch { console.error("La base no tiene las migraciones del proyecto (falta public.demo_entorno). Aplícalas primero (supabase db push); este programa no crea el esquema."); Deno.exit(1); }
-  if ((await bd.filas("select 1 from public.demo_entorno")).length) mundo = await mundoExistente(bd);   // reinicio: se conserva todo
-  else {
-    const [{ n }] = await bd.filas<{ n: number }>("select count(*)::int as n from public.empresas");
-    if (n > 0) { console.error(`La base ya contiene ${n} empresa(s) que no son de la demostración. Por seguridad NO se siembra ni se usa: apunta FEL_DEMO_BD_URL a una base exclusiva de la demostración.`); Deno.exit(1); }
-    mundo = await sembrar(bd); await sembrarPractico(bd); await bd.ejecutar("insert into public.demo_entorno default values");
-    console.log("  Base de la demostración sembrada por primera vez.");
-  }
-} else { mundo = await sembrar(bd); await sembrarPractico(bd); }
+try { mundo = await prepararBase(bd, { sembrar: true, aviso: (m) => console.log(`  ${m}`) }); }
+catch (e) { if (e instanceof ErrorAprovisionar) { console.error(e.message); Deno.exit(1); } throw e; }
 const ALEATORIAS = !PUBLICADO && (LAN || Deno.env.get("FEL_DEMO_CLAVE_ALEATORIA") === "1");   // acceso desde otros equipos / remoto: nunca contraseñas públicas
 const sesiones = LOGIN ? new Sesiones(undefined, bd.tipo === "pg" ? new AlmacenPg(bd) : new AlmacenMemoria(PERSONAS)) : undefined;
 // auditoría de la autenticación en el registro de auditoría de NEXA FEL (nunca contraseñas ni códigos)

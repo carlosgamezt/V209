@@ -7,3 +7,4 @@ integracion-manifiesto-*.json
 integracion-*-resultados.json
 supabase/.temp/
 supabase/.branches/
+dist/
