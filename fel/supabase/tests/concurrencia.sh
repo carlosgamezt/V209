@@ -185,4 +185,68 @@ case "$est" in
   *) fallar "con el arrendamiento vencido el resultado no debía aceptarse (estado: $est)";;
 esac
 echo "OK concurrencia: resultado vs vencimiento → incierta y por_verificar (nunca se acepta un resultado vencido)"
+
+# ===== D2-1 · bolsón global (mundo A): sesiones simultáneas reales =====
+oks() { cat /tmp/conc_$1_*.res 2>/dev/null | grep -c OK || true; }
+errs_con() { cat /tmp/conc_$1_*.out 2>/dev/null | grep -c "$2" || true; }
+# 14. seis creaciones simultáneas de la MISMA cuenta: una sola cuenta, un solo saldo, reglas sin duplicar; todas reciben la misma
+for i in 1 2 3 4 5 6; do correr "select public.fel_admin_bolson_cuenta_crear('$A','digifact','pruebas','CONC-CUENTA-14')" b14_$i & done
+wait
+[ "$(oks b14)" = 6 ] || fallar "bolsón: las 6 creaciones idénticas debían tener éxito (idempotentes), tuvieron $(oks b14)"
+[ "$(q "select count(*) from public.bolson_cuentas where referencia_externa='CONC-CUENTA-14'")" = 1 ] || fallar "bolsón: se duplicó la cuenta"
+C14=$(q "select id from public.bolson_cuentas where referencia_externa='CONC-CUENTA-14'")
+[ "$(q "select count(*) from public.bolson_saldos where cuenta_id='$C14'")" = 1 ] || fallar "bolsón: saldo duplicado"
+[ "$(q "select count(*) from public.bolson_reglas_consumo where cuenta_id='$C14' and vigente_hasta is null")" = "$(q "select count(*) from public.evento_tipos")" ] || fallar "bolsón: reglas iniciales duplicadas o faltantes"
+echo "OK concurrencia: bolsón · cuenta creada una sola vez"
+# 15. ocho compras simultáneas IDÉNTICAS (misma referencia): un solo lote y el saldo suma una sola vez
+for i in 1 2 3 4 5 6 7 8; do correr "select public.fel_admin_bolson_lote_registrar('$A','$C14',100,50,'CONC-LOTE-15')" b15_$i & done
+wait
+[ "$(oks b15)" = 8 ] || fallar "bolsón: las compras idénticas debían ser idempotentes (éxito en todas), tuvieron $(oks b15)"
+[ "$(q "select count(*) from public.bolson_lotes where cuenta_id='$C14' and referencia_proveedor='CONC-LOTE-15'")" = 1 ] || fallar "bolsón: lote duplicado"
+[ "$(q "select comprado from public.bolson_saldos where cuenta_id='$C14'")" = 100.000000 ] || fallar "bolsón: el saldo no suma el lote exactamente una vez"
+echo "OK concurrencia: bolsón · compras idénticas simultáneas → un solo lote y saldo exacto"
+# 16. seis compras simultáneas con la MISMA referencia y datos DISTINTOS: gana una; las demás reciben FEL_IDEMPOTENCIA; saldo = la ganadora
+for i in 1 2 3 4 5 6; do correr "select public.fel_admin_bolson_lote_registrar('$A','$C14',$((200+i)),10,'CONC-LOTE-16')" b16_$i & done
+wait
+[ "$(oks b16)" = 1 ] || fallar "bolsón: con datos distintos debía ganar exactamente una (ganaron $(oks b16))"
+[ "$(errs_con b16 FEL_IDEMPOTENCIA)" = 5 ] || fallar "bolsón: las 5 perdedoras debían recibir FEL_IDEMPOTENCIA"
+[ "$(q "select count(*) from public.bolson_lotes where cuenta_id='$C14' and referencia_proveedor='CONC-LOTE-16'")" = 1 ] || fallar "bolsón: hay más de un lote con la misma referencia"
+[ "$(q "select comprado from public.bolson_saldos where cuenta_id='$C14'")" = "$(q "select sum(unidades) from public.bolson_lotes where cuenta_id='$C14'")" ] || fallar "bolsón: el saldo no coincide con el libro"
+echo "OK concurrencia: bolsón · misma referencia con datos distintos → una sola ganadora"
+# 17. diez compras simultáneas DISTINTAS en una cuenta nueva: el saldo es exactamente la suma (sin pérdidas por actualizaciones simultáneas)
+q "select public.fel_admin_bolson_cuenta_crear('$A','digifact','pruebas','CONC-CUENTA-17')" >/dev/null
+C17=$(q "select id from public.bolson_cuentas where referencia_externa='CONC-CUENTA-17'")
+for i in 1 2 3 4 5 6 7 8 9 10; do correr "select public.fel_admin_bolson_lote_registrar('$A','$C17',$i,$i,'CONC-LOTE-17-$i')" b17_$i & done
+wait
+[ "$(oks b17)" = 10 ] || fallar "bolsón: las 10 compras distintas debían tener éxito (tuvieron $(oks b17))"
+[ "$(q "select comprado from public.bolson_saldos where cuenta_id='$C17'")" = 55.000000 ] || fallar "bolsón: se perdió una actualización del saldo (esperado 55)"
+echo "OK concurrencia: bolsón · compras simultáneas distintas → saldo exacto (55)"
+# 18. seis registros simultáneos de regla para la misma cuenta y evento: todos terminan; una sola vigente y ninguna vigencia solapada
+for i in 1 2 3 4 5 6; do correr "select public.fel_admin_bolson_regla_registrar('$A','$C17','consulta','si',$i,true,'observado_en_pruebas',jsonb_build_object('n',$i))" b18_$i & done
+wait
+[ "$(oks b18)" = 6 ] || fallar "bolsón: los 6 cambios de regla debían serializarse con éxito (tuvieron $(oks b18))"
+[ "$(q "select count(*) from public.bolson_reglas_consumo where cuenta_id='$C17' and evento_tipo='consulta' and vigente_hasta is null")" = 1 ] || fallar "bolsón: debe haber exactamente una regla vigente"
+[ "$(q "select count(*) from public.bolson_reglas_consumo where cuenta_id='$C17' and evento_tipo='consulta'")" = 7 ] || fallar "bolsón: debían existir 7 versiones (la inicial + 6)"
+[ "$(q "select count(*) from public.bolson_reglas_consumo a join public.bolson_reglas_consumo b on a.cuenta_id=b.cuenta_id and a.evento_tipo=b.evento_tipo and a.id<b.id where a.cuenta_id='$C17' and a.evento_tipo='consulta' and tstzrange(a.vigente_desde,a.vigente_hasta,'[)') && tstzrange(b.vigente_desde,b.vigente_hasta,'[)')")" = 0 ] || fallar "bolsón: hay vigencias solapadas"
+echo "OK concurrencia: bolsón · cambios de regla simultáneos → serializados, una sola vigente, sin solapes"
+# 19. compras simultáneas mientras la cuenta se cierra: el saldo siempre coincide con el libro y la cuenta queda cerrada
+q "select public.fel_admin_bolson_cuenta_crear('$A','digifact','pruebas','CONC-CUENTA-19')" >/dev/null
+C19=$(q "select id from public.bolson_cuentas where referencia_externa='CONC-CUENTA-19'")
+correr "select public.fel_admin_bolson_cuenta_estado('$A','$C19','cerrada','Cierre concurrente de prueba')" b19_c &
+for i in 1 2 3 4; do correr "select public.fel_admin_bolson_lote_registrar('$A','$C19',$i,$i,'CONC-LOTE-19-$i')" b19_$i & done
+wait
+[ "$(q "select estado from public.bolson_cuentas where id='$C19'")" = cerrada ] || fallar "bolsón: la cuenta debía quedar cerrada"
+[ "$(q "select comprado from public.bolson_saldos where cuenta_id='$C19'")" = "$(q "select coalesce(sum(unidades),0) from public.bolson_lotes where cuenta_id='$C19'")" ] || fallar "bolsón: el saldo no coincide con el libro tras el cierre concurrente"
+echo "OK concurrencia: bolsón · compras vs cierre de cuenta → saldo = libro"
+# 20. el mismo extracto importado por seis sesiones a la vez: uno solo; y la misma línea desde dos extractos a la vez: una sola
+for i in 1 2 3 4 5 6; do correr "insert into public.bolson_extractos (cuenta_id,periodo_desde,periodo_hasta,fuente,hash_contenido,saldo_inicial,saldo_final) values ('$C14','2026-11-01','2026-11-30','archivo',repeat('f',64),1,1)" b20_$i & done
+wait
+[ "$(oks b20)" = 1 ] && [ "$(q "select count(*) from public.bolson_extractos where cuenta_id='$C14' and hash_contenido=repeat('f',64)")" = 1 ] || fallar "bolsón: el mismo extracto se importó más de una vez"
+q "insert into public.bolson_extractos (cuenta_id,periodo_desde,periodo_hasta,fuente,hash_contenido,saldo_inicial,saldo_final) values ('$C14','2026-11-01','2026-11-30','archivo',repeat('e',64),1,1)" >/dev/null
+EA=$(q "select id from public.bolson_extractos where cuenta_id='$C14' and hash_contenido=repeat('f',64)"); EB=$(q "select id from public.bolson_extractos where cuenta_id='$C14' and hash_contenido=repeat('e',64)")
+correr "insert into public.bolson_extracto_lineas (extracto_id,cuenta_id,numero_linea,referencia_externa,evento_externo,unidades,ocurrido_en,hash_linea) values ('$EA','$C14',1,'U','CERT',1,now(),repeat('7',64))" b20l_a &
+correr "insert into public.bolson_extracto_lineas (extracto_id,cuenta_id,numero_linea,referencia_externa,evento_externo,unidades,ocurrido_en,hash_linea) values ('$EB','$C14',1,'U','CERT',1,now(),repeat('7',64))" b20l_b &
+wait
+[ "$(oks b20l)" = 1 ] && [ "$(q "select count(*) from public.bolson_extracto_lineas where cuenta_id='$C14' and hash_linea=repeat('7',64)")" = 1 ] || fallar "bolsón: la misma línea se aceptó desde dos extractos"
+echo "OK concurrencia: bolsón · extractos y líneas duplicados simultáneos → una sola"
 echo "CONCURRENCIA OK"

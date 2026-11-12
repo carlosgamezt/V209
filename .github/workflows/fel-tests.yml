@@ -103,6 +103,8 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
+      - name: D2 · lo existente no cambió y las migraciones de D2 son solo aditivas
+        run: python3 fel/supabase/tests/verificar_aditiva_d2.py
       - name: Levantar Supabase local y aplicar migraciones
         run: supabase --workdir fel start
       - name: Ejecutar pruebas SQL
