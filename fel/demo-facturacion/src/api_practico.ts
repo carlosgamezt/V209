@@ -92,7 +92,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_D.has(esc as EscenarioDigifact)) throw new ErrorPr(400, "Escenario no válido", "entrada_invalida");
       const clave = texto(b.clave, 16, 80, "Clave de idempotencia");
       sim.fijarEscenario(docId, esc as EscenarioDigifact);
-      await servicio.certificar({ actor: a.id, empresa: d.emp(), documento: docId, clave, canal });
+      return await servicio.certificar({ actor: a.id, empresa: d.emp(), documento: docId, clave, canal });
     },
 
     // ---------------------------------------------------------------- sesión (no requiere sesión previa)

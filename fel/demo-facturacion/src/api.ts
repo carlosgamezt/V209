@@ -212,7 +212,8 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const b = await cuerpo(); const docId = id(r[1]);
       if (b.proveedor === "digifact") {   // certificación con Digifact SIMULADO: con cobertura (bolsón + monedero) y su simulador local
         if (!pr) throw new ErrorHttp(404, "Digifact simulado no está disponible en este modo", "no_disponible");
-        await pr.certificar(a, docId, b, await canalDe("digifact")); return json({ ...(await detalle(docId)) });
+        const s = await pr.certificar(a, docId, b, await canalDe("digifact"));
+        return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)) });
       }
       const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_IDS.has(esc as Escenario)) throw new ErrorHttp(400, "Escenario no válido", "entrada_invalida");
       const clave = texto(b.clave, 16, 80, "Clave de idempotencia");

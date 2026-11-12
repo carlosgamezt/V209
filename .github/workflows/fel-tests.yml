@@ -70,6 +70,10 @@ jobs:
           node fel/app/tests/cuentas.cjs
       - name: Demostración de facturación individual SIMULADA (navegador + orquestador real + PostgreSQL en memoria; sin credenciales ni red externa)
         run: node fel/demo-facturacion/tests/e2e.cjs
+      - name: Versión práctica · inicio de sesión (unidad), API real (Digifact simulado, plan y saldo, plataforma, aislamiento) y navegador en PC y teléfono (PWA); simulado y local
+        run: |
+          deno test -A fel/demo-facturacion/tests/sesiones_test.ts fel/demo-facturacion/tests/practico_api_test.ts
+          node fel/demo-facturacion/tests/e2e_practico.cjs
       - name: Servidor de la demostración con el plano de control del agente (firma Ed25519 por HTTP, supervisor periódico y cierre ordenado; simulado y local)
         run: deno test -A fel/demo-facturacion/tests/agente_servidor_test.ts
       - name: Simulador FEL del agente local (núcleo, servidor 127.0.0.1 y formulario en Chromium; confirmación solo humana, interrupciones, duplicados; sin SAT ni credenciales)

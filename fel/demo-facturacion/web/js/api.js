@@ -13,6 +13,7 @@ export async function llamar(metodo, ruta, cuerpo) {
     r = await fetch(ruta, { method: metodo, headers: { "x-demo": "1", "x-demo-usuario": usuario, "content-type": "application/json" }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
   } catch { throw new ErrorApi("No hay conexión con el servidor de la demostración.", "red", 0); }
   let datos = null; try { datos = await r.json(); } catch { /* sin cuerpo */ }
+  if (r.status === 401 && datos?.codigo === "no_sesion") document.dispatchEvent(new Event("fel-sesion-vencida"));
   if (!r.ok) throw new ErrorApi(datos?.mensaje || "No se pudo completar la operación.", datos?.codigo || "error", r.status);
   return datos;
 }
@@ -34,7 +35,24 @@ export const api = {
   estadoPreparacion: (id, estado, version, motivo) => llamar("POST", `/api/documentos/${id}/estado`, { estado, version, motivo }),
   reabrir: (id, version) => llamar("POST", `/api/documentos/${id}/reabrir`, { version }),
   validar: (id) => llamar("POST", `/api/documentos/${id}/validar`, {}),
-  certificar: (id, clave, escenario) => llamar("POST", `/api/documentos/${id}/certificar`, { clave, escenario }),
+  certificar: (id, clave, escenario, proveedor) => llamar("POST", `/api/documentos/${id}/certificar`, { clave, escenario, ...(proveedor ? { proveedor } : {}) }),
+  consultarProveedor: (id) => llamar("GET", `/api/documentos/${id}/consultar-proveedor`),
+  anular: (id, clave, motivo, escenario) => llamar("POST", `/api/documentos/${id}/anular`, { clave, motivo, escenario }),
+  conciliarAnulacion: (op) => llamar("POST", `/api/operaciones/${op}/conciliar-anulacion`, {}),
+  plan: () => llamar("GET", "/api/plan"),
+  sesion: () => llamar("GET", "/api/sesion"),
+  entrar: (usuario, clave, recordar) => llamar("POST", "/api/sesion/entrar", { usuario, clave, recordar }),
+  salir: () => llamar("POST", "/api/sesion/salir", {}),
+  pl: {
+    resumen: () => llamar("GET", "/api/plataforma/resumen"), planes: () => llamar("GET", "/api/plataforma/planes"), empresaPlan: (id) => llamar("GET", `/api/plataforma/empresas/${id}/plan`),
+    crearEmpresa: (d) => llamar("POST", "/api/plataforma/empresas", d), estadoEmpresa: (id, estado, motivo) => llamar("POST", `/api/plataforma/empresas/${id}/estado`, { estado, motivo }),
+    crearPlan: (d) => llamar("POST", "/api/plataforma/planes", d), crearVersion: (codigo, d) => llamar("POST", `/api/plataforma/planes/${codigo}/versiones`, d),
+    contrato: (empresa, plan_version) => llamar("POST", "/api/plataforma/contratos", { empresa, plan_version }), pago: (empresa, monto, referencia, clave) => llamar("POST", "/api/plataforma/pagos", { empresa, monto, referencia, clave }),
+    cuenta: (empresa, estado, cupo, motivo) => llamar("POST", "/api/plataforma/cuentas", { empresa, estado, cupo, motivo }),
+    cobroGenerar: (empresa) => llamar("POST", "/api/plataforma/cobros/generar", { empresa }), cobroEmitir: (cobro, referencia, monto_total) => llamar("POST", "/api/plataforma/cobros/emitir", { cobro, referencia, monto_total }),
+    bolson: () => llamar("GET", "/api/plataforma/bolson"), lote: (cuenta, unidades, costo_total, referencia) => llamar("POST", "/api/plataforma/bolson/lotes", { cuenta, unidades, costo_total, referencia }),
+    resolverAlerta: (id, nota) => llamar("POST", `/api/plataforma/bolson/alertas/${id}/resolver`, { nota }), revisar: () => llamar("POST", "/api/plataforma/bolson/revisar", {}),
+  },
   conciliar: (op) => llamar("POST", `/api/operaciones/${op}/conciliar`, {}),
   proponer: (op, tipo, evidencia, datos) => llamar("POST", `/api/operaciones/${op}/conciliacion`, { tipo, evidencia, datos }),
   decidir: (id, aprobar, nota) => llamar("POST", `/api/conciliaciones/${id}/decidir`, { aprobar, nota }),

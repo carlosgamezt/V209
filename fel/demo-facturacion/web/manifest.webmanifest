@@ -1,0 +1,17 @@
+{
+  "name": "NEXA FEL · Facturación electrónica (demostración)",
+  "short_name": "Nexa FEL",
+  "description": "Demostración SIMULADA de facturación electrónica: sin valor fiscal.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#4654F5",
+  "background_color": "#EDEEF9",
+  "icons": [
+    { "src": "/web/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/web/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/web/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

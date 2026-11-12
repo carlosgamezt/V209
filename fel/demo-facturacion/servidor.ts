@@ -19,7 +19,7 @@ const HOSTS_EXTRA = (Deno.env.get("FEL_DEMO_HOSTS") ?? "").split(",").map((x) =>
 if (LAN && !LOGIN) { console.error("--lan exige el inicio de sesión (FEL_DEMO_LOGIN distinto de 0)."); Deno.exit(1); }
 const PUERTO = Number(arg("puerto", Deno.env.get("FEL_DEMO_PUERTO") ?? "8787"));
 const AQUI = fileURLToPath(new URL(".", import.meta.url));
-const TIPOS: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
+const TIPOS: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json; charset=utf-8", ".ico": "image/x-icon" };
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 const bd = await crearBd();
@@ -33,13 +33,15 @@ const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agent
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;
   if (ruta === "/" || ruta === "/index.html") archivo = `${AQUI}web/index.html`;
+  else if (ruta === "/manifest.webmanifest") archivo = `${AQUI}web/manifest.webmanifest`;
+  else if (ruta === "/sw.js") archivo = `${AQUI}web/sw.js`;
   else if (ruta.startsWith("/web/")) archivo = `${AQUI}${ruta.slice(1)}`;
   else if (/^\/app\/(css|js)\/[A-Za-z0-9._-]+$/.test(ruta)) archivo = `${AQUI}../${ruta.slice(1)}`;   // identidad visual y utilidades de la interfaz de NEXA FEL
   else return new Response("No encontrado", { status: 404 });
   if (archivo.includes("..") && !ruta.startsWith("/app/")) return new Response("No encontrado", { status: 404 });
   try {
     const datos = await Deno.readFile(archivo); const ext = archivo.slice(archivo.lastIndexOf("."));
-    return new Response(datos, { headers: { "content-type": TIPOS[ext] ?? "application/octet-stream", "content-security-policy": CSP, "x-content-type-options": "nosniff", "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+    return new Response(datos, { headers: { "content-type": TIPOS[ext] ?? "application/octet-stream", "content-security-policy": CSP, "x-content-type-options": "nosniff", "cache-control": "no-store", "referrer-policy": "no-referrer", ...(ruta === "/sw.js" ? { "service-worker-allowed": "/" } : {}) } });
   } catch { return new Response("No encontrado", { status: 404 }); }
 }
 

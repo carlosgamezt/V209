@@ -5,7 +5,7 @@ import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 
-const FILTROS = [["todas", "Todas"], ["borrador", "Borradores"], ["revisado", "Revisadas"], ["certificado", "Certificadas (simuladas)"], ["por_verificar", "Por verificar"], ["rechazado", "Rechazadas"]];
+const FILTROS = [["todas", "Todas"], ["borrador", "Borradores"], ["revisado", "Revisadas"], ["certificado", "Certificadas (simuladas)"], ["por_verificar", "Por verificar"], ["rechazado", "Rechazadas"], ["anulado", "Anuladas"]];
 const coincide = (d, f) => f === "todas" || d.estado_preparacion === f || d.estado_fiscal === f;
 export const esSimulado = (d) => (d.canal_ambiente ?? "simulado") === "simulado";
 
