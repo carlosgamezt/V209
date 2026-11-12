@@ -31,7 +31,7 @@ test("sólo escucha en 127.0.0.1 y devuelve cabeceras de seguridad sin caché", 
 
 test("el control exige token: sin token o con token erróneo ⇒ 401 uniforme", async () => {
   await antes();
-  for (const tok of [undefined, "", "x", sim.tokenControl.slice(0, -1) + "0"]) {
+  for (const tok of [undefined, "", "x", sim.tokenControl.slice(0, -1) + (sim.tokenControl.endsWith("0") ? "1" : "0")]) {
     const r = await pedir("POST", "/control/sesiones", { cuerpo: { empresa: "emp-a", referencia: "ref-00000001" }, cab: tok === undefined ? {} : { "x-control-token": tok } });
     assert.equal(r.status, 401); assert.equal(r.json.error, "NO_AUTORIZADO");
   }
