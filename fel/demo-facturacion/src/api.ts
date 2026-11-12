@@ -52,6 +52,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     if (!c) throw new ErrorHttp(422, `La empresa no tiene un canal «${proveedor}» simulado habilitado`, "regla");
     return c.id;
   };
+  const canalBase = async () => (pr ? await canalDe("mock") : mundo.canal);   // sin la versión práctica (pruebas del agente) el canal es el sembrado; con ella, el de la empresa de la petición
   const actor = (req: Request): { clave: string; id: string } => {
     if (extras.sesiones) {
       const s = extras.sesiones.validar(Sesiones.idDeCookie(req)); if (!s) throw new ErrorHttp(401, "Inicia sesión para continuar", "no_sesion");
@@ -122,7 +123,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
       return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...PERSONAS[a.clave] }, login: !!extras.sesiones, practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
-        permisos, establecimientos, clientes, conceptos, canal: await canalDe("mock"), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+        permisos, establecimientos, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
       return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, c.frecuente, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [emp()]));
@@ -218,7 +219,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_IDS.has(esc as Escenario)) throw new ErrorHttp(400, "Escenario no válido", "entrada_invalida");
       const clave = texto(b.clave, 16, 80, "Clave de idempotencia");
       mock.fijarEscenario(docId, esc as Escenario);
-      const s = await orq().solicitar({ actor: a.id, empresa: emp(), documento: docId, clave, canal: await canalDe("mock") });
+      const s = await orq().solicitar({ actor: a.id, empresa: emp(), documento: docId, clave, canal: await canalBase() });
       return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)) });
     }
     if (m === "POST" && (r = /^\/api\/operaciones\/([^/]+)\/conciliar$/.exec(ruta))) {
@@ -257,7 +258,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const caer = () => { throw new ProcesoCaido(punto); };
       const o = orq({ ganchos: { despuesDeSolicitar: punto === "a" ? caer : undefined, despuesDeMarcarEnvio: punto === "b" ? caer : undefined, despuesDeEnviar: punto === "c" ? caer : undefined, despuesDeEvento: punto === "d" ? caer : undefined } });
       let caido = false;
-      try { await o.solicitar({ actor: a.id, empresa: emp(), documento: docId, clave: texto(b.clave, 16, 80, "Clave"), canal: await canalDe("mock") }); } catch (e) { if (e instanceof ProcesoCaido) caido = true; else throw e; }
+      try { await o.solicitar({ actor: a.id, empresa: emp(), documento: docId, clave: texto(b.clave, 16, 80, "Clave"), canal: await canalBase() }); } catch (e) { if (e instanceof ProcesoCaido) caido = true; else throw e; }
       return json({ caido, punto, ...(await detalle(docId)) });
     }
     if (pr) { const x = await pr.rutasEmpresa({ req, url, a, ruta, m, cuerpo, id, json, canalDe, detalle, permisos: () => permisosDe(a) }); if (x) return x; }
