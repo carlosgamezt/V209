@@ -44,6 +44,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     return o && doc?.autorizacion_sat && registro.obtener(o.proveedor)?.soportaAnulacion ? { clave: o.clave_idempotencia, autorizacion: doc.autorizacion_sat, proveedor: o.proveedor } : null;
   }
 
+  const nom = (id: unknown) => registro.obtener(String(id))?.nombre ?? String(id ?? "—");   // nombre del certificador: las pantallas no los conocen por id
   async function planDe(empresa: string) {
     const [cuenta] = await bd.filas<Obj>("select id, estado, cupo_mensual_unidades::text as cupo from public.cuentas_comerciales where empresa_id = $1", [empresa]);
     const contratos = await bd.filas<Obj>(`select ct.id, ct.desde, ct.hasta, pv.id as version_id, pv.version, pl.codigo, pl.nombre, pl.modalidad, pv.cuota_fija::text as cuota_fija, pv.unidades_incluidas::text as unidades_incluidas, pv.permite_sobregiro, pv.limite_sobregiro::text as limite_sobregiro
@@ -52,13 +53,17 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     const tarifas = vigente ? await bd.filas<Obj>("select evento_tipo, precio_unitario::text as precio_unitario, cargable from public.tarifas where plan_version_id = $1 order by evento_tipo", [vigente.version_id]) : [];
     const [mon] = await bd.filas<Obj>("select recargado::text, consumido::text, reservado::text, reembolsado::text, ajustado::text, sobregiro::text, (recargado + ajustado - consumido - reservado - reembolsado + sobregiro)::text as disponible from public.monedero_saldos where empresa_id = $1", [empresa]);
     const pagos = await bd.filas<Obj>("select id, monto::text as monto, referencia_pago, estado, confirmado_en from public.pagos where empresa_id = $1 order by confirmado_en desc limit 30", [empresa]);
-    const consumos = await bd.filas<Obj>(`select c.id, c.evento_tipo, c.estado, c.unidades_reservadas::text as unidades_reservadas, c.unidades_consumidas::text as unidades_consumidas, c.reservado_en, c.resuelto_en, c.documento_id,
+    const consumos = await bd.filas<Obj>(`select c.id, c.evento_tipo, c.estado, c.unidades_reservadas::text as unidades_reservadas, c.unidades_consumidas::text as unidades_consumidas, c.reservado_en, c.resuelto_en, c.documento_id, b.proveedor_id as certificador,
         d.numero_borrador, (select coalesce(sum(g.monto), 0)::text from public.cargos g where g.consumo_id = c.id) as cargado
-      from public.consumos c left join public.documentos d on d.id = c.documento_id and d.empresa_id = c.empresa_id where c.empresa_id = $1 order by c.reservado_en desc limit 50`, [empresa]);
+      from public.consumos c join public.bolson_cuentas b on b.id = c.cuenta_id left join public.documentos d on d.id = c.documento_id and d.empresa_id = c.empresa_id where c.empresa_id = $1 order by c.reservado_en desc limit 50`, [empresa]);
+    const porCertificador = await bd.filas<Obj>(`select b.proveedor_id as certificador, count(*) filter (where c.estado = 'confirmado')::int as confirmados, count(*) filter (where c.estado = 'reservado')::int as retenidos, count(*) filter (where c.estado = 'liberado')::int as liberados,
+        coalesce(sum(c.unidades_consumidas) filter (where c.estado = 'confirmado'), 0)::text as unidades, coalesce(sum(g.monto), 0)::text as cargado
+      from public.consumos c join public.bolson_cuentas b on b.id = c.cuenta_id left join (select consumo_id, sum(monto) as monto from public.cargos where naturaleza = 'cargo' group by consumo_id) g on g.consumo_id = c.id
+      where c.empresa_id = $1 group by b.proveedor_id order by b.proveedor_id`, [empresa]);
     const cargos = await bd.filas<Obj>("select id, concepto, naturaleza, cantidad::text as cantidad, precio_unitario::text as precio_unitario, monto::text as monto, periodo, estado, creado_en from public.cargos where empresa_id = $1 order by creado_en desc limit 50", [empresa]);
     const cobros = await bd.filas<Obj>("select id, tipo, periodo, monto_neto::text as monto_neto, referencia_documento, monto_total_documento::text as monto_total_documento, estado from public.cobros where empresa_id = $1 order by periodo desc", [empresa]);
     const [res] = await bd.filas<Obj>("select count(*) filter (where estado = 'confirmado' and evento_tipo = 'certificacion')::int as certificaciones, count(*) filter (where estado = 'reservado')::int as reservadas, coalesce(sum(unidades_consumidas) filter (where estado = 'confirmado'), 0)::text as unidades from public.consumos where empresa_id = $1", [empresa]);
-    return { cuenta: cuenta ?? null, contrato: vigente, contratos, tarifas, monedero: mon ?? null, pagos, consumos, cargos, cobros, resumen: res, aviso: "Pagos y cobros SIMULADOS: no hay pasarela de pago. NEXA no calcula impuestos de sus propias facturas: guarda la referencia del documento emitido fuera de este sistema." };
+    return { cuenta: cuenta ?? null, contrato: vigente, contratos, tarifas, monedero: mon ?? null, pagos, consumos: consumos.map((x) => ({ ...x, certificador_nombre: nom(x.certificador) })), porCertificador: porCertificador.map((x) => ({ ...x, certificador_nombre: nom(x.certificador) })), cargos, cobros, resumen: res, aviso: "Pagos y cobros SIMULADOS: no hay pasarela de pago. NEXA no calcula impuestos de sus propias facturas: guarda la referencia del documento emitido fuera de este sistema." };
   }
 
   return {
@@ -158,9 +163,9 @@ export function crearPractico(bd: BdDemo, d: Deps) {
               d.serie, d.numero_fiscal as numero, d.autorizacion_sat as autorizacion_simulada from public.documentos d left join public.clientes cl on cl.id = d.cliente_id and cl.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador`, [E]);
         } else {
           if (!permisos.includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para este reporte", "no_autorizado");
-          cols = ["fecha", "evento", "documento", "estado", "unidades", "cargado"];
-          filas = await bd.filas<Obj>(`select to_char(c.reservado_en at time zone 'America/Guatemala', 'YYYY-MM-DD HH24:MI') as fecha, c.evento_tipo as evento, 'BR-' || lpad(d.numero_borrador::text, 4, '0') as documento, c.estado, case when c.estado = 'confirmado' then c.unidades_consumidas else c.unidades_reservadas end::text as unidades,
-              (select coalesce(sum(g.monto), 0) from public.cargos g where g.consumo_id = c.id)::text as cargado from public.consumos c left join public.documentos d on d.id = c.documento_id and d.empresa_id = c.empresa_id where c.empresa_id = $1 order by c.reservado_en`, [E]);
+          cols = ["fecha", "certificador", "evento", "documento", "estado", "unidades", "cargado"];
+          filas = await bd.filas<Obj>(`select to_char(c.reservado_en at time zone 'America/Guatemala', 'YYYY-MM-DD HH24:MI') as fecha, b.proveedor_id as certificador, c.evento_tipo as evento, 'BR-' || lpad(d.numero_borrador::text, 4, '0') as documento, c.estado, case when c.estado = 'confirmado' then c.unidades_consumidas else c.unidades_reservadas end::text as unidades,
+              (select coalesce(sum(g.monto), 0) from public.cargos g where g.consumo_id = c.id)::text as cargado from public.consumos c join public.bolson_cuentas b on b.id = c.cuenta_id left join public.documentos d on d.id = c.documento_id and d.empresa_id = c.empresa_id where c.empresa_id = $1 order by c.reservado_en`, [E]);
         }
         const csv = "\uFEFF" + [cols.join(","), ...filas.map((f) => cols.map((k) => celda(f[k])).join(","))].join("\r\n") + "\r\n# SIMULADO - SIN VALOR FISCAL\r\n";
         return new Response(csv, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="SIMULADO-${r[1]}.csv"`, "cache-control": "no-store", "x-content-type-options": "nosniff" } });
@@ -277,12 +282,18 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         return json({ empresa, usuario, aviso: "Empresa habilitada con canal simulado y Digifact simulado. Asígnale un plan y registra un pago simulado para que pueda certificar." });
       }
       if (m === "GET" && ruta === "/api/plataforma/bolson") {
-        const cuentas = await bd.filas<Obj>("select c.id, c.proveedor_id, c.ambiente, c.referencia_externa, c.estado, s.comprado::text as comprado, s.consumido::text as consumido, s.reservado::text as reservado, s.ajustado::text as ajustado, (s.comprado + s.ajustado - s.consumido - s.reservado)::text as disponible from public.bolson_cuentas c join public.bolson_saldos s on s.cuenta_id = c.id order by c.creada_en");
+        const cuentas = await bd.filas<Obj>("select (select case when sum(l.unidades) > 0 then (sum(l.costo_total) / sum(l.unidades))::numeric(18,6)::text end from public.bolson_lotes l where l.cuenta_id = c.id) as costo_unitario, c.id, c.proveedor_id, c.ambiente, c.referencia_externa, c.estado, s.comprado::text as comprado, s.consumido::text as consumido, s.reservado::text as reservado, s.ajustado::text as ajustado, (s.comprado + s.ajustado - s.consumido - s.reservado)::text as disponible from public.bolson_cuentas c join public.bolson_saldos s on s.cuenta_id = c.id order by c.creada_en");
         const lotes = await bd.filas<Obj>("select l.id, l.cuenta_id, l.unidades::text as unidades, l.costo_total::text as costo_total, l.referencia_proveedor, l.registrado_en from public.bolson_lotes l order by l.registrado_en desc limit 20");
-        const porEmpresa = await bd.filas<Obj>("select e.id, e.nombre_comercial, count(*) filter (where c.estado = 'confirmado')::int as confirmados, count(*) filter (where c.estado = 'reservado')::int as reservados, count(*) filter (where c.estado = 'liberado')::int as liberados, coalesce(sum(c.unidades_consumidas) filter (where c.estado = 'confirmado'), 0)::text as unidades from public.empresas e left join public.consumos c on c.empresa_id = e.id group by e.id, e.nombre_comercial order by e.nombre_comercial");
+        const porEmpresa = await bd.filas<Obj>(`with costo as (select b.id as cuenta_id, case when sum(l.unidades) > 0 then sum(l.costo_total) / sum(l.unidades) else 0 end as unitario from public.bolson_cuentas b left join public.bolson_lotes l on l.cuenta_id = b.id group by b.id),
+            cargado as (select consumo_id, sum(monto) as monto from public.cargos where naturaleza = 'cargo' group by consumo_id)
+          select e.id, e.nombre_comercial, b.proveedor_id as certificador, count(*) filter (where c.estado = 'confirmado')::int as confirmados, count(*) filter (where c.estado = 'reservado')::int as reservados, count(*) filter (where c.estado = 'liberado')::int as liberados,
+            coalesce(sum(c.unidades_consumidas) filter (where c.estado = 'confirmado'), 0)::text as unidades, coalesce(sum(g.monto), 0)::text as cargado,
+            coalesce(sum(c.unidades_consumidas * k.unitario) filter (where c.estado = 'confirmado'), 0)::numeric(18,6)::text as costo_estimado
+          from public.empresas e left join public.consumos c on c.empresa_id = e.id left join public.bolson_cuentas b on b.id = c.cuenta_id left join costo k on k.cuenta_id = c.cuenta_id left join cargado g on g.consumo_id = c.id
+          group by e.id, e.nombre_comercial, b.proveedor_id order by e.nombre_comercial, b.proveedor_id`);
         const reglas = await bd.filas<Obj>("select r.cuenta_id, r.evento_tipo, r.consume, r.unidades::text as unidades from public.bolson_reglas_consumo r where r.vigente_hasta is null order by r.evento_tipo");
         const alertas = await bd.filas<Obj>("select a.id, a.tipo, a.detalle, a.creada_en, a.resuelta_en, e.nombre_comercial from public.bolson_alertas a left join public.empresas e on e.id = a.empresa_id order by a.creada_en desc limit 20");
-        return json({ cuentas, lotes, porEmpresa, reglas, alertas, simuladores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, saldo_reportado: x.simulacion.saldoReportado(), certificaciones: x.simulacion.certificaciones(), llamadas: x.simulacion.llamadas() })), verificacion: await this.verificacion() });
+        return json({ cuentas: cuentas.map((x) => ({ ...x, certificador_nombre: nom(x.proveedor_id) })), lotes, porEmpresa: porEmpresa.map((x) => ({ ...x, certificador_nombre: x.certificador ? nom(x.certificador) : null })), reglas, alertas, simuladores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, saldo_reportado: x.simulacion.saldoReportado(), certificaciones: x.simulacion.certificaciones(), llamadas: x.simulacion.llamadas() })), verificacion: await this.verificacion() });
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/lotes") {
         const b = await leer(req); if (!uuidOk(b.cuenta)) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");
