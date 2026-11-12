@@ -110,7 +110,11 @@ function arrancar() {
   assert.ok(!cacheadas.some((x) => x.startsWith("/api/")), "la API nunca se guarda en caché");
   await m.goto(`${srv.url}/#/nueva`); await m.waitForSelector('select[aria-label="Receptor"]'); await foto(m, "mov-03-nueva.png"); await sinDesborde(m, "nueva factura");
   for (const [ruta, sel, nombre] of [["/plan", '[data-panel="consumos"]', "plan"], ["/clientes", ".lista", "clientes"], ["/config", ".tabs", "config"]]) { await m.goto(`${srv.url}/#${ruta}`); await m.waitForSelector(sel); await foto(m, `mov-04-${nombre}.png`); await sinDesborde(m, nombre); }
-  await cMov.close();
+  await m.click("#cerrar-sesion-cab"); await m.waitForSelector("#login-usuario");   // en el teléfono se sale desde la barra superior
+  const { c: cMov2, p: m2 } = await nuevoCtx({ ...devices["Pixel 7"] });   // otra persona en otro teléfono: el administrador de la plataforma
+  await entrar(m2, "maestro"); await m2.waitForSelector('[data-panel="empresas"]'); await foto(m2, "mov-05-plataforma.png"); await sinDesborde(m2, "plataforma");
+  for (const [ruta, sel, nombre] of [["/planes", '[data-plan="prepago_basico"]', "planes"], ["/bolson", '[data-panel="conciliacion-bolson"]', "bolson"]]) { await m2.goto(`${srv.url}/#${ruta}`); await m2.waitForSelector(sel); await foto(m2, `mov-06-${nombre}.png`); await sinDesborde(m2, nombre); }
+  await cMov2.close(); await cMov.close();
 
   await nav.close(); srv.parar();
   assert.deepEqual(errores, [], "errores de consola o de página:\n" + errores.join("\n"));

@@ -207,3 +207,5 @@ body{min-height:100vh}
   .btn,.icon-btn,.nv{min-height:44px}.icon-btn{min-width:44px}
   .nav-movil{overflow-x:auto}
 }
+.cab-salir{min-height:38px;padding:0 14px;margin-left:10px}
+@media(min-width:901px){.cab-salir{display:none}}   /* en PC el botón de salir está en el menú lateral */
