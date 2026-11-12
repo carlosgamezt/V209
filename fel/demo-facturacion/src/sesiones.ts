@@ -24,6 +24,13 @@ export class Sesiones {
   constructor(private ahora: () => number = () => Date.now()) {}
 
   async registrar(usuario: string, clave: string) { const sal = crypto.getRandomValues(new Uint8Array(16)); this.cuentas.set(usuario, { sal, hash: await derivar(clave, sal) }); }
+  /** Comprueba la contraseña actual (cuenta como intento fallido si es errónea; respeta el bloqueo). */
+  async verificar(usuario: string, clave: string): Promise<boolean> {
+    const f = this.fallos.get(usuario); if (f && f.n >= MAX_FALLOS && f.hasta > this.ahora()) return false;
+    const c = this.cuentas.get(usuario); const ok = !!c && iguales(await derivar(clave, c.sal), c.hash);
+    if (!ok) { const n = (f && f.hasta > this.ahora() ? f.n : 0) + 1; this.fallos.set(usuario, { n, hasta: this.ahora() + BLOQUEO_MS }); } else this.fallos.delete(usuario);
+    return ok;
+  }
   async cambiarClave(usuario: string, clave: string) { await this.registrar(usuario, clave); for (const [id, s] of this.sesiones) if (s.usuario === usuario) this.sesiones.delete(id); }
 
   /** Devuelve la sesión nueva o null. El mismo mensaje para usuario inexistente y contraseña errónea. */

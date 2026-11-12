@@ -69,6 +69,7 @@ const totp = (semilla, ms = Date.now()) => { const m = Buffer.alloc(8); m.writeB
   await p.goto(`${srv.url}/#/plan`); await p.waitForSelector('[data-panel="consumos"]'); assert.match(await p.locator('[data-panel="consumos"]').innerText(), /Anulación/); assert.match(await p.locator('[data-panel="plan-resumen"]').innerText(), /Q 97\.50/, "anular no se cobra");
   // segundo certificador simulado (multiproveedor): la misma pantalla, otro certificador y su propio bolsón
   await llenarFactura(p, [["Servicio con otro certificador", "1", "80"]]); await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); await p.click("text=Marcar como revisado"); await toast(p, "Marcado como revisado");
+  await p.waitForSelector("#canal-certificacion option >> nth=2", { state: "attached" });
   assert.deepEqual(await p.locator("#canal-certificacion option").allInnerTexts(), ["Proveedor simulado genérico", "Digifact (simulado) · con plan, saldo y consumo", "Certificador B (simulado) · con plan, saldo y consumo"]);
   await p.selectOption("#canal-certificacion", "certificador_b"); await p.click("#enviar"); await p.waitForSelector('[data-estado="certificado"]'); assert.match(await p.locator('[data-panel="cobertura"]').innerText(), /certificador b/i);
   await p.click("#consultar-proveedor"); await p.waitForSelector("#resultado-consulta >> text=Certificador B confirma el documento"); await foto(p, "pc-08b-certificador-b.png");
@@ -83,7 +84,9 @@ const totp = (semilla, ms = Date.now()) => { const m = Buffer.alloc(8); m.writeB
   assert.equal((await cPc.cookies()).find((x) => x.name === "fel_sid")?.value ?? "", "", "la cookie se borra al cerrar sesión");
 
   // emisor sin permisos de plan; lector sin certificar
-  await entrar(p, "marta"); await p.waitForSelector(".cab-demo"); assert.equal(await p.locator('.nav a:has-text("Plan y consumo")').count(), 0, "la emisora no ve el plan"); await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
+  await entrar(p, "marta"); await p.waitForSelector(".cab-demo"); assert.equal(await p.locator('.nav a:has-text("Plan y consumo")').count(), 0, "la emisora no ve el plan");
+  await p.goto(`${srv.url}/#/cuenta`); await p.waitForSelector('[data-panel="cuenta"]'); await p.fill('input[aria-label="Contraseña actual"]', "demo1234"); await p.fill('input[aria-label="Contraseña nueva (8 o más)"]', "clave-marta-nueva-1"); await p.fill('input[aria-label="Repite la contraseña nueva"]', "clave-marta-nueva-1"); await p.click("#cambiar-clave"); await p.waitForSelector("#login-usuario");
+  await entrar(p, "marta", "demo1234"); await p.waitForSelector("text=Usuario o contraseña incorrectos."); await entrar(p, "marta", "clave-marta-nueva-1"); await p.waitForSelector(".cab-demo"); await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
 
   // plataforma
   await entrar(p, "maestro"); await p.waitForSelector('[data-panel="empresas"]'); assert.equal(await p.locator('.nav a:has-text("Nueva factura")').count(), 0); await foto(p, "pc-10-plataforma.png");

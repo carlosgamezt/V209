@@ -104,6 +104,12 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     // ---------------------------------------------------------------- rutas de una empresa
     async rutasEmpresa(c: CtxEmpresa): Promise<Response | null> {
       const { m, ruta, a } = c; let r: RegExpExecArray | null; const E = d.emp();
+      if (m === "POST" && ruta === "/api/cuenta/clave") {   // «Mi cuenta»: cambiar la propia contraseña; cierra todas las sesiones de la persona
+        const b = await c.cuerpo(), S = d.sesiones; if (!S) throw new ErrorPr(404, "No disponible en este modo", "no_disponible");
+        const nueva = texto(b.nueva, 8, 80, "Contraseña nueva"); if (nueva === String(b.actual)) throw new ErrorPr(400, "La contraseña nueva debe ser distinta de la actual", "entrada_invalida");
+        if (!(await S.verificar(a.clave, String(b.actual ?? "")))) throw new ErrorPr(403, "La contraseña actual no es correcta", "no_autorizado");
+        await S.cambiarClave(a.clave, nueva); return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(null, new URL(c.req.url).protocol === "https:" || c.req.headers.get("x-forwarded-proto") === "https") } });
+      }
       // ---------------- usuarios, roles y permisos de la empresa (las reglas de jerarquía viven en la base)
       if (m === "GET" && ruta === "/api/usuarios") {
         const permisos = await c.permisos(); if (!permisos.includes("usuarios.ver")) throw new ErrorPr(403, "No tienes permiso para ver los usuarios", "no_autorizado");

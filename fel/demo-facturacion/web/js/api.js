@@ -40,6 +40,7 @@ export const api = {
   anular: (id, clave, motivo, escenario) => llamar("POST", `/api/documentos/${id}/anular`, { clave, motivo, escenario }),
   conciliarAnulacion: (op) => llamar("POST", `/api/operaciones/${op}/conciliar-anulacion`, {}),
   plan: () => llamar("GET", "/api/plan"),
+  cambiarClave: (actual, nueva) => llamar("POST", "/api/cuenta/clave", { actual, nueva }),
   panel: () => llamar("GET", "/api/panel"), usuarios: () => llamar("GET", "/api/usuarios"), crearUsuario: (u) => llamar("POST", "/api/usuarios", u), actualizarUsuario: (id, cambios) => llamar("POST", `/api/usuarios/${id}/actualizar`, cambios),
   sesion: () => llamar("GET", "/api/sesion"),
   entrar: (usuario, clave, recordar, codigo) => llamar("POST", "/api/sesion/entrar", { usuario, clave, recordar, codigo }),

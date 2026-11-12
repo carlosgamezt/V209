@@ -141,6 +141,11 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     const pdfR = await raw(ana, `/api/documentos/${docId}/pdf-demo`); assert.equal(pdfR.status, 200); assert.equal(pdfR.headers.get("content-type"), "application/pdf"); const pdfT = new TextDecoder("latin1").decode(await pdfR.arrayBuffer());
     assert.ok(pdfT.startsWith("%PDF")); assert.match(pdfT, /DOCUMENTO NO FISCAL/); assert.match(pdfT, /SIM-/, "muestra la autorización SIMULADA, nunca una real"); assert.equal((await raw(sofia, `/api/documentos/${docId}/pdf-demo`)).status, 404);
 
+    // ---- 6c. «Mi cuenta»: cambio de contraseña propio
+    const cc = await nuevo("luis"); const cc2 = await nuevo("luis");
+    assert.equal((await cc.llamar("POST", "/api/cuenta/clave", { actual: "incorrecta", nueva: "otra-clave-9999" })).status, 403); assert.equal((await cc.llamar("POST", "/api/cuenta/clave", { actual: "demo1234", nueva: "corta" })).status, 400); assert.equal((await cc.llamar("POST", "/api/cuenta/clave", { actual: "demo1234", nueva: "demo1234" })).status, 400);
+    assert.equal((await cc.llamar("POST", "/api/cuenta/clave", { actual: "demo1234", nueva: "clave-luis-nueva-1" })).status, 200);
+    assert.equal((await cc2.llamar("GET", "/api/estado")).status, 401, "cambiar la contraseña cierra las demás sesiones"); assert.equal((await new Cliente("luis").entrar("demo1234")).status, 401, "la anterior ya no sirve"); assert.equal((await new Cliente("luis").entrar("clave-luis-nueva-1")).status, 200);
     // ---- 7. plataforma: crear empresa, plan, contrato, pago; bolsón global
     const nueva = await maestro.llamar("POST", "/api/plataforma/empresas", { nombre_comercial: "Taller Rivera", razon_social: "Taller Rivera, S.A. (FICTICIA)", nit: "9990003-1", propietario_nombre: "Rita Rivera", propietario_usuario: "rita", propietario_clave: "clave-rita-1234" });
     assert.equal(nueva.status, 200, JSON.stringify(nueva.json)); assert.equal((await maestro.llamar("POST", "/api/plataforma/empresas", { nombre_comercial: "Otra", razon_social: "Otra", nit: "9990004-2", propietario_nombre: "Rita Dos", propietario_usuario: "rita", propietario_clave: "clave-rita-1234" })).status, 409);

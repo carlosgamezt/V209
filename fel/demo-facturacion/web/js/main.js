@@ -11,6 +11,7 @@ import { pantallaConfig } from "./config.js";
 import { pantallaLogin } from "./login.js";
 import { pantallaPlan } from "./plan.js";
 import { pantallaPanel } from "./panel.js";
+import { pantallaCuenta } from "./cuenta.js";
 import { pantallaUsuarios } from "./usuarios.js";
 import { pantallaEmpresas, pantallaEmpresa, pantallaPlanes, pantallaBolson } from "./plataforma.js";
 
@@ -25,6 +26,7 @@ const NAV = [
   { ruta: "/usuarios", titulo: "Usuarios", icon: "users", permiso: "usuarios.ver", practico: true },
   { ruta: "/plan", titulo: "Plan y consumo", icon: "package", permiso: "facturacion.ver", practico: true },
   { ruta: "/config", titulo: "Configuración", icon: "building", permiso: "empresa.ver" },
+  { ruta: "/cuenta", titulo: "Mi cuenta", icon: "lock", permiso: "borradores.ver", practico: true, login: true },
 ];
 const NAV_MAESTRO = [
   { ruta: "/", titulo: "Empresas", icon: "building", exacta: true, tambien: ["/empresa/"] },
@@ -59,7 +61,7 @@ async function iniciar(estadoInicial) {
     try { const ds = await api.documentos(); pendientes = ds.filter((d) => d.estado_fiscal === "por_verificar" || d.alertas > 0 || (d.estado_fiscal === "pendiente_certificacion")); } catch { pendientes = []; }
   }
   function pintarMenu() {
-    const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico));
+    const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin));
     const enlaces = (clase) => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null }, icono(n.icon), h("span", {}, n.titulo)));
     poner(nav, ...enlaces()); poner(movil, ...enlaces());
     poner(usuarioCard, h("span", { class: "avatar" }, iniciales(estado.usuario.nombre)), h("div", {}, h("strong", {}, estado.usuario.nombre), h("small", {}, maestro ? "Administrador de la plataforma" : estado.usuario.rol)),
@@ -98,6 +100,7 @@ async function iniciar(estadoInicial) {
     else if (ruta === "/conceptos") vista = pantallaConceptos(ctx);
     else if (ruta === "/plan" && estado.practico) vista = pantallaPlan(ctx);
     else if (ruta === "/panel" && estado.practico) vista = pantallaPanel(ctx);
+    else if (ruta === "/cuenta" && conLogin) vista = pantallaCuenta(ctx);
     else if (ruta === "/usuarios" && estado.practico) vista = pantallaUsuarios(ctx);
     else if (ruta === "/config") vista = pantallaConfig(ctx);
     else vista = pantallaLista(ctx);
