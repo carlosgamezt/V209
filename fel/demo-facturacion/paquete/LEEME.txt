@@ -1,0 +1,19 @@
+NEXA FEL - DEMOSTRACION SIMULADA (SIN VALOR FISCAL)
+====================================================
+No se conecta a SAT ni a Digifact. No hay pagos reales. Los datos viven en memoria y se pierden al cerrar.
+
+EN LA COMPUTADORA
+  1. Descomprime esta carpeta.
+  2. Doble clic en INICIAR.cmd. Si Windows muestra "Windows protegio su PC", pulsa "Mas informacion" y "Ejecutar de todos modos"
+     (el programa no esta firmado digitalmente porque es una demostracion).
+  3. Entra con el usuario  ana  y la contrasena  demo1234  (tambien: maestro, maestro2, luis, marta, pedro, sofia).
+
+EN EL TELEFONO (misma red Wi-Fi)
+  1. Doble clic en INICIAR-TELEFONO.cmd. Anota la IP de la computadora y las contrasenas ALEATORIAS que se muestran.
+  2. En el telefono abre  http://IP:8787/  en Chrome y entra con esos datos.
+  (Chrome solo ofrece "Instalar app" con HTTPS o en la propia computadora; la pagina funciona igual en el navegador.)
+
+RECORRIDO SUGERIDO
+  ana: Nueva factura (varios items) -> Marcar como revisado -> Canal "Digifact (simulado)" -> Enviar -> Consultar -> Anular -> Plan y consumo.
+  maestro: Empresas (alta, plan, pago simulado), Planes y tarifas, Bolsón global (extracto, conciliacion).
+  maestro2: aprueba la conciliacion que propone maestro (la decide otra persona).

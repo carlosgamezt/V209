@@ -50,6 +50,7 @@ async function estatico(ruta: string): Promise<Response> {
 
 const servidor = Deno.serve({ hostname: LAN ? "0.0.0.0" : "127.0.0.1", port: PUERTO, onListen: ({ port }) => {
   console.log(`\n  NEXA FEL · demostración de facturación individual SIMULADA\n  Abre:  http://127.0.0.1:${port}/\n${LAN ? "  En la red local: http://<IP de este equipo>:" + port + "/  (modo --lan: solo con inicio de sesión)\n" : ""}${LOGIN ? (ALEATORIAS ? `  Contraseñas ALEATORIAS de esta sesión (solo se muestran aquí):\n${Object.entries(CLAVES).map(([u, c]) => `    ${u.padEnd(9)} ${c}`).join("\n")}\n` : `  Usuarios ficticios: maestro, maestro2, ana, luis, marta, pedro, sofia · contraseña: ${CLAVE_DEMO}\n`) : "  Modo de pruebas: selector de personas, sin contraseña\n"}  (todo es simulado: SIN VALOR FISCAL; no se conecta a SAT ni a ningún certificador; Ctrl+C para salir)\n`);
+  if (Deno.args.includes("--abrir")) { try { const url = `http://127.0.0.1:${port}/`; const [cmd, ...args] = Deno.build.os === "windows" ? ["cmd", "/c", "start", "", url] : Deno.build.os === "darwin" ? ["open", url] : ["xdg-open", url]; new Deno.Command(cmd, { args, stdout: "null", stderr: "null" }).spawn().unref(); } catch { /* sin navegador predeterminado: se abre a mano */ } }
 } }, (req) => {
   const host = (req.headers.get("host") ?? "").split(":")[0];
   const permitido = host === "127.0.0.1" || host === "localhost" || (LAN && (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || HOSTS_EXTRA.includes(host.toLowerCase())));

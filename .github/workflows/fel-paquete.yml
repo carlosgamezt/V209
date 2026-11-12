@@ -1,0 +1,40 @@
+name: NEXA FEL · paquete de la demostración
+# Construye ejecutables autónomos de la demostración SIMULADA (no necesitan instalar nada) y prueba el de Linux antes de publicarlos como artefactos.
+on:
+  push:
+    branches: [fel-proveedores-diseno]
+    paths: ["fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  paquete:
+    name: Paquete autónomo (Windows, macOS, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Compilar
+        working-directory: fel/demo-facturacion
+        run: |
+          mkdir -p ../../dist
+          for t in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
+            ext=""; [ "$t" = "x86_64-pc-windows-msvc" ] && ext=".exe"
+            deno compile -A --target "$t" --include web --include ../app/css --include ../app/js --include ../supabase/migrations --include ../tools/shim_supabase.sql \
+              -o "../../dist/$t/nexa-fel-demo$ext" servidor.ts
+          done
+          ls -la ../../dist/*
+      - name: Probar el ejecutable de Linux (arranca, sirve la interfaz, inicia sesión y consulta el plan)
+        run: bash fel/demo-facturacion/paquete/probar.sh dist/x86_64-unknown-linux-gnu/nexa-fel-demo
+      - name: Empaquetar
+        run: |
+          cp fel/demo-facturacion/paquete/INICIAR.cmd fel/demo-facturacion/paquete/INICIAR-TELEFONO.cmd fel/demo-facturacion/paquete/LEEME.txt dist/x86_64-pc-windows-msvc/
+          cp fel/demo-facturacion/paquete/LEEME.txt dist/aarch64-apple-darwin/ && cp fel/demo-facturacion/paquete/LEEME.txt dist/x86_64-unknown-linux-gnu/
+          cd dist && for d in */; do (cd "$d" && zip -qr "../nexa-fel-demo-${d%/}.zip" .); done; ls -la *.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexa-fel-demo
+          path: dist/*.zip
+          retention-days: 30
