@@ -2,6 +2,11 @@
 
 Todo lo que ves es **SIMULADO · SIN VALOR FISCAL**. No se conecta a SAT ni a Digifact; no hay pasarela de pago; no se usan credenciales. Los datos viven en memoria y se pierden al cerrar el programa.
 
+## 0. La forma más sencilla (sin instalar nada)
+En GitHub → *Actions* → ejecución más reciente de **«NEXA FEL · paquete de la demostración»** → artefacto **nexa-fel-demo** → descarga el `.zip` de tu sistema (`…windows-msvc.zip`), descomprímelo y haz doble clic en `INICIAR.cmd` (se abre el navegador; usuario `ana`, contraseña `demo1234`). Para el teléfono: `INICIAR-TELEFONO.cmd` (misma Wi‑Fi; contraseñas **aleatorias** que se muestran solo en esa ventana). Windows puede avisar porque el programa no está firmado: *Más información → Ejecutar de todos modos*. El ejecutable lo construye y prueba (arranque, interfaz, login y plan) el propio CI.
+
+**Acceso remoto:** `--lan` o `FEL_DEMO_CLAVE_ALEATORIA=1` generan contraseñas aleatorias por sesión y la pantalla de inicio no muestra ninguna; no se publica ningún acceso con contraseña fija.
+
 ## 1. Cómo ejecutarla
 
 **Requisito único:** [Deno](https://deno.com) (`winget install DenoLand.Deno`). En Windows: doble clic en `fel/demo-facturacion/INICIAR-DEMO.cmd`. En cualquier sistema:
@@ -61,4 +66,5 @@ La primera vez descarga la base de datos embebida (PGlite) y tarda un poco.
 ## 5. Pendiente y bloqueado
 **Para conectar Digifact TEST** (D4): credenciales de pruebas; documentación oficial de la API (autenticación, certificación, consulta, anulación, consumos); ajustar solo `digifact.ts` y el simulador (el contrato HTTP actual es una *hipótesis documentada*); habilitar ambiente `pruebas` en la base con su barrera y cuentas de bolsón reales de pruebas.
 **Para producción:** además, régimen/reglas fiscales verificadas con contador y fuente oficial (D1-B: V1–V12 siguen bloqueadas; IVA/redondeo no se calculan), verificación MFA real del maestro, pasarela de pago (hoy inexistente), alta de Supabase Auth, dominio HTTPS en Cloudflare, plazo de anulación (V12).
-**Aún no hecho de lo autorizado:** D2-4 (extractos, conciliación del bolsón y ajustes extraordinarios), sesión persistente con BFF de producción, pruebas en WebKit/Firefox reales y en un teléfono físico (solo Chromium emulado).
+**D2-4 (hecho):** `20261112000600_fel_bolson_conciliacion.sql` — extractos (idempotentes, sin duplicar líneas solapadas), partidas (coincide / falta en NEXA / sobra en NEXA / diferencia de unidades), aprobación por **otra** persona (`maestro` propone, `maestro2` decide), resolución única con motivo (ajuste de saldo, consumo extraordinario atribuido a una empresa, o justificación) que deja un movimiento en el libro. Pruebas SQL `23_*`, API y e2e.
+**Aún no hecho de lo autorizado:** sesión persistente con BFF de producción, pruebas en WebKit/Firefox reales y en un teléfono físico (solo Chromium emulado).
