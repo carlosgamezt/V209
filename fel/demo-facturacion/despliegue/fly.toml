@@ -1,0 +1,32 @@
+# NEXA FEL · demostración privada en línea (Fly.io). NO está aplicado: requiere tu autorización y tu cuenta. Desde la carpeta «fel/»:
+#   fly launch --no-deploy --copy-config -c demo-facturacion/despliegue/fly.toml --dockerfile demo-facturacion/Dockerfile
+#   deno run src/generar_secretos.ts   (en demo-facturacion/; copia los secretos y pégalos con «fly secrets set …»)
+#   fly deploy -c demo-facturacion/despliegue/fly.toml --dockerfile demo-facturacion/Dockerfile
+app = "nexa-fel-demo-CAMBIAME"
+primary_region = "gdl"          # Guadalajara (la más cercana a Guatemala); alternativa: dfw / mia
+
+[env]
+  FEL_DEMO_PUBLICADO = "1"
+  FEL_DEMO_LOGIN = "1"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"     # los datos y las sesiones viven en memoria: la máquina no debe apagarse sola
+  auto_start_machines = false
+  min_machines_running = 1       # UNA sola instancia (no se puede repartir: la memoria es el almacén)
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+  [[http_service.checks]]
+    method = "GET"
+    path = "/salud"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

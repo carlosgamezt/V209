@@ -18,14 +18,19 @@ function arrancar(extra = {}) {
 
 const b32 = (s) => { let bits = 0, v = 0; const o = []; for (const c of s) { v = (v << 5) | "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c); bits += 5; if (bits >= 8) { o.push((v >>> (bits - 8)) & 255); bits -= 8; } } return Buffer.from(o); };
 const totp = (semilla, ms = Date.now()) => { const m = Buffer.alloc(8); m.writeBigUInt64BE(BigInt(Math.floor(ms / 30000))); const h = require("crypto").createHmac("sha1", b32(semilla)).update(m).digest(), o = h[19] & 15; return String((((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1000000).padStart(6, "0"); };
+// Contra un servidor PUBLICADO (contenedor): FEL_E2E_CLAVES="usuario=clave,…" y FEL_E2E_MFA="usuario=SEMILLA,…"; FEL_E2E_CHROMIUM_ARGS para tratar el nombre como seguro (cookies «Secure» sobre http).
+const CLAVES_E2E = Object.fromEntries((process.env.FEL_E2E_CLAVES ?? "").split(",").filter(Boolean).map((x) => x.split("=")));
+const MFA_E2E = Object.fromEntries((process.env.FEL_E2E_MFA ?? "").split(",").filter(Boolean).map((x) => x.split("=")));
+const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
 (async () => {
-  const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await chromium.launch();
+  const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await chromium.launch({ args: (process.env.FEL_E2E_CHROMIUM_ARGS ?? "").split(";").filter(Boolean) });
   const nuevoCtx = async (opciones) => { const c = await nav.newContext({ locale: "es-GT", acceptDownloads: true, ...opciones }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); const p = await c.newPage();
     p.on("pageerror", (e) => errores.push(`pageerror: ${e.message}`)); p.on("console", (m) => { if (m.type() === "error" && !/fonts\.|Failed to load resource/.test(m.text())) errores.push(`console: ${m.text()}`); }); return { c, p }; };
   const foto = async (p, nombre) => { assert.doesNotMatch(await p.locator("body").innerText(), /\bnull\b|\bundefined\b|\[object /, `texto interno visible en ${nombre}`); if (capturas) await p.screenshot({ path: path.join(capturas, nombre) }); };
   const sinDesborde = async (p, donde) => { const [ancho, vista] = await p.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]); assert.ok(ancho <= vista + 1, `desborde horizontal en ${donde}: ${ancho} > ${vista}`); };
-  const entrar = async (p, usuario, clave = "demo1234", recordar = false) => {
+  const entrar = async (p, usuario, clave = CLAVE(usuario), recordar = false) => {
     await p.goto(srv.url); await p.waitForSelector("#login-usuario"); await p.selectOption("#login-usuario", usuario); await p.fill("#login-clave", clave); if (recordar) await p.check("#login-recordar"); await p.click("#login-entrar");
+    if (MFA_E2E[usuario] && clave === CLAVE(usuario)) { await p.waitForSelector("#login-codigo", { state: "visible" }); await p.fill("#login-codigo", totp(MFA_E2E[usuario])); await p.click("#login-entrar"); }   // segundo factor
   };
   const toast = (p, t) => p.waitForSelector(`#toasts >> text=${t}`);
   const llenarFactura = async (p, lineas) => {
@@ -45,7 +50,7 @@ const totp = (semilla, ms = Date.now()) => { const m = Buffer.alloc(8); m.writeB
   assert.match(await p.locator(".login-banda").innerText(), /SIMULADO - SIN VALOR FISCAL/);
   assert.equal((await p.evaluate(() => fetch("/api/estado", { headers: { "x-demo": "1" } }).then((r) => r.status))), 401, "sin sesión no hay datos");
   await entrar(p, "ana", "incorrecta"); await p.waitForSelector("text=Usuario o contraseña incorrectos."); await foto(p, "pc-02-login-error.png");
-  await entrar(p, "ana", "demo1234", true); await p.waitForSelector(".cab-demo"); assert.equal(await p.locator("#usuario-actual").innerText(), "Ana Torres");
+  await entrar(p, "ana", CLAVE("ana"), true); await p.waitForSelector(".cab-demo"); assert.equal(await p.locator("#usuario-actual").innerText(), "Ana Torres");
   const ck = (await cPc.cookies()).find((x) => x.name === "fel_sid"); assert.ok(ck && ck.httpOnly && ck.sameSite === "Strict", "cookie HttpOnly y SameSite=Strict");
   assert.doesNotMatch(await p.evaluate(() => document.cookie), /fel_sid/, "JavaScript no puede leer la sesión");
   assert.equal(await p.locator('select[aria-label="Persona de la demostración"]').count(), 0, "con inicio de sesión no hay selector de personas");
@@ -85,8 +90,8 @@ const totp = (semilla, ms = Date.now()) => { const m = Buffer.alloc(8); m.writeB
 
   // emisor sin permisos de plan; lector sin certificar
   await entrar(p, "marta"); await p.waitForSelector(".cab-demo"); assert.equal(await p.locator('.nav a:has-text("Plan y consumo")').count(), 0, "la emisora no ve el plan");
-  await p.goto(`${srv.url}/#/cuenta`); await p.waitForSelector('[data-panel="cuenta"]'); await p.fill('input[aria-label="Contraseña actual"]', "demo1234"); await p.fill('input[aria-label="Contraseña nueva (8 o más)"]', "clave-marta-nueva-1"); await p.fill('input[aria-label="Repite la contraseña nueva"]', "clave-marta-nueva-1"); await p.click("#cambiar-clave"); await p.waitForSelector("#login-usuario");
-  await entrar(p, "marta", "demo1234"); await p.waitForSelector("text=Usuario o contraseña incorrectos."); await entrar(p, "marta", "clave-marta-nueva-1"); await p.waitForSelector(".cab-demo"); await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
+  await p.goto(`${srv.url}/#/cuenta`); await p.waitForSelector('[data-panel="cuenta"]'); await p.fill('input[aria-label="Contraseña actual"]', CLAVE("marta")); await p.fill('input[aria-label="Contraseña nueva (8 o más)"]', "clave-marta-nueva-1"); await p.fill('input[aria-label="Repite la contraseña nueva"]', "clave-marta-nueva-1"); await p.click("#cambiar-clave"); await p.waitForSelector("#login-usuario");
+  await entrar(p, "marta", CLAVE("marta")); await p.waitForSelector("text=Usuario o contraseña incorrectos."); await entrar(p, "marta", "clave-marta-nueva-1"); await p.waitForSelector(".cab-demo"); await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
 
   // plataforma
   await entrar(p, "maestro"); await p.waitForSelector('[data-panel="empresas"]'); assert.equal(await p.locator('.nav a:has-text("Nueva factura")').count(), 0); await foto(p, "pc-10-plataforma.png");

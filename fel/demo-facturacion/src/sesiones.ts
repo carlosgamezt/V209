@@ -18,6 +18,8 @@ function iguales(a: string, b: string) { if (a.length !== b.length) return false
 export class Sesiones {
   /** Contraseña de demostración que la pantalla de inicio puede mostrar; nula cuando las contraseñas son aleatorias (modo remoto). */
   claveDemoPublica: string | null = null;
+  /** En modo publicado la cookie es siempre «Secure» (el servicio solo se ofrece por HTTPS). */
+  forzarSeguro = false;
   private cuentas = new Map<string, { sal: Uint8Array; hash: string }>();
   private sesiones = new Map<string, Sesion>();
   private fallos = new Map<string, { n: number; hasta: number }>();

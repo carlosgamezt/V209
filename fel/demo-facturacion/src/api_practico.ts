@@ -30,7 +30,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     const t = await req.text(); if (t.length > 262144) throw new ErrorPr(413, "Cuerpo demasiado grande", "entrada_invalida");
     try { const j = t ? JSON.parse(t) : {}; if (j === null || typeof j !== "object" || Array.isArray(j)) throw 0; return j as Obj; } catch { throw new ErrorPr(400, "Cuerpo no válido", "entrada_invalida"); }
   };
-  const seguro = (req: Request) => new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  const seguro = (req: Request) => !!d.sesiones?.forzarSeguro || new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
 
   /** Aplica a consumos y cargos el resultado confirmado de las operaciones de los certificadores (p. ej. tras conciliar). Seguro de repetir. */
   async function sincronizar() {
@@ -113,7 +113,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const b = await c.cuerpo(), S = d.sesiones; if (!S) throw new ErrorPr(404, "No disponible en este modo", "no_disponible");
         const nueva = texto(b.nueva, 8, 80, "Contraseña nueva"); if (nueva === String(b.actual)) throw new ErrorPr(400, "La contraseña nueva debe ser distinta de la actual", "entrada_invalida");
         if (!(await S.verificar(a.clave, String(b.actual ?? "")))) throw new ErrorPr(403, "La contraseña actual no es correcta", "no_autorizado");
-        await S.cambiarClave(a.clave, nueva); return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(null, new URL(c.req.url).protocol === "https:" || c.req.headers.get("x-forwarded-proto") === "https") } });
+        await S.cambiarClave(a.clave, nueva); return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(null, !!d.sesiones?.forzarSeguro || new URL(c.req.url).protocol === "https:" || c.req.headers.get("x-forwarded-proto") === "https") } });
       }
       // ---------------- usuarios, roles y permisos de la empresa (las reglas de jerarquía viven en la base)
       if (m === "GET" && ruta === "/api/usuarios") {

@@ -1,0 +1,10 @@
+**/node_modules
+**/.git
+app/capturas
+demo-facturacion/capturas
+poc-sat
+revision
+docs
+agente-local
+supabase/.temp
+supabase/.branches

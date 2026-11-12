@@ -3,7 +3,7 @@ name: NEXA FEL · paquete de la demostración
 on:
   push:
     branches: [fel-proveedores-diseno]
-    paths: ["fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
+    paths: ["fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,3 +38,57 @@ jobs:
           name: nexa-fel-demo
           path: dist/*.zip
           retention-days: 30
+  contenedor:
+    name: Contenedor publicable (construcción, pruebas de seguridad y E2E sobre la imagen)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Construir la imagen
+        run: docker build -f fel/demo-facturacion/Dockerfile -t nexa-fel-demo fel
+      - name: Arrancar la imagen en modo PUBLICADO (credenciales solo por entorno; las de CI son de prueba y descartables)
+        run: |
+          set -euo pipefail
+          # contraseñas de CI generadas al azar para esta ejecución (no son las de la demostración local)
+          for u in maestro maestro2 ana luis marta pedro sofia; do echo "CLAVE_$u=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 20)Aa1" >> "$GITHUB_ENV"; done
+          echo "SEMILLA=JBSWY3DPEHPK3PXP" >> "$GITHUB_ENV"
+      - name: Contenedor
+        run: |
+          set -euo pipefail
+          CLAVES="maestro=$CLAVE_maestro,maestro2=$CLAVE_maestro2,ana=$CLAVE_ana,luis=$CLAVE_luis,marta=$CLAVE_marta,pedro=$CLAVE_pedro,sofia=$CLAVE_sofia"
+          docker run -d --name nexa -p 8080:8080 -e FEL_DEMO_HOSTS=nexa-demo.localhost -e "FEL_DEMO_CLAVES=$CLAVES" -e "FEL_DEMO_MFA_SEMILLAS=maestro=$SEMILLA,maestro2=$SEMILLA" \
+            -e FEL_DEMO_LIMITE_LOGIN=100000 -e FEL_DEMO_LIMITE_API=1000000 -e FEL_AGENTE_SUPERVISOR_MS=60000 nexa-fel-demo
+          for i in $(seq 1 120); do [ "$(docker inspect -f '{{.State.Health.Status}}' nexa)" = healthy ] && break; sleep 2; done
+          docker inspect -f '{{.State.Health.Status}}' nexa | grep -q healthy || { docker logs nexa; exit 1; }
+          echo "CLAVES_E2E=$CLAVES" >> "$GITHUB_ENV"; echo "MFA_E2E=maestro=$SEMILLA,maestro2=$SEMILLA" >> "$GITHUB_ENV"
+      - name: Comprobaciones de seguridad sobre la imagen (nombre, HTTPS, cabeceras, cuentas, sin credenciales en el registro)
+        run: |
+          set -euo pipefail
+          H=(-H "Host: nexa-demo.localhost" -H "X-Forwarded-Proto: https")
+          [ "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/salud)" = 200 ]
+          [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: otro.example' -H 'X-Forwarded-Proto: https' localhost:8080/)" = 403 ]
+          [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: nexa-demo.localhost' -H 'X-Forwarded-Proto: http' localhost:8080/)" = 308 ]
+          curl -sI "${H[@]}" localhost:8080/ | tr -d '\r' | grep -i '^strict-transport-security: max-age=' >/dev/null
+          curl -sI "${H[@]}" localhost:8080/ | tr -d '\r' | grep -i '^x-robots-tag: noindex' >/dev/null
+          [ "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -H 'x-demo: 1' localhost:8080/api/estado)" = 401 ]
+          [ "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" -H 'x-demo: 1' -H 'content-type: application/json' -X POST localhost:8080/api/sesion/entrar -d '{"usuario":"ana","clave":"demo1234"}')" = 401 ]
+          [ "$(curl -s -o /dev/null -w '%{http_code}' "${H[@]}" localhost:8080/servidor.ts)" = 404 ]
+          ! docker logs nexa 2>&1 | grep -F -e "$CLAVE_maestro" -e "$CLAVE_ana" -e "$SEMILLA"
+          docker exec nexa sh -c 'touch /app/prueba-escritura 2>&1 || true' | head -1
+      - name: Navegador (Chromium) para el E2E
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1
+          NODE_PATH="$RUNNER_TEMP/pw/node_modules" "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+          echo "NODE_PATH=$RUNNER_TEMP/pw/node_modules" >> "$GITHUB_ENV"
+      - name: E2E completo (PC y teléfono) contra la imagen publicada, con MFA y contraseñas propias
+        run: |
+          FEL_DEMO_URL="http://nexa-demo.localhost:8080" FEL_E2E_CLAVES="$CLAVES_E2E" FEL_E2E_MFA="$MFA_E2E" \
+          node fel/demo-facturacion/tests/e2e_practico.cjs
+      - name: Registro del contenedor si algo falla
+        if: failure()
+        run: docker logs nexa 2>&1 | tail -60
