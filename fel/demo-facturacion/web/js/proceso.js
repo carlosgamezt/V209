@@ -31,7 +31,7 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
   const yo = ctx.estado.usuario.id;
   const abierta = operaciones.find((o) => (o.estado === "iniciada" || o.estado === "desconocida") && o.tipo !== "anulacion");
   const anulAbierta = operaciones.find((o) => (o.estado === "iniciada" || o.estado === "desconocida") && o.tipo === "anulacion");
-  const practico = !!ctx.estado.practico, tieneDigifact = practico && (ctx.estado.canales ?? []).includes("digifact");
+  const practico = !!ctx.estado.practico, todos = practico ? (ctx.estado.certificadores ?? []) : [], certs = todos.filter((c) => (ctx.estado.canales ?? []).includes(c.id)), tieneCert = certs.length > 0;   // certificadores simulados: la lista viene del servidor, la pantalla no conoce a ninguno por nombre
   const alertaAbierta = alertas.find((a) => !a.resuelta_en);
   const exitosa = operaciones.find((o) => o.estado === "confirmada_exitosa");
   const ultEvCon = abierta ? [...eventos].reverse().find((e) => e.operacion_id === abierta.id && e.tipo === "conciliacion") : null;
@@ -65,21 +65,21 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
         : "No disponible en este estado.";
       return h("div", { class: "card" }, h("h2", { class: "card-t" }, "Envío a certificación simulada"), h("p", { class: "mut", id: "motivo-sin-envio" }, motivo));
     }
-    const lista = () => (canalSel === "digifact" ? ctx.estado.escenariosDigifact : ctx.estado.escenarios);
+    const lista = () => (canalSel === "mock" ? ctx.estado.escenarios : certs.find((c) => c.id === canalSel)?.escenarios ?? ctx.estado.escenarios);
     const sel = h("select", { "aria-label": "Comportamiento del proveedor simulado", onchange: (e) => { escenario = e.target.value; ayuda.textContent = lista().find((x) => x.id === escenario)?.explicacion ?? ""; } });
     const pintarEscenarios = () => { if (!lista().some((x) => x.id === escenario)) escenario = "exito"; poner(sel, ...lista().map((x) => h("option", { value: x.id, selected: x.id === escenario }, x.nombre))); sel.value = escenario; ayuda.textContent = lista().find((x) => x.id === escenario)?.explicacion ?? ""; };
     const ayuda = h("small", { class: "campo-ayuda" }, "");
-    const selCanal = tieneDigifact ? h("select", { "aria-label": "Canal de certificación", id: "canal-certificacion", onchange: (e) => { canalSel = e.target.value; pintarEscenarios(); } },
-      h("option", { value: "mock" }, "Proveedor simulado genérico"), h("option", { value: "digifact" }, "Digifact (simulado) · con plan, saldo y consumo")) : null;
+    const selCanal = tieneCert ? h("select", { "aria-label": "Canal de certificación", id: "canal-certificacion", onchange: (e) => { canalSel = e.target.value; pintarEscenarios(); } },
+      h("option", { value: "mock" }, "Proveedor simulado genérico"), ...certs.map((c) => h("option", { value: c.id }, `${c.nombre} · con plan, saldo y consumo`))) : null;
     pintarEscenarios();
     const clave = claveDe(doc.id, operaciones.length);
     const permitido = ctx.tiene("fiscal.certificar");
     const b = boton("Enviar a certificación simulada", { icon: "check", id: "enviar", disabled: !permitido || sucio(), title: !permitido ? "Tu rol no puede certificar" : sucio() ? "Guarda los cambios primero" : null,
-      onclick: accion(() => { b.disabled = true; return api.certificar(doc.id, clave, escenario, canalSel === "digifact" ? "digifact" : undefined); }, (r) => avisar(r.resultado.reutilizada ? "Esa clave ya tenía una operación: no se envió de nuevo" : r.resultado.estado === "confirmada_exitosa" ? "Certificado (simulación)" : r.resultado.estado === "confirmada_fallida" ? "El proveedor simulado rechazó el documento" : r.resultado.estado === "desconocida" ? "Resultado desconocido: queda por verificar" : "Operación en curso", r.resultado.estado === "confirmada_exitosa" ? "ok" : "error")) });
+      onclick: accion(() => { b.disabled = true; return api.certificar(doc.id, clave, escenario, canalSel === "mock" ? undefined : canalSel); }, (r) => avisar(r.resultado.reutilizada ? "Esa clave ya tenía una operación: no se envió de nuevo" : r.resultado.estado === "confirmada_exitosa" ? "Certificado (simulación)" : r.resultado.estado === "confirmada_fallida" ? "El proveedor simulado rechazó el documento" : r.resultado.estado === "desconocida" ? "Resultado desconocido: queda por verificar" : "Operación en curso", r.resultado.estado === "confirmada_exitosa" ? "ok" : "error")) });
     return h("div", { class: "card" }, h("h2", { class: "card-t" }, "Envío a certificación simulada"),
       h("p", { class: "mut" }, "El documento se guarda como operación ANTES de enviarse y el envío se marca antes de salir. Solo se envía una vez por operación."),
       !permitido ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, "Tu rol no puede certificar. Cambia de persona arriba (por ejemplo, Ana Torres).")) : null,
-      selCanal ? campo("Canal de certificación", selCanal, { ayuda: "Digifact simulado reserva saldo antes de enviar y cobra según tu plan. Nada sale de este equipo." }) : null,
+      selCanal ? campo("Canal de certificación", selCanal, { ayuda: "El certificador simulado reserva saldo antes de enviar y cobra según tu plan. Nada sale de este equipo." }) : null,
       campo("Comportamiento del proveedor simulado (solo para la demostración)", sel, {}), ayuda,
       h("p", { class: "mut clave-idem" }, "Clave de idempotencia de este intento: ", h("span", { class: "mono" }, `${clave.slice(0, 8)}…`), " · si repites el envío con la misma clave no se duplica."), b);
   })();
@@ -129,26 +129,27 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
 
   // ------------------------------------------------------------ Digifact simulado: cobertura, consulta al proveedor, anulación
   const digifact = [];
-  const usoDigifact = operaciones.some((o) => o.proveedor === "digifact");
+  const usoCert = operaciones.some((o) => todos.some((c) => c.id === o.proveedor));
+  const idCert = operaciones.find((o) => todos.some((c) => c.id === o.proveedor))?.proveedor, certDoc = todos.find((c) => c.id === idCert), nombreCert = certDoc?.nombre ?? "el certificador", corto = nombreCert.replace(" (simulado)", "");
   if (practico && (det.cobertura ?? []).length) {
     const ET = { certificacion: "Certificación", anulacion: "Anulación" }, EST = { reservado: "Retenido (resultado pendiente)", confirmado: "Confirmado", liberado: "Liberado" };
-    digifact.push(h("div", { class: "card", "data-panel": "cobertura" }, h("h2", { class: "card-t" }, "Consumo y cobro (Digifact simulado)"),
+    digifact.push(h("div", { class: "card", "data-panel": "cobertura" }, h("h2", { class: "card-t" }, `Consumo y cobro · ${nombreCert}`),
       h("ul", { class: "tl" }, ...det.cobertura.map((c) => h("li", {}, `${ET[c.evento_tipo] ?? c.evento_tipo}: ${EST[c.estado] ?? c.estado} · ${Number(c.estado === "confirmado" ? c.consumidas : c.reservadas)} unidad(es)${Number(c.cargado) ? ` · cobrado ${quetzales(c.cargado)}` : c.estado === "confirmado" ? " · no se cobra al cliente" : ""}`))),
       h("p", { class: "mut" }, "Antes de enviar se reserva saldo; un rechazo o una anulación no se cobran por política. Ver el detalle en «Plan y consumo».")));
   }
-  if (practico && usoDigifact) {
+  if (practico && usoCert) {
     const salida = h("p", { class: "mut", id: "resultado-consulta", "aria-live": "polite" }, "");
     digifact.push(h("div", { class: "card", "data-panel": "consulta-proveedor" }, h("h2", { class: "card-t" }, "Consultar estado ante el proveedor"),
-      h("p", { class: "mut" }, "Pregunta a Digifact (simulado) por este documento. Es de solo lectura: no cambia nada."),
-      boton("Consultar a Digifact", { tipo: "sec", icon: "search", id: "consultar-proveedor", onclick: async () => { salida.textContent = "Consultando…"; try { const r = await api.consultarProveedor(doc.id); const x = r.respuesta_del_proveedor;
-        salida.textContent = x.tipo === "certificado" ? `Digifact confirma el documento: serie ${x.serie}, número ${x.numero}, autorización ${x.autorizacion}.` : x.tipo === "no_existe_confirmado" ? "Digifact confirma que el documento NO existe." : `Digifact no puede confirmar ni descartar (${x.motivo ?? x.tipo}).`; } catch (e) { salida.textContent = mensajeError(e); } } }), salida));
+      h("p", { class: "mut" }, `Pregunta a ${nombreCert} por este documento. Es de solo lectura: no cambia nada.`),
+      boton(`Consultar a ${corto}`, { tipo: "sec", icon: "search", id: "consultar-proveedor", onclick: async () => { salida.textContent = "Consultando…"; try { const r = await api.consultarProveedor(doc.id); const x = r.respuesta_del_proveedor;
+        salida.textContent = x.tipo === "certificado" ? `${corto} confirma el documento: serie ${x.serie}, número ${x.numero}, autorización ${x.autorizacion}.` : x.tipo === "no_existe_confirmado" ? `${corto} confirma que el documento NO existe.` : `${corto} no puede confirmar ni descartar (${x.motivo ?? x.tipo}).`; } catch (e) { salida.textContent = mensajeError(e); } } }), salida));
   }
   if (practico && det.anulable && doc.estado_fiscal === "certificado" && !anulAbierta) {
     let escA = "exito"; const permiso = ctx.tiene("fiscal.anular");
-    const selA = h("select", { "aria-label": "Respuesta del proveedor simulado a la anulación", onchange: (e) => { escA = e.target.value; } }, ...ctx.estado.escenariosAnulacion.map((x) => h("option", { value: x.id }, x.nombre)));
+    const selA = h("select", { "aria-label": "Respuesta del proveedor simulado a la anulación", onchange: (e) => { escA = e.target.value; } }, ...(certDoc?.escenariosAnulacion ?? []).map((x) => h("option", { value: x.id }, x.nombre)));
     const claveA = claveDe(doc.id + ":anular", operaciones.length);
     digifact.push(h("div", { class: "card", "data-panel": "anulacion" }, h("h2", { class: "card-t" }, "Anular (simulado)"),
-      h("p", { class: "mut" }, "Solicita la anulación de este documento certificado ante Digifact simulado. El plazo normativo de anulación está pendiente de verificación oficial: esta demostración no lo aplica."),
+      h("p", { class: "mut" }, `Solicita la anulación de este documento certificado ante ${nombreCert}. El plazo normativo de anulación está pendiente de verificación oficial: esta demostración no lo aplica.`),
       !permiso ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, "Tu rol no puede anular.")) : null,
       campo("Comportamiento del proveedor simulado (solo para la demostración)", selA, {}),
       boton("Anular documento", { tipo: "peligro", icon: "trash", id: "anular", disabled: !permiso, onclick: accion(async () => { const motivo = await pedirMotivo({ titulo: "Anular documento (simulado)", texto: "Escribe el motivo de la anulación.", confirmar: "Anular", min: 5 }); if (!motivo) return null; return api.anular(doc.id, claveA, motivo, escA); },
@@ -156,7 +157,7 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
   }
   if (practico && anulAbierta?.estado === "desconocida") digifact.push(h("div", { class: "card", "data-panel": "anulacion-desconocida" }, h("h2", { class: "card-t" }, "Anulación por verificar"),
     h("p", { class: "mut" }, "No hubo respuesta utilizable. Consulta al proveedor: solo se cierra si él lo garantiza."),
-    boton("Consultar a Digifact (anulación)", { tipo: "sec", icon: "search", id: "conciliar-anulacion", disabled: !ctx.tiene("fiscal.conciliar"), onclick: accion(() => api.conciliarAnulacion(anulAbierta.id), () => avisar("Consulta hecha")) })));
+    boton(`Consultar a ${corto} (anulación)`, { tipo: "sec", icon: "search", id: "conciliar-anulacion", disabled: !ctx.tiene("fiscal.conciliar"), onclick: accion(() => api.conciliarAnulacion(anulAbierta.id), () => avisar("Consulta hecha")) })));
 
   if (practico && ctx.tiene("borradores.ver")) digifact.push(h("div", { class: "card", "data-panel": "pdf-demo" }, h("h2", { class: "card-t" }, "PDF de demostración"),
     h("p", { class: "mut" }, "Genera un PDF de este documento marcado en grande como «DOCUMENTO NO FISCAL · DEMOSTRACIÓN». No es una factura ni un DTE."),

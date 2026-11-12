@@ -42,7 +42,7 @@ select set_config('fel.sim', (public.fel_admin_bolson_cuenta_crear('00000000-000
 select set_config('fel.prb', (public.fel_admin_bolson_cuenta_crear('00000000-0000-0000-0000-0000000000a1', 'digifact', 'pruebas', 'CUENTA-TEST')).id::text, false) as _b \gset
 do $$ declare a1 uuid := '00000000-0000-0000-0000-0000000000a1';
 begin
-  perform pg_temp.espera_error($q$select public.fel_admin_bolson_cuenta_crear('00000000-0000-0000-0000-0000000000a1','mock','simulado','X')$q$, 'solo el simulador de Digifact');
+  perform pg_temp.espera_error($q$select public.fel_admin_bolson_cuenta_crear('00000000-0000-0000-0000-0000000000a1','mock','simulado','X')$q$, 'certificadores simulados');
   perform pg_temp.espera_error($q$insert into public.bolson_cuentas (proveedor_id, ambiente, referencia_externa) values ('mock','simulado','X')$q$, 'check|violates');
   perform pg_temp.espera_error($q$select public.fel_admin_bolson_cuenta_crear('00000000-0000-0000-0000-0000000000a1','digifact','produccion','PROD')$q$, 'cuentas de producción');
   assert (select ambiente from public.bolson_cuentas where id = current_setting('fel.sim')::uuid) = 'simulado' and (select count(*) from public.bolson_reglas_consumo where cuenta_id = current_setting('fel.sim')::uuid and vigente_hasta is null) = 10, 'cuenta simulada con sus reglas conservadoras';
@@ -90,7 +90,7 @@ declare A uuid := '10000000-0000-0000-0000-00000000000a'; c1 uuid := '00000000-0
 begin
   perform pg_temp.espera_error(format($q$select public.fel_op_anulacion_simulada_iniciar('%s','%s','%s','clave-anu-0000000001',repeat('c',64),'Motivo de prueba','%s')$q$, c3, A, d1, canal), 'FEL_NO_AUTORIZADO');   -- el emisor no anula
   perform pg_temp.espera_error(format($q$select public.fel_op_anulacion_simulada_iniciar('%s','%s','%s','clave-anu-0000000001',repeat('c',64),'abc','%s')$q$, c1, A, d1, canal), 'motivo es obligatorio');
-  perform pg_temp.espera_error(format($q$select public.fel_op_anulacion_simulada_iniciar('%s','%s','%s','clave-anu-0000000001',repeat('c',64),'Motivo de prueba','%s')$q$, c1, A, d1, canalm), 'canal simulado habilitado de Digifact');   -- el mock no anula
+  perform pg_temp.espera_error(format($q$select public.fel_op_anulacion_simulada_iniciar('%s','%s','%s','clave-anu-0000000001',repeat('c',64),'Motivo de prueba','%s')$q$, c1, A, d1, canalm), 'canal simulado habilitado');   -- el mock no anula
   perform pg_temp.espera_error(format($q$select public.fel_op_anulacion_simulada_iniciar('%s','%s','%s','clave-anu-0000000001',repeat('c',64),'Motivo de prueba','99999999-0000-0000-0000-000000000000')$q$, c1, A, d1), 'canal simulado habilitado');
   perform pg_temp.espera_error(format($q$select public.fel_op_anulacion_simulada_iniciar('%s','10000000-0000-0000-0000-00000000000b','%s','clave-anu-0000000001',repeat('c',64),'Motivo de prueba','%s')$q$, '00000000-0000-0000-0000-0000000000d1', d1, canal), 'canal simulado habilitado|NO_ENCONTRADO');   -- otra empresa
   -- un documento que NO está certificado no se anula

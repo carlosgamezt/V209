@@ -44,7 +44,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
   const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
   const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, base, ganchos);
-  const orqRec = () => new OrquestadorDb(bd.rpc, pr ? new ProveedorEnrutado(bd.rpc, { mock: base, digifact: pr.proveedor }, base) : base);   // conciliar / recuperar: cada operación con SU proveedor
+  const orqRec = () => new OrquestadorDb(bd.rpc, pr ? new ProveedorEnrutado(bd.rpc, { mock: base, ...Object.fromEntries(pr.registro.listar().map((x) => [x.id, x.proveedor])) }, base) : base);   // conciliar / recuperar: cada operación con SU proveedor
   const CTX = { ambiente: "simulado" as const, ahora: () => new Date() };
   const personas = (): typeof PERSONAS => extras.sesiones ? PERSONAS : Object.fromEntries(Object.entries(PERSONAS).filter(([, u]) => u.empresa === EMPRESA)) as typeof PERSONAS;
   const canalDe = async (proveedor: string): Promise<string> => {
@@ -211,9 +211,9 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     }
     if (m === "POST" && (r = /^\/api\/documentos\/([^/]+)\/certificar$/.exec(ruta))) {
       const b = await cuerpo(); const docId = id(r[1]);
-      if (b.proveedor === "digifact") {   // certificación con Digifact SIMULADO: con cobertura (bolsón + monedero) y su simulador local
-        if (!pr) throw new ErrorHttp(404, "Digifact simulado no está disponible en este modo", "no_disponible");
-        const s = await pr.certificar(a, docId, b, await canalDe("digifact"));
+      if (b.proveedor !== undefined && b.proveedor !== "mock") {   // certificador SIMULADO registrado: con cobertura (bolsón + monedero)
+        if (!pr || !pr.registro.tiene(b.proveedor)) throw new ErrorHttp(400, "Certificador no válido o no disponible en este modo", "entrada_invalida");
+        const s = await pr.certificar(a, docId, b, await canalDe(b.proveedor as string));
         return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)) });
       }
       const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_IDS.has(esc as Escenario)) throw new ErrorHttp(400, "Escenario no válido", "entrada_invalida");
@@ -280,6 +280,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       if (e instanceof ErrorBd) {
         const status = STATUS[e.codigo];
         if (status) return new Response(JSON.stringify({ codigo: e.codigo, mensaje: e.message.replace(/^FEL_[A-Z_]+:\s*/, "") }), { status, headers: cab });
+        if (e.codigo.startsWith("SQL_22")) return new Response(JSON.stringify({ codigo: "entrada_invalida", mensaje: "Algún dato no tiene un formato válido (por ejemplo, caracteres no permitidos)." }), { status: 400, headers: cab });   // errores de datos de la base: nunca un 500
         if (e.codigo === "SQL_23514" || e.codigo === "SQL_23505") return new Response(JSON.stringify({ codigo: "regla", mensaje: e.codigo === "SQL_23505" ? "Ya existe un registro con esos datos" : "Los datos no cumplen una regla de la base de datos" }), { status: 422, headers: cab });
       }
       console.error("error interno:", e);

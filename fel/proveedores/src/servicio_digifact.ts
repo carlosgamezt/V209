@@ -1,4 +1,4 @@
-// Servicio de orquestación de Digifact SIMULADO: certificación con cobertura (bolsón + monedero) y anulación simulada.
+// Servicio de orquestación de un certificador SIMULADO (Digifact, Certificador B…): certificación con cobertura (bolsón + monedero) y anulación simulada.
 // No modifica orquestador_db.ts ni tipos.ts: envuelve al proveedor (decorador) y usa funciones SQL fel_sys_*.
 // Todo es simulado: el adaptador se niega a operar fuera del ambiente «simulado» y la base lo exige con barreras propias.
 import { OrquestadorDb, type ResultadoSolicitudDb } from "./orquestador_db.ts";
@@ -32,12 +32,12 @@ class ProveedorConCobertura implements EmissionProvider {
 
 export interface ResultadoAnulacionDb { operacion: Record<string, unknown>; estado: string; reutilizada: boolean }
 
-export class ServicioDigifact {
-  constructor(private rpc: Rpc, private proveedor: ProveedorAnulacion, private ctx: Contexto = { ambiente: "simulado", ahora: () => new Date() }) {}
+export class ServicioCertificador {
+  constructor(private rpc: Rpc, private proveedor: ProveedorAnulacion, private ctx: Contexto = { ambiente: "simulado", ahora: () => new Date() }, readonly id: string = proveedor.capacidades.id) {}
 
   private async cuenta(): Promise<string> {
-    const c = await this.rpc("fel_sys_bolson_cuenta_simulada", { p_proveedor: "digifact" }) as string | null;
-    if (!c) throw new ErrorBd("FEL_REGLA: no hay una cuenta del bolsón simulada para Digifact");
+    const c = await this.rpc("fel_sys_bolson_cuenta_simulada", { p_proveedor: this.id }) as string | null;
+    if (!c) throw new ErrorBd(`FEL_REGLA: no hay una cuenta del bolsón simulada para ${this.id}`);
     return c;
   }
 
@@ -79,8 +79,8 @@ export class ServicioDigifact {
     const op = await this.operacion(p.empresa, p.operacion);
     if (op.estado !== "desconocida") return { resultado: "sin_cambios", estado: String(op.estado) };
     const r = await this.proveedor.conciliarAnulacion({ empresaId: p.empresa, documentoId: p.documento, operacionId: p.operacion, claveIdempotencia: p.clave, referenciaCertificacion: p.certificacion.clave, autorizacion: p.certificacion.autorizacion, motivo: p.motivo, ambiente: "simulado" }, this.ctx);
-    if (r.tipo === "anulado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: p.empresa, p_op: p.operacion, p_exitosa: true, p_evidencia: { fuente: "digifact_simulado", fecha_anulacion: r.fechaAnulacion, conciliacion: true } });
-    else if (r.tipo === "no_anulado_confirmado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: p.empresa, p_op: p.operacion, p_exitosa: false, p_evidencia: { fuente: "digifact_simulado", conciliacion: true, resultado: "no_anulado" } });
+    if (r.tipo === "anulado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: p.empresa, p_op: p.operacion, p_exitosa: true, p_evidencia: { fuente: `${this.id}_simulado`, fecha_anulacion: r.fechaAnulacion, conciliacion: true } });
+    else if (r.tipo === "no_anulado_confirmado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: p.empresa, p_op: p.operacion, p_exitosa: false, p_evidencia: { fuente: `${this.id}_simulado`, conciliacion: true, resultado: "no_anulado" } });
     await this.cerrarCobertura(p.empresa, p.operacion);
     return { resultado: r.tipo, estado: String((await this.operacion(p.empresa, p.operacion)).estado) };
   }
@@ -94,9 +94,12 @@ export class ServicioDigifact {
   }
 
   private async aplicar(empresa: string, id: string, r: Awaited<ReturnType<ProveedorAnulacion["anular"]>>): Promise<void> {
-    if (r.tipo === "anulado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: empresa, p_op: id, p_exitosa: true, p_evidencia: { fuente: "digifact_simulado", fecha_anulacion: r.fechaAnulacion } });
-    else if (r.tipo === "rechazado_confirmado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: empresa, p_op: id, p_exitosa: false, p_evidencia: { fuente: "digifact_simulado", codigo: r.codigo.slice(0, 60) } });
+    if (r.tipo === "anulado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: empresa, p_op: id, p_exitosa: true, p_evidencia: { fuente: `${this.id}_simulado`, fecha_anulacion: r.fechaAnulacion } });
+    else if (r.tipo === "rechazado_confirmado") await this.rpc("fel_sys_anulacion_cerrar", { p_empresa: empresa, p_op: id, p_exitosa: false, p_evidencia: { fuente: `${this.id}_simulado`, codigo: r.codigo.slice(0, 60) } });
     else await this.rpc("fel_sys_anulacion_desconocida", { p_empresa: empresa, p_op: id, p_motivo: r.motivo });
   }
   private async operacion(empresa: string, id: string) { return await this.rpc("fel_sys_operacion", { p_empresa: empresa, p_op: id }) as Record<string, unknown>; }
 }
+
+/** Compatibilidad: el servicio de Digifact es el servicio genérico con el id «digifact». */
+export class ServicioDigifact extends ServicioCertificador { constructor(rpc: Rpc, proveedor: ProveedorAnulacion, ctx?: Contexto) { super(rpc, proveedor, ctx, "digifact"); } }

@@ -40,11 +40,13 @@ export async function sembrarPractico(bd: BdDemo): Promise<MundoPractico> {
   // canales: ambas empresas pueden certificar con el proveedor simulado genérico o con Digifact SIMULADO
   for (const [emp, u] of [[EMPRESA, USUARIOS.ana.id], [EMPRESA2, S]] as const) {
     if (emp === EMPRESA2) await bd.filas("select public.fel_op_canal_configurar($1, $2, null, 'mock', 'simulado', true)", [u, emp]);
-    await bd.filas("select public.fel_op_canal_configurar($1, $2, null, 'digifact', 'simulado', true)", [u, emp]);
+    for (const prov of ["digifact", "certificador_b"]) await bd.filas("select public.fel_op_canal_configurar($1, $2, null, $3, 'simulado', true)", [u, emp, prov]);
   }
   // bolsón global SIMULADO de Digifact y catálogo comercial
   const cuenta = (await bd.filas<{ id: string }>("select (public.fel_admin_bolson_cuenta_crear($1, 'digifact', 'simulado', 'SIM-DEMO-1')).id as id", [M]))[0].id;
   await bd.filas("select public.fel_admin_bolson_lote_registrar($1, $2, 5000, 0, 'LOTE-SIM-1')", [M, cuenta]);
+  const cuentaB = (await bd.filas<{ id: string }>("select (public.fel_admin_bolson_cuenta_crear($1, 'certificador_b', 'simulado', 'SIM-DEMO-B')).id as id", [M]))[0].id;
+  await bd.filas("select public.fel_admin_bolson_lote_registrar($1, $2, 5000, 0, 'LOTE-SIM-B1')", [M, cuentaB]);
   const tar = (precio: string) => JSON.stringify([{ evento: "certificacion", precio, cargable: true }, { evento: "anulacion", precio: "0", cargable: false }, { evento: "rechazo_proveedor", precio: "0", cargable: false }, { evento: "consulta", precio: "0", cargable: false }]);
   const plan = async (codigo: string, nombre: string, mod: string, cuota: string, incl: string, sob: boolean, lim: string, precio: string) => {
     await bd.filas("select public.fel_admin_plan_crear($1, $2, $3, $4)", [M, codigo, nombre, mod]);

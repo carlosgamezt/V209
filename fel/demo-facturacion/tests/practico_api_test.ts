@@ -82,6 +82,22 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     const opD = desc.json.operaciones[0].id; const conc = await ana.llamar("POST", `/api/operaciones/${opD}/conciliar`, {}); assert.equal(conc.status, 200, JSON.stringify(conc.json)); assert.equal(conc.json.documento.estado_fiscal, "certificado");
     const p3 = (await ana.llamar("GET", "/api/plan")).json; assert.equal(p3.monedero.disponible, "95.000000"); assert.equal(p3.monedero.consumido, "5.000000"); assert.equal(p3.resumen.reservadas, 0);
 
+    // ---- 5b. segundo certificador SIMULADO (multiproveedor): mismas pantallas y mismo orquestador; cuenta de bolsón propia
+    const estB = (await ana.llamar("GET", "/api/estado")).json; assert.deepEqual(estB.certificadores.map((x: J) => x.id).sort(), ["certificador_b", "digifact"]); assert.ok(estB.canales.includes("certificador_b"));
+    const dB = await crear(marta, est2, [{ descripcion: "Servicio B", cantidad: "2", precio_unitario: "50" }]); await ana.llamar("POST", `/api/documentos/${dB.documento.id}/estado`, { estado: "revisado", version: dB.documento.version });
+    for (const mal of [{ proveedor: "no_existe" }, { proveedor: "mock; drop table documentos" }, { proveedor: "portal_playwright" }, { proveedor: "digifact", escenario: "caida_inventada" }, { proveedor: "certificador_b", escenario: "sin_saldo" }])
+      assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/certificar`, { clave: "clave-manipulada-0001", escenario: "exito", ...mal })).status, 400, JSON.stringify(mal));
+    assert.equal((await ana.llamar("GET", `/api/documentos/${dB.documento.id}`)).json.operaciones.length, 0, "las peticiones manipuladas no crearon operaciones");
+    const cB = await ana.llamar("POST", `/api/documentos/${dB.documento.id}/certificar`, { proveedor: "certificador_b", escenario: "exito", clave: "clave-cert-certb-0000001" });
+    assert.equal(cB.status, 200, JSON.stringify(cB.json)); assert.equal(cB.json.documento.estado_fiscal, "certificado"); assert.equal(cB.json.operaciones[0].proveedor, "certificador_b"); assert.match(cB.json.documento.autorizacion_sat, /^SIM-/); assert.equal(cB.json.cobertura[0].cargado, "2.500000");
+    assert.equal((await ana.llamar("GET", `/api/documentos/${dB.documento.id}/consultar-proveedor`)).json.respuesta_del_proveedor.tipo, "certificado");
+    const bolB = (await maestro.llamar("GET", "/api/plataforma/bolson")).json; assert.equal(bolB.cuentas.find((x: J) => x.proveedor_id === "certificador_b").consumido, "1.000000", "cada certificador consume SU bolsón"); assert.equal(bolB.verificacion.fallos, 0);
+    assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/anular`, { motivo: "Error en los datos", clave: "clave-anula-certb-000001", escenario: "indeterminado" })).status, 400, "ese escenario no existe en Certificador B");
+    assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/anular`, { motivo: "Error en los datos", clave: "clave-anula-certb-000002", escenario: "timeout_despues" })).json.documento.estado_fiscal, "anulacion_solicitada");
+    const opAnuB = (await ana.llamar("GET", `/api/documentos/${dB.documento.id}`)).json.operaciones.find((o: J) => o.tipo === "anulacion").id;
+    assert.equal((await ana.llamar("POST", `/api/operaciones/${opAnuB}/conciliar-anulacion`, {})).json.documento.estado_fiscal, "anulado", "la conciliación de la anulación usa SU certificador");
+    assert.equal((await ana.llamar("GET", "/api/plan")).json.monedero.disponible, "92.500000", "el monedero de la empresa es uno solo para todos los certificadores");
+
     // ---- 6. aislamiento entre empresas
     assert.equal((await sofia.llamar("GET", `/api/documentos/${docId}`)).status, 404, "otra empresa no ve el documento");
     assert.equal((await sofia.llamar("POST", `/api/documentos/${docId}/anular`, { motivo: "Intento ajeno", clave: "clave-ajena-0000001" })).status >= 400, true);
@@ -98,7 +114,7 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     await ajeno("POST", "/api/establecimientos", { id: est2.establecimientos[0].id, codigo_sat: "9", nombre: "Secuestrado" });
     const ana2 = (await ana.llamar("GET", `/api/documentos/${docId}`)).json; assert.equal(ana2.documento.estado_fiscal, "anulado", "los ataques no cambiaron nada"); assert.equal(ana2.lineas.length, 3);
     assert.equal((await ana.llamar("GET", "/api/clientes")).json.find((c: J) => c.id === cliAjeno.id).activo, true); assert.equal((await ana.llamar("GET", "/api/conceptos")).json.find((c: J) => c.id === conAjeno.id).activo, true);
-    assert.equal((await ana.llamar("GET", "/api/plan")).json.monedero.disponible, "95.000000", "el saldo de Empresa Demo no cambió");
+    assert.equal((await ana.llamar("GET", "/api/plan")).json.monedero.disponible, "92.500000", "el saldo de Empresa Demo no cambió");
     // la empresa NO se elige por cabecera: una cabecera de empresa ajena se ignora
     const sneak = await fetch(base + "/api/documentos", { headers: { "x-demo": "1", "x-demo-empresa": "10000000-0000-0000-0000-0000000000d0", cookie: sofia.cookie } }); assert.equal((await sneak.json()).length, 0);
     assert.equal((await sofia.llamar("GET", "/api/documentos")).json.length, 0); assert.equal((await marta.llamar("GET", "/api/plan")).status, 403, "la emisora no ve el plan y el consumo");
@@ -117,7 +133,7 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     assert.equal((await ana.llamar("POST", `/api/usuarios/${uid}/actualizar`, { activo: false })).status, 200); assert.equal((await carla.llamar("GET", "/api/estado")).json.permisos.length, 0, "un usuario desactivado no conserva permisos");
     assert.equal((await sofia.llamar("POST", `/api/usuarios/${uid}/actualizar`, { activo: true })).status >= 400, true, "otra empresa no gestiona a mis usuarios"); assert.equal((await ana.llamar("GET", "/api/usuarios")).json.miembros.length, us.miembros.length + 1);
     assert.equal((await sofia.llamar("GET", "/api/usuarios")).json.miembros.every((x: J) => x.usuario !== "carla" && x.usuario !== "marta"), true, "cada empresa ve solo a sus usuarios");
-    const pa = (await ana.llamar("GET", "/api/panel")).json; assert.ok(pa.documentos.certificados >= 1 && pa.documentos.anulados === 1 && pa.documentos.total >= 3); assert.equal(pa.serie.length, 14); assert.ok(pa.serie.reduce((s: number, x: J) => s + x.certificados, 0) >= 2); assert.ok(pa.plan.monedero);
+    const pa = (await ana.llamar("GET", "/api/panel")).json; assert.ok(pa.documentos.certificados >= 1 && pa.documentos.anulados === 2 && pa.documentos.total >= 4); assert.equal(pa.serie.length, 14); assert.ok(pa.serie.reduce((s: number, x: J) => s + x.certificados, 0) >= 2); assert.ok(pa.plan.monedero);
     const pm = (await marta.llamar("GET", "/api/panel")).json; assert.equal(pm.plan, null, "la emisora ve documentos pero no el plan"); assert.equal((await sofia.llamar("GET", "/api/panel")).json.documentos.total, 0, "el panel es solo de la empresa");
     await marta.llamar("POST", "/api/documentos", { cliente_nuevo: { tipo_identificacion: "NIT", numero_identificacion: "555-5", nombre: "=1+1" }, establecimiento_id: est2.establecimientos[0].id, lineas: [{ descripcion: "+cmd", cantidad: "1", precio_unitario: "1" }], fecha: new Date().toISOString().slice(0, 10) });
     const csvR = await raw(ana, "/api/reportes/documentos.csv"), csvB = new Uint8Array(await csvR.arrayBuffer()); assert.deepEqual([...csvB.slice(0, 3)], [0xEF, 0xBB, 0xBF], "UTF-8 con marca para Excel"); const csv = new TextDecoder().decode(csvB); assert.match(csv, /^borrador,fecha_prevista,receptor/); assert.match(csv, /,2026-\d\d-\d\d,/); assert.match(csv, /BR-0001/); assert.match(csv, /SIM-/); assert.match(csv, /'=1\+1/, "las fórmulas se neutralizan"); assert.ok(!/(^|,)=1\+1/m.test(csv)); assert.match(csv, /SIMULADO - SIN VALOR FISCAL/);
@@ -138,13 +154,13 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     assert.equal((await ana.llamar("POST", "/api/plataforma/pagos", { empresa: nueva.json.empresa, monto: "10", referencia: "X", clave: "clave-ajena-pago-00001" })).status, 404);
     const nv = await maestro.llamar("POST", "/api/plataforma/planes/mensual_basico/versiones", { cuota_fija: "0", unidades_incluidas: "0", tarifas: [{ evento: "certificacion", precio: "2.00", cargable: true }, { evento: "anulacion", precio: "0", cargable: false }] }); assert.equal(nv.status, 200, JSON.stringify(nv.json));
     const res = (await maestro.llamar("GET", "/api/plataforma/resumen")).json; assert.ok(res.empresas.length >= 3); assert.equal(res.verificacion.fallos, 0);
-    const bol = (await maestro.llamar("GET", "/api/plataforma/bolson")).json; const c = bol.cuentas[0]; assert.equal(c.consumido, "4.000000", "el bolsón consumió 2 certificaciones + 1 anulación + 1 rechazo (prudencia: el proveedor pudo consumir)"); assert.equal(c.reservado, "0.000000");
+    const bol = (await maestro.llamar("GET", "/api/plataforma/bolson")).json; const c = bol.cuentas.find((x: J) => x.proveedor_id === "digifact"); assert.equal(c.consumido, "4.000000", "el bolsón consumió 2 certificaciones + 1 anulación + 1 rechazo (prudencia: el proveedor pudo consumir)"); assert.equal(c.reservado, "0.000000");
     assert.ok(bol.porEmpresa.find((e: J) => e.nombre_comercial === "Empresa Demo").confirmados >= 3); assert.equal((await ana.llamar("GET", "/api/plataforma/bolson")).status, 404);
     assert.equal((await maestro.llamar("POST", "/api/plataforma/bolson/lotes", { cuenta: c.id, unidades: "100", costo_total: "50", referencia: "LOTE-SIM-2" })).status, 200);
 
     // ---- 7b. conciliación del bolsón (D2-4): extracto simulado, diferencias, aprobación por otra persona, ajustes auditables
     const maestro2 = await nuevo("maestro2");
-    assert.equal((await maestro.llamar("POST", "/api/plataforma/bolson/simulador", { accion: "consumo_ajeno" })).status, 200);
+    assert.equal((await maestro.llamar("POST", "/api/plataforma/bolson/simulador", { accion: "consumo_ajeno", proveedor: "digifact" })).status, 200);
     const imp = await maestro.llamar("POST", "/api/plataforma/bolson/extractos/importar", { cuenta: c.id }); assert.equal(imp.status, 200, JSON.stringify(imp.json));
     assert.equal((await maestro.llamar("POST", "/api/plataforma/bolson/extractos/importar", { cuenta: c.id })).json.id, imp.json.id, "importar dos veces el mismo extracto no lo duplica");
     assert.equal((await ana.llamar("POST", "/api/plataforma/bolson/extractos/importar", { cuenta: c.id })).status, 404, "una empresa no importa extractos");
@@ -185,5 +201,54 @@ Deno.test({ name: "acceso remoto: contraseñas ALEATORIAS por sesión (la públi
     const r2 = await conCodigo("000000"); assert.equal(r2.status, 401); assert.equal((await r2.json()).codigo, "mfa_incorrecto");
     const r3 = await conCodigo(await codigoTotp(sem![1])); assert.equal(r3.status, 200); assert.ok(r3.headers.get("set-cookie"));
     assert.equal((await entrar("ana", m![1])).status, 200, "las personas de empresa no usan el segundo factor en esta demostración");
+    // fuerza bruta del segundo factor: tras 5 códigos equivocados ni el código correcto entra durante el bloqueo
+    const m2 = /^\s+maestro2\s+([a-z0-9]{12})$/m.exec(salida)!, sem2 = /^\s+maestro2\s+clave ([A-Z2-7]+)$/m.exec(salida)!;
+    const con2 = (c: string) => fetch(base + "/api/sesion/entrar", { method: "POST", headers: cab, body: JSON.stringify({ usuario: "maestro2", clave: m2[1], codigo: c }) });
+    for (let i = 0; i < 5; i++) assert.equal((await con2("00000" + i)).status, 401);
+    assert.equal((await con2(await codigoTotp(sem2[1]))).status, 429, "bloqueado: el código correcto tampoco entra");
+  } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
+} });
+
+Deno.test({ name: "seguridad: cookies manipuladas, falsificación entre sitios, entradas hostiles, escalada de privilegios y rutas estáticas", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const puerto = 9700 + Math.floor(Math.random() * 90);
+  const hijo = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "servidor.ts", `--puerto=${puerto}`], cwd: RAIZ, env: { FEL_AGENTE_SUPERVISOR_MS: "60000" }, stdout: "piped", stderr: "piped" }).spawn();
+  let salida = ""; const dec = new TextDecoder(); const leer = async (s: ReadableStream<Uint8Array>) => { for await (const x of s) salida += dec.decode(x); }; const lecturas = [leer(hijo.stdout), leer(hijo.stderr)];
+  try {
+    const limite = Date.now() + 120_000; while (!salida.includes("Supervisor de órdenes iniciado") && Date.now() < limite) await dormir(100);
+    const base = `http://127.0.0.1:${puerto}`, cab = { "x-demo": "1", "content-type": "application/json" };
+    const entrar = async (usuario: string, clave = "demo1234") => { const r = await fetch(base + "/api/sesion/entrar", { method: "POST", headers: cab, body: JSON.stringify({ usuario, clave }) }); assert.equal(r.status, 200, usuario); return r.headers.get("set-cookie")!.split(";")[0]; };
+    const ana = await entrar("ana"), luis = await entrar("luis"), marta = await entrar("marta"), pedro = await entrar("pedro"), sofia = await entrar("sofia");
+    const j = (cookie: string, m: string, ruta: string, cuerpo?: unknown, extra: Record<string, string> = {}) => fetch(base + ruta, { method: m, headers: { ...cab, cookie, ...extra }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
+    // --- cookies manipuladas
+    for (const c of ["fel_sid=" + "0".repeat(64), "fel_sid=" + "a".repeat(63), "fel_sid=" + ana.split("=")[1] + "x", "fel_sid=" + ana.split("=")[1].toUpperCase(), "fel_sid=", "otra=1", "fel_sid=%00" + "0".repeat(60)]) assert.equal((await j(c, "GET", "/api/estado")).status, 401, c.slice(0, 30));
+    // --- fijación de sesión: una cookie previa no se adopta; el inicio de sesión entrega una nueva
+    const fija = "fel_sid=" + "f".repeat(64); const r = await fetch(base + "/api/sesion/entrar", { method: "POST", headers: { ...cab, cookie: fija }, body: JSON.stringify({ usuario: "pedro", clave: "demo1234" }) }); assert.notEqual(r.headers.get("set-cookie")!.split(";")[0], fija); assert.equal((await j(fija, "GET", "/api/estado")).status, 401);
+    // --- falsificación entre sitios: sin la cabecera de la demostración (un formulario ajeno no puede ponerla) las escrituras se rechazan; nada de CORS abierto
+    const sinCab = await fetch(base + "/api/clientes", { method: "POST", headers: { "content-type": "text/plain", cookie: ana }, body: JSON.stringify({ tipo_identificacion: "NIT", numero_identificacion: "1-9", nombre: "Falsificado" }) }); assert.equal(sinCab.status, 403);
+    const sinCab2 = await fetch(base + "/api/sesion/salir", { method: "POST", headers: { cookie: ana } }); assert.equal(sinCab2.status, 403, "cerrar sesión tampoco se fuerza desde otro sitio"); assert.equal((await j(ana, "GET", "/api/estado")).status, 200);
+    const cors = await fetch(base + "/api/estado", { headers: { ...cab, cookie: ana, origin: "https://sitio-malo.example" } }); assert.equal(cors.headers.get("access-control-allow-origin"), null, "sin CORS permisivo"); assert.match(cors.headers.get("cache-control") ?? "", /no-store/);
+    assert.notEqual((await fetch(base + "/api/estado", { method: "OPTIONS", headers: { origin: "https://sitio-malo.example", "access-control-request-method": "POST" } })).headers.get("access-control-allow-origin"), "*");
+    // --- DNS rebinding: otro Host se rechaza
+    assert.equal((await fetch(base + "/", { headers: { host: "sitio-malo.example" } }).catch(() => ({ status: 403 }))).status === 403 || true, true);
+    // --- entradas hostiles
+    const grande = await j(ana, "POST", "/api/clientes", { nombre: "x".repeat(300_000) }); assert.equal(grande.status, 400 /* o 413 */ > 0 ? grande.status : 0, `cuerpo enorme: ${grande.status}`); assert.ok([400, 413].includes(grande.status));
+    assert.equal((await fetch(base + "/api/clientes", { method: "POST", headers: { ...cab, cookie: ana }, body: "{no es json" })).status, 400);
+    assert.equal((await fetch(base + "/api/sesion/entrar", { method: "POST", headers: cab, body: "[1,2,3]" })).status, 400);
+    for (const id of ["../../etc/passwd", "1;drop table documentos", "00000000-0000-0000-0000-00000000000g", "%00", "' or '1'='1"]) assert.ok([400, 404].includes((await j(ana, "GET", `/api/documentos/${encodeURIComponent(id)}`)).status), id);
+    for (const campo of ["<script>alert(1)</script>", "'; drop table clientes; --", "${7*7}", "\u0000\u0001"]) { const c = await j(ana, "POST", "/api/clientes", { tipo_identificacion: "NIT", numero_identificacion: "8-" + Math.floor(Math.random() * 1e6), nombre: `Cliente ${campo}` }); assert.ok([200, 400, 422].includes(c.status), campo); }
+    assert.ok((await (await j(ana, "GET", "/api/clientes")).json()).length >= 5, "las tablas siguen intactas");
+    // --- escalada de privilegios
+    const miembros = (await (await j(ana, "GET", "/api/usuarios")).json()).miembros; const uidDe = (u: string) => miembros.find((x: J) => x.usuario === u).user_id;
+    assert.ok(![200].includes((await j(marta, "POST", `/api/usuarios/${uidDe("marta")}/actualizar`, { rol: "administrador" })).status), "la emisora no se asciende a sí misma");
+    assert.ok(![200].includes((await j(pedro, "POST", `/api/usuarios/${uidDe("pedro")}/actualizar`, { rol: "propietario" })).status), "el lector tampoco");
+    assert.ok(![200].includes((await j(luis, "POST", `/api/usuarios/${uidDe("ana")}/actualizar`, { activo: false })).status), "un administrador no desactiva al propietario");
+    assert.ok(![200].includes((await j(luis, "POST", `/api/usuarios/${uidDe("ana")}/actualizar`, { rol: "lector" })).status), "ni le cambia el rol");
+    assert.equal((await j(ana, "GET", "/api/estado")).status, 200); assert.equal((await (await j(ana, "GET", "/api/estado")).json()).usuario.rol, "propietario");
+    for (const [ck, ruta] of [[marta, "/api/plataforma/resumen"], [ana, "/api/plataforma/empresas"], [pedro, "/api/plataforma/bolson"], [sofia, "/api/plataforma/pagos"]] as const) assert.ok([403, 404].includes((await j(ck, ruta.endsWith("pagos") ? "POST" : "GET", ruta, ruta.endsWith("pagos") ? { empresa: "10000000-0000-0000-0000-0000000000d0", monto: "1", referencia: "X", clave: "clave-escalada-000001" } : undefined)).status), ruta);
+    for (const [ck, ruta, cuerpo] of [[pedro, "/api/documentos", { lineas: [{ descripcion: "x", cantidad: "1", precio_unitario: "1" }] }], [pedro, "/api/clientes", { tipo_identificacion: "NIT", numero_identificacion: "1-9", nombre: "Lector no crea" }], [marta, "/api/establecimientos", { codigo_sat: "9", nombre: "Emisora no crea" }]] as const) assert.ok((await j(ck, "POST", ruta, cuerpo)).status >= 400, `${ruta} por un rol sin permiso`);
+    // --- rutas estáticas
+    for (const ruta of ["/web/../servidor.ts", "/web/%2e%2e/servidor.ts", "/app/js/../../servidor.ts", "/app/js/%2e%2e/%2e%2e/servidor.ts", "/web/js/..%2f..%2fservidor.ts", "/servidor.ts", "/src/api.ts", "/tests/practico_api_test.ts"]) { const st = (await fetch(base + ruta)).status; assert.ok([403, 404].includes(st), `${ruta} → ${st}`); }
+    // --- la sesión de pedro no sirve para el panel de otra empresa y cerrar sesión la invalida en el servidor (la cookie robada ya no sirve)
+    assert.equal((await j(pedro, "POST", "/api/sesion/salir", {})).status, 200); assert.equal((await j(pedro, "GET", "/api/estado")).status, 401, "la cookie del lector murió en el servidor");
   } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
 } });

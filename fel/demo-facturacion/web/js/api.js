@@ -54,7 +54,7 @@ export const api = {
     bolson: () => llamar("GET", "/api/plataforma/bolson"), lote: (cuenta, unidades, costo_total, referencia) => llamar("POST", "/api/plataforma/bolson/lotes", { cuenta, unidades, costo_total, referencia }),
     conciliaciones: () => llamar("GET", "/api/plataforma/bolson/conciliaciones"), importarExtracto: (cuenta) => llamar("POST", "/api/plataforma/bolson/extractos/importar", { cuenta }),
     proponer: (extracto) => llamar("POST", "/api/plataforma/bolson/conciliaciones/proponer", { extracto }), decidir: (id, aprobar, nota) => llamar("POST", `/api/plataforma/bolson/conciliaciones/${id}/decidir`, { aprobar, nota }),
-    resolverPartida: (id, accion, empresa, motivo) => llamar("POST", `/api/plataforma/bolson/partidas/${id}/resolver`, { accion, empresa, motivo }), simulador: (accion) => llamar("POST", "/api/plataforma/bolson/simulador", { accion }),
+    resolverPartida: (id, accion, empresa, motivo) => llamar("POST", `/api/plataforma/bolson/partidas/${id}/resolver`, { accion, empresa, motivo }), simulador: (accion, proveedor) => llamar("POST", "/api/plataforma/bolson/simulador", { accion, proveedor }),
     resolverAlerta: (id, nota) => llamar("POST", `/api/plataforma/bolson/alertas/${id}/resolver`, { nota }), revisar: () => llamar("POST", "/api/plataforma/bolson/revisar", {}),
   },
   conciliar: (op) => llamar("POST", `/api/operaciones/${op}/conciliar`, {}),

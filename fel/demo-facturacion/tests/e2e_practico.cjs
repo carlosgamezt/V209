@@ -5,10 +5,10 @@ const { spawn } = require("child_process"), fs = require("fs"), path = require("
 const { chromium, devices } = require("playwright");
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null; if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
-function arrancar() {
-  if (process.env.FEL_DEMO_URL) return Promise.resolve({ url: process.env.FEL_DEMO_URL, parar() {} });
+function arrancar(extra = {}) {
+  if (process.env.FEL_DEMO_URL && !Object.keys(extra).length) return Promise.resolve({ url: process.env.FEL_DEMO_URL, parar() {} });
   const puerto = 9400 + Math.floor(Math.random() * 400);
-  const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "1" } });
+  const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "1", ...extra } });
   return new Promise((ok, mal) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); mal(new Error("el servidor no arrancó a tiempo:\n" + salida)); }, 120000);
     const alLeer = (d) => { salida += d; if (salida.includes("Abre:")) { clearTimeout(t); ok({ url: `http://127.0.0.1:${puerto}`, parar() { hijo.kill(); } }); } };
@@ -16,6 +16,8 @@ function arrancar() {
   });
 }
 
+const b32 = (s) => { let bits = 0, v = 0; const o = []; for (const c of s) { v = (v << 5) | "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(c); bits += 5; if (bits >= 8) { o.push((v >>> (bits - 8)) & 255); bits -= 8; } } return Buffer.from(o); };
+const totp = (semilla, ms = Date.now()) => { const m = Buffer.alloc(8); m.writeBigUInt64BE(BigInt(Math.floor(ms / 30000))); const h = require("crypto").createHmac("sha1", b32(semilla)).update(m).digest(), o = h[19] & 15; return String((((h[o] & 0x7f) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1000000).padStart(6, "0"); };
 (async () => {
   const srv = await arrancar(), errores = (globalThis.__errores = []), nav = await chromium.launch();
   const nuevoCtx = async (opciones) => { const c = await nav.newContext({ locale: "es-GT", acceptDownloads: true, ...opciones }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); const p = await c.newPage();
@@ -65,6 +67,11 @@ function arrancar() {
   // anulación simulada
   await p.goto(docUrl); await p.waitForSelector("#anular"); await p.click("#anular"); await p.fill('textarea[aria-label="Motivo"]', "Error en los datos del receptor"); await p.getByRole("button", { name: "Anular", exact: true }).last().click(); await toast(p, "Documento anulado (simulación)"); await p.waitForSelector(".doc-cab .tag >> text=Anulado"); await foto(p, "pc-09-anulado.png");
   await p.goto(`${srv.url}/#/plan`); await p.waitForSelector('[data-panel="consumos"]'); assert.match(await p.locator('[data-panel="consumos"]').innerText(), /Anulación/); assert.match(await p.locator('[data-panel="plan-resumen"]').innerText(), /Q 97\.50/, "anular no se cobra");
+  // segundo certificador simulado (multiproveedor): la misma pantalla, otro certificador y su propio bolsón
+  await llenarFactura(p, [["Servicio con otro certificador", "1", "80"]]); await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); await p.click("text=Marcar como revisado"); await toast(p, "Marcado como revisado");
+  assert.deepEqual(await p.locator("#canal-certificacion option").allInnerTexts(), ["Proveedor simulado genérico", "Digifact (simulado) · con plan, saldo y consumo", "Certificador B (simulado) · con plan, saldo y consumo"]);
+  await p.selectOption("#canal-certificacion", "certificador_b"); await p.click("#enviar"); await p.waitForSelector('[data-estado="certificado"]'); assert.match(await p.locator('[data-panel="cobertura"]').innerText(), /certificador b/i);
+  await p.click("#consultar-proveedor"); await p.waitForSelector("#resultado-consulta >> text=Certificador B confirma el documento"); await foto(p, "pc-08b-certificador-b.png");
   // PDF de demostración, panel con indicadores y reportes, usuarios y roles
   await p.goto(docUrl); await p.waitForSelector("#pdf-demo"); const [dPdf] = await Promise.all([p.waitForEvent("download"), p.click("#pdf-demo")]); const rutaPdf = await dPdf.path(); assert.match(dPdf.suggestedFilename(), /^NO-FISCAL-DEMO-/); assert.match(fs.readFileSync(rutaPdf, "latin1"), /DOCUMENTO NO FISCAL/);
   await p.goto(`${srv.url}/#/panel`); await p.waitForSelector('[data-panel="indicadores"]'); assert.match(await p.locator('[data-panel="indicadores"]').innerText(), /Documentos/); assert.ok(await p.locator(".barra-col").count() === 14); await foto(p, "pc-09b-panel.png");
@@ -86,10 +93,10 @@ function arrancar() {
   await p.click("#asignar-plan"); const ver = await p.locator('select[aria-label="Plan y versión"] option', { hasText: "prepago_basico" }).first().getAttribute("value"); await p.selectOption('select[aria-label="Plan y versión"]', ver); await p.click("#guardar-formulario"); await p.waitForSelector("text=Prepago básico");
   await p.click("#registrar-pago"); await p.fill('input[aria-label="Monto"]', "10"); await p.fill('input[aria-label="Referencia del pago"]', "PAGO-RITA-1"); await p.click("#guardar-formulario"); await p.waitForSelector('[data-panel="plan-resumen"] >> text=Q 10.00'); await foto(p, "pc-11-empresa.png");
   await p.goto(`${srv.url}/#/planes`); await p.waitForSelector('[data-plan="prepago_basico"]'); await foto(p, "pc-12-planes.png");
-  await p.goto(`${srv.url}/#/bolson`); await p.waitForSelector('[data-panel="bolson-cuentas"]'); assert.match(await p.locator("body").innerText(), /Bolsón SIMULADO de Digifact/); assert.match(await p.locator('[data-panel="bolson-empresas"]').innerText(), /Empresa Demo/); await foto(p, "pc-13-bolson.png");
+  await p.goto(`${srv.url}/#/bolson`); await p.waitForSelector('[data-panel="bolson-cuentas"]'); assert.match(await p.locator("body").innerText(), /Bolsones SIMULADOS/); assert.match(await p.locator('[data-panel="bolson-empresas"]').innerText(), /Empresa Demo/); await foto(p, "pc-13-bolson.png");
   // conciliación del bolsón (D2-4): extracto del proveedor simulado, diferencia, aprobación por OTRA persona y ajuste
-  await p.click('[data-panel="conciliacion-bolson"] summary'); await p.click("#sim-ajeno"); await toast(p, "Consumo ajeno simulado");
-  await p.click("#importar-extracto"); await toast(p, "Extracto importado"); await p.click("[data-extracto]"); await toast(p, "Conciliación propuesta"); await p.waitForSelector('[data-conciliacion="propuesta"]');
+  await p.click('[data-panel="conciliacion-bolson"] summary'); await p.click("#sim-ajeno-digifact"); await toast(p, "Consumo ajeno simulado");
+  await p.click("#importar-extracto-digifact"); await toast(p, "Extracto importado"); await p.click("[data-extracto]"); await toast(p, "Conciliación propuesta"); await p.waitForSelector('[data-conciliacion="propuesta"]');
   assert.equal(await p.locator("#aprobar-conciliacion").isDisabled(), true, "quien propone no aprueba"); await foto(p, "pc-14-conciliacion.png");
   await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
   await entrar(p, "maestro2"); await p.waitForSelector('[data-panel="empresas"]'); await p.goto(`${srv.url}/#/bolson`); await p.waitForSelector('[data-conciliacion="propuesta"]');
@@ -123,6 +130,14 @@ function arrancar() {
   for (const [ruta, sel, nombre] of [["/planes", '[data-plan="prepago_basico"]', "planes"], ["/bolson", '[data-panel="conciliacion-bolson"]', "bolson"]]) { await m2.goto(`${srv.url}/#${ruta}`); await m2.waitForSelector(sel); await foto(m2, `mov-06-${nombre}.png`); await sinDesborde(m2, nombre); }
   await cMov2.close(); await cMov.close();
 
+  // verificación en dos pasos del administrador de la plataforma, en el navegador (servidor con MFA obligatoria)
+  const SEM = "JBSWY3DPEHPK3PXP", srv2 = await arrancar({ FEL_DEMO_MFA: "1", FEL_DEMO_MFA_SEMILLAS: `maestro=${SEM},maestro2=${SEM}` }); const { c: cMfa, p: q } = await nuevoCtx({ viewport: { width: 1200, height: 800 } });
+  await q.goto(srv2.url); await q.waitForSelector("#login-usuario"); assert.equal(await q.locator("#login-codigo").isVisible(), false, "el código solo se pide a quien lo necesita");
+  await q.selectOption("#login-usuario", "ana"); await q.fill("#login-clave", "demo1234"); await q.click("#login-entrar"); await q.waitForSelector(".cab-demo");   // las personas de empresa no usan el segundo factor en esta demostración
+  await q.click("#cerrar-sesion"); await q.waitForSelector("#login-usuario");
+  await q.selectOption("#login-usuario", "maestro"); await q.fill("#login-clave", "demo1234"); await q.click("#login-entrar"); await q.waitForSelector("#login-codigo", { state: "visible" }); await foto(q, "pc-16-mfa.png");
+  await q.fill("#login-codigo", "000000"); await q.click("#login-entrar"); await q.waitForSelector("text=El código no es correcto"); assert.equal(await q.locator('[data-panel="empresas"]').count(), 0, "un código equivocado no entra");
+  await q.fill("#login-codigo", totp(SEM)); await q.click("#login-entrar"); await q.waitForSelector('[data-panel="empresas"]'); await cMfa.close(); srv2.parar();
   await nav.close(); srv.parar();
   assert.deepEqual(errores, [], "errores de consola o de página:\n" + errores.join("\n"));
   console.log("PRÁCTICA E2E OK");

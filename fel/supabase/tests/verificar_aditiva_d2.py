@@ -9,6 +9,8 @@ MIG = RAIZ / "fel/supabase/migrations"
 PERMITIDOS_AJENOS = {                                        # {archivo: {accion: {tabla,...}}}: excepciones EXPLÍCITAS, una por migración, con su justificación
     # D3-1: digifact pasa a «solo simulado» (misma barrera que portal_playwright); se reemplaza la restricción que lo bloqueaba por completo
     "20261112000300_fel_digifact_simulado.sql": {"alter": {"proveedores_emision"}, "update": {"proveedores_emision", "operaciones_fiscales"}, "insert": {"operaciones_fiscales"}},   # las funciones de anulación simulada crean y cierran operaciones
+    # D3-3: segundo certificador SIMULADO en el catálogo (siempre solo «simulado»); la anulación simulada generalizada conserva sus escrituras
+    "20261112000700_fel_multiproveedor.sql": {"alter": {"proveedores_emision"}, "insert": {"proveedores_emision", "operaciones_fiscales"}},
     # D2-3: permisos nuevos (solo datos) para ver consumo y facturación
     "20261112000400_fel_comercial.sql": {"insert": {"permisos_catalogo", "rol_permisos"}},
 }

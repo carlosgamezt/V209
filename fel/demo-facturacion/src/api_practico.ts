@@ -1,9 +1,7 @@
 // Funciones de la versión PRÁCTICA de la demostración: inicio de sesión, Digifact SIMULADO (certificar con cobertura, consultar, anular),
 // plan / saldo / consumo de la empresa y panel de la PLATAFORMA (empresas, planes, contratos, pagos simulados y bolsón global).
 // Todo usa las MISMAS funciones SQL y servicios que las pruebas. Nada sale de este equipo: «SIMULADO - SIN VALOR FISCAL».
-import { DigifactProvider } from "../../proveedores/src/digifact.ts";
-import { DigifactSimulador, type EscenarioAnulacion, type EscenarioDigifact } from "../../proveedores/src/digifact_simulador.ts";
-import { ServicioDigifact } from "../../proveedores/src/servicio_digifact.ts";
+import { registroSimulado } from "../../proveedores/src/registro.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
@@ -19,31 +17,12 @@ const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 const texto = (x: unknown, min: number, max: number, campo: string): string => { if (typeof x !== "string" || x.trim().length < min || x.length > max) throw new ErrorPr(400, `${campo}: texto de ${min} a ${max} caracteres`, "entrada_invalida"); return x.trim(); };
 const monto = (x: unknown, campo: string): string => { if (typeof x !== "string" || !RE_MONTO.test(x)) throw new ErrorPr(400, `${campo}: número con hasta 6 decimales`, "entrada_invalida"); return x; };
 
-export const ESCENARIOS_DIGIFACT: { id: EscenarioDigifact; nombre: string; explicacion: string }[] = [
-  { id: "exito", nombre: "Éxito", explicacion: "Digifact (simulado) certifica y responde bien." },
-  { id: "rechazo", nombre: "Rechazo confirmado", explicacion: "Digifact garantiza que NO hay documento: se puede corregir. No se cobra al cliente." },
-  { id: "sin_saldo", nombre: "Bolsón agotado en Digifact", explicacion: "El proveedor rechaza por falta de saldo en su lado." },
-  { id: "timeout_antes", nombre: "Tiempo agotado · no procesó", explicacion: "Sin respuesta y nada se certificó. Queda «por verificar»; la reserva sigue retenida." },
-  { id: "timeout_despues", nombre: "Tiempo agotado · sí certificó", explicacion: "Sin respuesta pero certificó. Al conciliar se confirma y se cobra." },
-  { id: "corte_despues", nombre: "Conexión cortada tras certificar", explicacion: "La respuesta se perdió aunque Digifact certificó." },
-  { id: "respuesta_ilegible", nombre: "Respuesta ilegible", explicacion: "Certificó pero la respuesta no se entiende; nunca se toma por éxito." },
-  { id: "timeout_indeterminado", nombre: "Sin forma de saberlo", explicacion: "Ni consultando se puede decidir: exige conciliación manual." },
-  { id: "caida", nombre: "Servicio caído", explicacion: "No es un rechazo garantizado." },
-];
-export const ESCENARIOS_ANULACION: { id: EscenarioAnulacion; nombre: string }[] = [
-  { id: "exito", nombre: "Anulación aceptada" }, { id: "rechazo", nombre: "Anulación rechazada" }, { id: "timeout_antes", nombre: "Tiempo agotado · no procesó" },
-  { id: "timeout_despues", nombre: "Tiempo agotado · sí anuló" }, { id: "indeterminado", nombre: "Sin forma de saberlo" },
-];
-const ESC_D = new Set(ESCENARIOS_DIGIFACT.map((e) => e.id)), ESC_A = new Set(ESCENARIOS_ANULACION.map((e) => e.id));
-
 interface Deps { mock: MockProvider; emp: () => string; sesiones?: Sesiones; mfa?: Map<string, string> }
 interface CtxEmpresa { req: Request; url: URL; a: { clave: string; id: string }; ruta: string; m: string; cuerpo: () => Promise<Obj>; id: (x: string) => string;
   json: (x: unknown, s?: number) => Response; canalDe: (p: string) => Promise<string>; detalle: (id: string) => Promise<unknown>; permisos: () => Promise<string[]> }
 
 export function crearPractico(bd: BdDemo, d: Deps) {
-  const sim = new DigifactSimulador({ saldoInicial: 5000 });
-  const proveedor = new DigifactProvider(sim.transporte, { usuario: "SIM-USUARIO", clave: "SIM-CLAVE" });
-  const servicio = new ServicioDigifact(bd.rpc, proveedor);
+  const registro = registroSimulado(bd.rpc), ids = registro.ids();   // certificadores simulados registrados: las pantallas y esta API solo conocen su descriptor
   const CTX = { ambiente: "simulado" as const, ahora: () => new Date() };
   const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
   const leer = async (req: Request): Promise<Obj> => {
@@ -53,16 +32,16 @@ export function crearPractico(bd: BdDemo, d: Deps) {
   };
   const seguro = (req: Request) => new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
 
-  /** Aplica a consumos y cargos el resultado confirmado de las operaciones de Digifact (p. ej. tras conciliar). Seguro de repetir. */
+  /** Aplica a consumos y cargos el resultado confirmado de las operaciones de los certificadores (p. ej. tras conciliar). Seguro de repetir. */
   async function sincronizar() {
-    const pend = await bd.filas<{ id: string; empresa_id: string }>("select o.id, o.empresa_id from public.operaciones_fiscales o join public.consumos c on c.operacion_id = o.id and c.empresa_id = o.empresa_id where c.estado = 'reservado' and o.estado in ('confirmada_exitosa','confirmada_fallida') and o.proveedor = 'digifact'");
-    for (const p of pend) await servicio.cerrarCobertura(p.empresa_id, p.id);
+    const pend = await bd.filas<{ id: string; empresa_id: string }>("select o.id, o.empresa_id from public.operaciones_fiscales o join public.consumos c on c.operacion_id = o.id and c.empresa_id = o.empresa_id where c.estado = 'reservado' and o.estado in ('confirmada_exitosa','confirmada_fallida') and o.proveedor = any($1::text[])", [ids]);
+    for (const p of pend) { const prov = (await bd.filas<{ proveedor: string }>("select proveedor from public.operaciones_fiscales where id = $1", [p.id]))[0]?.proveedor; await registro.obtener(prov)?.servicio.cerrarCobertura(p.empresa_id, p.id); }
   }
 
   async function certOp(docId: string, empresa: string) {
-    const [o] = await bd.filas<{ clave_idempotencia: string }>("select clave_idempotencia from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' and proveedor = 'digifact' and ambiente = 'simulado' order by iniciada_en desc limit 1", [docId, empresa]);
+    const [o] = await bd.filas<{ clave_idempotencia: string; proveedor: string }>("select clave_idempotencia, proveedor from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' and proveedor = any($3::text[]) and ambiente = 'simulado' order by iniciada_en desc limit 1", [docId, empresa, ids]);
     const [doc] = await bd.filas<{ autorizacion_sat: string | null }>("select autorizacion_sat from public.documentos where id = $1 and empresa_id = $2", [docId, empresa]);
-    return o && doc?.autorizacion_sat ? { clave: o.clave_idempotencia, autorizacion: doc.autorizacion_sat } : null;
+    return o && doc?.autorizacion_sat && registro.obtener(o.proveedor)?.soportaAnulacion ? { clave: o.clave_idempotencia, autorizacion: doc.autorizacion_sat, proveedor: o.proveedor } : null;
   }
 
   async function planDe(empresa: string) {
@@ -83,18 +62,19 @@ export function crearPractico(bd: BdDemo, d: Deps) {
   }
 
   return {
-    sim, proveedor, servicio, sincronizar,
-    async estadoExtra() { return { escenariosDigifact: ESCENARIOS_DIGIFACT, escenariosAnulacion: ESCENARIOS_ANULACION, canales: (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.empresa_canales where empresa_id = $1 and ambiente = 'simulado' and habilitado", [d.emp()])).map((c) => c.proveedor_id) }; },
+    registro, sincronizar,
+    async estadoExtra() { return { certificadores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, soportaAnulacion: x.soportaAnulacion, escenarios: x.escenarios, escenariosAnulacion: x.escenariosAnulacion })), canales: (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.empresa_canales where empresa_id = $1 and ambiente = 'simulado' and habilitado", [d.emp()])).map((c) => c.proveedor_id) }; },
     async detalleExtra(docId: string) {
       const cobertura = await bd.filas<Obj>(`select c.id, c.evento_tipo, c.estado, c.unidades_reservadas::text as reservadas, c.unidades_consumidas::text as consumidas, c.operacion_id,
           (select coalesce(sum(g.monto), 0)::text from public.cargos g where g.consumo_id = c.id) as cargado from public.consumos c where c.documento_id = $1 and c.empresa_id = $2 order by c.reservado_en`, [docId, d.emp()]);
-      return { cobertura, escenarioDigifact: sim.escenarioDe(docId), anulable: !!(await certOp(docId, d.emp())) };
+      return { cobertura, escenarioCertificador: registro.listar().map((x) => x.simulacion.escenarioDe(docId)).find((e) => e) ?? null, anulable: !!(await certOp(docId, d.emp())) };
     },
     async certificar(a: { id: string }, docId: string, b: Obj, canal: string) {
-      const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_D.has(esc as EscenarioDigifact)) throw new ErrorPr(400, "Escenario no válido", "entrada_invalida");
+      const cert = registro.obtener(String(b.proveedor)); if (!cert) throw new ErrorPr(400, "Certificador no válido", "entrada_invalida");
+      const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!cert.escenarios.some((e) => e.id === esc)) throw new ErrorPr(400, "Escenario no válido", "entrada_invalida");
       const clave = texto(b.clave, 16, 80, "Clave de idempotencia");
-      sim.fijarEscenario(docId, esc as EscenarioDigifact);
-      return await servicio.certificar({ actor: a.id, empresa: d.emp(), documento: docId, clave, canal });
+      cert.simulacion.fijarEscenario(docId, esc);
+      return await cert.servicio.certificar({ actor: a.id, empresa: d.emp(), documento: docId, clave, canal });
     },
 
     // ---------------------------------------------------------------- sesión (no requiere sesión previa)
@@ -193,18 +173,18 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         if (!(await c.permisos()).includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para ver el plan y el consumo", "no_autorizado");
         return c.json(await planDe(E));
       }
-      if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)\/consultar-proveedor$/.exec(ruta))) {   // solo lectura: pregunta a Digifact (simulado) y NO cambia nada
-        const docId = c.id(r[1]); const [o] = await bd.filas<{ id: string; clave_idempotencia: string; estado: string }>("select id, clave_idempotencia, estado from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and proveedor = 'digifact' order by iniciada_en desc limit 1", [docId, E]);
-        if (!o) throw new ErrorPr(404, "Este documento no se envió a Digifact", "no_encontrado");
-        const x = await proveedor.conciliar({ empresaId: E, documentoId: docId, operacionId: o.id, claveIdempotencia: o.clave_idempotencia, ambiente: "simulado" }, CTX);
+      if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)\/consultar-proveedor$/.exec(ruta))) {   // solo lectura: pregunta al certificador (simulado) y NO cambia nada
+        const docId = c.id(r[1]); const [o] = await bd.filas<{ id: string; clave_idempotencia: string; estado: string; proveedor: string }>("select id, clave_idempotencia, estado, proveedor from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and proveedor = any($3::text[]) order by iniciada_en desc limit 1", [docId, E, ids]);
+        if (!o) throw new ErrorPr(404, "Este documento no se envió a un certificador simulado", "no_encontrado");
+        const x = await registro.obtener(o.proveedor)!.proveedor.conciliar({ empresaId: E, documentoId: docId, operacionId: o.id, claveIdempotencia: o.clave_idempotencia, ambiente: "simulado" }, CTX);
         return c.json({ operacion_estado: o.estado, respuesta_del_proveedor: x.tipo === "certificado" ? { tipo: x.tipo, serie: x.serie, numero: x.numero, autorizacion: x.autorizacion } : x, nota: "Consulta de solo lectura al proveedor simulado; no modifica el documento." });
       }
       if (m === "POST" && (r = /^\/api\/documentos\/([^/]+)\/anular$/.exec(ruta))) {
         const b = await c.cuerpo(), docId = c.id(r[1]); const cert = await certOp(docId, E);
-        if (!cert) throw new ErrorPr(422, "Solo se anula un documento certificado con Digifact simulado", "regla");
-        const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_A.has(esc as EscenarioAnulacion)) throw new ErrorPr(400, "Escenario de anulación no válido", "entrada_invalida");
-        sim.fijarEscenarioAnulacion(docId, esc as EscenarioAnulacion);
-        await servicio.anular({ actor: a.id, empresa: E, documento: docId, clave: texto(b.clave, 16, 80, "Clave de idempotencia"), motivo: texto(b.motivo, 5, 300, "Motivo"), canal: await c.canalDe("digifact"), certificacion: cert });
+        if (!cert) throw new ErrorPr(422, "Solo se anula un documento certificado con un certificador simulado que soporte la anulación", "regla");
+        const cd = registro.obtener(cert.proveedor)!; const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!cd.escenariosAnulacion.some((e) => e.id === esc)) throw new ErrorPr(400, "Escenario de anulación no válido", "entrada_invalida");
+        cd.simulacion.fijarEscenarioAnulacion(docId, esc);
+        await cd.servicio.anular({ actor: a.id, empresa: E, documento: docId, clave: texto(b.clave, 16, 80, "Clave de idempotencia"), motivo: texto(b.motivo, 5, 300, "Motivo"), canal: await c.canalDe(cert.proveedor), certificacion: { clave: cert.clave, autorizacion: cert.autorizacion } });
         return c.json(await c.detalle(docId));
       }
       if (m === "POST" && (r = /^\/api\/operaciones\/([^/]+)\/conciliar-anulacion$/.exec(ruta))) {
@@ -212,7 +192,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const opId = c.id(r[1]); const [o] = await bd.filas<{ documento_id: string; clave_idempotencia: string; motivo: string | null }>("select documento_id, clave_idempotencia, motivo from public.operaciones_fiscales where id = $1 and empresa_id = $2 and tipo = 'anulacion'", [opId, E]);
         if (!o) throw new ErrorPr(404, "Anulación no encontrada", "no_encontrado"); const cert = await certOp(o.documento_id, E);
         if (!cert) throw new ErrorPr(422, "No se encontró la certificación de este documento", "regla");
-        await servicio.conciliarAnulacion({ empresa: E, operacion: opId, documento: o.documento_id, clave: o.clave_idempotencia, certificacion: cert, motivo: o.motivo ?? "conciliación" });
+        await registro.obtener(cert.proveedor)!.servicio.conciliarAnulacion({ empresa: E, operacion: opId, documento: o.documento_id, clave: o.clave_idempotencia, certificacion: { clave: cert.clave, autorizacion: cert.autorizacion }, motivo: o.motivo ?? "conciliación" });
         return c.json(await c.detalle(o.documento_id));
       }
       return null;
@@ -285,7 +265,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const uid = crypto.randomUUID(), nombre = texto(b.propietario_nombre, 3, 80, "Nombre del propietario");
         await bd.db.query("insert into auth.users (id, email) values ($1, $2)", [uid, `${usuario}@demo.example`]); await bd.db.query("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [uid]);
         await bd.db.query("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, 'propietario')", [empresa, uid]);
-        for (const p of ["mock", "digifact"]) await bd.filas("select public.fel_op_canal_configurar($1, $2, null, $3, 'simulado', true)", [uid, empresa, p]);
+        for (const p of ["mock", ...ids]) await bd.filas("select public.fel_op_canal_configurar($1, $2, null, $3, 'simulado', true)", [uid, empresa, p]);
         PERSONAS[usuario] = { id: uid, nombre, rol: "propietario", descripcion: `Propietario de ${texto(b.nombre_comercial, 1, 120, "Nombre comercial")}`, empresa };
         await d.sesiones?.registrar(usuario, clave);
         return json({ empresa, usuario, aviso: "Empresa habilitada con canal simulado y Digifact simulado. Asígnale un plan y registra un pago simulado para que pueda certificar." });
@@ -296,12 +276,12 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const porEmpresa = await bd.filas<Obj>("select e.id, e.nombre_comercial, count(*) filter (where c.estado = 'confirmado')::int as confirmados, count(*) filter (where c.estado = 'reservado')::int as reservados, count(*) filter (where c.estado = 'liberado')::int as liberados, coalesce(sum(c.unidades_consumidas) filter (where c.estado = 'confirmado'), 0)::text as unidades from public.empresas e left join public.consumos c on c.empresa_id = e.id group by e.id, e.nombre_comercial order by e.nombre_comercial");
         const reglas = await bd.filas<Obj>("select r.cuenta_id, r.evento_tipo, r.consume, r.unidades::text as unidades from public.bolson_reglas_consumo r where r.vigente_hasta is null order by r.evento_tipo");
         const alertas = await bd.filas<Obj>("select a.id, a.tipo, a.detalle, a.creada_en, a.resuelta_en, e.nombre_comercial from public.bolson_alertas a left join public.empresas e on e.id = a.empresa_id order by a.creada_en desc limit 20");
-        return json({ cuentas, lotes, porEmpresa, reglas, alertas, simulador: { saldo_reportado: sim.saldo, certificaciones: sim.certificados.length, llamadas: sim.llamadas.length }, verificacion: await this.verificacion() });
+        return json({ cuentas, lotes, porEmpresa, reglas, alertas, simuladores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, saldo_reportado: x.simulacion.saldoReportado(), certificaciones: x.simulacion.certificaciones(), llamadas: x.simulacion.llamadas() })), verificacion: await this.verificacion() });
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/lotes") {
         const b = await leer(req); if (!uuidOk(b.cuenta)) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");
         await bd.rpc("fel_admin_bolson_lote_registrar", { p_actor: M, p_cuenta: b.cuenta, p_unidades: monto(String(b.unidades ?? ""), "Unidades"), p_costo_total: monto(String(b.costo_total ?? "0"), "Costo total"), p_referencia: texto(b.referencia, 1, 120, "Referencia del proveedor") });
-        sim.saldo += Number(b.unidades); return json({ ok: true });
+        const prov = (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.bolson_cuentas where id = $1", [b.cuenta]))[0]?.proveedor_id; registro.obtener(prov)?.simulacion.sumarSaldo(Number(b.unidades)); return json({ ok: true });
       }
       if (m === "POST" && (r = /^\/api\/plataforma\/bolson\/alertas\/([^/]+)\/resolver$/.exec(ruta))) {
         const b = await leer(req); if (!uuidOk(r[1])) throw new ErrorPr(400, "Alerta no válida", "entrada_invalida");
@@ -319,7 +299,8 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       if (m === "POST" && ruta === "/api/plataforma/bolson/extractos/importar") {
         const b = await leer(req); const cuenta = uuidOk(b.cuenta) ? b.cuenta : null; if (!cuenta) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");
         const hoy = new Date(), ayer = new Date(hoy.getTime() - 86_400_000), f = (x: Date) => x.toISOString().slice(0, 10);
-        return json(await servicio.importarExtracto({ actor: M, cuenta, desde: f(ayer), hasta: f(hoy), saldoFinal: sim.saldo }));
+        const prov = (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.bolson_cuentas where id = $1", [cuenta]))[0]?.proveedor_id, cert = registro.obtener(prov); if (!cert) throw new ErrorPr(404, "Cuenta de un certificador simulado no encontrada", "no_encontrado");
+        return json(await cert.servicio.importarExtracto({ actor: M, cuenta, desde: f(ayer), hasta: f(hoy), saldoFinal: cert.simulacion.saldoReportado() }));
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/conciliaciones/proponer") { const b = await leer(req); if (!uuidOk(b.extracto)) throw new ErrorPr(400, "Extracto no válido", "entrada_invalida"); return json(await bd.rpc("fel_admin_bolson_conciliar_proponer", { p_actor: M, p_extracto: b.extracto })); }
       if (m === "POST" && (r = /^\/api\/plataforma\/bolson\/conciliaciones\/([^/]+)\/decidir$/.exec(ruta))) {
@@ -332,8 +313,9 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/simulador") {   // controles de la DEMOSTRACIÓN: reproducen lo que en la realidad hace el proveedor por su cuenta
         const b = await leer(req);
-        if (b.accion === "consumo_ajeno") sim.inyectarConsumoAjeno(`AJENO-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, "1.000000");
-        else if (b.accion === "omitir_ultimo") { const ult = [...sim.consumos].reverse().find((c) => c.evento === "CERTIFICACION"); if (!ult) throw new ErrorPr(422, "No hay consumos que omitir", "regla"); sim.omitirConsumo(ult.referencia); }
+        const cert = registro.obtener(String(b.proveedor ?? "digifact")); if (!cert) throw new ErrorPr(400, "Certificador no válido", "entrada_invalida");
+        if (b.accion === "consumo_ajeno") cert.simulacion.consumoAjeno();
+        else if (b.accion === "omitir_ultimo") { if (!cert.simulacion.omitirUltimoConsumo()) throw new ErrorPr(422, "No hay consumos que omitir", "regla"); }
         else throw new ErrorPr(400, "Acción no válida", "entrada_invalida");
         return json({ ok: true });
       }

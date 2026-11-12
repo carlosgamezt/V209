@@ -51,7 +51,7 @@ export class Sesiones {
   salir(id: string | null | undefined) { if (id) this.sesiones.delete(id); }
   cantidad() { return this.sesiones.size; }
 
-  static idDeCookie(req: Request): string | null { const m = new RegExp(`(?:^|;\\s*)${NOMBRE}=([0-9a-f]{64})`).exec(req.headers.get("cookie") ?? ""); return m ? m[1] : null; }
+  static idDeCookie(req: Request): string | null { const m = new RegExp(`(?:^|;\\s*)${NOMBRE}=([0-9a-f]{64})(?=;|\\s*$)`).exec(req.headers.get("cookie") ?? ""); return m ? m[1] : null; }
   static cookie(s: Sesion | null, seguro: boolean): string {
     const base = `${NOMBRE}=${s?.id ?? ""}; Path=/; HttpOnly; SameSite=Strict${seguro ? "; Secure" : ""}`;
     return s ? `${base}${s.recordar ? `; Max-Age=${MAXIMO_RECORDAR / 1000}` : ""}` : `${base}; Max-Age=0`;

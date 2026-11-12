@@ -258,7 +258,7 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 do $$ begin
   assert (select count(*) from public.establecimientos) = 0 and (select count(*) from public.eventos_proveedor) = 0 and (select count(*) from public.artefactos_documento) = 0
          and (select count(*) from public.alertas_fiscales) = 0 and (select count(*) from public.empresa_canales) = 0, 'el administrador maestro no ve datos de negocio';
-  assert (select count(*) from public.proveedores_emision) = 3, 'el catálogo de proveedores sí es visible';
+  assert (select count(*) from public.proveedores_emision) = 4, 'el catálogo de proveedores sí es visible';
 end $$;
 reset role;
 set local role authenticated;
