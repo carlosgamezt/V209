@@ -31,6 +31,11 @@ jobs:
       - name: Demostración de facturación simulada (tipos)
         working-directory: fel/demo-facturacion
         run: deno check servidor.ts src/*.ts tests/*.ts
+      - name: Motor fiscal D1-A (recursos oficiales verificados por hash, aritmética decimal exacta, validación estructural y bloqueo de escenarios no aprobados; no calcula ni certifica)
+        working-directory: fel/fiscal
+        run: |
+          deno check mod.ts pruebas/*.ts
+          deno test -A pruebas/
 
   interfaz:
     name: Interfaz (modo demostración)

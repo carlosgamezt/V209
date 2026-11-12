@@ -1,0 +1,243 @@
+{
+  "esquema": 1,
+  "fuente": {
+    "nombre": "Catalogo-FEL (Esquema y catálogos - FEL, rama v2)",
+    "url": "https://github.com/notificacioneselectfel/Catalogo-FEL",
+    "publicador": "Gerencia de Informática de la SAT (según el README del repositorio)",
+    "licencia": "GPL-3.0 (archivo LICENSE del repositorio)"
+  },
+  "referencia": {
+    "rama": "main",
+    "commit": "025144527e33116c65d4138c48865b8ac99e0c08",
+    "fechaCommit": "2026-10-14",
+    "nota": "Archivos descargados de la rama main; el commit indicado era el más reciente del historial público al descargarlos. Los cuatro archivos centrales (GT_Documento-0.2.1.xsd y los tres catálogos) se comprobaron idénticos en ese commit."
+  },
+  "descargado": "2026-11-12",
+  "nota": "La fecha «Ultima Actualizacion» que traen las cabeceras de los catálogos NO es fiable como vigencia (p. ej. el de frases dice 25/03/2025 y contiene decretos de 2026): la versión efectiva es el commit.",
+  "archivos": [
+    {
+      "ruta": "XSD/GT_AnulacionDocumento-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 8781,
+      "sha256": "3d240302a6f0d050f53f4181debf23a1dcda948aa4f9f479d2056304f361e307"
+    },
+    {
+      "ruta": "XSD/GT_AnulacionEndoso-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 33095,
+      "sha256": "9638ceef661221cc2aded19ca59280e5a7e5002a8221277e203e1f420855d4f9"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_AlmacenajeGalonaje-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 8479,
+      "sha256": "b4336345d61dce292e8dedd912b49270527732ea579ec07c9c894a5e25dc430c"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_Cambiaria-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 1802,
+      "sha256": "3a6ba5b2cde390c7a5d14a5f0c68710ebd32eafa1fd36421abbfbc68621239de"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_CobroXCuentaAjena-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 4590,
+      "sha256": "19a6a9ecb1abca36540b101feea1193249365bddb47bbd44e2609d0609c4b36e"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_Espectaculos-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 2409,
+      "sha256": "a4456544e6b30967d1f0be0545bd36347b48838ba95b638a7d9822ea28c9d644"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_Exportaciones-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 18191,
+      "sha256": "106f35454d2212dff4e09f7e52b337908c691ee188fe13b532278640cbb3552c"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_ExportacionProvisional-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 14471,
+      "sha256": "4274bff4b15d7c0961c9714f998be03414ae200beecc3aa2c423ba135339fe40"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_Fac_Especial-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 1578,
+      "sha256": "41151abc9770116b5ed9dcf6aedc7875d969f1a6dabb37278d5e97d766215d77"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_GasLicuadoPetroleo.xsd",
+      "tipo": "esquema",
+      "version": null,
+      "bytes": 8698,
+      "sha256": "f17c76db4bf9ee8c749338f37336c39bfc46a7951c39aa0f405c31100191b30d"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_MediosdePago-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 2536,
+      "sha256": "f7c2cc72a813f8d23a1250cd5cc8fae64b53a12852d4eed894b9ba355fa2958a"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_PartidosPoliticos-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 2903,
+      "sha256": "d80682c6f0c762392c30c9fcac3bf48297e6c2ab64493d4e324c51c3b9f0b9d4"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_Referencia_Nota-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 3369,
+      "sha256": "d6d7862d2732a315a3a1929421f6dac1119ee8b1e6094c579e8772a4e7761716"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_ReferenciaBoletaDespacho-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 1676,
+      "sha256": "21d83e8726eb5ab3c076f2e649bc2cac160456e336b4dbcf1fa6650772007940"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_ReferenciaConstancia-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 3683,
+      "sha256": "62eab8aaf908eec02dcf6303e4b6577f9e672480ff0bc471cc9ce0190dee75c5"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_ReferenciaDTE-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 1600,
+      "sha256": "b85feeb4ccd8bbe3448d297a5945209c4e9f3b9e804eea8d7336dae21213f117"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_ReferenciaNotaEnvio-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 3142,
+      "sha256": "48936cee6d6a2907bfb5ca3dcb02474ff9ecb4b5fa8398f3dfaf62a50610eee1"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_RetencionesFacturaEspecifica.xsd",
+      "tipo": "esquema",
+      "version": null,
+      "bytes": 1684,
+      "sha256": "8041b6e6f4682573654c53ce8fd3cf7bad0fb3af1bd72b348e934f71c8ff1d0c"
+    },
+    {
+      "ruta": "XSD/GT_Complemento_TurismoPasaje-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 2896,
+      "sha256": "7ccec94bb320cfb62f12cf149d4c9142beec104bb4f09bbba4160cd6c714cecd"
+    },
+    {
+      "ruta": "XSD/GT_ComplementoAlItem.xsd",
+      "tipo": "esquema",
+      "version": null,
+      "bytes": 2018,
+      "sha256": "87f6652fe09ab7f158f09c28d40cd843b1dfb2c2832fe55622ee06a745284566"
+    },
+    {
+      "ruta": "XSD/GT_ComplementoDetalleProductos-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 5390,
+      "sha256": "20487ad0828513c61c7ee9ad499ec7e739d4e21ca8cbf5c54fa54b28dd698b76"
+    },
+    {
+      "ruta": "XSD/GT_ComplementoTrasladoMercancias-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 5542,
+      "sha256": "7303d30e4fc8e1f91b2ccbca04474c19014d88c59b27fec89f104b1e539cc07e"
+    },
+    {
+      "ruta": "XSD/GT_Documento-0.2.1.xsd",
+      "tipo": "esquema",
+      "version": "0.2.1",
+      "bytes": 66143,
+      "sha256": "f47d7990e7394d8befc9a667a9f0617bc31ec8220166f879f7e3792c7e360252"
+    },
+    {
+      "ruta": "XSD/GT_Endoso-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 39804,
+      "sha256": "9455de4f811fb1e245b190df5d45db29536b977bc2687973db4a33a0fa801b99"
+    },
+    {
+      "ruta": "XSD/GT_PagoEndoso-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 32215,
+      "sha256": "cde61802f21a3a738cd1e86b6c60beebcf0f30aba39ba68dcac04bc5aea6445c"
+    },
+    {
+      "ruta": "XSD/GT_ReversionDocumento-0.1.0.xsd",
+      "tipo": "esquema",
+      "version": "0.1.0",
+      "bytes": 12426,
+      "sha256": "b0e767618bb753d743214640fb865f65b3c6d68f3160fb5bc87845d5df17ad29"
+    },
+    {
+      "ruta": "XSD/xmldsig-core-schema.xsd",
+      "tipo": "esquema",
+      "version": null,
+      "bytes": 9497,
+      "sha256": "c0e9513dceef74914ca89260bf76b8088c251ce4e0c262d9ead6fef5e1237e71"
+    },
+    {
+      "ruta": "Catalogos/CatalogoFrases-0.6.0.json",
+      "tipo": "catalogo",
+      "version": "0.6.0",
+      "bytes": 61655,
+      "sha256": "e2302463d9b09eed479bf66b59ea8a703ea2a8af5dce6f87534609f6183e584b"
+    },
+    {
+      "ruta": "Catalogos/catalogoMensajes-0.3.0.json",
+      "tipo": "catalogo",
+      "version": "0.3.0",
+      "bytes": 74609,
+      "sha256": "4ae62141ce681f16a1a5467df3673605311ed17a2ac916a038965b422bbd5242"
+    },
+    {
+      "ruta": "Catalogos/catalogoUnidadesGravables-0.1.4.json",
+      "tipo": "catalogo",
+      "version": "0.1.4",
+      "bytes": 13623,
+      "sha256": "64f098f601f0dfe320ea05582927693881ddeb59d23af33205a5f3408ee64d38"
+    },
+    {
+      "ruta": "LICENSE",
+      "tipo": "documento",
+      "version": null,
+      "bytes": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "ruta": "README.md",
+      "tipo": "documento",
+      "version": null,
+      "bytes": 446,
+      "sha256": "3617bfbae0195efb35c651ec7a292999260bac98d340ebe1e3c323f5bef5e5cd"
+    }
+  ]
+}
