@@ -11,7 +11,7 @@ import { codigo, semillaNueva } from "../src/totp.ts";
 import { claveFuerte } from "../src/generar_secretos.ts";
 
 const hay = !!Deno.env.get("FEL_TEST_PG_ADMIN"), RAIZ = new URL("..", import.meta.url).pathname;
-const CLAVE_SERVICIO = "sb_secret_" + "x".repeat(40), ID = "11111111-1111-4111-8111-111111111111";
+const CLAVE_SERVICIO = "eyJ" + "x".repeat(60), ID = "11111111-1111-4111-8111-111111111111";
 type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 
 Deno.test("Auth admin: alta confirmada y sin contraseña, mismo id, idempotente; errores sin secretos; HTTPS exigido", async () => {

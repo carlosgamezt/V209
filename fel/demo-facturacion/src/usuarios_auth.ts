@@ -14,7 +14,9 @@ export function creadorAdminApi(o: { url: string; claveServicio: string; fetchIm
   const f = o.fetchImpl ?? fetch, base = new URL(o.url);
   if (base.protocol !== "https:" && !["127.0.0.1", "localhost"].includes(base.hostname)) throw new Error("La dirección de Supabase debe ser HTTPS");
   if (o.claveServicio.length < 20) throw new Error("clave de servicio no válida");
-  const raiz = base.origin, cab = { apikey: o.claveServicio, authorization: `Bearer ${o.claveServicio}`, "content-type": "application/json" };
+  const raiz = base.origin;
+  // clave nueva de Supabase («sb_secret_…», no es un JWT): solo va en «apikey»; la clave service_role clásica (JWT) va también como portadora
+  const cab: Record<string, string> = { apikey: o.claveServicio, "content-type": "application/json", ...(o.claveServicio.startsWith("sb_secret_") ? {} : { authorization: `Bearer ${o.claveServicio}` }) };
   return {
     async crear(id, email) {
       // errores sin cuerpo ni cabeceras: nunca arrastran la clave ni datos de personas

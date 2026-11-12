@@ -1,0 +1,30 @@
+name: Supabase CLI (instalación resistente)
+description: >
+  Instala la CLI de Supabase. La acción oficial resuelve «latest» con la API de GitHub sin autenticar y a veces falla con «rate limit exceeded» (ocurrió en los runs 85 y 86);
+  si falla, se descarga el binario directamente del enlace de la última versión (que no usa la API) con reintentos. Una versión fija se puede pedir con la entrada «version».
+inputs:
+  version:
+    description: "Versión de la CLI (p. ej. 2.40.7) o «latest»"
+    default: latest
+runs:
+  using: composite
+  steps:
+    - id: oficial
+      uses: supabase/setup-cli@v1
+      continue-on-error: true
+      with:
+        version: ${{ inputs.version }}
+    - name: Plan B · descarga directa (sin API de GitHub) con reintentos
+      if: steps.oficial.outcome != 'success'
+      shell: bash
+      run: |
+        set -euo pipefail
+        V="${{ inputs.version }}"
+        if [ "$V" = latest ]; then URL="https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz"; else URL="https://github.com/supabase/cli/releases/download/v${V#v}/supabase_linux_amd64.tar.gz"; fi
+        for i in 1 2 3 4 5; do curl -fsSL --retry 3 --retry-delay 3 -o "$RUNNER_TEMP/supabase.tgz" "$URL" && break || { echo "intento $i falló"; sleep $((i*5)); }; done
+        test -s "$RUNNER_TEMP/supabase.tgz"
+        mkdir -p "$RUNNER_TEMP/sbbin" && tar -xzf "$RUNNER_TEMP/supabase.tgz" -C "$RUNNER_TEMP/sbbin" supabase
+        echo "$RUNNER_TEMP/sbbin" >> "$GITHUB_PATH"
+    - name: Versión instalada (queda en el registro para reproducir)
+      shell: bash
+      run: supabase --version

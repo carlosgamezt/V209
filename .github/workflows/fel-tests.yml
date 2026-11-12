@@ -104,9 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      - uses: ./.github/actions/supabase-cli
       - name: D2 · lo existente no cambió y las migraciones de D2 son solo aditivas
         run: python3 fel/supabase/tests/verificar_aditiva_d2.py
       - name: Levantar Supabase local y aplicar migraciones
@@ -153,9 +151,7 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      - uses: ./.github/actions/supabase-cli
       - name: Levantar Supabase local y aplicar migraciones
         run: supabase --workdir fel start
       - name: Exportar claves LOCALES de la pila efímera
@@ -177,6 +173,10 @@ jobs:
         run: |
           set -a; source "$RUNNER_TEMP/sb.env"; set +a
           RESULTADOS="$RUNNER_TEMP/integracion-ejecutar.json" node fel/tools/integracion-local/ejecutar.mjs --etapa=ejecutar --manifiesto="$RUNNER_TEMP/manifiesto.json"
+      - name: Alta de usuarios de la demostración por la API de administración de Auth REAL (id fijado por nosotros, confirmado, sin contraseña, idempotente)
+        run: |
+          set -a; source "$RUNNER_TEMP/sb.env"; set +a
+          deno run -A fel/tools/integracion-local/auth_admin_id.ts
       - name: Etapa 3 · limpiar (solo lo registrado en el manifiesto)
         if: always()
         run: |
