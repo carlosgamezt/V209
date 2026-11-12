@@ -32,10 +32,11 @@ create temp table t_eA as select (public.fel_op_establecimiento_guardar('0000000
 create temp table t_eB as select (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b', null, '1', 'Casa matriz B', null, 'activo')).id as id;
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'produccion', true)$$, 'FEL_REGLA');
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'pruebas', true)$$, 'FEL_REGLA');
-select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'simulado', true)$$, 'FEL_REGLA');
+-- (D3-1) Digifact solo contra el SIMULADOR (ver 16); aquí se confirma que no puede ampliarse a pruebas/producción
+select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'simulado', false);
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'produccion', true)$$, 'FEL_REGLA');
 select pg_temp.espera_error($$insert into public.empresa_canales (empresa_id, proveedor_id, ambiente, habilitado) values ('10000000-0000-0000-0000-00000000000a', 'portal_playwright', 'produccion', true)$$, '23514|check');
-select pg_temp.espera_error($$update public.proveedores_emision set habilitado = true where id = 'digifact'$$, '23514|check');
+select pg_temp.espera_error($$update public.proveedores_emision set ambientes = '{simulado,produccion}' where id = 'digifact'$$, '23514|check');
 select pg_temp.espera_error($$update public.proveedores_emision set ambientes = '{simulado,produccion}' where id = 'portal_playwright'$$, '23514|check');
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'simulado', true)$$, 'FEL_NO_AUTORIZADO');
 create temp table t_cA as select (public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'simulado', true)).id as id;   -- D-F2: solo simulado

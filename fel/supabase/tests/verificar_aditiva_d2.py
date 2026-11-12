@@ -6,7 +6,10 @@
 import hashlib, pathlib, re, sys
 RAIZ = pathlib.Path(__file__).resolve().parents[3]          # raíz del repositorio
 MIG = RAIZ / "fel/supabase/migrations"
-PERMITIDOS_AJENOS = {}                                       # {archivo: {"insert": {tabla,...}}}; vacío en D2-1
+PERMITIDOS_AJENOS = {                                        # {archivo: {accion: {tabla,...}}}: excepciones EXPLÍCITAS, una por migración, con su justificación
+    # D3-1: digifact pasa a «solo simulado» (misma barrera que portal_playwright); se reemplaza la restricción que lo bloqueaba por completo
+    "20261112000300_fel_digifact_simulado.sql": {"alter": {"proveedores_emision"}, "update": {"proveedores_emision", "operaciones_fiscales"}, "insert": {"operaciones_fiscales"}},   # las funciones de anulación simulada crean y cierran operaciones
+}
 fallos = []
 # 1) inmutables
 for linea in (pathlib.Path(__file__).with_name("inmutables_d2.sha256")).read_text().splitlines():
@@ -30,7 +33,7 @@ for f in d2:
     permitido = PERMITIDOS_AJENOS.get(f.name, {})
     def ajena(tabla, accion):
         return tabla not in nuevas and tabla not in permitido.get(accion, set())
-    for m in re.finditer(r"\bdrop\s+(?!trigger\s+if)\w+", texto, re.I): fallos.append(f"{f.name}: DROP no permitido ({m.group(0)})")
+    for m in re.finditer(r"\bdrop\s+(?!trigger\s+if|constraint)\w+", texto, re.I): fallos.append(f"{f.name}: DROP no permitido ({m.group(0)})")
     if re.search(r"\btruncate\b", texto, re.I): fallos.append(f"{f.name}: TRUNCATE no permitido")
     for m in re.finditer(r"alter\s+table\s+(?:only\s+)?public\.(\w+)", texto, re.I):
         if ajena(m.group(1), "alter"): fallos.append(f"{f.name}: ALTER TABLE sobre tabla ajena {m.group(1)}")

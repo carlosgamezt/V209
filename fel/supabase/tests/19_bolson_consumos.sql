@@ -160,7 +160,7 @@ begin
   perform pg_temp.espera_error(format($q$select pg_temp.res('%s','%s','consulta',null,'%s','k-v-9')$q$, A, cta, docB), 'documento no encontrado');
   perform pg_temp.espera_error(format($q$select pg_temp.res('%s','%s','consulta','%s','%s','k-v-10')$q$, A, cta, pg_temp.nueva_op(A), pg_temp.nuevo_doc(A)), 'no corresponde a la operación');
   -- simulación y realidad no se mezclan; cuenta y operación deben ser del mismo proveedor y ambiente
-  perform pg_temp.espera_error(format($q$select pg_temp.res('%s','%s','certificacion','%s',null,'k-v-11')$q$, A, cta, opSim), 'simuladas no consumen');
+  perform pg_temp.espera_error(format($q$select pg_temp.res('%s','%s','certificacion','%s',null,'k-v-11')$q$, A, cta, opSim), 'no corresponde a la cuenta');   -- (D3-1) una operación simulada (mock) no consume una cuenta de pruebas de Digifact
   perform pg_temp.espera_error(format($q$select pg_temp.res('%s','%s','certificacion','%s',null,'k-v-12')$q$, A, cta, opMock), 'no corresponde a la cuenta');
   perform pg_temp.espera_error(format($q$select pg_temp.res('%s','%s','certificacion','%s',null,'k-v-13')$q$, A, ctm, pg_temp.nueva_op(A)), 'no corresponde a la cuenta');
   -- el evento debe corresponder al tipo de la operación y esta no puede estar ya confirmada

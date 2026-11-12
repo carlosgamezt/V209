@@ -75,7 +75,10 @@ reset role;
 -- ================= canales reales siguen bloqueados (no se habilita ninguno, ni siquiera con permiso)
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'portal_playwright', 'produccion', true)$$, 'FEL_REGLA|23514|check');
 select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'pruebas', true)$$, 'FEL_REGLA|23514|check');
-select pg_temp.espera_error($$select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'simulado', true)$$, 'FEL_REGLA|23514|check');   -- Digifact no se habilita ni en simulado (Fase 4)
+-- (D3-1) Digifact solo puede habilitarse contra el SIMULADOR: el ambiente simulado es válido; pruebas y producción siguen cerrados (línea anterior y restricciones de tabla)
+select public.fel_op_canal_configurar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'digifact', 'simulado', false);
+select pg_temp.espera_error($$update public.proveedores_emision set ambientes = '{simulado,pruebas}' where id = 'digifact'$$, '23514|check');
+select pg_temp.espera_error($$insert into public.empresa_canales (empresa_id, proveedor_id, ambiente, habilitado) values ('10000000-0000-0000-0000-00000000000a', 'digifact', 'pruebas', true)$$, '23514|check');
 do $$ begin assert not exists (select 1 from public.empresa_canales where habilitado and proveedor_id <> 'mock'), 'ningún canal real habilitado'; assert not exists (select 1 from public.empresas where emision_real_habilitada), 'sin emisión real'; end $$;
 
 rollback;
