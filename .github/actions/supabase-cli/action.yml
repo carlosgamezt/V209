@@ -1,28 +1,35 @@
 name: Supabase CLI (instalación resistente)
 description: >
-  Instala la CLI de Supabase. La acción oficial resuelve «latest» con la API de GitHub sin autenticar y a veces falla con «rate limit exceeded» (ocurrió en los runs 85 y 86);
-  si falla, se descarga el binario directamente del enlace de la última versión (que no usa la API) con reintentos. Una versión fija se puede pedir con la entrada «version».
+  Instala la CLI de Supabase. La acción oficial resuelve «latest» con la API de GitHub SIN autenticar y desde los ejecutores compartidos falla con «rate limit exceeded» (runs 85, 86 y 90).
+  Aquí la versión se resuelve con el token del flujo de trabajo y se instala con la acción oficial a versión fija; si aun así fallara, un plan B descarga el paquete y VERIFICA su SHA-256.
 inputs:
   version:
     description: "Versión de la CLI (p. ej. 2.40.7) o «latest»"
     default: latest
   sha256:
-    description: "Huella SHA-256 esperada del paquete linux_amd64 (opcional; fija el binario exacto). Sin ella se verifica contra el archivo de sumas que publica el propio lanzamiento."
+    description: "Huella SHA-256 esperada del paquete linux_amd64 (opcional; fija el binario exacto para el plan B)"
     default: ""
+  token:
+    description: "Token para consultar los lanzamientos (por defecto el del flujo de trabajo)"
+    default: ${{ github.token }}
 runs:
   using: composite
   steps:
+    - id: resolver
+      shell: bash
+      continue-on-error: true
+      env: { VERSION: "${{ inputs.version }}", GITHUB_TOKEN: "${{ inputs.token }}" }
+      run: echo "version=$(bash "${{ github.action_path }}/instalar.sh" resolver)" >> "$GITHUB_OUTPUT"
     - id: oficial
+      if: steps.resolver.outputs.version != ''
       uses: supabase/setup-cli@v1
       continue-on-error: true
       with:
-        version: ${{ inputs.version }}
-    - name: Plan B · descarga directa (sin API de GitHub), con reintentos y verificación de integridad
+        version: ${{ steps.resolver.outputs.version }}
+    - name: Plan B · descarga directa con verificación de integridad (SHA-256)
       if: steps.oficial.outcome != 'success'
       shell: bash
-      env:
-        VERSION: ${{ inputs.version }}
-        SHA256: ${{ inputs.sha256 }}
+      env: { VERSION: "${{ inputs.version }}", SHA256: "${{ inputs.sha256 }}", GITHUB_TOKEN: "${{ inputs.token }}" }
       run: bash "${{ github.action_path }}/instalar.sh"
     - name: Versión instalada (queda en el registro para reproducir)
       shell: bash
