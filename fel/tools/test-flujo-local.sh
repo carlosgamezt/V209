@@ -17,5 +17,5 @@ PSQL=("$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -v ON_ERROR_ST
 for f in supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f" >/dev/null; done
 echo "migraciones aplicadas; ejecutando las pruebas del flujo (Deno)…"
 cd proveedores
-FEL_PGHOST="$SOCK" FEL_PGPORT="$PORT" FEL_PGUSER=postgres FEL_PGDATABASE=postgres deno test -A pruebas_db/
+FEL_PGHOST="$SOCK" FEL_PGPORT="$PORT" FEL_PGUSER=postgres FEL_PGDATABASE=postgres deno test -A ${FEL_DENO_ARGS:-pruebas_db/}
 echo "FLUJO OK"
