@@ -18,6 +18,8 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Instalación de la CLI de Supabase · plan B con verificación de integridad (sin red externa)
+        run: bash fel/tools/test-instalar-cli.sh
       - name: Tipos y pruebas
         working-directory: fel/supabase/functions/fel-api
         run: |

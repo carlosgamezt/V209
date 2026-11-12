@@ -31,6 +31,6 @@ await Deno.writeTextFile(join(F, "config.toml"), `# Generado por nube/construir.
 
 // ---- control: nada sensible en lo construido
 const sospechosos: string[] = [];
-async function revisar(d: string) { for await (const e of Deno.readDir(d)) { const r = join(d, e.name); if (e.isDirectory) { await revisar(r); continue; } if (/\.(ts|js|html|toml|css|txt|webmanifest)$|^_headers$/.test(e.name)) { const t = await Deno.readTextFile(r); if (/(postgres(ql)?:\/\/[^\s'"`]+:[^\s'"`@]+@)|(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})|(sb_secret_)|(service_role['"]?\s*[:=]\s*['"]ey)/.test(t)) sospechosos.push(relative(SALIDA, r)); } } }
+async function revisar(d: string) { for await (const e of Deno.readDir(d)) { const r = join(d, e.name); if (e.isDirectory) { await revisar(r); continue; } if (/\.(ts|js|html|toml|css|txt|webmanifest)$|^_headers$/.test(e.name)) { const t = await Deno.readTextFile(r); if (/(postgres(ql)?:\/\/[^\s'"`]+:[^\s'"`@]+@)|(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})|(sb_secret_[A-Za-z0-9_-]{20,})|(service_role['"]?\s*[:=]\s*['"]ey)/.test(t)) sospechosos.push(relative(SALIDA, r)); } } }
 await revisar(SALIDA); if (sospechosos.length) { console.error("Posibles secretos en:", sospechosos); Deno.exit(1); }
 console.log(`  Construido en ${SALIDA}\n   · pagina/  (${locales.length ? "Cloudflare Pages" : ""})\n   · funcion/ (Supabase: ${locales.length} módulos locales copiados)`);
