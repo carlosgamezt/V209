@@ -1,11 +1,12 @@
 // «Certificador B» SIMULADO: un segundo certificador de demostración que prueba la arquitectura multiproveedor. NO es un certificador autorizado y no existe integración real.
 // Implementa el mismo contrato (EmissionProvider + ProveedorAnulacion) con otra «API» (in-memory); añadirlo no requirió cambios en el orquestador ni en las pantallas.
 import { MockProvider, type Escenario } from "./mock.ts";
+import type { Persistible } from "./persistible.ts";
 import type { LineaConsumoProveedor, ProveedorAnulacion, ResultadoAnulacion, ResultadoConciliacionAnulacion, SolicitudAnulacion } from "./digifact.ts";
 import type { CapacidadesProveedor, Contexto, DocumentoCongelado, OperacionRef, ResultadoConciliacion, ResultadoEnvio, ResultadoValidacion, SolicitudCertificacion } from "./tipos.ts";
 
 export type EscenarioAnulacionB = "exito" | "rechazo" | "timeout_antes" | "timeout_despues";
-export class CertificadorBSimulado implements ProveedorAnulacion {
+export class CertificadorBSimulado implements ProveedorAnulacion, Persistible {
   readonly capacidades: CapacidadesProveedor;
   private base = new MockProvider({ prefijoSerie: "SIMB", idempotenciaNativa: true });
   private anuladas = new Map<string, string>();                 // autorización → fecha
@@ -18,6 +19,9 @@ export class CertificadorBSimulado implements ProveedorAnulacion {
   get certificaciones() { return this.base.servidor.length; }
   base_certificacionesDe(documentoId: string) { return this.base.certificacionesDe(documentoId); }
   get llamadas() { return this.base.llamadasEnviar.length; }
+  exportar() { return { base: this.base.exportar(), anuladas: this.anuladas, escAnul: this.escAnul, porClaveAnulacion: this.porClaveAnulacion, ajenos: this.ajenos, omitidos: this.omitidos, saldo: this.saldo }; }
+  // deno-lint-ignore no-explicit-any
+  importar(x: any) { this.base.importar(x.base ?? {}); this.anuladas = x.anuladas ?? new Map(); this.escAnul = x.escAnul ?? {}; this.porClaveAnulacion = x.porClaveAnulacion ?? new Map(); this.ajenos = x.ajenos ?? []; this.omitidos = x.omitidos ?? new Set(); this.saldo = x.saldo ?? this.saldo; }
   fijarEscenario(doc: string, e: Escenario) { this.base.fijarEscenario(doc, e); }
   escenarioDe(doc: string) { return this.base.escenarioDeDocumento(doc); }
   fijarEscenarioAnulacion(doc: string, e: EscenarioAnulacionB) { this.escAnul[doc] = e; }

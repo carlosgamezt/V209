@@ -3,13 +3,15 @@
 // Solo escucha en 127.0.0.1. No usa credenciales, no se conecta a SAT ni a ningún certificador y no emite nada: todo lleva «SIMULADO - SIN VALOR FISCAL».
 // Uso:  deno run -A servidor.ts [--puerto=8787]
 import { fileURLToPath } from "node:url";
-import { crearBd, crearBdPg } from "./src/bd.ts";
+import { crearBdPg } from "./src/bd.ts";
+import { crearBd } from "./src/bd_memoria.ts";
 import { AlmacenMemoria, AlmacenPg } from "./src/almacen.ts";
 import { sembrar, mundoExistente } from "./src/mundo_demo.ts";
 import { CLAVE_DEMO, PERSONAS, sembrarPractico } from "./src/mundo_practico.ts";
 import { Sesiones } from "./src/sesiones.ts";
 import { semillaNueva, uriOtp } from "./src/totp.ts";
 import { LimiteTasa } from "./src/limite.ts";
+import { crearEndurecimiento } from "./src/endurecimiento.ts";
 import { leerConfigPublicada } from "./src/publicado.ts";
 import { crearApi } from "./src/api.ts";
 import { montarAgente } from "./src/agente_demo.ts";
@@ -83,34 +85,17 @@ async function estatico(ruta: string): Promise<Response> {
   } catch { return new Response("No encontrado", { status: 404 }); }
 }
 
-const limiteLogin = new LimiteTasa(Number(Deno.env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000), limiteApi = new LimiteTasa(Number(Deno.env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000);
-const ipDe = (req: Request) => req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "?";   // solo es de fiar detrás del proxy de la plataforma (que sobrescribe estas cabeceras)
-/** Cabeceras de seguridad comunes (en modo publicado también HSTS, sin indexación y sin permisos de dispositivo). */
-function asegurar(r: Response, req: Request): Response {
-  if (!PUBLICADO) return r;
-  const h = new Headers(r.headers); h.set("x-robots-tag", "noindex, nofollow, noarchive"); h.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"); h.set("cross-origin-opener-policy", "same-origin"); h.set("cross-origin-resource-policy", "same-origin"); h.set("x-frame-options", "DENY");
-  h.set("strict-transport-security", "max-age=63072000; includeSubDomains"); void req; return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
-}
-const json = (x: unknown, status = 200, extra: Record<string, string> = {}) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...extra } });
+const endurecer = crearEndurecimiento({ publicado: PUBLICADO, hosts: HOSTS_EXTRA, lan: LAN, limiteLogin: new LimiteTasa(Number(Deno.env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000), limiteApi: new LimiteTasa(Number(Deno.env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });
 
 const servidor = Deno.serve({ hostname: LAN || PUBLICADO ? "0.0.0.0" : "127.0.0.1", port: PUERTO, onListen: ({ port }) => {
   if (PUBLICADO) { console.log(`\n  NEXA FEL · demostración PRIVADA en línea (SIMULADA, sin valor fiscal)\n  Escuchando en el puerto ${port}; nombres permitidos: ${HOSTS_EXTRA.join(", ")}; inicio de sesión y verificación en dos pasos obligatorios. Sin credenciales en este registro.\n`); }
   else console.log(`\n  NEXA FEL · demostración de facturación individual SIMULADA\n  Abre:  http://127.0.0.1:${port}/\n${LAN ? "  En la red local: http://<IP de este equipo>:" + port + "/  (modo --lan: solo con inicio de sesión)\n" : ""}${LOGIN ? (ALEATORIAS ? `  Contraseñas ALEATORIAS de esta sesión (solo se muestran aquí):\n${Object.entries(CLAVES).map(([u, c]) => `    ${u.padEnd(9)} ${c}`).join("\n")}\n` : `  Usuarios ficticios: maestro, maestro2, ana, luis, marta, pedro, sofia · contraseña: ${CLAVE_DEMO}\n`) : "  Modo de pruebas: selector de personas, sin contraseña\n"}  (todo es simulado: SIN VALOR FISCAL; no se conecta a SAT ni a ningún certificador; Ctrl+C para salir)\n`);
   if (!PUBLICADO && Deno.args.includes("--abrir")) { try { const url = `http://127.0.0.1:${port}/`; const [cmd, ...args] = Deno.build.os === "windows" ? ["cmd", "/c", "start", "", url] : Deno.build.os === "darwin" ? ["open", url] : ["xdg-open", url]; new Deno.Command(cmd, { args, stdout: "null", stderr: "null" }).spawn().unref(); } catch { /* sin navegador predeterminado: se abre a mano */ } }
 } }, async (req) => {
+  const previo = endurecer.previo(req); if (previo) return previo;
   const url = new URL(req.url);
-  if (url.pathname === "/salud") return asegurar(json({ ok: true }), req);   // comprobación de estado para la plataforma: sin datos y sin sesión
-  const host = (req.headers.get("host") ?? "").split(":")[0].toLowerCase();
-  const permitido = PUBLICADO ? HOSTS_EXTRA.includes(host) : host === "127.0.0.1" || host === "localhost" || (LAN && (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || HOSTS_EXTRA.includes(host)));
-  if (!permitido) return new Response("Host no permitido", { status: 403 });   // contra DNS rebinding (en --lan solo direcciones IP y los nombres de FEL_DEMO_HOSTS; publicado: solo el nombre configurado)
-  if (PUBLICADO) {
-    if (req.headers.get("x-forwarded-proto") === "http") return asegurar(new Response(null, { status: 308, headers: { location: `https://${host}${url.pathname}${url.search}` } }), req);   // solo HTTPS
-    if (url.pathname === "/robots.txt") return asegurar(new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } }), req);
-    const ip = ipDe(req), l = (url.pathname === "/api/sesion/entrar" ? limiteLogin : limiteApi).permitir(`${url.pathname === "/api/sesion/entrar" ? "login" : "api"}:${ip}`);
-    if (!l.ok) return asegurar(json({ codigo: "limite", mensaje: "Demasiadas solicitudes. Espera un momento." }, 429, { "retry-after": String(l.reintentarEnS) }), req);
-  }
-  if (url.pathname.startsWith(PREFIJO_AGENTE)) return PUBLICADO ? asegurar(new Response("No encontrado", { status: 404 }), req) : agente.plano(req);   // plano de control del agente local (firmado); NO se ofrece en línea
-  return asegurar(url.pathname.startsWith("/api/") ? await api(req) : await estatico(url.pathname), req);
+  if (url.pathname.startsWith(PREFIJO_AGENTE)) return PUBLICADO ? endurecer.asegurar(new Response("No encontrado", { status: 404 })) : agente.plano(req);   // plano de control del agente local (firmado); NO se ofrece en línea
+  return endurecer.asegurar(url.pathname.startsWith("/api/") ? await api(req) : await estatico(url.pathname));
 });
 agente.supervisor.iniciar();
 

@@ -1,5 +1,6 @@
 // Adaptador SIMULADO. Determinista, sin red, sin credenciales, sin tiempo real. Nada de lo que produce tiene valor fiscal.
 // Contiene un «servidor simulado» interno para poder reproducir lo difícil: que el servidor certifique aunque el cliente no vea la respuesta.
+import type { Persistible } from "./persistible.ts";
 import { ErrorProveedor } from "./tipos.ts";
 import type { ArtefactoRef, CapacidadesProveedor, Contexto, DatosFiscales, DocumentoCongelado, EmissionProvider, OperacionRef, ResultadoConciliacion, ResultadoEnvio, ResultadoValidacion, SolicitudCertificacion } from "./tipos.ts";
 import { validarDocumento } from "./validacion.ts";
@@ -40,7 +41,7 @@ function pdfSimulado(texto: string): Uint8Array {
   return enc.encode(pdf);
 }
 
-export class MockProvider implements EmissionProvider {
+export class MockProvider implements EmissionProvider, Persistible {
   readonly capacidades: CapacidadesProveedor;
   /** «Servidor simulado»: lo que de verdad existe, independientemente de lo que el cliente haya visto. */
   readonly servidor: CertificadoSimulado[] = [];
@@ -61,6 +62,10 @@ export class MockProvider implements EmissionProvider {
   private escenarioDe(documentoId: string): Escenario { return this.opciones.escenarioPorDocumento?.[documentoId] ?? this.opciones.escenarioPorDefecto ?? "exito"; }
   /** Escenario fijado para un documento (nulo si usa el predeterminado). */
   escenarioDeDocumento(documentoId: string): Escenario | null { return this.opciones.escenarioPorDocumento?.[documentoId] ?? null; }
+  /** Estado del «servidor» simulado (certificaciones, solicitudes tardías, órdenes humanas, contadores y escenarios): se guarda y se restaura para sobrevivir a reinicios. */
+  exportar() { return { servidor: this.servidor, llamadasEnviar: this.llamadasEnviar.slice(-500), tardios: this.tardios, contador: this.contador, indeterminados: this.indeterminados, pendientesHumanos: this.pendientesHumanos, escenarios: this.opciones.escenarioPorDocumento ?? {} }; }
+  // deno-lint-ignore no-explicit-any
+  importar(x: any) { this.servidor.length = 0; this.servidor.push(...(x.servidor ?? [])); this.llamadasEnviar.length = 0; this.llamadasEnviar.push(...(x.llamadasEnviar ?? [])); this.tardios = x.tardios ?? []; this.contador = x.contador ?? 0; this.indeterminados = x.indeterminados ?? new Set(); this.pendientesHumanos = x.pendientesHumanos ?? new Map(); this.opciones.escenarioPorDocumento = x.escenarios ?? {}; }
   /** Cambia el escenario de un documento en caliente (p. ej. para probar la conciliación o el reintento). */
   fijarEscenario(documentoId: string, e: Escenario) { (this.opciones.escenarioPorDocumento ??= {})[documentoId] = e; }
 

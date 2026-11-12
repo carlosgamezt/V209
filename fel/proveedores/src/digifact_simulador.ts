@@ -4,6 +4,7 @@
 // del bolsón que la conciliación puede contrastar (incluidas diferencias inyectadas a propósito).
 import type { PeticionHttp, RespuestaHttp, Transporte } from "./digifact.ts";
 import { aBase64 } from "./digifact.ts";
+import type { Persistible } from "./persistible.ts";
 
 export type EscenarioDigifact =
   | "exito" | "rechazo" | "sin_saldo" | "timeout_antes" | "timeout_despues" | "corte_despues" | "respuesta_ilegible"
@@ -24,7 +25,7 @@ const ok = (o: unknown, estado = 200): RespuestaHttp => ({ estado, cuerpo: JSON.
 
 export interface OpcionesSimulador { usuario?: string; clave?: string; saldoInicial?: number; ahora?: () => Date; tokenVidaS?: number; escenarioPorDefecto?: EscenarioDigifact }
 
-export class DigifactSimulador {
+export class DigifactSimulador implements Persistible {
   readonly certificados: CertificadoDigifact[] = [];
   readonly consumos: LineaConsumo[] = [];
   /** Cada petición que llegó al «servidor» (ruta + referencia), para afirmar cuántas veces se llamó. */
@@ -38,6 +39,15 @@ export class DigifactSimulador {
   private ahora: () => Date;
   private falloLogin = false;
   constructor(private o: OpcionesSimulador = {}) { this.saldo = o.saldoInicial ?? 1000; this.ahora = o.ahora ?? (() => new Date()); }
+
+  /** Estado del «servidor» simulado (certificaciones, consumos, saldo, escenarios; las sesiones de API/tokens son del transporte y NO se guardan): se guarda y se restaura para sobrevivir a reinicios. */
+  exportar() { return { certificados: this.certificados, consumos: this.consumos, llamadas: this.llamadas.slice(-500), saldo: this.saldo, contador: this.contador, escenarios: this.escenarios, escenariosAnulacion: this.escenariosAnulacion, indeterminados: this.indeterminados, anulacionesPorReferencia: this.anulacionesPorReferencia }; }
+  // deno-lint-ignore no-explicit-any
+  importar(x: any) {
+    this.certificados.length = 0; this.certificados.push(...(x.certificados ?? [])); this.consumos.length = 0; this.consumos.push(...(x.consumos ?? [])); this.llamadas.length = 0; this.llamadas.push(...(x.llamadas ?? []));
+    this.saldo = x.saldo ?? this.saldo; this.contador = x.contador ?? 0; this.escenarios = x.escenarios ?? {}; this.escenariosAnulacion = x.escenariosAnulacion ?? {}; this.indeterminados = x.indeterminados ?? new Set();
+    this.anulacionesPorReferencia.clear(); for (const [k, v] of (x.anulacionesPorReferencia ?? new Map()) as Map<string, string>) this.anulacionesPorReferencia.set(k, v);
+  }
 
   /** Transporte listo para inyectar en DigifactProvider. */
   readonly transporte: Transporte = (p) => this.manejar(p);

@@ -13,6 +13,7 @@ import { Sesiones } from "./sesiones.ts";
 import { PERSONAS, esMaestro } from "./mundo_practico.ts";
 import type { Persona } from "./almacen.ts";
 import { crearPractico, ErrorPr } from "./api_practico.ts";
+import { PersistenciaSimuladores } from "./simuladores.ts";
 import { EMPRESA, type Sembrado } from "./mundo_demo.ts";
 
 export const ESCENARIOS: { id: Escenario; nombre: string; explicacion: string }[] = [
@@ -43,6 +44,8 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
   const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
   const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa }) : null;
+  // estado de los simuladores en la base real (solo modo PostgreSQL con versión práctica): sobrevive a reinicios y es común a todas las instancias
+  const simPersist = pr ? new PersistenciaSimuladores(bd, { mock, ...Object.fromEntries(pr.registro.listar().filter((x) => x.persistible).map((x) => [x.id, x.persistible!])) }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
   const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, base, ganchos);
   const orqRec = () => new OrquestadorDb(bd.rpc, pr ? new ProveedorEnrutado(bd.rpc, { mock: base, ...Object.fromEntries(pr.registro.listar().map((x) => [x.id, x.proveedor])) }, base) : base);   // conciliar / recuperar: cada operación con SU proveedor
@@ -275,8 +278,13 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const url = new URL(req.url);
       if (pr) { const s = await pr.rutasSesion(req, url); if (s) return s; }   // inicio y cierre de sesión (no requieren sesión previa)
       const a = await actor(req);
-      if (pr && esMaestro(a.clave)) return await pr.rutasMaestro(req, url, a);   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
-      return await alcance.run({ empresa: (await personaDe(a.clave))?.empresa ?? EMPRESA }, () => manejar(req, url));
+      const atender = async () => {
+        if (pr && esMaestro(a.clave)) return await pr.rutasMaestro(req, url, a);   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
+        return await alcance.run({ empresa: (await personaDe(a.clave))?.empresa ?? EMPRESA }, () => manejar(req, url));
+      };
+      if (!simPersist?.activa) return await atender();
+      if (req.method === "GET" || req.method === "HEAD") { await simPersist.sincronizar(); return await atender(); }
+      return await simPersist.con(atender);   // toda operación que escribe: estado de los simuladores cargado → atender → guardado, en exclusión mutua
     }
     catch (e) {
       const cab = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };

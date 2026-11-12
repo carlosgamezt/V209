@@ -5,6 +5,7 @@ import { DigifactSimulador } from "./digifact_simulador.ts";
 import { CertificadorBSimulado } from "./certificador_b.ts";
 import { ServicioCertificador } from "./servicio_digifact.ts";
 import type { Rpc } from "./rpc.ts";
+import type { Persistible } from "./persistible.ts";
 
 export interface Escenario { id: string; nombre: string; explicacion?: string }
 /** Controles de la SIMULACIÓN de un certificador (no existen en un certificador real). */
@@ -13,7 +14,7 @@ export interface Simulacion {
   saldoReportado(): number; sumarSaldo(unidades: number): void; certificaciones(): number; llamadas(): number;
   consumoAjeno(): void; omitirUltimoConsumo(): boolean;
 }
-export interface DescriptorCertificador { id: string; nombre: string; simulado: true; soportaAnulacion: boolean; escenarios: Escenario[]; escenariosAnulacion: Escenario[]; proveedor: ProveedorAnulacion; simulacion: Simulacion; servicio: ServicioCertificador }
+export interface DescriptorCertificador { id: string; nombre: string; simulado: true; soportaAnulacion: boolean; escenarios: Escenario[]; escenariosAnulacion: Escenario[]; proveedor: ProveedorAnulacion; simulacion: Simulacion; /** Estado del servidor simulado, para guardarlo y restaurarlo (reinicios). */ persistible?: Persistible; servicio: ServicioCertificador }
 
 export const ESCENARIOS_ENVIO: Escenario[] = [
   { id: "exito", nombre: "Éxito", explicacion: "El certificador (simulado) certifica y responde bien." },
@@ -42,11 +43,11 @@ export function registroSimulado(rpc: Rpc): RegistroCertificadores {
   const b = new CertificadorBSimulado(5000);
   const esc = (x: string[]) => ESCENARIOS_ENVIO.filter((e) => x.includes(e.id));
   return new RegistroCertificadores()
-    .registrar({ id: "digifact", nombre: "Digifact (simulado)", simulado: true, soportaAnulacion: true, escenarios: ESCENARIOS_ENVIO, escenariosAnulacion: [...ESCENARIOS_ANULACION, { id: "indeterminado", nombre: "Sin forma de saberlo" }], proveedor: prov, servicio: new ServicioCertificador(rpc, prov, undefined, "digifact"),
+    .registrar({ id: "digifact", nombre: "Digifact (simulado)", simulado: true, persistible: sim, soportaAnulacion: true, escenarios: ESCENARIOS_ENVIO, escenariosAnulacion: [...ESCENARIOS_ANULACION, { id: "indeterminado", nombre: "Sin forma de saberlo" }], proveedor: prov, servicio: new ServicioCertificador(rpc, prov, undefined, "digifact"),
       simulacion: { fijarEscenario: (d, i) => sim.fijarEscenario(d, i as never), fijarEscenarioAnulacion: (d, i) => sim.fijarEscenarioAnulacion(d, i as never), escenarioDe: (d) => sim.escenarioDe(d), saldoReportado: () => sim.saldo, sumarSaldo: (n) => { sim.saldo += n; },
         certificaciones: () => sim.certificados.length, llamadas: () => sim.llamadas.length, consumoAjeno: () => sim.inyectarConsumoAjeno(`AJENO-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, "1.000000"),
         omitirUltimoConsumo: () => { const u = [...sim.consumos].reverse().find((c) => c.evento === "CERTIFICACION"); if (!u) return false; sim.omitirConsumo(u.referencia); return true; } } })
-    .registrar({ id: "certificador_b", nombre: "Certificador B (simulado)", simulado: true, soportaAnulacion: true, escenarios: esc(["exito", "rechazo", "timeout_antes", "timeout_despues", "corte_despues", "respuesta_ilegible", "timeout_indeterminado", "caida"]), escenariosAnulacion: ESCENARIOS_ANULACION.filter((e) => e.id !== "indeterminado"), proveedor: b, servicio: new ServicioCertificador(rpc, b, undefined, "certificador_b"),
+    .registrar({ id: "certificador_b", nombre: "Certificador B (simulado)", simulado: true, persistible: b, soportaAnulacion: true, escenarios: esc(["exito", "rechazo", "timeout_antes", "timeout_despues", "corte_despues", "respuesta_ilegible", "timeout_indeterminado", "caida"]), escenariosAnulacion: ESCENARIOS_ANULACION.filter((e) => e.id !== "indeterminado"), proveedor: b, servicio: new ServicioCertificador(rpc, b, undefined, "certificador_b"),
       simulacion: { fijarEscenario: (d, i) => b.fijarEscenario(d, i as never), fijarEscenarioAnulacion: (d, i) => b.fijarEscenarioAnulacion(d, i as never), escenarioDe: (d) => b.escenarioDe(d), saldoReportado: () => b.saldo, sumarSaldo: (n) => { b.saldo += n; },
         certificaciones: () => b.certificaciones, llamadas: () => b.llamadas, consumoAjeno: () => b.inyectarConsumoAjeno(`AJENO-B-${crypto.randomUUID().slice(0, 8).toUpperCase()}`), omitirUltimoConsumo: () => b.omitirUltimoConsumo() } });
 }

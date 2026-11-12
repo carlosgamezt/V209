@@ -2,7 +2,7 @@
 // demostración, con el canal «portal_playwright» (ambiente simulado) como canal de la empresa. Solo para pruebas locales: 127.0.0.1, sin credenciales ni red externa.
 // Añade unas pocas rutas /prueba/* (SOLO aquí, nunca en la demostración): configurar el destino del simulador, listar órdenes y forzar el vencimiento de un arrendamiento.
 // Uso: deno run -A nexa_prueba.ts --puerto=9700   (imprime «PRUEBA_LISTA {json}» cuando está lista)
-import { crearBd } from "../../demo-facturacion/src/bd.ts";
+import { crearBd } from "../../demo-facturacion/src/bd_memoria.ts";
 import { sembrar } from "../../demo-facturacion/src/mundo_demo.ts";
 import { crearApi } from "../../demo-facturacion/src/api.ts";
 import { montarAgente } from "../../demo-facturacion/src/agente_demo.ts";
