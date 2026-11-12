@@ -11,7 +11,7 @@ const uuid = () => crypto.randomUUID();
 export interface Mundo { empresa: string; propietario: string; admin2: string; emisor: string; lector: string; establecimiento: string; canal: string; cliente: string }
 
 export async function nuevoMundo(cx: ConexionPg): Promise<Mundo> {
-  const { sql } = cx, n = ++secuencia * 7919 + Math.floor(Math.random() * 1000), nit = `${String(n).padStart(7, "0").slice(-7)}-${n % 10}`;
+  const { sql } = cx, n = 1_000_000 + (++secuencia + crypto.getRandomValues(new Uint32Array(1))[0]) % 8_900_000, nit = `${String(n).padStart(7, "0")}-${n % 10}`;   // NIT ficticio aleatorio de 7 dígitos: sin colisiones entre archivos de prueba que comparten la base
   const m: Mundo = { empresa: uuid(), propietario: uuid(), admin2: uuid(), emisor: uuid(), lector: uuid(), establecimiento: "", canal: "", cliente: "" };
   for (const [k, id] of Object.entries({ propietario: m.propietario, admin2: m.admin2, emisor: m.emisor, lector: m.lector })) {
     await sql.unsafe("insert into auth.users (id, email) values ($1, $2)", [id, `${k}-${id.slice(0, 8)}@fel.test`]);
