@@ -27,12 +27,16 @@ export class Sesiones {
   async cambiarClave(usuario: string, clave: string) { await this.registrar(usuario, clave); for (const [id, s] of this.sesiones) if (s.usuario === usuario) this.sesiones.delete(id); }
 
   /** Devuelve la sesión nueva o null. El mismo mensaje para usuario inexistente y contraseña errónea. */
-  async entrar(usuario: string, clave: string, recordar: boolean): Promise<{ sesion: Sesion | null; bloqueado: boolean }> {
+  async entrar(usuario: string, clave: string, recordar: boolean, segundo?: (u: string) => Promise<"ok" | "falta" | "mal">): Promise<{ sesion: Sesion | null; bloqueado: boolean; mfa?: "falta" | "mal" }> {
     const f = this.fallos.get(usuario);
     if (f && f.n >= MAX_FALLOS && f.hasta > this.ahora()) return { sesion: null, bloqueado: true };
     const c = this.cuentas.get(usuario);
     const sal = c?.sal ?? new Uint8Array(16), calculado = await derivar(clave, sal);
     if (!c || !iguales(calculado, c.hash)) { const n = (f && f.hasta > this.ahora() ? f.n : 0) + 1; this.fallos.set(usuario, { n, hasta: this.ahora() + BLOQUEO_MS }); return { sesion: null, bloqueado: false }; }
+    if (segundo) {   // segundo factor (TOTP): sin él no hay sesión; un código equivocado cuenta como intento fallido, uno ausente no
+      const f = await segundo(usuario);
+      if (f !== "ok") { if (f === "mal") { const n = (this.fallos.get(usuario)?.n ?? 0) + 1; this.fallos.set(usuario, { n, hasta: this.ahora() + BLOQUEO_MS }); } return { sesion: null, bloqueado: false, mfa: f }; }
+    }
     this.fallos.delete(usuario);
     const s: Sesion = { id: hex(crypto.getRandomValues(new Uint8Array(32))), usuario, creada: this.ahora(), ultima: this.ahora(), recordar };
     this.sesiones.set(s.id, s); return { sesion: s, bloqueado: false };

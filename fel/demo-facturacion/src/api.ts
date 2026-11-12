@@ -37,11 +37,11 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string> } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
-  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones }) : null;
+  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
   const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, base, ganchos);
   const orqRec = () => new OrquestadorDb(bd.rpc, pr ? new ProveedorEnrutado(bd.rpc, { mock: base, digifact: pr.proveedor }, base) : base);   // conciliar / recuperar: cada operación con SU proveedor

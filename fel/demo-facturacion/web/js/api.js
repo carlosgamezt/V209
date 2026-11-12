@@ -40,8 +40,9 @@ export const api = {
   anular: (id, clave, motivo, escenario) => llamar("POST", `/api/documentos/${id}/anular`, { clave, motivo, escenario }),
   conciliarAnulacion: (op) => llamar("POST", `/api/operaciones/${op}/conciliar-anulacion`, {}),
   plan: () => llamar("GET", "/api/plan"),
+  panel: () => llamar("GET", "/api/panel"), usuarios: () => llamar("GET", "/api/usuarios"), crearUsuario: (u) => llamar("POST", "/api/usuarios", u), actualizarUsuario: (id, cambios) => llamar("POST", `/api/usuarios/${id}/actualizar`, cambios),
   sesion: () => llamar("GET", "/api/sesion"),
-  entrar: (usuario, clave, recordar) => llamar("POST", "/api/sesion/entrar", { usuario, clave, recordar }),
+  entrar: (usuario, clave, recordar, codigo) => llamar("POST", "/api/sesion/entrar", { usuario, clave, recordar, codigo }),
   salir: () => llamar("POST", "/api/sesion/salir", {}),
   pl: {
     resumen: () => llamar("GET", "/api/plataforma/resumen"), planes: () => llamar("GET", "/api/plataforma/planes"), empresaPlan: (id) => llamar("GET", `/api/plataforma/empresas/${id}/plan`),

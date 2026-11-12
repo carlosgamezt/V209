@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { ErrorBd, type Rpc } from "../../proveedores/src/rpc.ts";
 
 const RAIZ = fileURLToPath(new URL("../../", import.meta.url));   // carpeta «fel/» (válido también en Windows)
-const LISTAS = new Set(["fel_sys_operaciones_pendientes", "fel_sys_fallidas_manuales_recientes", "fel_sys_artefactos_faltantes", "fel_sys_ordenes_para_cerrar", "fel_op_agentes_listar"]);
+const LISTAS = new Set(["fel_sys_operaciones_pendientes", "fel_sys_fallidas_manuales_recientes", "fel_sys_artefactos_faltantes", "fel_sys_ordenes_para_cerrar", "fel_op_agentes_listar", "fel_op_miembros_listar"]);
 
 export interface BdDemo { db: PGlite; rpc: Rpc; filas: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]> }
 

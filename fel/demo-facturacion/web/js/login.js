@@ -10,6 +10,8 @@ export function pantallaLogin(raiz, sesion, alEntrar) {
   usuario.value = "ana";
   const clave = h("input", { id: "login-clave", type: "password", "aria-label": "Contraseña", autocomplete: "current-password", placeholder: "Contraseña", maxlength: 80 });
   const recordar = h("input", { type: "checkbox", id: "login-recordar", "aria-label": "Recordar este dispositivo" });
+  const codigo = h("input", { id: "login-codigo", "aria-label": "Código de verificación", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, placeholder: "000000" });
+  const campoCodigo = campo("Código de verificación (6 dígitos)", codigo, { ayuda: "Verificación en dos pasos con tu aplicación de autenticación." }); campoCodigo.hidden = true;
   const ayuda = h("small", { class: "campo-ayuda", id: "login-ayuda" }, "");
   const describir = () => { ayuda.textContent = sesion.usuarios.find((u) => u.clave === usuario.value)?.descripcion ?? ""; };
   usuario.addEventListener("change", describir); describir();
@@ -17,14 +19,14 @@ export function pantallaLogin(raiz, sesion, alEntrar) {
   const entrar = async (ev) => {
     ev?.preventDefault(); if (ocupado) return; err.textContent = ""; if (!clave.value) { err.textContent = "Escribe la contraseña."; clave.focus(); return; }
     ocupado = true; b.disabled = true;
-    try { await api.entrar(usuario.value, clave.value, recordar.checked); await alEntrar(); }
-    catch (e) { err.textContent = mensajeError(e); clave.select(); } finally { ocupado = false; b.disabled = false; }
+    try { await api.entrar(usuario.value, clave.value, recordar.checked, codigo.value.trim() || undefined); await alEntrar(); }
+    catch (e) { err.textContent = mensajeError(e); if (e.codigo === "mfa_requerido" || e.codigo === "mfa_incorrecto") { campoCodigo.hidden = false; codigo.focus(); codigo.select(); } else clave.select(); } finally { ocupado = false; b.disabled = false; }
   };
   const b = boton("Entrar", { id: "login-entrar", icon: "lock", onclick: entrar });
   poner(raiz, h("main", { class: "login-pagina" }, h("form", { class: "login-tarjeta", onsubmit: entrar, "aria-labelledby": "login-titulo" },
     h("div", { class: "login-marca" }, h("span", { class: "marca-logo" }, "N"), h("div", {}, h("h1", { id: "login-titulo" }, "Nexa FEL"), h("p", { class: "mut" }, "Facturación electrónica"))),
     h("div", { class: "banda-simulado login-banda", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", {}, "Demostración: no se conecta a SAT ni a ningún certificador.")),
-    campo("Usuario", usuario, {}), ayuda, campo("Contraseña", clave, {}),
+    campo("Usuario", usuario, {}), ayuda, campo("Contraseña", clave, {}), campoCodigo,
     h("label", { class: "login-recordar" }, recordar, h("span", {}, "Recordar este dispositivo"), h("small", { class: "mut" }, "Mantiene la sesión hasta 7 días sin actividad (14 como máximo). No lo uses en equipos compartidos.")),
     err, b,
     h("p", { class: "aviso aviso-azul login-demo" }, icono("info"), sesion.clave_demo ? h("span", {}, "Demostración con personas ficticias. Contraseña de todos los usuarios: ", h("strong", { class: "mono" }, sesion.clave_demo))

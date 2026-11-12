@@ -65,6 +65,13 @@ function arrancar() {
   // anulación simulada
   await p.goto(docUrl); await p.waitForSelector("#anular"); await p.click("#anular"); await p.fill('textarea[aria-label="Motivo"]', "Error en los datos del receptor"); await p.getByRole("button", { name: "Anular", exact: true }).last().click(); await toast(p, "Documento anulado (simulación)"); await p.waitForSelector(".doc-cab .tag >> text=Anulado"); await foto(p, "pc-09-anulado.png");
   await p.goto(`${srv.url}/#/plan`); await p.waitForSelector('[data-panel="consumos"]'); assert.match(await p.locator('[data-panel="consumos"]').innerText(), /Anulación/); assert.match(await p.locator('[data-panel="plan-resumen"]').innerText(), /Q 97\.50/, "anular no se cobra");
+  // PDF de demostración, panel con indicadores y reportes, usuarios y roles
+  await p.goto(docUrl); await p.waitForSelector("#pdf-demo"); const [dPdf] = await Promise.all([p.waitForEvent("download"), p.click("#pdf-demo")]); const rutaPdf = await dPdf.path(); assert.match(dPdf.suggestedFilename(), /^NO-FISCAL-DEMO-/); assert.match(fs.readFileSync(rutaPdf, "latin1"), /DOCUMENTO NO FISCAL/);
+  await p.goto(`${srv.url}/#/panel`); await p.waitForSelector('[data-panel="indicadores"]'); assert.match(await p.locator('[data-panel="indicadores"]').innerText(), /Documentos/); assert.ok(await p.locator(".barra-col").count() === 14); await foto(p, "pc-09b-panel.png");
+  const [dCsv] = await Promise.all([p.waitForEvent("download"), p.click("#reporte-documentos")]); assert.match(fs.readFileSync(await dCsv.path(), "utf8"), /BR-0001/);
+  await p.goto(`${srv.url}/#/usuarios`); await p.waitForSelector('[data-panel="usuarios"]'); await p.click("#nuevo-usuario"); await p.fill('input[aria-label="Nombre del usuario"]', "Carla Gómez"); await p.fill('input[aria-label="Usuario nuevo"]', "carla"); await p.fill('input[aria-label="Contraseña del usuario nuevo"]', "clave-carla-1234");
+  await p.selectOption('select[aria-label="Rol del usuario nuevo"]', "emisor"); await p.click("#guardar-formulario"); await p.waitForSelector('[data-panel="usuarios"] >> text=Carla Gómez'); await foto(p, "pc-09c-usuarios.png");
+  await p.selectOption('select[aria-label="Rol de Carla Gómez"]', "lector"); await toast(p, "Usuario actualizado");
   await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
   assert.equal((await cPc.cookies()).find((x) => x.name === "fel_sid")?.value ?? "", "", "la cookie se borra al cerrar sesión");
 
@@ -109,7 +116,7 @@ function arrancar() {
   assert.ok(cacheadas.length > 0 && cacheadas.every((x) => /^\/(web|app)\/|^\/manifest/.test(x)), "solo recursos estáticos en caché: " + cacheadas.join(","));
   assert.ok(!cacheadas.some((x) => x.startsWith("/api/")), "la API nunca se guarda en caché");
   await m.goto(`${srv.url}/#/nueva`); await m.waitForSelector('select[aria-label="Receptor"]'); await foto(m, "mov-03-nueva.png"); await sinDesborde(m, "nueva factura");
-  for (const [ruta, sel, nombre] of [["/plan", '[data-panel="consumos"]', "plan"], ["/clientes", ".lista", "clientes"], ["/config", ".tabs", "config"]]) { await m.goto(`${srv.url}/#${ruta}`); await m.waitForSelector(sel); await foto(m, `mov-04-${nombre}.png`); await sinDesborde(m, nombre); }
+  for (const [ruta, sel, nombre] of [["/panel", '[data-panel="indicadores"]', "panel"], ["/usuarios", '[data-panel="usuarios"]', "usuarios"], ["/plan", '[data-panel="consumos"]', "plan"], ["/clientes", ".lista", "clientes"], ["/config", ".tabs", "config"]]) { await m.goto(`${srv.url}/#${ruta}`); await m.waitForSelector(sel); await foto(m, `mov-04-${nombre}.png`); await sinDesborde(m, nombre); }
   await m.click("#cerrar-sesion-cab"); await m.waitForSelector("#login-usuario");   // en el teléfono se sale desde la barra superior
   const { c: cMov2, p: m2 } = await nuevoCtx({ ...devices["Pixel 7"] });   // otra persona en otro teléfono: el administrador de la plataforma
   await entrar(m2, "maestro"); await m2.waitForSelector('[data-panel="empresas"]'); await foto(m2, "mov-05-plataforma.png"); await sinDesborde(m2, "plataforma");

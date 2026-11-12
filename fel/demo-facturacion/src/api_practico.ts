@@ -9,6 +9,8 @@ import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
 import { PERSONAS, EXTRA, esMaestro } from "./mundo_practico.ts";
 import { Sesiones } from "./sesiones.ts";
+import { pdfDemo } from "./pdf_demo.ts";
+import { verificar as verificarTotp } from "./totp.ts";
 
 export class ErrorPr extends Error { constructor(public status: number, mensaje: string, public codigo = "error") { super(mensaje); } }
 type Obj = Record<string, unknown>;
@@ -34,7 +36,7 @@ export const ESCENARIOS_ANULACION: { id: EscenarioAnulacion; nombre: string }[] 
 ];
 const ESC_D = new Set(ESCENARIOS_DIGIFACT.map((e) => e.id)), ESC_A = new Set(ESCENARIOS_ANULACION.map((e) => e.id));
 
-interface Deps { mock: MockProvider; emp: () => string; sesiones?: Sesiones }
+interface Deps { mock: MockProvider; emp: () => string; sesiones?: Sesiones; mfa?: Map<string, string> }
 interface CtxEmpresa { req: Request; url: URL; a: { clave: string; id: string }; ruta: string; m: string; cuerpo: () => Promise<Obj>; id: (x: string) => string;
   json: (x: unknown, s?: number) => Response; canalDe: (p: string) => Promise<string>; detalle: (id: string) => Promise<unknown>; permisos: () => Promise<string[]> }
 
@@ -104,7 +106,10 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       }
       if (req.method === "POST" && url.pathname === "/api/sesion/entrar") {
         const b = await leer(req); const usuario = String(b.usuario ?? "").toLowerCase().trim();
-        const r = await S.entrar(usuario in PERSONAS ? usuario : "-", String(b.clave ?? ""), b.recordar === true);
+        const segundo = d.mfa ? async (u: string) => { const sem = d.mfa!.get(u); if (!sem) return "ok" as const; const c = String(b.codigo ?? "").trim(); return c === "" ? "falta" as const : (await verificarTotp(sem, c)) ? "ok" as const : "mal" as const; } : undefined;
+        const r = await S.entrar(usuario in PERSONAS ? usuario : "-", String(b.clave ?? ""), b.recordar === true, segundo);
+        if (r.mfa === "falta") return json({ codigo: "mfa_requerido", mensaje: "Escribe el código de 6 dígitos de tu aplicación de autenticación." }, 401);
+        if (r.mfa === "mal") return json({ codigo: "mfa_incorrecto", mensaje: "El código no es correcto o venció. Inténtalo con el siguiente." }, 401);
         if (r.bloqueado) return json({ codigo: "bloqueado", mensaje: "Demasiados intentos. Espera un minuto e inténtalo de nuevo." }, 429);
         if (!r.sesion) return json({ codigo: "credenciales", mensaje: "Usuario o contraseña incorrectos." }, 401);
         return new Response(JSON.stringify({ autenticado: true, usuario: r.sesion.usuario, nombre: PERSONAS[r.sesion.usuario].nombre }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "set-cookie": Sesiones.cookie(r.sesion, seguro(req)) } });
@@ -119,6 +124,71 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     // ---------------------------------------------------------------- rutas de una empresa
     async rutasEmpresa(c: CtxEmpresa): Promise<Response | null> {
       const { m, ruta, a } = c; let r: RegExpExecArray | null; const E = d.emp();
+      // ---------------- usuarios, roles y permisos de la empresa (las reglas de jerarquía viven en la base)
+      if (m === "GET" && ruta === "/api/usuarios") {
+        const permisos = await c.permisos(); if (!permisos.includes("usuarios.ver")) throw new ErrorPr(403, "No tienes permiso para ver los usuarios", "no_autorizado");
+        const miembros = await bd.rpc("fel_op_miembros_listar", { p_actor: a.id, p_empresa: E }) as Obj[];
+        const invitaciones = await bd.filas<Obj>("select id, email, rol, estado, expira_en from public.invitaciones where empresa_id = $1 and estado = 'pendiente' order by creado_en desc", [E]);
+        const roles = await bd.filas<Obj>("select rol, array_agg(permiso order by permiso) as permisos from public.rol_permisos group by rol order by case rol when 'propietario' then 0 when 'administrador' then 1 when 'emisor' then 2 else 3 end");
+        const catalogo = await bd.filas<Obj>("select codigo, descripcion from public.permisos_catalogo order by codigo");
+        const claveDe = (uid: unknown) => Object.entries(PERSONAS).find(([, p]) => p.id === uid)?.[0] ?? null;
+        return c.json({ miembros: miembros.map((x) => ({ ...x, usuario: claveDe(x.user_id) })), invitaciones, roles, catalogo, puedeGestionar: permisos.includes("usuarios.gestionar"), yo: a.id });
+      }
+      if (m === "POST" && ruta === "/api/usuarios") {   // alta de una persona de la demostración: invitación real (con su chequeo de jerarquía) + cuenta + aceptación
+        const b = await c.cuerpo(); const usuario = texto(b.usuario, 3, 20, "Usuario").toLowerCase(), nombre = texto(b.nombre, 3, 80, "Nombre"), clave = texto(b.clave, 8, 80, "Contraseña"), rol = String(b.rol);
+        if (!/^[a-z][a-z0-9_]{2,19}$/.test(usuario)) throw new ErrorPr(400, "Usuario: letras minúsculas, números o guion bajo (3 a 20)", "entrada_invalida");
+        if (!["administrador", "emisor", "lector"].includes(rol)) throw new ErrorPr(400, "Rol no válido", "entrada_invalida");
+        if (usuario in PERSONAS) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const email = `${usuario}@demo.example`;
+        await bd.rpc("fel_op_invitacion_registrar", { p_actor: a.id, p_empresa: E, p_email: email, p_rol: rol, p_permisos_extra: [] });   // aquí se valida que quien invita puede dar ese rol
+        const uid = crypto.randomUUID(); await bd.db.query("insert into auth.users (id, email, email_confirmed_at) values ($1, $2, now())", [uid, email]); await bd.db.query("insert into public.perfiles (user_id, nombre) values ($1, $2) on conflict (user_id) do update set nombre = excluded.nombre", [uid, nombre]);
+        await bd.rpc("fel_op_invitacion_aceptar", { p_user: uid, p_email: email });
+        PERSONAS[usuario] = { id: uid, nombre, rol, descripcion: `${rol} de la empresa`, empresa: E }; await d.sesiones?.registrar(usuario, clave);
+        return c.json({ ok: true, usuario });
+      }
+      if (m === "POST" && (r = /^\/api\/usuarios\/([^/]+)\/actualizar$/.exec(ruta))) {
+        const b = await c.cuerpo(); const uid = c.id(r[1]);
+        await bd.rpc("fel_op_miembro_actualizar", { p_actor: a.id, p_empresa: E, p_user: uid, p_rol: typeof b.rol === "string" ? b.rol : null, p_permisos_extra: null, p_permisos_revocados: null, p_activo: typeof b.activo === "boolean" ? b.activo : null });
+        return c.json({ ok: true });
+      }
+      // ---------------- panel (indicadores) y reportes
+      if (m === "GET" && ruta === "/api/panel") {
+        const permisos = await c.permisos(); if (!permisos.includes("borradores.ver")) throw new ErrorPr(403, "No tienes permiso para ver el panel", "no_autorizado");
+        const [est] = await bd.filas<Obj>(`select count(*)::int as total, count(*) filter (where estado_preparacion = 'borrador' and estado_fiscal = 'ninguno')::int as borradores, count(*) filter (where estado_preparacion = 'revisado' and estado_fiscal = 'ninguno')::int as revisados,
+            count(*) filter (where estado_fiscal = 'certificado')::int as certificados, count(*) filter (where estado_fiscal = 'anulado')::int as anulados, count(*) filter (where estado_fiscal = 'por_verificar')::int as por_verificar,
+            count(*) filter (where estado_fiscal = 'rechazado')::int as rechazados, coalesce(sum(base_imponible) filter (where estado_fiscal = 'certificado'), 0)::text as base_certificada from public.documentos where empresa_id = $1`, [E]);
+        const serie = await bd.filas<Obj>(`select to_char(g.d, 'YYYY-MM-DD') as dia, coalesce(x.n, 0)::int as certificados from generate_series(current_date - 13, current_date, interval '1 day') as g(d)
+            left join (select (resuelta_en at time zone 'America/Guatemala')::date as dia, count(*) as n from public.operaciones_fiscales where empresa_id = $1 and tipo = 'certificacion' and estado = 'confirmada_exitosa' group by 1) x on x.dia = g.d::date order by g.d`, [E]);
+        const clientes = await bd.filas<Obj>(`select c.nombre, count(*)::int as documentos, sum(d.base_imponible)::text as base from public.documentos d join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.empresa_id = $1 and d.estado_fiscal = 'certificado' group by c.nombre order by sum(d.base_imponible) desc limit 5`, [E]);
+        const pendientes = await bd.filas<Obj>("select id, numero_borrador, estado_fiscal from public.documentos where empresa_id = $1 and (estado_fiscal in ('por_verificar','pendiente_certificacion') or exists (select 1 from public.alertas_fiscales a where a.documento_id = documentos.id and a.resuelta_en is null)) order by actualizado_en desc limit 5", [E]);
+        return c.json({ documentos: est, serie, clientes, pendientes, plan: permisos.includes("facturacion.ver") ? await planDe(E) : null, aviso: "Cifras de la SIMULACIÓN: sin valor fiscal." });
+      }
+      if (m === "GET" && (r = /^\/api\/reportes\/(documentos|consumos)\.csv$/.exec(ruta))) {
+        const permisos = await c.permisos(); const celda = (v: unknown) => { let s = v === null || v === undefined ? "" : v instanceof Date ? v.toISOString() : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r;]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; };
+        let filas: Obj[], cols: string[];
+        if (r[1] === "documentos") {
+          if (!permisos.includes("borradores.ver")) throw new ErrorPr(403, "No tienes permiso para este reporte", "no_autorizado");
+          cols = ["borrador", "fecha_prevista", "receptor", "identificacion", "estado", "estado_fiscal", "base_imponible", "serie", "numero", "autorizacion_simulada"];
+          filas = await bd.filas<Obj>(`select 'BR-' || lpad(d.numero_borrador::text, 4, '0') as borrador, d.fecha_emision_prevista::text as fecha_prevista, cl.nombre as receptor, cl.numero_identificacion as identificacion, d.estado_preparacion as estado, d.estado_fiscal, d.base_imponible::text as base_imponible,
+              d.serie, d.numero_fiscal as numero, d.autorizacion_sat as autorizacion_simulada from public.documentos d left join public.clientes cl on cl.id = d.cliente_id and cl.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador`, [E]);
+        } else {
+          if (!permisos.includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para este reporte", "no_autorizado");
+          cols = ["fecha", "evento", "documento", "estado", "unidades", "cargado"];
+          filas = await bd.filas<Obj>(`select to_char(c.reservado_en at time zone 'America/Guatemala', 'YYYY-MM-DD HH24:MI') as fecha, c.evento_tipo as evento, 'BR-' || lpad(d.numero_borrador::text, 4, '0') as documento, c.estado, case when c.estado = 'confirmado' then c.unidades_consumidas else c.unidades_reservadas end::text as unidades,
+              (select coalesce(sum(g.monto), 0) from public.cargos g where g.consumo_id = c.id)::text as cargado from public.consumos c left join public.documentos d on d.id = c.documento_id and d.empresa_id = c.empresa_id where c.empresa_id = $1 order by c.reservado_en`, [E]);
+        }
+        const csv = "\uFEFF" + [cols.join(","), ...filas.map((f) => cols.map((k) => celda(f[k])).join(","))].join("\r\n") + "\r\n# SIMULADO - SIN VALOR FISCAL\r\n";
+        return new Response(csv, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="SIMULADO-${r[1]}.csv"`, "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+      }
+      if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)\/pdf-demo$/.exec(ruta))) {
+        if (!(await c.permisos()).includes("borradores.ver")) throw new ErrorPr(403, "No tienes permiso para ver documentos", "no_autorizado");
+        const det = await c.detalle(c.id(r[1])) as { documento: Obj; lineas: Obj[] }; const [emp] = await bd.filas<Obj>("select razon_social, nit from public.empresas where id = $1", [E]); const dc = det.documento;
+        const ESTADO: Record<string, string> = { ninguno: "Sin estado fiscal", pendiente_certificacion: "Pendiente de certificación (simulación)", por_verificar: "Por verificar (simulación)", certificado: "Certificado en SIMULACIÓN", rechazado: "Rechazado (simulación)", anulado: "Anulado (simulación)", anulacion_solicitada: "Anulación solicitada (simulación)" };
+        const f = String(dc.fecha_emision_prevista ?? "").slice(0, 10).split("-").reverse().join("/");
+        const bytes = pdfDemo({ empresa: String(emp.razon_social), nit: String(emp.nit), receptor: String(dc.cliente_nombre ?? "Sin receptor"), receptorId: `${dc.cliente_tipo ?? ""} ${dc.cliente_numero ?? ""}`.trim(), fecha: f || "—", numeroBorrador: `BR-${String(dc.numero_borrador).padStart(4, "0")}`,
+          estado: dc.estado_fiscal === "ninguno" ? (dc.estado_preparacion === "revisado" ? "Revisado" : "Borrador") : ESTADO[String(dc.estado_fiscal)] ?? String(dc.estado_fiscal), serie: dc.serie as string | null, numero: dc.numero_fiscal as string | null, autorizacion: dc.autorizacion_sat as string | null,
+          lineas: det.lineas.map((l) => ({ descripcion: String(l.descripcion), cantidad: String(l.cantidad), precio: String(l.precio_unitario), neto: String((l.importes as Obj)?.neto ?? "0") })), subtotal: String(dc.subtotal ?? dc.base_imponible), descuento: String(dc.descuento_total ?? "0"), base: String(dc.base_imponible) });
+        return new Response(bytes as unknown as BodyInit, { headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="NO-FISCAL-DEMO-BR-${dc.numero_borrador}.pdf"`, "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+      }
       if (m === "GET" && ruta === "/api/plan") {
         if (!(await c.permisos()).includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para ver el plan y el consumo", "no_autorizado");
         return c.json(await planDe(E));

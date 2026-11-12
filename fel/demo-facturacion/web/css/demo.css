@@ -209,3 +209,9 @@ body{min-height:100vh}
 }
 .cab-salir{min-height:38px;padding:0 14px;margin-left:10px}
 @media(min-width:901px){.cab-salir{display:none}}   /* en PC el botón de salir está en el menú lateral */
+[hidden]{display:none!important}
+/* panel */
+.barras{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:18px}
+.barra-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px}
+.barra-v{display:block;width:100%;max-width:34px;min-height:3px;background:var(--pri);border-radius:6px 6px 0 0;opacity:.85}
+.barra-n{font-size:11px;font-weight:800;color:var(--mut);min-height:14px}.barra-col small{font-size:10.5px;color:var(--mut)}

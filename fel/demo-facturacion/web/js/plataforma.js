@@ -12,7 +12,7 @@ const num = (t) => String(Number(t));
 const claveNueva = () => crypto.randomUUID();
 const input = (a = {}) => h("input", { autocomplete: "off", ...a });
 
-function formulario({ titulo, campos, accion, textoBoton = "Guardar", ancho = "md" }) {
+export function formulario({ titulo, campos, accion, textoBoton = "Guardar", ancho = "md" }) {
   const err = h("p", { class: "err", role: "alert" }); let m;
   const b = boton(textoBoton, { id: "guardar-formulario", onclick: async () => {
     err.textContent = ""; b.disabled = true;

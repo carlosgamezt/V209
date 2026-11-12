@@ -7,6 +7,7 @@ import { crearBd } from "./src/bd.ts";
 import { sembrar } from "./src/mundo_demo.ts";
 import { CLAVE_DEMO, PERSONAS, sembrarPractico } from "./src/mundo_practico.ts";
 import { Sesiones } from "./src/sesiones.ts";
+import { semillaNueva, uriOtp } from "./src/totp.ts";
 import { crearApi } from "./src/api.ts";
 import { montarAgente } from "./src/agente_demo.ts";
 import { intervaloDesdeEntorno } from "../proveedores/src/supervisor_ordenes.ts";
@@ -31,7 +32,15 @@ const CLAVES: Record<string, string> = {};
 const aleatoria = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => "abcdefghjkmnpqrstuvwxyz23456789"[x % 31]).join("");
 if (sesiones) { sesiones.claveDemoPublica = ALEATORIAS ? null : CLAVE_DEMO; for (const k of Object.keys(PERSONAS)) { CLAVES[k] = ALEATORIAS ? aleatoria() : CLAVE_DEMO; await sesiones.registrar(k, CLAVES[k]); } }
 const agente = montarAgente(bd, { intervaloMs: intervaloDesdeEntorno(Deno.env.get("FEL_AGENTE_SUPERVISOR_MS")) });   // intervalo configurable (50 ms – 1 h; 15 s por defecto)
-const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true });
+// Verificación en dos pasos (TOTP) del administrador de la plataforma: obligatoria en modo remoto o con FEL_DEMO_MFA=1 (semillas fijas opcionales: FEL_DEMO_MFA_SEMILLAS="maestro=BASE32,maestro2=BASE32")
+const MFA = new Map<string, string>();
+if (sesiones && (ALEATORIAS || Deno.env.get("FEL_DEMO_MFA") === "1")) {
+  const fijas = Object.fromEntries((Deno.env.get("FEL_DEMO_MFA_SEMILLAS") ?? "").split(",").filter(Boolean).map((x) => x.split("=") as [string, string]));
+  for (const u of ["maestro", "maestro2"]) MFA.set(u, fijas[u] ?? semillaNueva());
+  console.log("\n  Verificación en dos pasos (aplicación de autenticación) para el administrador de la plataforma:");
+  for (const [u, s] of MFA) console.log(`    ${u.padEnd(9)} clave ${s}\n              ${uriOtp(u, s)}`);
+}
+const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;

@@ -6,6 +6,7 @@ import { quetzales } from "./dinero.js";
 import { PREPARACION, FISCAL } from "/app/js/formato.js";
 import { api, llamar, usuarioActual } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
+import { descargarArchivo } from "./descarga.js";
 
 let demoAbierto = false;   // los controles de la demostración permanecen abiertos mientras se usan
 const claves = new Map();   // una clave de idempotencia por intención: se conserva si repites el envío por un fallo de red
@@ -156,6 +157,10 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
   if (practico && anulAbierta?.estado === "desconocida") digifact.push(h("div", { class: "card", "data-panel": "anulacion-desconocida" }, h("h2", { class: "card-t" }, "Anulación por verificar"),
     h("p", { class: "mut" }, "No hubo respuesta utilizable. Consulta al proveedor: solo se cierra si él lo garantiza."),
     boton("Consultar a Digifact (anulación)", { tipo: "sec", icon: "search", id: "conciliar-anulacion", disabled: !ctx.tiene("fiscal.conciliar"), onclick: accion(() => api.conciliarAnulacion(anulAbierta.id), () => avisar("Consulta hecha")) })));
+
+  if (practico && ctx.tiene("borradores.ver")) digifact.push(h("div", { class: "card", "data-panel": "pdf-demo" }, h("h2", { class: "card-t" }, "PDF de demostración"),
+    h("p", { class: "mut" }, "Genera un PDF de este documento marcado en grande como «DOCUMENTO NO FISCAL · DEMOSTRACIÓN». No es una factura ni un DTE."),
+    boton("Descargar PDF de demostración", { tipo: "sec", icon: "file", id: "pdf-demo", onclick: async () => { try { await descargarArchivo(`/api/documentos/${doc.id}/pdf-demo`, `NO-FISCAL-DEMO-${doc.numero_borrador}.pdf`); } catch (e) { mostrarError(e); } } })));
 
   // ------------------------------------------------------------ línea de tiempo
   const linea = (() => {

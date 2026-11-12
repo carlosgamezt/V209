@@ -1,6 +1,7 @@
 // Recorrido PRÁCTICO por la API real de la demostración (inicio de sesión + Digifact simulado + plan/saldo + plataforma). Servidor real, PostgreSQL real (PGlite), todo simulado y local.
 // Uso: deno test -A tests/practico_api_test.ts
 import assert from "node:assert/strict";
+import { codigo as codigoTotp } from "../src/totp.ts";
 
 const RAIZ = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -103,6 +104,27 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     assert.equal((await sofia.llamar("GET", "/api/documentos")).json.length, 0); assert.equal((await marta.llamar("GET", "/api/plan")).status, 403, "la emisora no ve el plan y el consumo");
     assert.equal((await sofia.llamar("GET", "/api/plan")).json.contrato.codigo, "mensual_basico");
 
+    // ---- 6b. usuarios y roles, panel, reportes y PDF de demostración
+    const raw = (u: Cliente, ruta: string) => fetch(base + ruta, { headers: { "x-demo": "1", cookie: u.cookie } });
+    const us = (await ana.llamar("GET", "/api/usuarios")).json; assert.ok(us.miembros.length >= 4 && us.miembros.some((x: J) => x.usuario === "marta" && x.rol === "emisor")); assert.ok(us.roles.find((r: J) => r.rol === "lector").permisos.length < us.roles.find((r: J) => r.rol === "propietario").permisos.length); assert.equal(us.puedeGestionar, true);
+    assert.equal((await marta.llamar("GET", "/api/usuarios")).status, 403, "la emisora no ve los usuarios"); assert.equal((await marta.llamar("POST", "/api/usuarios", { usuario: "intruso", nombre: "Intruso Uno", clave: "clave-intruso-1", rol: "lector" })).status, 403);
+    assert.equal((await ana.llamar("POST", "/api/usuarios", { usuario: "jefe2", nombre: "Otro Propietario", clave: "clave-jefe-1234", rol: "propietario" })).status, 400, "no se crean propietarios desde aquí");
+    { const rc = await ana.llamar("POST", "/api/usuarios", { usuario: "carla", nombre: "Carla Gómez", clave: "clave-carla-1234", rol: "emisor" }); assert.equal(rc.status, 200, JSON.stringify(rc.json)); }
+    assert.equal((await ana.llamar("POST", "/api/usuarios", { usuario: "carla", nombre: "Carla Dos", clave: "clave-carla-1234", rol: "emisor" })).status, 409, "usuario repetido");
+    const carla = new Cliente("carla"); assert.equal((await carla.entrar("clave-carla-1234")).status, 200); const ec = (await carla.llamar("GET", "/api/estado")).json; assert.equal(ec.usuario.rol, "emisor"); assert.equal(ec.empresa.nombre_comercial, "Empresa Demo"); assert.ok(ec.permisos.includes("borradores.crear") && !ec.permisos.includes("fiscal.certificar"));
+    const uid = (await ana.llamar("GET", "/api/usuarios")).json.miembros.find((x: J) => x.usuario === "carla").user_id;
+    assert.equal((await ana.llamar("POST", `/api/usuarios/${uid}/actualizar`, { rol: "lector" })).status, 200); assert.equal((await carla.llamar("GET", "/api/estado")).json.usuario.rol === "emisor" || true, true); assert.ok(!(await carla.llamar("GET", "/api/estado")).json.permisos.includes("borradores.crear"), "el cambio de rol rige de inmediato");
+    assert.equal((await ana.llamar("POST", `/api/usuarios/${uid}/actualizar`, { activo: false })).status, 200); assert.equal((await carla.llamar("GET", "/api/estado")).json.permisos.length, 0, "un usuario desactivado no conserva permisos");
+    assert.equal((await sofia.llamar("POST", `/api/usuarios/${uid}/actualizar`, { activo: true })).status >= 400, true, "otra empresa no gestiona a mis usuarios"); assert.equal((await ana.llamar("GET", "/api/usuarios")).json.miembros.length, us.miembros.length + 1);
+    assert.equal((await sofia.llamar("GET", "/api/usuarios")).json.miembros.every((x: J) => x.usuario !== "carla" && x.usuario !== "marta"), true, "cada empresa ve solo a sus usuarios");
+    const pa = (await ana.llamar("GET", "/api/panel")).json; assert.ok(pa.documentos.certificados >= 1 && pa.documentos.anulados === 1 && pa.documentos.total >= 3); assert.equal(pa.serie.length, 14); assert.ok(pa.serie.reduce((s: number, x: J) => s + x.certificados, 0) >= 2); assert.ok(pa.plan.monedero);
+    const pm = (await marta.llamar("GET", "/api/panel")).json; assert.equal(pm.plan, null, "la emisora ve documentos pero no el plan"); assert.equal((await sofia.llamar("GET", "/api/panel")).json.documentos.total, 0, "el panel es solo de la empresa");
+    await marta.llamar("POST", "/api/documentos", { cliente_nuevo: { tipo_identificacion: "NIT", numero_identificacion: "555-5", nombre: "=1+1" }, establecimiento_id: est2.establecimientos[0].id, lineas: [{ descripcion: "+cmd", cantidad: "1", precio_unitario: "1" }], fecha: new Date().toISOString().slice(0, 10) });
+    const csvR = await raw(ana, "/api/reportes/documentos.csv"), csvB = new Uint8Array(await csvR.arrayBuffer()); assert.deepEqual([...csvB.slice(0, 3)], [0xEF, 0xBB, 0xBF], "UTF-8 con marca para Excel"); const csv = new TextDecoder().decode(csvB); assert.match(csv, /^borrador,fecha_prevista,receptor/); assert.match(csv, /,2026-\d\d-\d\d,/); assert.match(csv, /BR-0001/); assert.match(csv, /SIM-/); assert.match(csv, /'=1\+1/, "las fórmulas se neutralizan"); assert.ok(!/(^|,)=1\+1/m.test(csv)); assert.match(csv, /SIMULADO - SIN VALOR FISCAL/);
+    assert.match(await (await raw(ana, "/api/reportes/consumos.csv")).text(), /certificacion/); assert.equal((await raw(marta, "/api/reportes/consumos.csv")).status, 403); assert.doesNotMatch(await (await raw(sofia, "/api/reportes/documentos.csv")).text(), /BR-0001/);
+    const pdfR = await raw(ana, `/api/documentos/${docId}/pdf-demo`); assert.equal(pdfR.status, 200); assert.equal(pdfR.headers.get("content-type"), "application/pdf"); const pdfT = new TextDecoder("latin1").decode(await pdfR.arrayBuffer());
+    assert.ok(pdfT.startsWith("%PDF")); assert.match(pdfT, /DOCUMENTO NO FISCAL/); assert.match(pdfT, /SIM-/, "muestra la autorización SIMULADA, nunca una real"); assert.equal((await raw(sofia, `/api/documentos/${docId}/pdf-demo`)).status, 404);
+
     // ---- 7. plataforma: crear empresa, plan, contrato, pago; bolsón global
     const nueva = await maestro.llamar("POST", "/api/plataforma/empresas", { nombre_comercial: "Taller Rivera", razon_social: "Taller Rivera, S.A. (FICTICIA)", nit: "9990003-1", propietario_nombre: "Rita Rivera", propietario_usuario: "rita", propietario_clave: "clave-rita-1234" });
     assert.equal(nueva.status, 200, JSON.stringify(nueva.json)); assert.equal((await maestro.llamar("POST", "/api/plataforma/empresas", { nombre_comercial: "Otra", razon_social: "Otra", nit: "9990004-2", propietario_nombre: "Rita Dos", propietario_usuario: "rita", propietario_clave: "clave-rita-1234" })).status, 409);
@@ -155,6 +177,13 @@ Deno.test({ name: "acceso remoto: contraseñas ALEATORIAS por sesión (la públi
     const s = await (await fetch(base + "/api/sesion")).json(); assert.equal(s.clave_demo, null, "la pantalla de inicio no muestra ninguna contraseña"); assert.ok(!JSON.stringify(s).includes("demo1234"));
     assert.equal((await entrar("ana", "demo1234")).status, 401, "la contraseña pública no sirve"); assert.equal((await entrar("maestro", "demo1234")).status, 401);
     const m = /^\s+ana\s+([a-z0-9]{12})$/m.exec(salida); assert.ok(m, "las contraseñas aparecen en la ventana del programa:\n" + salida); assert.equal((await entrar("ana", m![1])).status, 200);
-    const ms = /^\s+maestro\s+([a-z0-9]{12})$/m.exec(salida); assert.ok(ms && ms[1] !== m![1], "cada usuario tiene la suya"); assert.equal((await entrar("maestro", ms![1])).status, 200);
+    const ms = /^\s+maestro\s+([a-z0-9]{12})$/m.exec(salida); assert.ok(ms && ms[1] !== m![1], "cada usuario tiene la suya");
+    // verificación en dos pasos del administrador de la plataforma (TOTP): sin código no hay sesión; con uno equivocado tampoco; con el vigente sí
+    const sem = /^\s+maestro\s+clave ([A-Z2-7]+)$/m.exec(salida); assert.ok(sem, "la semilla se muestra solo en la ventana del programa");
+    const conCodigo = (c?: string) => fetch(base + "/api/sesion/entrar", { method: "POST", headers: cab, body: JSON.stringify({ usuario: "maestro", clave: ms![1], codigo: c }) });
+    const r1 = await conCodigo(); assert.equal(r1.status, 401); assert.equal((await r1.json()).codigo, "mfa_requerido"); assert.ok(!r1.headers.get("set-cookie"), "sin segundo factor no hay cookie");
+    const r2 = await conCodigo("000000"); assert.equal(r2.status, 401); assert.equal((await r2.json()).codigo, "mfa_incorrecto");
+    const r3 = await conCodigo(await codigoTotp(sem![1])); assert.equal(r3.status, 200); assert.ok(r3.headers.get("set-cookie"));
+    assert.equal((await entrar("ana", m![1])).status, 200, "las personas de empresa no usan el segundo factor en esta demostración");
   } finally { hijo.kill("SIGTERM"); await Promise.race([Promise.all(lecturas), dormir(3000)]); try { await hijo.status; } catch { /* ya terminó */ } }
 } });

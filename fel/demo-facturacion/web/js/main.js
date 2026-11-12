@@ -10,15 +10,19 @@ import { pantallaConceptos } from "./conceptos.js";
 import { pantallaConfig } from "./config.js";
 import { pantallaLogin } from "./login.js";
 import { pantallaPlan } from "./plan.js";
+import { pantallaPanel } from "./panel.js";
+import { pantallaUsuarios } from "./usuarios.js";
 import { pantallaEmpresas, pantallaEmpresa, pantallaPlanes, pantallaBolson } from "./plataforma.js";
 
 const raiz = document.getElementById("app");
 let alCambiarRuta = null;
 const NAV = [
+  { ruta: "/panel", titulo: "Panel", icon: "file", permiso: "borradores.ver", practico: true },
   { ruta: "/nueva", titulo: "Nueva factura", icon: "plus", permiso: "borradores.crear" },
   { ruta: "/", titulo: "Facturas", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
   { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
   { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
+  { ruta: "/usuarios", titulo: "Usuarios", icon: "users", permiso: "usuarios.ver", practico: true },
   { ruta: "/plan", titulo: "Plan y consumo", icon: "package", permiso: "facturacion.ver", practico: true },
   { ruta: "/config", titulo: "Configuración", icon: "building", permiso: "empresa.ver" },
 ];
@@ -93,6 +97,8 @@ async function iniciar(estadoInicial) {
     else if (ruta === "/clientes") vista = pantallaClientes(ctx);
     else if (ruta === "/conceptos") vista = pantallaConceptos(ctx);
     else if (ruta === "/plan" && estado.practico) vista = pantallaPlan(ctx);
+    else if (ruta === "/panel" && estado.practico) vista = pantallaPanel(ctx);
+    else if (ruta === "/usuarios" && estado.practico) vista = pantallaUsuarios(ctx);
     else if (ruta === "/config") vista = pantallaConfig(ctx);
     else vista = pantallaLista(ctx);
     poner(contenido, vista); pintarMenu();
