@@ -27,7 +27,7 @@ jobs:
         working-directory: fel/proveedores
         run: |
           deno check src/mod.ts src/repo_pg.ts pruebas/*.ts pruebas_db/*.ts
-          deno test pruebas/
+          deno test --allow-net=127.0.0.1 pruebas/
       - name: Demostración de facturación simulada (tipos)
         working-directory: fel/demo-facturacion
         run: deno check servidor.ts src/*.ts tests/*.ts
