@@ -134,15 +134,14 @@ begin
   -- solo inserción (incluso para el propietario de la tabla)
   perform pg_temp.espera_error(format($q$update public.bolson_lotes set unidades = 1 where cuenta_id = '%s'$q$, c), 'FEL_APPEND_ONLY');
   perform pg_temp.espera_error(format($q$delete from public.bolson_lotes where cuenta_id = '%s'$q$, c), 'FEL_APPEND_ONLY');
-  -- saldo: restricción de no sobreconsumo, lo comprado no disminuye, no se borra
-  perform pg_temp.espera_error(format($q$update public.bolson_saldos set consumido = 2000 where cuenta_id = '%s'$q$, c), 'check');
-  perform pg_temp.espera_error(format($q$update public.bolson_saldos set reservado = 1001 where cuenta_id = '%s'$q$, c), 'check');
-  perform pg_temp.espera_error(format($q$update public.bolson_saldos set comprado = 1 where cuenta_id = '%s'$q$, c), 'no disminuye');
+  -- saldo (desde D2-2): solo cambia por movimientos del libro; cualquier actualización directa se rechaza, incluso para el propietario de la tabla
+  perform pg_temp.espera_error(format($q$update public.bolson_saldos set consumido = 2000 where cuenta_id = '%s'$q$, c), 'solo cambia por movimientos');
+  perform pg_temp.espera_error(format($q$update public.bolson_saldos set reservado = 1001 where cuenta_id = '%s'$q$, c), 'solo cambia por movimientos');
+  perform pg_temp.espera_error(format($q$update public.bolson_saldos set comprado = 1 where cuenta_id = '%s'$q$, c), 'solo cambia por movimientos');
+  perform pg_temp.espera_error(format($q$update public.bolson_saldos set consumido = -1 where cuenta_id = '%s'$q$, c), 'solo cambia por movimientos');
   perform pg_temp.espera_error(format($q$delete from public.bolson_saldos where cuenta_id = '%s'$q$, c), 'no se borran');
-  perform pg_temp.espera_error(format($q$update public.bolson_saldos set consumido = -1 where cuenta_id = '%s'$q$, c), 'check');
-  update public.bolson_saldos set consumido = 1000.3 where cuenta_id = c;                                  -- justo el límite: permitido
-  perform pg_temp.espera_error(format($q$update public.bolson_saldos set reservado = 0.000001 where cuenta_id = '%s'$q$, c), 'check');   -- un micro-unidad de más: rechazado
-  update public.bolson_saldos set consumido = 0 where cuenta_id = c;
+  assert (select comprado from public.bolson_saldos where cuenta_id = c) = (select sum(unidades) from public.bolson_movimientos where cuenta_id = c and tipo = 'recarga'), 'lo comprado coincide con las recargas del libro';
+  assert (select count(*) from public.bolson_movimientos where cuenta_id = c and tipo = 'recarga') = 3, 'cada lote tiene su recarga en el libro (la repetición idéntica no duplica)';
 end $$;
 
 -- cuenta cerrada: no acepta lotes y es terminal
@@ -253,7 +252,8 @@ begin
     assert not has_function_privilege('anon', t, 'EXECUTE') and not has_function_privilege('authenticated', t, 'EXECUTE'), 'ejecutable por usuarios: ' || t;
     assert has_function_privilege('service_role', t, 'EXECUTE'), 'service_role no ejecuta ' || t;
   end loop;
-  assert (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname like 'fel\_admin\_bolson\_%') = 5, 'cinco funciones fel_admin_bolson_*';
+  assert (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
+          and p.proname in ('fel_admin_bolson_cuenta_crear','fel_admin_bolson_cuenta_estado','fel_admin_bolson_evento_tipo_crear','fel_admin_bolson_regla_registrar','fel_admin_bolson_lote_registrar')) = 5, 'las cinco funciones fel_admin_bolson_* de D2-1';
   for t in select unnest(array['fel_bolson_cuenta_guard','fel_bolson_regla_guard','fel_bolson_saldo_guard']) loop
     assert not has_function_privilege('service_role', ('public.' || t || '()')::regprocedure, 'EXECUTE') and not has_function_privilege('authenticated', ('public.' || t || '()')::regprocedure, 'EXECUTE'), 'guard ejecutable: ' || t;
   end loop;
@@ -327,8 +327,10 @@ reset role;
 
 -- ================= 9. ningún dato de empresa se mezcla: el mundo A no referencia empresas ni documentos
 do $$ begin
-  assert (select count(*) from information_schema.columns where table_schema = 'public' and (table_name like 'bolson\_%') and column_name in ('empresa_id','documento_id','operacion_id')) = 0,
-    'el mundo A no debe referenciar empresas, documentos ni operaciones (la atribución llega con los consumos, en D2-2)';
+  assert (select count(*) from information_schema.columns where table_schema = 'public'
+          and table_name in ('evento_tipos','bolson_cuentas','bolson_lotes','bolson_reglas_consumo','bolson_extractos','bolson_extracto_lineas','bolson_saldos')
+          and column_name in ('empresa_id','documento_id','operacion_id')) = 0,
+    'las tablas de hechos del proveedor (D2-1) no deben referenciar empresas, documentos ni operaciones: la atribución vive en consumos y movimientos (D2-2)';
 end $$;
 
 rollback;

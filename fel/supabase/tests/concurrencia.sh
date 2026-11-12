@@ -249,4 +249,104 @@ correr "insert into public.bolson_extracto_lineas (extracto_id,cuenta_id,numero_
 wait
 [ "$(oks b20l)" = 1 ] && [ "$(q "select count(*) from public.bolson_extracto_lineas where cuenta_id='$C14' and hash_linea=repeat('7',64)")" = 1 ] || fallar "bolsón: la misma línea se aceptó desde dos extractos"
 echo "OK concurrencia: bolsón · extractos y líneas duplicados simultáneos → una sola"
+
+# ===== D2-2 · consumos y libro del bolsón: sesiones simultáneas reales =====
+NDOC=800000
+nueva_cuenta() { # $1=referencia $2=unidades de la compra $3=unidades que consume «consulta»; imprime el id de la cuenta
+  q "select public.fel_admin_bolson_cuenta_crear('$A','digifact','pruebas','$1')" >/dev/null
+  local c; c=$(q "select id from public.bolson_cuentas where referencia_externa='$1'")
+  q "select public.fel_admin_bolson_lote_registrar('$A','$c',$2,1,'LOTE-$1')" >/dev/null
+  q "select public.fel_admin_bolson_regla_registrar('$A','$c','consulta','si',$3,true,'contrato_escrito',jsonb_build_object('doc','conc'))" >/dev/null
+  echo "$c"
+}
+nuevo_consumo() { # $1=cuenta $2=clave; imprime el id del consumo (consulta, sin operación)
+  q "select (public.fel_sys_consumo_reservar('$E','$1','consulta',null,null,rpad('$2',16,'_'),repeat('b',64))).id"
+}
+nueva_operacion_pruebas() { # imprime el id de una operación de certificación en «pruebas» de digifact
+  NDOC=$((NDOC+1))
+  q "with d as (insert into public.documentos (empresa_id, numero_borrador) values ('$E', $NDOC) returning id)
+     insert into public.operaciones_fiscales (empresa_id, documento_id, tipo, clave_idempotencia, hash_contenido, proveedor, ambiente)
+     select '$E', d.id, 'certificacion', 'op-conc-' || gen_random_uuid(), repeat('a',64), 'digifact', 'pruebas' from d returning id"
+}
+saldos_ok() { [ "$(q "select count(*) from public.fel_sys_verificar_saldos() where not ok")" = 0 ] && [ "$(q "select count(*) from public.bolson_saldos where comprado+ajustado-consumido-reservado < 0")" = 0 ]; }
+# 21. ocho reservas simultáneas IDÉNTICAS: un solo consumo, todas lo reciben, la reserva cuenta una sola vez
+C21=$(nueva_cuenta CONC-D22-21 10 1)
+for i in 1 2 3 4 5 6 7 8; do correr "select public.fel_sys_consumo_reservar('$E','$C21','consulta',null,null,'k-c21-0000000001',repeat('b',64))" b21_$i & done
+wait
+[ "$(oks b21)" = 8 ] || fallar "consumos: las 8 reservas idénticas debían ser idempotentes (tuvieron $(oks b21))"
+[ "$(q "select count(*) from public.consumos where cuenta_id='$C21'")" = 1 ] || fallar "consumos: se duplicó el consumo"
+[ "$(q "select reservado from public.bolson_saldos where cuenta_id='$C21'")" = 1.000000 ] || fallar "consumos: la reserva no cuenta exactamente una vez"
+[ "$(q "select count(*) from public.bolson_movimientos where cuenta_id='$C21' and tipo='reserva'")" = 1 ] || fallar "consumos: movimientos de reserva duplicados"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos (21)"
+echo "OK concurrencia: consumos · reservas idénticas simultáneas → un solo consumo"
+# 22. doce reservas simultáneas distintas por solo 5 unidades: exactamente 5 triunfan y 7 reciben FEL_BOLSON_AGOTADO (nunca se sobreasigna)
+C22=$(nueva_cuenta CONC-D22-22 5 1)
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do correr "select public.fel_sys_consumo_reservar('$E','$C22','consulta',null,null,rpad('k-c22-$i',16,'_'),repeat('b',64))" b22_$i & done
+wait
+[ "$(oks b22)" = 5 ] || fallar "consumos: debían triunfar exactamente 5 reservas (triunfaron $(oks b22))"
+[ "$(errs_con b22 FEL_BOLSON_AGOTADO)" = 7 ] || fallar "consumos: las 7 restantes debían recibir FEL_BOLSON_AGOTADO"
+[ "$(q "select reservado from public.bolson_saldos where cuenta_id='$C22'")" = 5.000000 ] || fallar "consumos: lo reservado debía ser exactamente 5"
+[ "$(q "select count(*) from public.consumos where cuenta_id='$C22'")" = 5 ] || fallar "consumos: debían existir 5 consumos"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos (22)"
+echo "OK concurrencia: consumos · 12 reservas por 5 unidades → 5 triunfan, 7 agotado"
+# 23. confirmar y liberar a la vez sobre el mismo consumo: exactamente uno gana; el otro recibe FEL_ESTADO; el saldo es coherente
+C23=$(nueva_cuenta CONC-D22-23 10 1); K23=$(nuevo_consumo "$C23" k-c23-0000000001)
+correr "select public.fel_sys_consumo_confirmar('$E','$K23')" b23_c &
+correr "select public.fel_sys_consumo_liberar('$E','$K23','no_enviado',jsonb_build_object('x',1))" b23_l &
+wait
+[ "$(oks b23)" = 1 ] || fallar "consumos: confirmar y liberar simultáneos debían tener un único ganador (ganaron $(oks b23))"
+[ "$(errs_con b23 FEL_ESTADO)" = 1 ] || fallar "consumos: el perdedor debía recibir FEL_ESTADO"
+[ "$(q "select count(*) from public.bolson_movimientos where consumo_id='$K23' and tipo in ('consumo','liberacion')")" = 1 ] || fallar "consumos: debe existir un único movimiento de cierre"
+[ "$(q "select reservado from public.bolson_saldos where cuenta_id='$C23'")" = 0.000000 ] || fallar "consumos: la reserva debía quedar resuelta"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos (23)"
+echo "OK concurrencia: consumos · confirmar vs liberar → un solo ganador y saldo coherente"
+# 24. seis confirmaciones idénticas simultáneas: todas responden igual y el consumo se registra una sola vez
+K24=$(nuevo_consumo "$C23" k-c24-0000000001)
+for i in 1 2 3 4 5 6; do correr "select public.fel_sys_consumo_confirmar('$E','$K24',1,'REF-C24')" b24_$i & done
+wait
+[ "$(oks b24)" = 6 ] || fallar "consumos: las 6 confirmaciones idénticas debían ser idempotentes (tuvieron $(oks b24))"
+[ "$(q "select count(*) from public.bolson_movimientos where consumo_id='$K24' and tipo='consumo'")" = 1 ] || fallar "consumos: el consumo se registró más de una vez"
+[ "$(q "select consumido from public.bolson_saldos where cuenta_id='$C23'")" = "$(q "select coalesce(sum(unidades_consumidas),0) from public.consumos where cuenta_id='$C23' and estado='confirmado'")" ] || fallar "consumos: lo consumido debía coincidir con la suma de los consumos confirmados"
+[ "$(q "select unidades_consumidas from public.consumos where id='$K24'")" = 1.000000 ] || fallar "consumos: el consumo del caso 24 debía ser 1"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos (24)"
+echo "OK concurrencia: consumos · confirmaciones idénticas simultáneas → un solo consumo"
+# 25. seis reservas simultáneas de certificación para la MISMA operación con claves distintas: solo una triunfa
+OP25=$(nueva_operacion_pruebas); C25=$(nueva_cuenta CONC-D22-25 10 1)
+for i in 1 2 3 4 5 6; do correr "select public.fel_sys_consumo_reservar('$E','$C25','certificacion','$OP25',null,'k-c25-000000000$i',repeat('b',64))" b25_$i & done
+wait
+[ "$(oks b25)" = 1 ] || fallar "consumos: debía triunfar exactamente una reserva para la operación (triunfaron $(oks b25))"
+[ "$(errs_con b25 FEL_OPERACION_CON_CONSUMO)" = 5 ] || fallar "consumos: las otras 5 debían recibir FEL_OPERACION_CON_CONSUMO"
+[ "$(q "select count(*) from public.consumos where operacion_id='$OP25'")" = 1 ] || fallar "consumos: hay más de un consumo para la operación"
+[ "$(q "select reservado from public.bolson_saldos where cuenta_id='$C25'")" = 1.000000 ] || fallar "consumos: lo reservado debía ser 1"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos (25)"
+echo "OK concurrencia: consumos · una operación, un consumo (claves distintas)"
+# 26. tormenta mezclada: confirmar, liberar, reservar y comprar a la vez sobre una misma cuenta; sin interbloqueos y con el libro exacto
+C26=$(nueva_cuenta CONC-D22-26 40 1); declare -a K26=()
+for i in $(seq 1 20); do K26+=("$(nuevo_consumo "$C26" "k-c26-pre-$i")"); done
+for i in $(seq 0 19); do
+  if [ $((i % 2)) = 0 ]; then correr "select public.fel_sys_consumo_confirmar('$E','${K26[$i]}')" b26_c$i & else correr "select public.fel_sys_consumo_liberar('$E','${K26[$i]}','no_enviado',jsonb_build_object('x',$i))" b26_l$i & fi
+done
+for i in $(seq 1 12); do correr "select public.fel_sys_consumo_reservar('$E','$C26','consulta',null,null,rpad('k-c26-nuevo-$i',16,'_'),repeat('b',64))" b26_n$i & done
+for i in 1 2 3; do correr "select public.fel_admin_bolson_lote_registrar('$A','$C26',$((i*5)),1,'LOTE-C26-$i')" b26_p$i & done
+wait
+[ "$(oks b26)" = 35 ] || fallar "consumos: en la tormenta debían triunfar las 35 operaciones (triunfaron $(oks b26)); errores: $(cat /tmp/conc_b26_*.out | grep -c ERROR)"
+[ "$(cat /tmp/conc_b26_*.out | grep -ci deadlock)" = 0 ] || fallar "consumos: hubo interbloqueos"
+[ "$(q "select count(*) from public.consumos where cuenta_id='$C26' and estado='confirmado'")" = 10 ] && [ "$(q "select count(*) from public.consumos where cuenta_id='$C26' and estado='liberado'")" = 10 ] || fallar "consumos: debían quedar 10 confirmados y 10 liberados"
+[ "$(q "select count(*) from public.consumos where cuenta_id='$C26' and estado='reservado'")" = 12 ] || fallar "consumos: debían quedar 12 reservados nuevos"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos tras la tormenta"
+echo "OK concurrencia: consumos · tormenta mezclada → sin interbloqueos y libro exacto"
+# 27. vigilancia simultánea (seis sesiones): una sola alerta y el consumo sigue reservado; revisiones simultáneas no duplican alertas ni liberan nada
+K27=$(nuevo_consumo "$C26" k-c27-0000000001)
+for i in 1 2 3 4 5 6; do correr "select public.fel_sys_consumo_vigilar('$E','$K27','tiempo agotado')" b27_$i & done
+wait
+[ "$(oks b27)" = 6 ] || fallar "consumos: las 6 vigilancias debían ser idempotentes (tuvieron $(oks b27))"
+[ "$(q "select count(*) from public.bolson_alertas where consumo_id='$K27' and tipo='consumo_incierto'")" = 1 ] || fallar "consumos: alertas de vigilancia duplicadas"
+[ "$(q "select estado||'/'||en_vigilancia from public.consumos where id='$K27'")" = "reservado/true" ] || fallar "consumos: debía seguir reservado y en vigilancia"
+for i in 1 2 3 4; do correr "select public.fel_sys_bolson_revisar(1)" b27r_$i & done
+wait
+[ "$(oks b27r)" = 4 ] || fallar "consumos: las revisiones simultáneas debían terminar sin error (terminaron $(oks b27r))"
+[ "$(q "select max(n) from (select count(*) n from public.bolson_alertas where resuelta_en is null and consumo_id is not null group by consumo_id, tipo) x")" = 1 ] || fallar "consumos: alertas duplicadas tras revisiones simultáneas"
+[ "$(q "select estado from public.consumos where id='$K27'")" = reservado ] || fallar "consumos: la revisión no debe liberar"
+saldos_ok || fallar "consumos: el libro no reproduce los saldos (27)"
+echo "OK concurrencia: consumos · vigilancia y revisión simultáneas → una alerta y nada liberado"
 echo "CONCURRENCIA OK"

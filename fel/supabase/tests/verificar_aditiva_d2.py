@@ -16,14 +16,17 @@ for linea in (pathlib.Path(__file__).with_name("inmutables_d2.sha256")).read_tex
     if not p.exists(): fallos.append(f"falta {ruta}"); continue
     if hashlib.sha256(p.read_bytes()).hexdigest() != h: fallos.append(f"CAMBIÓ lo existente: {ruta}")
 # 2) migraciones de D2
-previas = [f for f in sorted(MIG.glob("*.sql")) if not f.name.startswith("2026111200") or f.name < "20261112000100"]
 previas = [f for f in sorted(MIG.glob("*.sql")) if f.name < "20261112000100"]
 funciones_previas = set()
 for f in previas:
     for m in re.finditer(r"create\s+(?:or\s+replace\s+)?function\s+public\.(\w+)", f.read_text(), re.I): funciones_previas.add(m.group(1))
-for f in sorted(MIG.glob("2026111200*.sql")):
+d2 = sorted(MIG.glob("2026111200*.sql"))
+# Las tablas creadas por CUALQUIER migración de D2 son propias de D2 (una migración posterior puede ampliarlas); las anteriores a D2 son ajenas.
+nuevas = set()
+for f in d2:
+    nuevas |= {m.group(1) for m in re.finditer(r"create\s+table\s+(?:if\s+not\s+exists\s+)?public\.(\w+)", re.sub(r"--[^\n]*", "", f.read_text()), re.I)}
+for f in d2:
     texto = re.sub(r"--[^\n]*", "", f.read_text())
-    nuevas = {m.group(1) for m in re.finditer(r"create\s+table\s+(?:if\s+not\s+exists\s+)?public\.(\w+)", texto, re.I)}
     permitido = PERMITIDOS_AJENOS.get(f.name, {})
     def ajena(tabla, accion):
         return tabla not in nuevas and tabla not in permitido.get(accion, set())
