@@ -22,6 +22,8 @@ jobs:
         run: bash fel/tools/test-instalar-cli.sh
       - name: Proyecto de Cloudflare Pages · crear o reutilizar con Wrangler (API simulada, sin cuenta real)
         run: bash fel/tools/test-pages-proyecto.sh
+      - name: Supabase hospedado · sintaxis de la CLI v3 y destino fijo (CLI falsa, sin credenciales)
+        run: bash fel/tools/test-supabase-hospedado.sh
       - name: Garantías de la publicación privada (solo manual, entorno protegido, secretos DEMO_ aislados)
         run: pip install --quiet pyyaml && python3 fel/tools/verificar-publicacion.py
       - name: Script de publicación (simulación, solo comprueba variables y muestra el plan)

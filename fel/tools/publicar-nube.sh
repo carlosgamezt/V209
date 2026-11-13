@@ -25,14 +25,14 @@ if [ ${#falta[@]} -gt 0 ] || [ ${#herr[@]} -gt 0 ]; then
   [ "$SIMULAR" = 1 ] || exit 1
 fi
 # DESTINOS FIJOS: este script solo puede tocar el proyecto Supabase «nexa-demo» y el proyecto de Pages «nexa-fel-demo» (la referencia no es un secreto).
-REF_ESPERADA="sbmchmknfercbtziwrge"; PAGES_ESPERADO="nexa-fel-demo"
+source tools/destinos-demo.sh
 [ -z "${FEL_DEMO_PROYECTO_REF:-}" ] || [ "$FEL_DEMO_PROYECTO_REF" = "$REF_ESPERADA" ] || { echo "PROHIBIDO: FEL_DEMO_PROYECTO_REF no es la referencia del proyecto nexa-demo ($REF_ESPERADA). No se hace nada."; exit 2; }
 [ -z "${PAGES_PROYECTO:-}" ] || [ "$PAGES_PROYECTO" = "$PAGES_ESPERADO" ] || { echo "PROHIBIDO: PAGES_PROYECTO debe ser exactamente $PAGES_ESPERADO. No se hace nada."; exit 2; }
 case "${PAGES_PROYECTO:-}" in nexa|nexacorp) echo "PROHIBIDO: «$PAGES_PROYECTO» es un proyecto principal de NEXA (la demostración usa nexa-fel-demo)"; exit 2;; esac
 comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar nada, que existen los comandos y las opciones que este script usa
   command -v supabase >/dev/null || { echo "(CLI de Supabase no instalada aquí: no se comprueban sus opciones)"; return 0; }
   local mal=0 c f; echo "CLI de Supabase $(supabase --version 2>/dev/null | head -1): comprobando opciones…"
-  for par in "link|--project-ref" "db push|--yes" "secrets set|--env-file" "secrets set|--project-ref" "functions deploy|--project-ref" "functions deploy|--no-verify-jwt"; do
+  for par in "link|--project-ref" "db push|--remote" "db push|--yes" "secrets set|--env-file" "secrets set|--remote" "secrets set|--yes" "functions deploy|--remote" "functions deploy|--yes" "functions deploy|--no-verify-jwt"; do
     c="${par%%|*}"; f="${par##*|}"
     if supabase $c --help 2>&1 | grep -q -- "$f"; then echo "  OK  supabase $c $f"; else echo "  FALLO supabase $c ya no admite $f"; mal=1; fi
   done
@@ -45,10 +45,10 @@ if [ "$SIMULAR" = 1 ]; then cat <<PLAN
 PLAN (simulación: no se ejecuta nada)
  1. Protección: la referencia ($REF) debe coincidir con la URL de Supabase y con la conexión a la base; el proyecto de Pages solo puede llamarse nexa-fel-demo (nunca nexa ni nexacorp).
  2. Cloudflare Pages: si el proyecto $PAGES_PROYECTO no existe se CREA con Wrangler (se verifica por la API); si existe se reutiliza; se toma su subdominio real (tools/pages-proyecto.sh)
- 3. supabase link --project-ref $REF  ·  supabase db push   (migraciones aditivas al proyecto NUEVO)
+ 3. supabase link --project-ref $REF  ·  supabase db push --remote=$REF --yes   (migraciones aditivas al proyecto NUEVO; la CLI v3 es local por defecto, por eso el destino va explícito)
  4. deno run -A demo-facturacion/nube/aprovisionar.ts      (siembra la base y crea los usuarios con la API de Supabase Auth; guarda solo hashes)
  5. deno run -A demo-facturacion/nube/construir.ts         (dist/nube/pagina con _worker.js + _routes.json, dist/nube/funcion)
- 6. supabase secrets set (archivo temporal 600)  ·  supabase functions deploy nexa-demo --no-verify-jwt
+ 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt
  7. wrangler pages secret put FUNCION_URL / PROXY_SECRETO  ·  wrangler pages deploy dist/nube/pagina
  8. Prueba de humo contra el subdominio real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia)
 PLAN
@@ -65,18 +65,13 @@ SALIDA_PAGES="$(bash tools/pages-proyecto.sh)"; echo "$SALIDA_PAGES" | grep -v '
 FEL_DEMO_HOSTS="$(echo "$SALIDA_PAGES" | sed -n 's/^HOST=//p' | tail -1)"; [ -n "$FEL_DEMO_HOSTS" ] || { echo "No se obtuvo el subdominio del proyecto"; exit 1; }; export FEL_DEMO_HOSTS
 echo "Dirección pública: https://$FEL_DEMO_HOSTS"
 paso "3/8 · migraciones (proyecto nuevo y exclusivo)"
-supabase link --project-ref "$REF" --workdir . >/dev/null
-supabase db push --workdir . --yes
+bash tools/supabase-hospedado.sh migraciones
 paso "4/8 · aprovisionar base y usuarios"
 ( cd demo-facturacion && deno run -A nube/aprovisionar.ts )
 paso "5/8 · construir"
 ( cd demo-facturacion && deno run -A nube/construir.ts )
 paso "6/8 · función de Supabase"
-ENVF="$(mktemp)"; chmod 600 "$ENVF"; trap 'rm -f "$ENVF"' EXIT
-{ echo "FEL_DEMO_BD_URL=$FEL_DEMO_BD_URL"; echo "FEL_DEMO_HOSTS=$FEL_DEMO_HOSTS"; echo "FEL_DEMO_MFA_SEMILLAS=$FEL_DEMO_MFA_SEMILLAS"; echo "FEL_PROXY_SECRETO=$FEL_PROXY_SECRETO"; } > "$ENVF"
-supabase secrets set --project-ref "$REF" --env-file "$ENVF" >/dev/null
-supabase functions deploy nexa-demo --project-ref "$REF" --workdir dist/nube/funcion --no-verify-jwt
-rm -f "$ENVF"
+bash tools/supabase-hospedado.sh funcion
 paso "7/8 · Cloudflare Pages: secretos y página (Wrangler)"
 WR=(npx --yes wrangler@4)
 printf '%s' "https://$REF.supabase.co/functions/v1/nexa-demo" | "${WR[@]}" pages secret put FUNCION_URL --project-name "$PAGES_PROYECTO" >/dev/null
