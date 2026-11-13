@@ -195,6 +195,22 @@ Deno.serve(async (req) => {
     const row = await cargar(a, b.folio, b.version)
     const suc = await userDoc(a, row.branch_user_id)
 
+    /* ----- Arqueos eliminados (baja lógica): ya no admiten ninguna acción ----- */
+    {
+      const { data: el } = await a.from('pa_arqueo_eliminados').select('folio').eq('folio', row.folio).maybeSingle()
+      if (el) throw new Err(b.action === 'eliminar' ? 'Este arqueo ya estaba eliminado' : 'Este arqueo fue eliminado', 410)
+    }
+    if (b.action === 'eliminar') { // solo el administrador; se conserva todo en la base y queda el motivo en el registro
+      if (me.role !== 'admin') throw new Err('Solo el administrador puede eliminar arqueos', 403)
+      const motivo = txt(b.motivo, 1000)
+      const { data: firm } = await a.from('pa_arqueos').select('version').eq('folio', row.folio).neq('estado', 'borrador').limit(1)
+      if (firm && firm.length && !motivo) throw new Err('Escribe el motivo de la eliminación')
+      const { error } = await a.from('pa_arqueo_eliminados').insert({ folio: row.folio, eliminado_por: me.user_id, eliminado_nombre: miNombre, motivo: motivo || null, estado_previo: row.estado })
+      if (error) throw new Err('No se pudo eliminar: ' + error.message)
+      await audit(a, row, 'arqueo_eliminado', me, miNombre, { motivo: motivo || null, estado: row.estado, version: row.version, sucursal: row.branch, fecha: row.fecha, resultado: row.resultado })
+      return json({ ok: true })
+    }
+
     if (b.action === 'lock') { // "Continuar a las firmas": se confirma el contenido y se calcula su huella
       if (row.estado !== 'borrador') throw new Err('Este arqueo ya pasó a firmas')
       if (row.supervisor_user_id !== me.user_id && me.role !== 'admin') throw new Err('Solo quien lo creó puede continuar', 403)

@@ -170,3 +170,23 @@ create policy pa_ff_sel on public.pa_ff_asignaciones for select to authenticated
                     or (pa_role() = 'supervisor' and ((d.data->>'region') = pa_region() or pa_xmode(d.data->>'region') is not null))))
 );
 -- (sin políticas de INSERT, UPDATE ni DELETE: solo la función "arqueos" escribe)
+
+-- 9) ELIMINAR ARQUEOS (solo administrador, desde la función "arqueos"): baja lógica con registro permanente.
+-- El arqueo y sus firmas NO se borran de la base (siguen las protecciones de arriba); el folio queda en esta tabla
+-- y la app y la función dejan de mostrarlo y de aceptarle cambios. Solo se agrega (no se edita ni se borra).
+create table if not exists public.pa_arqueo_eliminados (
+  folio            text primary key,
+  eliminado_por    text not null,
+  eliminado_nombre text,
+  motivo           text,
+  estado_previo    text,
+  eliminado_at     timestamptz not null default now()
+);
+alter table public.pa_arqueo_eliminados enable row level security;
+drop trigger if exists pa_elim_ao on public.pa_arqueo_eliminados;
+create trigger pa_elim_ao before update or delete on public.pa_arqueo_eliminados for each row execute function public.pa_append_only();
+drop policy if exists pa_arqe_sel on public.pa_arqueo_eliminados;
+create policy pa_arqe_sel on public.pa_arqueo_eliminados for select to authenticated using (
+  exists (select 1 from public.pa_arqueos a where a.folio = pa_arqueo_eliminados.folio)
+);
+-- (sin políticas de INSERT, UPDATE ni DELETE: solo la función "arqueos" escribe)
