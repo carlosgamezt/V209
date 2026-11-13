@@ -31,4 +31,9 @@ for f in glob.glob(".github/workflows/*.yml"):
 else: ok("ningún otro flujo de trabajo usa los secretos DEMO_")
 for f in glob.glob(".github/workflows/*.yml"):
     if f != R and "demo-privada" in open(f, encoding="utf-8").read(): mal(f"{f} usa el entorno demo-privada")
+sh = open("fel/tools/publicar-nube.sh", encoding="utf-8").read(); pp = open("fel/tools/pages-proyecto.sh", encoding="utf-8").read()
+if "nexa|nexacorp" in sh and "nexa|nexacorp" in pp and "nexa-fel-demo" in pp: ok("el proyecto de Pages solo puede ser nexa-fel-demo; nexa y nexacorp están vetados")
+else: mal("faltan los vetos a nexa/nexacorp en los scripts de publicación")
+if "pages project create" in pp and "2>&1 || " not in pp and "/dev/null 2>&1 ||" not in pp: ok("la creación del proyecto de Pages no oculta errores")
+else: mal("la creación de Pages oculta errores")
 sys.exit(1 if fallos else 0)
