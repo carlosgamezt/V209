@@ -20,6 +20,8 @@ jobs:
           deno-version: v2.x
       - name: Instalación de la CLI de Supabase · plan B con verificación de integridad (sin red externa)
         run: bash fel/tools/test-instalar-cli.sh
+      - name: Garantías de la publicación privada (solo manual, entorno protegido, secretos DEMO_ aislados)
+        run: pip install --quiet pyyaml && python3 fel/tools/verificar-publicacion.py
       - name: Script de publicación (simulación, solo comprueba variables y muestra el plan)
         run: bash fel/tools/publicar-nube.sh --simular | tail -9
       - name: Tipos y pruebas

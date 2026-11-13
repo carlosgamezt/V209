@@ -1,13 +1,21 @@
-name: NEXA FEL · publicación privada (solo con tu autorización)
-# NO se ejecuta por sí solo. Despliega la demostración SIMULADA en TU Supabase y TU Cloudflare Pages únicamente si se cumplen TRES condiciones a la vez:
-#   1) un commit en fel-proveedores-diseno que modifique .github/publicar-nube.solicitud y cuyo mensaje EMPIECE por «PUBLICAR-DEMO» (lo hago yo cuando me autorices);
-#   2) el entorno «demo-privada» de GitHub, con TU aprobación obligatoria (Settings → Environments → Required reviewers) y tus secretos guardados ahí (nunca en el chat);
-#   3) todos los secretos presentes (si falta uno, el script se detiene sin tocar nada).
-# Usa planes gratuitos; no activa servicios de pago ni toca la rama principal.
+name: NEXA FEL · publicación privada (manual)
+# SOLO se ejecuta cuando TÚ la lanzas a mano (Actions → esta página → «Run workflow»); ningún push, pull request, programación ni mensaje de commit la activa.
+# Aun lanzada, el trabajo queda en espera hasta que TÚ lo apruebes en el entorno protegido «demo-privada» (Required reviewers + ramas permitidas), y solo entonces recibe los secretos.
+#  · modo «verificar» (por defecto): comprueba qué secretos y herramientas hay y muestra el plan. No toca nada.
+#  · modo «publicar»: migraciones → base → función de Supabase → Cloudflare Pages con Wrangler → prueba de humo. Exige además escribir PUBLICAR.
+# Los secretos tienen prefijo DEMO_ a propósito: así NUNCA se mezclan con los del proyecto principal de NEXA que ya existen en este repositorio (deploy-nexa / deploy-supabase).
 on:
-  push:
-    branches: [fel-proveedores-diseno]
-    paths: [".github/publicar-nube.solicitud"]
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "verificar (no toca nada) o publicar"
+        type: choice
+        options: [verificar, publicar]
+        default: verificar
+      confirmar:
+        description: "Para «publicar», escribe PUBLICAR"
+        type: string
+        default: ""
 permissions:
   contents: read
 concurrency:
@@ -15,25 +23,15 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publicar:
-    name: Publicar demostración privada (Supabase + Cloudflare Pages)
-    if: startsWith(github.event.head_commit.message, 'PUBLICAR-DEMO')
+    name: Publicación privada (Supabase + Cloudflare Pages)
+    if: github.ref == 'refs/heads/fel-proveedores-diseno'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: demo-privada
-    env:
-      FEL_DEMO_PROYECTO_REF: ${{ secrets.FEL_DEMO_PROYECTO_REF }}
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      FEL_DEMO_BD_URL: ${{ secrets.FEL_DEMO_BD_URL }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      FEL_DEMO_CLAVES: ${{ secrets.FEL_DEMO_CLAVES }}
-      FEL_DEMO_MFA_SEMILLAS: ${{ secrets.FEL_DEMO_MFA_SEMILLAS }}
-      FEL_PROXY_SECRETO: ${{ secrets.FEL_PROXY_SECRETO }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      PAGES_PROYECTO: ${{ secrets.PAGES_PROYECTO }}
     steps:
+      - name: Confirmación explícita
+        if: inputs.modo == 'publicar' && inputs.confirmar != 'PUBLICAR'
+        run: echo "Para publicar hay que escribir PUBLICAR en «confirmar»."; exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -42,5 +40,21 @@ jobs:
         with:
           deno-version: v2.x
       - uses: ./.github/actions/supabase-cli
-      - name: Publicar (migraciones → base → función → Pages con Wrangler → prueba de humo)
-        run: bash fel/tools/publicar-nube.sh
+      # los secretos solo existen en ESTE paso (no en las acciones de terceros de arriba)
+      - name: Ejecutar (${{ inputs.modo }})
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DEMO_SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.DEMO_SUPABASE_DB_PASSWORD }}
+          FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
+          SUPABASE_URL: ${{ secrets.DEMO_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEMO_SUPABASE_SERVICE_ROLE_KEY }}
+          FEL_DEMO_CLAVES: ${{ secrets.DEMO_CLAVES }}
+          FEL_DEMO_MFA_SEMILLAS: ${{ secrets.DEMO_MFA_SEMILLAS }}
+          FEL_PROXY_SECRETO: ${{ secrets.DEMO_PROXY_SECRETO }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DEMO_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.DEMO_CLOUDFLARE_ACCOUNT_ID }}
+          PAGES_PROYECTO: ${{ secrets.DEMO_PAGES_PROYECTO }}
+          MODO: ${{ inputs.modo }}
+        run: |
+          if [ "$MODO" = publicar ]; then bash fel/tools/publicar-nube.sh; else bash fel/tools/publicar-nube.sh --simular; fi
