@@ -36,4 +36,8 @@ if "nexa|nexacorp" in sh and "nexa|nexacorp" in pp and "nexa-fel-demo" in pp: ok
 else: mal("faltan los vetos a nexa/nexacorp en los scripts de publicación")
 if "pages project create" in pp and "2>&1 || " not in pp and "/dev/null 2>&1 ||" not in pp: ok("la creación del proyecto de Pages no oculta errores")
 else: mal("la creación de Pages oculta errores")
+if 'REF_ESPERADA="sbmchmknfercbtziwrge"' in sh and 'PAGES_ESPERADO="nexa-fel-demo"' in sh and "PROHIBIDO: FEL_DEMO_PROYECTO_REF no es" in sh: ok("destinos fijos: solo el proyecto Supabase nexa-demo y el Pages nexa-fel-demo")
+else: mal("los destinos de Supabase y Pages no están fijados en el script")
+if "comprobar_cli" in sh and "--no-verify-jwt" in sh: ok("se comprueba la compatibilidad de la CLI antes de actuar")
+else: mal("falta la comprobación de la CLI")
 sys.exit(1 if fallos else 0)

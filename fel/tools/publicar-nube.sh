@@ -24,8 +24,21 @@ if [ ${#falta[@]} -gt 0 ] || [ ${#herr[@]} -gt 0 ]; then
   [ ${#falta[@]} -gt 0 ] && echo "Faltan variables: ${falta[*]}"; [ ${#herr[@]} -gt 0 ] && echo "Faltan herramientas: ${herr[*]}"
   [ "$SIMULAR" = 1 ] || exit 1
 fi
+# DESTINOS FIJOS: este script solo puede tocar el proyecto Supabase «nexa-demo» y el proyecto de Pages «nexa-fel-demo» (la referencia no es un secreto).
+REF_ESPERADA="sbmchmknfercbtziwrge"; PAGES_ESPERADO="nexa-fel-demo"
+[ -z "${FEL_DEMO_PROYECTO_REF:-}" ] || [ "$FEL_DEMO_PROYECTO_REF" = "$REF_ESPERADA" ] || { echo "PROHIBIDO: FEL_DEMO_PROYECTO_REF no es la referencia del proyecto nexa-demo ($REF_ESPERADA). No se hace nada."; exit 2; }
+[ -z "${PAGES_PROYECTO:-}" ] || [ "$PAGES_PROYECTO" = "$PAGES_ESPERADO" ] || { echo "PROHIBIDO: PAGES_PROYECTO debe ser exactamente $PAGES_ESPERADO. No se hace nada."; exit 2; }
 case "${PAGES_PROYECTO:-}" in nexa|nexacorp) echo "PROHIBIDO: «$PAGES_PROYECTO» es un proyecto principal de NEXA (la demostración usa nexa-fel-demo)"; exit 2;; esac
-[ -z "${PAGES_PROYECTO:-}" ] || [[ "$PAGES_PROYECTO" =~ ^nexa-fel-demo(-[a-z0-9]+)?$ ]] || { echo "PAGES_PROYECTO no permitido: debe ser nexa-fel-demo"; exit 2; }
+comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar nada, que existen los comandos y las opciones que este script usa
+  command -v supabase >/dev/null || { echo "(CLI de Supabase no instalada aquí: no se comprueban sus opciones)"; return 0; }
+  local mal=0 c f; echo "CLI de Supabase $(supabase --version 2>/dev/null | head -1): comprobando opciones…"
+  for par in "link|--project-ref" "db push|--yes" "secrets set|--env-file" "secrets set|--project-ref" "functions deploy|--project-ref" "functions deploy|--no-verify-jwt"; do
+    c="${par%%|*}"; f="${par##*|}"
+    if supabase $c --help 2>&1 | grep -q -- "$f"; then echo "  OK  supabase $c $f"; else echo "  FALLO supabase $c ya no admite $f"; mal=1; fi
+  done
+  supabase --help 2>&1 | grep -q -- "--workdir" && echo "  OK  --workdir (global)" || { supabase db push --help 2>&1 | grep -q -- "--workdir" && echo "  OK  --workdir" || { echo "  FALLO falta --workdir"; mal=1; }; }
+  return $mal
+}
 REF="${FEL_DEMO_PROYECTO_REF:-<ref>}"; PAGES_PROYECTO="${PAGES_PROYECTO:-<nombre>}"; export FEL_DEMO_HOSTS="${FEL_DEMO_HOSTS:-${PAGES_PROYECTO}.pages.dev}"
 paso() { echo; echo "== $1"; }
 if [ "$SIMULAR" = 1 ]; then cat <<PLAN
@@ -39,8 +52,10 @@ PLAN (simulación: no se ejecuta nada)
  7. wrangler pages secret put FUNCION_URL / PROXY_SECRETO  ·  wrangler pages deploy dist/nube/pagina
  8. Prueba de humo contra el subdominio real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia)
 PLAN
+  comprobar_cli || { echo "La CLI instalada no es compatible con este script: corrígelo antes de publicar."; exit 1; }
   exit 0; fi
 
+comprobar_cli || { echo "La CLI instalada no es compatible con este script. No se hace nada."; exit 1; }
 paso "1/8 · comprobaciones previas"
 case "$SUPABASE_URL" in "https://$REF.supabase.co") ;; *) echo "SUPABASE_URL no corresponde a FEL_DEMO_PROYECTO_REF"; exit 1;; esac
 case "$FEL_DEMO_BD_URL" in *"$REF"*) ;; *) echo "FEL_DEMO_BD_URL no pertenece al proyecto indicado"; exit 1;; esac

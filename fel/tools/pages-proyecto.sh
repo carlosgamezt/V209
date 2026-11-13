@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Crea (con Wrangler) o reutiliza el proyecto de Cloudflare Pages de la DEMOSTRACIÓN y devuelve su nombre público real.
-# Garantías: solo trabaja con un nombre «nexa-fel-demo…»; nunca con «nexa» ni «nexacorp» (proyectos principales); no traga errores (un fallo distinto de «no existe» detiene todo);
+# Garantías: solo trabaja con el nombre exacto «nexa-fel-demo»; nunca con «nexa» ni «nexacorp» (proyectos principales); no traga errores (un fallo distinto de «no existe» detiene todo);
 # el token no va en argumentos de comandos. Imprime en la última línea:  HOST=<subdominio>.pages.dev   (puede llevar sufijo si el nombre ya estaba ocupado en pages.dev).
 # Entradas: PAGES_PROYECTO, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN · opcionales: CLOUDFLARE_API_BASE, WRANGLER_CMD, RAMA_PRODUCCION (main).
 set -euo pipefail
 NOMBRE="${PAGES_PROYECTO:-}"; BASE="${CLOUDFLARE_API_BASE:-https://api.cloudflare.com/client/v4}"; RAMA="${RAMA_PRODUCCION:-main}"
 read -r -a WR <<< "${WRANGLER_CMD:-npx --yes wrangler@4}"
 case "$NOMBRE" in nexa|nexacorp) echo "PROHIBIDO: «$NOMBRE» es un proyecto principal de NEXA; la demostración usa nexa-fel-demo."; exit 2;; esac
-[[ "$NOMBRE" =~ ^nexa-fel-demo(-[a-z0-9]+)?$ ]] || { echo "Nombre no permitido («$NOMBRE»): debe ser nexa-fel-demo (o nexa-fel-demo-<sufijo>)."; exit 2; }
+[ "$NOMBRE" = "nexa-fel-demo" ] || { echo "Nombre no permitido («$NOMBRE»): debe ser exactamente nexa-fel-demo."; exit 2; }
 for v in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN; do [ -n "${!v:-}" ] || { echo "Falta $v"; exit 2; }; done
 [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "CLOUDFLARE_ACCOUNT_ID no tiene el formato esperado (32 caracteres hexadecimales)"; exit 2; }
 URL="$BASE/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$NOMBRE"

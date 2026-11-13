@@ -34,7 +34,7 @@ rm -f "$LLAMADAS"; S2=$(base nexa-fel-demo 2>&1); R=$?; [ $R = 0 ] && [ ! -e "$L
 rm -f "$MARCA" "$LLAMADAS"; echo '{"subdominio":"nexa-fel-demo-x7q"}' > "$CTL"; S3=$(base nexa-fel-demo 2>&1); [ "$(tail -1 <<<"$S3")" = "HOST=nexa-fel-demo-x7q.pages.dev" ] && ok "subdominio con sufijo (nombre ocupado en pages.dev): se usa el real" || { mal "subdominio"; echo "$S3"; }
 rm -f "$MARCA" "$LLAMADAS"; echo '{}' > "$CTL"
 for n in nexa nexacorp; do base $n >/dev/null 2>&1; [ $? = 2 ] && [ ! -e "$LLAMADAS" ] && ok "«$n» (proyecto principal) rechazado antes de cualquier llamada" || mal "$n aceptado"; done
-for n in otro-proyecto nexa-fel-demo2 "NEXA-FEL-DEMO" "nexa-fel-demo/../nexa"; do base "$n" >/dev/null 2>&1; [ $? = 2 ] && ok "nombre «$n» rechazado" || mal "nombre «$n» aceptado"; done
+for n in otro-proyecto nexa-fel-demo2 nexa-fel-demo-x7q "NEXA-FEL-DEMO" "nexa-fel-demo/../nexa"; do base "$n" >/dev/null 2>&1; [ $? = 2 ] && ok "nombre «$n» rechazado" || mal "nombre «$n» aceptado"; done
 echo '{"forzar":403}' > "$CTL"; rm -f "$LLAMADAS"; base nexa-fel-demo >/dev/null 2>&1; [ $? = 1 ] && [ ! -e "$LLAMADAS" ] && ok "token rechazado (403) → se detiene sin crear" || mal "403"
 echo '{"forzar":500}' > "$CTL"; base nexa-fel-demo >/dev/null 2>&1; [ $? = 1 ] && [ ! -e "$LLAMADAS" ] && ok "respuesta inesperada (500) → se detiene sin crear" || mal "500"
 echo '{}' > "$CTL"; rm -f "$MARCA" "$LLAMADAS"; FALLA=1 base nexa-fel-demo >/dev/null 2>&1; [ $? != 0 ] && ok "si Wrangler falla al crear, el script falla (no se oculta)" || mal "error oculto"
