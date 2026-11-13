@@ -44,8 +44,16 @@ sb = open("fel/tools/supabase-hospedado.sh", encoding="utf-8").read(); d = open(
 if 'REF_ESPERADA="sbmchmknfercbtziwrge"' in d and 'PAGES_ESPERADO="nexa-fel-demo"' in d: ok("destinos únicos en tools/destinos-demo.sh")
 else: mal("destinos no fijados en destinos-demo.sh")
 hospedadas = [l for l in sb.splitlines() if re.search(r"supabase (db push|secrets set|functions deploy)", l)]
-if len(hospedadas) == 3 and all('--remote="$REF"' in l and "--yes" in l and "--project-ref" not in l for l in hospedadas): ok("las 3 órdenes hospedadas llevan --remote=<ref> explícito y --yes, sin --project-ref obsoleto")
+def _bien(l):
+    if "--project-ref" in l: return False
+    if "db push" in l:
+        if '--remote="$URL_SESION"' not in l: return False
+        return ("--dry-run" in l and "--yes" not in l) or ("--yes" in l and "--dry-run" not in l)
+    return '--remote="$REF"' in l and "--yes" in l
+if len(hospedadas) == 4 and all(_bien(l) for l in hospedadas) and sum("--dry-run" in l for l in hospedadas) == 1: ok("las 4 órdenes hospedadas llevan destino explícito: db push por --remote=\"$URL_SESION\" (la de conexión solo con --dry-run, sin --yes; la de migraciones con --yes), y secrets/functions con --remote=<ref> y --yes; sin --project-ref obsoleto")
 else: mal(f"órdenes hospedadas sin destino explícito: {hospedadas}")
 if "destinos-demo.sh" in sh and "destinos-demo.sh" in sb and 'REF" = "$REF_ESPERADA"' in sb: ok("ambos scripts usan los destinos únicos y rechazan otra referencia")
 else: mal("los scripts no validan contra destinos-demo.sh")
+if r"pooler\.supabase\.com" in sb and "postgres\\.${REF}" in sb and "(6543|5432)" in sb and ":5432/postgres" in sb: ok("la URL de base de datos se valida contra el pooler compartido de nexa-demo y se deriva al puerto 5432 (Session Pooler, IPv4)")
+else: mal("falta la validación/derivación del Session Pooler")
 sys.exit(1 if fallos else 0)

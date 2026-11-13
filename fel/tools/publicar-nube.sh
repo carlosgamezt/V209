@@ -32,7 +32,7 @@ case "${PAGES_PROYECTO:-}" in nexa|nexacorp) echo "PROHIBIDO: «$PAGES_PROYECTO�
 comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar nada, que existen los comandos y las opciones que este script usa
   command -v supabase >/dev/null || { echo "(CLI de Supabase no instalada aquí: no se comprueban sus opciones)"; return 0; }
   local mal=0 c f; echo "CLI de Supabase $(supabase --version 2>/dev/null | head -1): comprobando opciones…"
-  for par in "link|--project-ref" "db push|--remote" "db push|--yes" "secrets set|--env-file" "secrets set|--remote" "secrets set|--yes" "functions deploy|--remote" "functions deploy|--yes" "functions deploy|--no-verify-jwt"; do
+  for par in "link|--project-ref" "db push|--remote" "db push|--yes" "db push|--dry-run" "secrets set|--env-file" "secrets set|--remote" "secrets set|--yes" "functions deploy|--remote" "functions deploy|--yes" "functions deploy|--no-verify-jwt"; do
     c="${par%%|*}"; f="${par##*|}"
     if supabase $c --help 2>&1 | grep -q -- "$f"; then echo "  OK  supabase $c $f"; else echo "  FALLO supabase $c ya no admite $f"; mal=1; fi
   done
@@ -45,7 +45,7 @@ if [ "$SIMULAR" = 1 ]; then cat <<PLAN
 PLAN (simulación: no se ejecuta nada)
  1. Protección: la referencia ($REF) debe coincidir con la URL de Supabase y con la conexión a la base; el proyecto de Pages solo puede llamarse nexa-fel-demo (nunca nexa ni nexacorp).
  2. Cloudflare Pages: si el proyecto $PAGES_PROYECTO no existe se CREA con Wrangler (se verifica por la API); si existe se reutiliza; se toma su subdominio real (tools/pages-proyecto.sh)
- 3. supabase link --project-ref $REF  ·  supabase db push --remote=$REF --yes   (migraciones aditivas al proyecto NUEVO; la CLI v3 es local por defecto, por eso el destino va explícito)
+ 3. supabase link --project-ref $REF  ·  supabase db push --remote=<Session Pooler, puerto 5432, IPv4> --yes   (migraciones aditivas al proyecto NUEVO; la URL se deriva de DEMO_BD_URL y se valida: usuario postgres.$REF, host *.pooler.supabase.com)
  4. deno run -A demo-facturacion/nube/aprovisionar.ts      (siembra la base y crea los usuarios con la API de Supabase Auth; guarda solo hashes)
  5. deno run -A demo-facturacion/nube/construir.ts         (dist/nube/pagina con _worker.js + _routes.json, dist/nube/funcion)
  6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt
@@ -53,12 +53,18 @@ PLAN (simulación: no se ejecuta nada)
  8. Prueba de humo contra el subdominio real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia)
 PLAN
   comprobar_cli || { echo "La CLI instalada no es compatible con este script: corrígelo antes de publicar."; exit 1; }
+  if [ ${#falta[@]} -eq 0 ] && [ ${#herr[@]} -eq 0 ]; then
+    echo; echo "== Comprobación de la cadena de conexión y prueba de conectividad de SOLO LECTURA (db push --dry-run por el Session Pooler IPv4: lista las migraciones pendientes, NO aplica nada)"
+    bash tools/supabase-hospedado.sh validar || { echo "La cadena de conexión no es válida: no se publicará hasta corregirla."; exit 1; }
+    bash tools/supabase-hospedado.sh conexion || { echo "La prueba de conectividad por el Session Pooler falló: no se publicará hasta resolverla."; exit 1; }
+  else echo "(faltan variables o herramientas: se omite la prueba de conectividad)"; fi
   exit 0; fi
 
 comprobar_cli || { echo "La CLI instalada no es compatible con este script. No se hace nada."; exit 1; }
 paso "1/8 · comprobaciones previas"
 case "$SUPABASE_URL" in "https://$REF.supabase.co") ;; *) echo "SUPABASE_URL no corresponde a FEL_DEMO_PROYECTO_REF"; exit 1;; esac
 case "$FEL_DEMO_BD_URL" in *"$REF"*) ;; *) echo "FEL_DEMO_BD_URL no pertenece al proyecto indicado"; exit 1;; esac
+bash tools/supabase-hospedado.sh validar   # el pooler compartido de ESTE proyecto, sin parámetros; si no, se detiene aquí sin tocar nada
 echo "OK"
 paso "2/8 · Cloudflare Pages: crear (con Wrangler) o reutilizar el proyecto $PAGES_PROYECTO"
 SALIDA_PAGES="$(bash tools/pages-proyecto.sh)"; echo "$SALIDA_PAGES" | grep -v '^HOST='
