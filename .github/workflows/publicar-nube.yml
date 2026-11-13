@@ -1,6 +1,6 @@
 name: NEXA FEL · publicación privada (solo con tu autorización)
 # NO se ejecuta por sí solo. Despliega la demostración SIMULADA en TU Supabase y TU Cloudflare Pages únicamente si se cumplen TRES condiciones a la vez:
-#   1) un commit en fel-proveedores-diseno que modifique .github/publicar-nube.solicitud y cuyo mensaje contenga «PUBLICAR-DEMO» (lo hago yo cuando me autorices);
+#   1) un commit en fel-proveedores-diseno que modifique .github/publicar-nube.solicitud y cuyo mensaje EMPIECE por «PUBLICAR-DEMO» (lo hago yo cuando me autorices);
 #   2) el entorno «demo-privada» de GitHub, con TU aprobación obligatoria (Settings → Environments → Required reviewers) y tus secretos guardados ahí (nunca en el chat);
 #   3) todos los secretos presentes (si falta uno, el script se detiene sin tocar nada).
 # Usa planes gratuitos; no activa servicios de pago ni toca la rama principal.
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   publicar:
     name: Publicar demostración privada (Supabase + Cloudflare Pages)
-    if: contains(github.event.head_commit.message, 'PUBLICAR-DEMO')
+    if: startsWith(github.event.head_commit.message, 'PUBLICAR-DEMO')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: demo-privada

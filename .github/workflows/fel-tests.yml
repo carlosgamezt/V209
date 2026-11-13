@@ -20,7 +20,7 @@ jobs:
           deno-version: v2.x
       - name: Instalación de la CLI de Supabase · plan B con verificación de integridad (sin red externa)
         run: bash fel/tools/test-instalar-cli.sh
-      - name: Script de publicación (simulación: solo comprueba variables y muestra el plan)
+      - name: Script de publicación (simulación, solo comprueba variables y muestra el plan)
         run: bash fel/tools/publicar-nube.sh --simular | tail -9
       - name: Tipos y pruebas
         working-directory: fel/supabase/functions/fel-api
