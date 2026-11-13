@@ -1,0 +1,46 @@
+name: NEXA FEL · publicación privada (solo con tu autorización)
+# NO se ejecuta por sí solo. Despliega la demostración SIMULADA en TU Supabase y TU Cloudflare Pages únicamente si se cumplen TRES condiciones a la vez:
+#   1) un commit en fel-proveedores-diseno que modifique .github/publicar-nube.solicitud y cuyo mensaje contenga «PUBLICAR-DEMO» (lo hago yo cuando me autorices);
+#   2) el entorno «demo-privada» de GitHub, con TU aprobación obligatoria (Settings → Environments → Required reviewers) y tus secretos guardados ahí (nunca en el chat);
+#   3) todos los secretos presentes (si falta uno, el script se detiene sin tocar nada).
+# Usa planes gratuitos; no activa servicios de pago ni toca la rama principal.
+on:
+  push:
+    branches: [fel-proveedores-diseno]
+    paths: [".github/publicar-nube.solicitud"]
+permissions:
+  contents: read
+concurrency:
+  group: publicar-nube
+  cancel-in-progress: false
+jobs:
+  publicar:
+    name: Publicar demostración privada (Supabase + Cloudflare Pages)
+    if: contains(github.event.head_commit.message, 'PUBLICAR-DEMO')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: demo-privada
+    env:
+      FEL_DEMO_PROYECTO_REF: ${{ secrets.FEL_DEMO_PROYECTO_REF }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      FEL_DEMO_BD_URL: ${{ secrets.FEL_DEMO_BD_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      FEL_DEMO_CLAVES: ${{ secrets.FEL_DEMO_CLAVES }}
+      FEL_DEMO_MFA_SEMILLAS: ${{ secrets.FEL_DEMO_MFA_SEMILLAS }}
+      FEL_PROXY_SECRETO: ${{ secrets.FEL_PROXY_SECRETO }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PAGES_PROYECTO: ${{ secrets.PAGES_PROYECTO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: ./.github/actions/supabase-cli
+      - name: Publicar (migraciones → base → función → Pages con Wrangler → prueba de humo)
+        run: bash fel/tools/publicar-nube.sh

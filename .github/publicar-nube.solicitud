@@ -1,0 +1,2 @@
+# Solicitud de publicación privada. Un commit que modifique este archivo y cuyo mensaje contenga PUBLICAR-DEMO lanza .github/workflows/publicar-nube.yml (con aprobación en el entorno «demo-privada»).
+# Sin cambios todavía: nada se ha publicado.

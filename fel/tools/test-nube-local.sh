@@ -30,4 +30,6 @@ for i in $(seq 1 60); do curl -fs -H "Host: nexa-demo.localhost" localhost:8790/
 E2E_CLAVES="$FEL_DEMO_CLAVES"; E2E_MFA="$FEL_DEMO_MFA_SEMILLAS"
 env -u FEL_DEMO_BD_URL -u FEL_DEMO_HOSTS -u FEL_DEMO_CLAVES -u FEL_DEMO_MFA_SEMILLAS -u FEL_PROXY_SECRETO -u FEL_DEMO_LIMITE_LOGIN -u FEL_DEMO_LIMITE_API \
   FEL_DEMO_URL="http://nexa-demo.localhost:8790" FEL_E2E_CLAVES="$E2E_CLAVES" FEL_E2E_MFA="$E2E_MFA" node tests/e2e_practico.cjs
+# la MISMA prueba de humo que se ejecutará contra la dirección real, aquí contra la cadena local (por 127.0.0.1; local.ts presenta el nombre público configurado)
+FEL_DEMO_URL="http://127.0.0.1:8790" FEL_DEMO_CLAVES="$E2E_CLAVES" FEL_DEMO_MFA_SEMILLAS="$E2E_MFA" deno run -A nube/prueba_humo.ts
 echo "NUBE LOCAL E2E OK"

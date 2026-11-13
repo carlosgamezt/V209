@@ -19,7 +19,10 @@ for (const f of ["index.html", "manifest.webmanifest", "sw.js"]) await copiar(jo
 for (const f of ["index.html", "manifest.webmanifest", "sw.js"]) await Deno.remove(join(P, "web", f)).catch(() => {});   // viven en la raíz (las rutas del manifiesto y del service worker)
 await copiarDir(join(FEL, "app", "css"), join(P, "app", "css")); await copiarDir(join(FEL, "app", "js"), join(P, "app", "js"), (n) => /^[A-Za-z0-9._-]+\.js$/.test(n) || !n.includes("."));
 await copiar(join(AQUI, "nube", "pages", "_headers"), join(P, "_headers")); await copiar(join(AQUI, "nube", "pages", "robots.txt"), join(P, "robots.txt"));
-await copiar(join(AQUI, "nube", "pages", "functions", "api", "[[path]].ts"), join(P, "functions", "api", "[[path]].ts")); await copiar(join(AQUI, "nube", "proxy.ts"), join(P, "functions", "_proxy.ts"));
+// intermediario: UN archivo _worker.js (modo avanzado de Pages; compatible con la subida del panel y con Wrangler) + _routes.json (solo /api/* lo invoca)
+const emp = await new Deno.Command(Deno.execPath(), { args: ["bundle", "--platform=browser", join(AQUI, "nube", "pages", "worker.ts"), "-o", join(P, "_worker.js")], stdout: "null", stderr: "piped" }).output();
+if (!emp.success) { console.error(new TextDecoder().decode(emp.stderr)); Deno.exit(1); }
+await Deno.writeTextFile(join(P, "_routes.json"), JSON.stringify({ version: 1, include: ["/api/*"], exclude: [] }, null, 2) + "\n");
 
 // ---- Supabase (función)
 const F = join(SALIDA, "funcion", "supabase"), CODIGO = join(F, "functions", "nexa-demo", "codigo");
@@ -31,6 +34,6 @@ await Deno.writeTextFile(join(F, "config.toml"), `# Generado por nube/construir.
 
 // ---- control: nada sensible en lo construido
 const sospechosos: string[] = [];
-async function revisar(d: string) { for await (const e of Deno.readDir(d)) { const r = join(d, e.name); if (e.isDirectory) { await revisar(r); continue; } if (/\.(ts|js|html|toml|css|txt|webmanifest)$|^_headers$/.test(e.name)) { const t = await Deno.readTextFile(r); if (/(postgres(ql)?:\/\/[^\s'"`]+:[^\s'"`@]+@)|(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})|(sb_secret_[A-Za-z0-9_-]{20,})|(service_role['"]?\s*[:=]\s*['"]ey)/.test(t)) sospechosos.push(relative(SALIDA, r)); } } }
+async function revisar(d: string) { for await (const e of Deno.readDir(d)) { const r = join(d, e.name); if (e.isDirectory) { await revisar(r); continue; } if (/\.(ts|js|json|html|toml|css|txt|webmanifest)$|^_headers$/.test(e.name)) { const t = await Deno.readTextFile(r); if (/(postgres(ql)?:\/\/[^\s'"`]+:[^\s'"`@]+@)|(eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})|(sb_secret_[A-Za-z0-9_-]{20,})|(service_role['"]?\s*[:=]\s*['"]ey)/.test(t)) sospechosos.push(relative(SALIDA, r)); } } }
 await revisar(SALIDA); if (sospechosos.length) { console.error("Posibles secretos en:", sospechosos); Deno.exit(1); }
 console.log(`  Construido en ${SALIDA}\n   · pagina/  (${locales.length ? "Cloudflare Pages" : ""})\n   · funcion/ (Supabase: ${locales.length} módulos locales copiados)`);
