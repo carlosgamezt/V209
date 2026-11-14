@@ -1,0 +1,152 @@
+{
+  "Version": "1.00",
+  "CountryCode": "GT",
+  "Header": {
+      "DocType": "FACT",
+      "IssuedDateTime": "2024-05-29T10:00:00-06:00",
+      "Currency": "GTQ"
+  },
+  "Seller": {
+      "TaxID": "123456",
+      "TaxIDAdditionalInfo": [
+          {
+              "Name": "AfiliacionIVA",
+              "Data": null,
+              "Value": "GEN"
+          }
+      ],
+      "Name": "FEL TEST",
+      "AdditionlInfo": [
+          {
+              "Name": "TipoFrase",
+              "Data": "1",
+              "Value": "1"
+          },
+          {
+              "Name": "Escenario",
+              "Data": "1",
+              "Value": "1"
+          }
+      ],
+      "BranchInfo": {
+          "Code": "1",
+          "Name": "ESTABLECIMIENTO DE PRUEBA",
+          "AddressInfo": {
+              "Address": "4 AVENIDA 15-70 ZONA 10 LOCAL 3 EDIFICIO PALADIUM",
+              "City": "01010",
+              "District": "Guatemala",
+              "State": "Guatemala",
+              "Country": "GT"
+          }
+      }
+  },
+  "Buyer": {
+      "TaxID": "3730617490101",
+      "TaxIDType": "CUI",
+      "Name": "Julio Cifuentes",
+      "AddressInfo": {
+          "Address": "CIUDAD",
+          "City": "01010",
+          "District": "GUATEMALA",
+          "State": "GUATEMALA",
+          "Country": "GT"
+      }
+  },
+  "Items": [
+      {
+          "Number": "1",
+          "Codes": null,
+          "Type": "Bien",
+          "Description": "LLANTAS 90/90-17 TL DOBLE PROPOSITO",
+          "Qty": "1.000000",
+          "UnitOfMeasure": "UNO",
+          "Price": "190.000000",
+          "Discounts": null,
+          "Taxes": {
+              "Tax": [
+                  {
+                      "Code": "1",
+                      "Description": "IVA",
+                      "TaxableAmount": "169.642857",
+                      "Amount": "20.357143"
+                  }
+              ]
+          },
+          "Totals": {
+              "TotalItem": "190.000000"
+          }
+      }
+  ],
+  "Totals": {
+      "TotalTaxes": {
+          "TotalTax": [
+              {
+                  "Description": "IVA",
+                  "Amount": "20.357143"
+              }
+          ]
+      },
+      "GrandTotal": {
+          "InvoiceTotal": "190.000000"
+      }
+  },
+  "AdditionalDocumentInfo": {
+      "AdditionalInfo": [
+          {
+              "Code": "FRONT-263C-444B-89BA-6F87EC1330C0",
+              "Type": "ADENDA",
+              "AditionalData": {
+                  "Data": [
+                      {
+                          "Info": [
+                              {
+                                  "Name": "OBSERVACIONES",
+                                  "Data": null,
+                                  "Value": "-"
+                              },
+                              {
+                                  "Name": "CANTIDAD_LETRAS",
+                                  "Data": null,
+                                  "Value": "CIENTO NOVENTA QUETZALES CON 00/100"
+                              }
+                          ],
+                          "Name": "INFORMACION_ADICIONAL"
+                      },
+                      {
+                          "Info": [
+                              {
+                                  "Name": "NumeroLinea",
+                                  "Data": null,
+                                  "Value": "1"
+                              },
+                              {
+                                  "Name": "Descripcion_Adicional",
+                                  "Data": null,
+                                  "Value": "-"
+                              },
+                              {
+                                  "Name": "CodigoEAN",
+                                  "Data": null,
+                                  "Value": "00015"
+                              },
+                              {
+                                  "Name": "CategoriaAdicional",
+                                  "Data": null,
+                                  "Value": "-"
+                              }
+                          ],
+                          "Name": "DetallesAux_Detalle"
+                      }
+                  ]
+              },
+              "AditionalInfo": [
+                  {
+                      "Name": "VALIDAR_REFERENCIA_INTERNA",
+                      "Data": null,
+                      "Value": "NO_VALIDAR"
+                  }
+              ]
+          }
+      ]
+  }
+}

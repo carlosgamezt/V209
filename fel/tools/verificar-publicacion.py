@@ -1,36 +1,46 @@
 #!/usr/bin/env python3
 """Garantías estáticas de la publicación privada (se ejecutan en el CI): ninguna ejecución automática puede publicar y los secretos de la demostración no se filtran a otros trabajos."""
 import glob, re, sys, yaml
-R = ".github/workflows/publicar-nube.yml"; fallos = []
+R = ".github/workflows/publicar-nube.yml"; DF = ".github/workflows/digifact-test.yml"; fallos = []
 def mal(m): fallos.append(m); print("FALLO", m)
 def ok(m): print("OK   ", m)
-w = yaml.safe_load(open(R, encoding="utf-8")); disparo = w.get(True, w.get("on"))   # PyYAML lee «on» como True
-if set(disparo) == {"workflow_dispatch"}: ok("solo se activa a mano (workflow_dispatch): sin push, pull_request, schedule, workflow_run ni repository_dispatch")
-else: mal(f"disparadores no permitidos: {sorted(set(disparo) - {'workflow_dispatch'})}")
-jobs = w["jobs"]
-if len(jobs) == 1: ok("un único trabajo")
-else: mal("debe haber un único trabajo")
-j = next(iter(jobs.values()))
-if j.get("environment") == "demo-privada": ok("el trabajo usa el entorno protegido «demo-privada» (aprobación obligatoria)")
-else: mal("el trabajo debe usar environment: demo-privada")
-if "refs/heads/fel-proveedores-diseno" in str(j.get("if", "")): ok("solo corre desde la rama fel-proveedores-diseno")
-else: mal("falta la restricción de rama")
-texto = open(R, encoding="utf-8").read()
-nombres = re.findall(r"secrets\.([A-Za-z0-9_]+)", texto)
-if nombres and all(n.startswith("DEMO_") for n in nombres): ok(f"los {len(set(nombres))} secretos usados tienen prefijo DEMO_ (no se mezclan con los del proyecto principal)")
-else: mal(f"secretos sin prefijo DEMO_: {[n for n in nombres if not n.startswith('DEMO_')]}")
-# los secretos solo en el paso final (no en acciones de terceros ni a nivel de trabajo)
-if "secrets." in str(j.get("env", "")): mal("hay secretos a nivel de trabajo")
-con_secretos = [s.get("name") or s.get("uses") for s in j["steps"] if "secrets." in str(s.get("env", "")) or "secrets." in str(s.get("with", ""))]
-if len(con_secretos) == 1 and "uses" not in next(s for s in j["steps"] if (s.get("name") or s.get("uses")) == con_secretos[0]): ok("los secretos se inyectan en un solo paso propio (run), no en acciones de terceros")
-else: mal(f"secretos en pasos no permitidos: {con_secretos}")
-if "PUBLICAR" in texto and "inputs.confirmar" in texto: ok("publicar exige escribir PUBLICAR")
-else: mal("falta la confirmación explícita")
+def verificar_flujo(ruta, etiqueta, palabra, entrada):
+    """Las MISMAS garantías para todo flujo que recibe secretos DEMO_: solo manual, un trabajo, entorno protegido, rama fija, secretos aislados en un solo paso y confirmación explícita."""
+    w = yaml.safe_load(open(ruta, encoding="utf-8").read()); disparo = w.get(True, w.get("on"))   # PyYAML lee «on» como True
+    if set(disparo) == {"workflow_dispatch"}: ok(f"[{etiqueta}] solo se activa a mano (workflow_dispatch): sin push, pull_request, schedule, workflow_run ni repository_dispatch")
+    else: mal(f"[{etiqueta}] disparadores no permitidos: {sorted(set(disparo) - {'workflow_dispatch'})}")
+    jobs = w["jobs"]
+    if len(jobs) == 1: ok(f"[{etiqueta}] un único trabajo")
+    else: mal(f"[{etiqueta}] debe haber un único trabajo")
+    j = next(iter(jobs.values()))
+    if j.get("environment") == "demo-privada": ok(f"[{etiqueta}] el trabajo usa el entorno protegido «demo-privada» (aprobación obligatoria)")
+    else: mal(f"[{etiqueta}] el trabajo debe usar environment: demo-privada")
+    if "refs/heads/fel-proveedores-diseno" in str(j.get("if", "")): ok(f"[{etiqueta}] solo corre desde la rama fel-proveedores-diseno")
+    else: mal(f"[{etiqueta}] falta la restricción de rama")
+    texto = open(ruta, encoding="utf-8").read()
+    nombres = re.findall(r"secrets\.([A-Za-z0-9_]+)", texto)
+    if nombres and all(n.startswith("DEMO_") for n in nombres): ok(f"[{etiqueta}] los {len(set(nombres))} secretos usados tienen prefijo DEMO_ (no se mezclan con los del proyecto principal)")
+    else: mal(f"[{etiqueta}] secretos sin prefijo DEMO_: {[n for n in nombres if not n.startswith('DEMO_')]}")
+    # los secretos solo en el paso final (no en acciones de terceros ni a nivel de trabajo)
+    if "secrets." in str(j.get("env", "")): mal(f"[{etiqueta}] hay secretos a nivel de trabajo")
+    con_secretos = [s.get("name") or s.get("uses") for s in j["steps"] if "secrets." in str(s.get("env", "")) or "secrets." in str(s.get("with", ""))]
+    if len(con_secretos) == 1 and "uses" not in next(s for s in j["steps"] if (s.get("name") or s.get("uses")) == con_secretos[0]): ok(f"[{etiqueta}] los secretos se inyectan en un solo paso propio (run), no en acciones de terceros")
+    else: mal(f"[{etiqueta}] secretos en pasos no permitidos: {con_secretos}")
+    if palabra in texto and entrada in texto: ok(f"[{etiqueta}] la operación crítica exige escribir {palabra}")
+    else: mal(f"[{etiqueta}] falta la confirmación explícita")
+    return texto
+verificar_flujo(R, "publicar-nube", "PUBLICAR", "inputs.confirmar")
+txt_df = verificar_flujo(DF, "digifact-test", "CERTIFICAR-TEST", "inputs.confirmar")
+if "testnucgt.digifact.com" in txt_df and "nucgt.digifact.com/gt.com.apinuc" not in txt_df and "--allow-net=testnucgt.digifact.com" in txt_df: ok("[digifact-test] solo puede salir a testnucgt.digifact.com (producción de Digifact no está permitida)")
+else: mal("[digifact-test] debe limitar la red a testnucgt.digifact.com")
+if "Digifact" in txt_df and "echo ${{ secrets" not in txt_df and "::add-mask" not in txt_df: ok("[digifact-test] ningún paso imprime secretos")
+else: mal("[digifact-test] un paso podría imprimir secretos")
+PERMITIDOS = {R, DF}
 for f in glob.glob(".github/workflows/*.yml"):
-    if f != R and re.search(r"secrets\.DEMO_", open(f, encoding="utf-8").read()): mal(f"{f} usa secretos DEMO_")
+    if f not in PERMITIDOS and re.search(r"secrets\.DEMO_", open(f, encoding="utf-8").read()): mal(f"{f} usa secretos DEMO_")
 else: ok("ningún otro flujo de trabajo usa los secretos DEMO_")
 for f in glob.glob(".github/workflows/*.yml"):
-    if f != R and "demo-privada" in open(f, encoding="utf-8").read(): mal(f"{f} usa el entorno demo-privada")
+    if f not in PERMITIDOS and "demo-privada" in open(f, encoding="utf-8").read(): mal(f"{f} usa el entorno demo-privada")
 sh = open("fel/tools/publicar-nube.sh", encoding="utf-8").read(); pp = open("fel/tools/pages-proyecto.sh", encoding="utf-8").read()
 if "nexa|nexacorp" in sh and "nexa|nexacorp" in pp and "nexa-fel-demo" in pp: ok("el proyecto de Pages solo puede ser nexa-fel-demo; nexa y nexacorp están vetados")
 else: mal("faltan los vetos a nexa/nexacorp en los scripts de publicación")

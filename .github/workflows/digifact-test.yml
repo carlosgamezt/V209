@@ -1,0 +1,74 @@
+name: NEXA FEL · Digifact TEST (manual)
+# SOLO se ejecuta cuando TÚ la lanzas a mano (Actions → esta página → «Run workflow»); ningún push, pull request ni programación la activa.
+# Aun lanzada, el trabajo queda en espera hasta que TÚ lo apruebes en el entorno protegido «demo-privada», y solo entonces recibe los secretos.
+# Habla ÚNICAMENTE con el ambiente de pruebas de Digifact (https://testnucgt.digifact.com): el cliente bloquea producción. Nunca imprime la contraseña ni el token.
+#  · autenticar          Prueba 1: obtiene un JWT de TEST (no se imprime).
+#  · consultar-nit       Prueba 2: consulta la razón social de un NIT (SHARED_GETINFONITcom).
+#  · validar-nuc         Prueba 3: construye y valida la factura de prueba (sin red).
+#  · certificar-test     Prueba 4: UNA certificación en TEST. Exige escribir CERTIFICAR-TEST en «confirmar».
+#  · consulta-posterior  Prueba 5: consulta el DTE certificado por su autorización (UUID).
+#  · descargar           Descarga XML/PDF de un DTE de TEST por su autorización.
+# Secretos de ENTORNO (prefijo DEMO_, solo en este entorno): DEMO_DIGIFACT_TEST_USERNAME, DEMO_DIGIFACT_TEST_PASSWORD, DEMO_DIGIFACT_TEST_NIT.
+on:
+  workflow_dispatch:
+    inputs:
+      paso:
+        description: "Prueba a ejecutar"
+        type: choice
+        options: [autenticar, consultar-nit, validar-nuc, certificar-test, consulta-posterior, descargar]
+        default: autenticar
+      confirmar:
+        description: "Para «certificar-test», escribe CERTIFICAR-TEST"
+        type: string
+        default: ""
+      nit_consulta:
+        description: "NIT a consultar en «consultar-nit» (vacío = el NIT de TEST)"
+        type: string
+        default: ""
+      autorizacion:
+        description: "UUID del DTE para «consulta-posterior» y «descargar»"
+        type: string
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: digifact-test
+  cancel-in-progress: false
+jobs:
+  digifact:
+    name: Digifact TEST
+    if: github.ref == 'refs/heads/fel-proveedores-diseno'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: demo-privada
+    steps:
+      - name: Confirmación explícita
+        if: inputs.paso == 'certificar-test' && inputs.confirmar != 'CERTIFICAR-TEST'
+        run: echo "Para certificar en TEST hay que escribir CERTIFICAR-TEST en «confirmar»."; exit 1
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # los secretos solo existen en ESTE paso (no en las acciones de terceros de arriba ni de abajo)
+      - name: Ejecutar (${{ inputs.paso }})
+        env:
+          DIGIFACT_TEST_USERNAME: ${{ secrets.DEMO_DIGIFACT_TEST_USERNAME }}
+          DIGIFACT_TEST_PASSWORD: ${{ secrets.DEMO_DIGIFACT_TEST_PASSWORD }}
+          DIGIFACT_TEST_NIT: ${{ secrets.DEMO_DIGIFACT_TEST_NIT }}
+          PASO: ${{ inputs.paso }}
+          DIGIFACT_CONFIRMAR: ${{ inputs.confirmar }}
+          DIGIFACT_NIT_CONSULTA: ${{ inputs.nit_consulta }}
+          DIGIFACT_AUTORIZACION: ${{ inputs.autorizacion }}
+        run: |
+          case "$PASO" in autenticar|consultar-nit|validar-nuc|certificar-test|consulta-posterior|descargar) ;; *) echo "Paso no válido"; exit 2;; esac
+          cd fel/proveedores
+          deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_EMISOR_NOMBRE --allow-read --allow-write=./salida digifact_prueba.ts "$PASO"
+      # solo los documentos de TEST de una certificación; se borran al día siguiente
+      - name: Documentos de la certificación de prueba
+        if: inputs.paso == 'certificar-test' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: digifact-test-documentos
+          path: fel/proveedores/salida
+          retention-days: 1
+          if-no-files-found: ignore

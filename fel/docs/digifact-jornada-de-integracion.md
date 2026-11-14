@@ -1,5 +1,7 @@
 # Digifact · preparación para la primera jornada de integración (ambiente TEST)
 
+> **Actualización 14/11/2026:** ya se leyó la documentación oficial y existe el cliente real (`proveedores/src/digifact_gt.ts`) y el constructor del NUC (`proveedores/src/nuc_gt.ts`), probados con transporte simulado. Lo confirmado, lo pendiente y las preguntas para soporte están en **`docs/digifact/integracion-pendiente.md`**. Lo que sigue de este documento es el plan original; donde diga «contrato hipotético» o «rutas de ejemplo», prevalece el documento nuevo.
+
 Estado: **bloqueado por información externa.** No tenemos documentación oficial, credenciales ni acceso de pruebas. **No se inventó ningún endpoint ni contrato.** Todo lo que hoy llama a «Digifact» habla con un simulador local (`DigifactSimulador`) cuyo contrato HTTP es una *hipótesis de trabajo* marcada como tal en `proveedores/src/digifact.ts`.
 
 ## 1. Qué ya está listo (y no cambia al llegar la documentación)
