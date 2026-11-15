@@ -43,7 +43,7 @@ Observaciones de la propia documentación: (a) «los links» del portal apuntan 
 
 | Servicio | Endpoint | Estado en el cliente (`src/digifact_gt.ts`) | Pendiente de confirmar |
 |---|---|---|---|
-| Token | `POST /login/get_token` · cuerpo `{Username, Password}` · respuesta `{token}` | Implementado y probado con transporte simulado | Vigencia del token; límite de inicios de sesión; formato del encabezado `Authorization` |
+| Token | `POST /login/get_token` · cuerpo `{Username, Password}` · respuesta `{token}` según la documentación | **Probado contra TEST el 15/11/2026: OK.** La respuesta real trae la clave **`Token`** (mayúscula), no `token`; el cliente acepta ambas. Vigencia observada ≈ **30 días** (2.591.999 s) | Límite de inicios de sesión; formato del encabezado `Authorization` (Prueba 2) |
 | Certificar | `POST /v2/transform/nuc_json?TAXID&FORMAT&USERNAME` (JSON). El XML va a `/v2/transform/nuc` (no usado) | Implementado; **no ejecutado contra TEST** | Códigos de `code`; tiempos; idempotencia |
 | Consultar NIT | `GET /Shared` · `DATA1=SHARED_GETINFONITcom` · `DATA2=NIT\|<nit>` | Implementado | — |
 | Consultar DTE | `GET /Shared` · `DATA1=SHARED_GETDTEINFO` · `DATA2=AUTHNUMBER\|<uuid>` | Implementado | — |
@@ -76,7 +76,7 @@ El cliente distingue: **certificado** (código 1 y autorización, serie y númer
 ## 8. Preguntas para soporte (soporte-gt@digifact.com · +502 3357 7512) — listas para enviar
 
 1. **Encabezado `Authorization`**: ¿el token JWT se envía tal cual o con el prefijo `Bearer `? (La documentación dice «Token JWT»; la guía de reportes muestra `Authorization: <token JWT>`.)
-2. **Vigencia del token** y política de renovación. ¿Hay límite de inicios de sesión por minuto/hora/día para un mismo usuario?
+2. **Política de renovación del token** (en TEST observamos una vigencia de ≈ 30 días: ¿es la misma en producción?). ¿Hay límite de inicios de sesión por minuto/hora/día para un mismo usuario? ¿Se bloquea el usuario tras intentos fallidos?
 3. **Límites de tasa** por servicio (certificar, consultas, descargas). ¿Cuándo responden 429? ¿Envían `Retry-After`?
 4. **Idempotencia**: ¿qué hace exactamente `VALIDAR_REFERENCIA_INTERNA = VALIDAR`? Si enviamos dos veces la misma referencia interna con la misma factura, ¿rechazan la segunda? ¿con qué código? ¿por cuánto tiempo se recuerda la referencia?
 5. Si una certificación termina con **tiempo agotado o corte**, ¿cuál es el método recomendado para saber si se certificó? ¿Existe consulta directa por referencia interna? ¿Con qué retardo aparece un documento en `SHARED_GETREPORTDAILYACUSES`? ¿Ese reporte llegará a producción y cuándo?
@@ -97,7 +97,7 @@ El cliente distingue: **certificado** (código 1 y autorización, serie y númer
 
 | # | Caso | Quién lo ejecuta | Estado |
 |---|---|---|---|
-| 1 | Autenticación (JWT válido) | Workflow `Digifact TEST` → `autenticar` | Pendiente (faltan los secretos `DEMO_DIGIFACT_TEST_*` y tu autorización) |
+| 1 | Autenticación (JWT válido) | Workflow `Digifact TEST` → `autenticar` | **HECHO 15/11/2026**: token obtenido en la 4.ª ejecución (las 3 primeras: 2 por contraseña mal escrita y 1 por la clave `Token`) |
 | 2 | Consulta de NIT | `consultar-nit` (prueba sin prefijo y, si hay 401, con `Bearer`) | Pendiente |
 | 3 | Validación del NUC (sin red) | `validar-nuc` | Se ejecuta en CI en cada commit |
 | 4 | Certificación TEST (1 factura) | `certificar-test` con `CERTIFICAR-TEST` | Pendiente de autorización explícita |
