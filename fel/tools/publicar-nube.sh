@@ -56,7 +56,7 @@ PLAN
   if [ ${#falta[@]} -eq 0 ] && [ ${#herr[@]} -eq 0 ]; then
     echo; echo "== Comprobación de la cadena de conexión y prueba de conectividad de SOLO LECTURA (db push --dry-run por el Session Pooler IPv4: lista las migraciones pendientes, NO aplica nada)"
     bash tools/supabase-hospedado.sh validar || { echo "La cadena de conexión no es válida: no se publicará hasta corregirla."; exit 1; }
-    bash tools/supabase-hospedado.sh conexion || { echo "La prueba de conectividad por el Session Pooler falló: no se publicará hasta resolverla."; exit 1; }
+    bash tools/supabase-hospedado.sh conexion || { echo "La prueba de conectividad por el Session Pooler falló: no se publicará hasta resolverla."; bash tools/supabase-hospedado.sh diagnostico || true; exit 1; }
   else echo "(faltan variables o herramientas: se omite la prueba de conectividad)"; fi
   exit 0; fi
 

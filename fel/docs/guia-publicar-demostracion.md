@@ -72,3 +72,13 @@ Nota: «Required reviewers» en repositorios **privados** solo existe en algunos
 - Pausar o borrar el proyecto de Supabase y el de Cloudflare detiene todo; no hay cobros si usas los planes gratuitos.
 - Para rotar contraseñas: repite los pasos 3 y 4.
 - Plan B ya preparado si la función de Supabase diera problemas: contenedor en Fly.io (≈ US$5–8/mes), `demo-facturacion/despliegue/fly.toml`.
+
+## Si la verificación dice «password authentication failed» (SQLSTATE 28P01)
+Significa que la conexión al Session Pooler **sí llegó** (red IPv4 y proyecto correctos) pero la **contraseña** que presentó no es la vigente de la base de `nexa-demo`. No se aplicó nada.
+1. Lanza `verificar`: si la conexión falla, ahora imprime un **diagnóstico sin valores** (SI/NO): si la contraseña de `DEMO_BD_URL` autentica, si la de `DEMO_SUPABASE_DB_PASSWORD` autentica, si son iguales, si quedó el marcador `[YOUR-PASSWORD]` sin reemplazar y si trae «%».
+2. Según la conclusión:
+   - **Ninguna autentica** (lo más probable si la contraseña se restableció o se copió mal): en Supabase → proyecto **nexa-demo** (referencia `sbmchmknfercbtziwrge`, **no** el proyecto de NEXA principal) → *Project Settings* → *Database* → *Reset database password*. Usa una contraseña solo con letras y números (evita `@ : / ? # %`). Luego actualiza **los dos** secretos del entorno `demo-privada`: `DEMO_SUPABASE_DB_PASSWORD` (la contraseña nueva) y `DEMO_BD_URL` (la cadena del *Transaction pooler* de *Connect*, con esa contraseña en lugar de `[YOUR-PASSWORD]`; puerto 6543).
+   - **Solo la de `DEMO_SUPABASE_DB_PASSWORD` autentica**: corrige únicamente `DEMO_BD_URL` con esa misma contraseña.
+   - **Solo la de `DEMO_BD_URL` autentica**: corrige `DEMO_SUPABASE_DB_PASSWORD`.
+3. Vuelve a lanzar `verificar` y aprueba en `demo-privada`. Cuando la conexión funcione imprimirá la lista de migraciones pendientes del `--dry-run` (solo lectura).
+Restablecer la contraseña de `nexa-demo` no afecta a NEXA principal ni a ningún otro proyecto.
