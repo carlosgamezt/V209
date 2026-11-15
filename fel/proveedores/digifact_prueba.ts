@@ -52,22 +52,29 @@ export function facturaDePruebaTest(e: DatosEmisor, referenciaInterna: string, f
   };
 }
 
-/** Busca en el reporte de acuses (solo lectura) un DTE ya ACEPTADO por SAT del establecimiento 2 y lee de su XML los datos del emisor. Máx. 17 consultas. */
+/** Busca en el reporte de acuses (solo lectura) un DTE ya certificado del establecimiento 2 (prefiere los ACEPTADOS por SAT) y lee de su XML los datos del emisor. Máx. ~45 consultas. Si no hay nada, informa qué SÍ existe (solo conteos y códigos). */
 async function descubrirEmisor(c: DigifactGt) {
   const rangos: Array<[string, string]> = [];
-  for (let i = 0; i < 15; i++) rangos.push([fechaGt(-(i * 2 + 2) * 86_400_000), fechaGt(-(i * 2) * 86_400_000)]);
-  rangos.push(["2026-10-05", "2026-10-07"]);   // fechas del ejemplo de la guía oficial de Digifact (NIT de prueba con 32 documentos)
-  for (const [d, h] of rangos) {
-    const filas = await c.reporteAcuses(d, { hasta: h, establecimiento: 2, estadoAcuse: "ACEPTADO_SAT", limite: 3 });
-    for (const f of filas.filter((x) => x.autorizacion)) {
-      const r = await c.consultarDte(f.autorizacion);
-      if (!r.encontrado || !r.xmlB64) continue;
-      const e = extraerEmisorDeDte(r.xmlB64);
-      if (e.ok) return { ok: true as const, datos: e.datos, fuente: { rango: `${d} a ${h}`, tipoDte: f.tipoDte, establecimiento: f.establecimiento, nombreEstablecimiento: f.nombreEstablecimiento, estadoAcuse: f.estadoAcuse } };
-      return { ok: false as const, motivo: e.motivo, etiquetasVistas: e.etiquetasVistas, fuente: { rango: `${d} a ${h}`, tipoDte: f.tipoDte } };
+  for (let i = 0; i < 20; i++) rangos.push([fechaGt(-(i * 2 + 2) * 86_400_000), fechaGt(-(i * 2) * 86_400_000)]);
+  rangos.push(["2026-10-05", "2026-10-07"]);   // fechas del ejemplo de la guía oficial de Digifact
+  const vistos = { rangosConsultados: 0, filas: 0, establecimientos: new Set<string>(), estados: new Set<string>(), tipos: new Set<string>() };
+  const orden = (a: { estadoAcuse: string }, b: { estadoAcuse: string }) => Number(b.estadoAcuse === "ACEPTADO_SAT") - Number(a.estadoAcuse === "ACEPTADO_SAT");
+  for (const filtrarEst of [true, false]) {
+    for (const [d, h] of rangos) {
+      const filas = await c.reporteAcuses(d, { hasta: h, ...(filtrarEst ? { establecimiento: 2 } : {}), limite: 20 }); vistos.rangosConsultados++;
+      for (const f of filas) { vistos.filas++; vistos.establecimientos.add(f.establecimiento); vistos.estados.add(f.estadoAcuse); vistos.tipos.add(f.tipoDte); }
+      const candidatas = filas.filter((x) => x.autorizacion && x.establecimiento === "2").sort(orden).slice(0, 3);
+      for (const f of candidatas) {
+        const r = await c.consultarDte(f.autorizacion);
+        if (!r.encontrado || !r.xmlB64) continue;
+        const e = extraerEmisorDeDte(r.xmlB64);
+        if (e.ok) return { ok: true as const, datos: e.datos, fuente: { rango: `${d} a ${h}`, tipoDte: f.tipoDte, establecimiento: f.establecimiento, nombreEstablecimiento: f.nombreEstablecimiento, estadoAcuse: f.estadoAcuse } };
+        return { ok: false as const, motivo: e.motivo, etiquetasVistas: e.etiquetasVistas, fuente: { rango: `${d} a ${h}`, tipoDte: f.tipoDte }, hallazgos: null };
+      }
     }
+    if (vistos.filas > 0) break;   // si ya hay documentos (de otros establecimientos) no hace falta repetir sin filtro
   }
-  return { ok: false as const, motivo: "no se encontró ningún DTE aceptado del establecimiento 2 en los últimos 30 días ni en las fechas de la guía", etiquetasVistas: [] as string[], fuente: null };
+  return { ok: false as const, motivo: "no se encontró ningún DTE del establecimiento 2 con datos legibles", etiquetasVistas: [] as string[], fuente: null, hallazgos: { rangosConsultados: vistos.rangosConsultados, filasVistas: vistos.filas, establecimientosVistos: [...vistos.establecimientos].slice(0, 20), estadosVistos: [...vistos.estados], tiposVistos: [...vistos.tipos] } };
 }
 
 async function main() {
@@ -97,7 +104,7 @@ async function main() {
       const ref = Deno.env.get("DIGIFACT_REFERENCIA") ?? ""; if (!UUID.test(ref)) salir("Falta DIGIFACT_REFERENCIA (GUID de 36 caracteres) para mostrar la factura exacta", 2);
       const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw");
       let r; try { r = await descubrirEmisor(c); } catch (e) { out({ prueba: "datos-emisor", ok: false, error: errorLegible(e) }); Deno.exit(1); }
-      if (!r.ok) { out({ prueba: "datos-emisor", ok: false, motivo: r.motivo, etiquetasVistas: r.etiquetasVistas, fuente: r.fuente }); Deno.exit(1); }
+      if (!r.ok) { out({ prueba: "datos-emisor", ok: false, motivo: r.motivo, etiquetasVistas: r.etiquetasVistas, fuente: r.fuente, hallazgos: r.hallazgos }); Deno.exit(1); }
       const problemas = verificarEmisorEsperado(r.datos);
       let nuc: Record<string, unknown> | null = null, errores: unknown = null;
       try { nuc = construirNuc(facturaDePruebaTest(r.datos, ref)); } catch (e) { errores = e instanceof NucInvalido ? e.errores : [String(e)]; }
