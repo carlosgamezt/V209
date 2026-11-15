@@ -25,7 +25,9 @@ export function nit12(nit: string): string {
 }
 /** Usuario de inicio de sesión: «GT.» + NIT de 12 dígitos + «.» + usuario (documentación, «Obtener Token»). */
 export function usuarioLogin(nit: string, usuario: string): string { return `GT.${nit12(nit)}.${validarUsuario(usuario)}`; }
-function validarUsuario(u: string): string { if (!/^[A-Za-z0-9_.-]{2,60}$/.test(u)) throw new ErrorDigifact("solicitud", "Usuario de Digifact no válido"); return u; }
+/** Si el secreto ya trae el nombre COMPLETO de inicio de sesión («GT.000005888492.USUARIO»), se queda solo con la parte del usuario: así no se repite el prefijo. */
+export function soloUsuario(u: string): string { const m = /^GT\.\d{12}\.(.+)$/i.exec(String(u).trim()); return m ? m[1] : String(u).trim(); }
+function validarUsuario(u: string): string { const x = soloUsuario(u); if (!/^[A-Za-z0-9_.-]{2,60}$/.test(x)) throw new ErrorDigifact("solicitud", "Usuario de Digifact no válido"); return x; }
 
 export interface ConfigDigifactGt {
   nit: string; usuario: string;
@@ -78,8 +80,10 @@ export class DigifactGt {
   #ahora: () => number; #margen: number; #vigencia: number; #esquema: "raw" | "bearer";
   /** Cuántos inicios de sesión se han hecho (para pruebas y para vigilar que no haya tormentas de autenticación). */
   logins = 0;
-  constructor(private c: ConfigDigifactGt) {
-    nit12(c.nit); validarUsuario(c.usuario);
+  private c: ConfigDigifactGt;
+  constructor(c0: ConfigDigifactGt) {
+    let c = c0;
+    nit12(c.nit); c = { ...c, usuario: validarUsuario(c.usuario) }; this.c = c;
     this.#ahora = c.ahora ?? Date.now; this.#margen = c.margenRenovacionS ?? 60; this.#vigencia = c.vigenciaPorDefectoS ?? 600; this.#esquema = c.esquemaAutorizacion ?? "raw";
   }
 

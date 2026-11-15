@@ -2,7 +2,7 @@
 //   deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_EMISOR_NOMBRE --allow-read --allow-write=./salida digifact_prueba.ts <paso>
 // Pasos:  autenticar · consultar-nit · validar-nuc · certificar-test · consulta-posterior · descargar
 // NUNCA imprime la contraseña ni el token; solo «sí/no», códigos, UUID, serie, número y fechas.
-import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12 } from "./src/digifact_gt.ts";
+import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12, soloUsuario } from "./src/digifact_gt.ts";
 import { construirNuc, NucInvalido, type FacturaGt } from "./src/nuc_gt.ts";
 
 const NECESARIAS = ["DIGIFACT_TEST_USERNAME", "DIGIFACT_TEST_PASSWORD", "DIGIFACT_TEST_NIT"] as const;
@@ -14,6 +14,15 @@ function cliente(esquema: "raw" | "bearer"): DigifactGt {
   const faltan = NECESARIAS.filter((n) => !Deno.env.get(n));
   if (faltan.length) salir(`Faltan variables de entorno (solo se indican los NOMBRES): ${faltan.join(", ")}`, 2);
   return crearDigifactGt({ ambiente: "test", nit: Deno.env.get("DIGIFACT_TEST_NIT")!, usuario: Deno.env.get("DIGIFACT_TEST_USERNAME")!, obtenerClave: () => Deno.env.get("DIGIFACT_TEST_PASSWORD")!, esquemaAutorizacion: esquema, tiempoMaximoMs: 30_000 });
+}
+/** Solo la FORMA de los datos (sí/no), nunca valores ni longitudes: ayuda a descubrir un secreto mal pegado sin exponerlo. */
+function formaDeCredenciales() {
+  const u = Deno.env.get("DIGIFACT_TEST_USERNAME") ?? "", n = Deno.env.get("DIGIFACT_TEST_NIT") ?? "", c = Deno.env.get("DIGIFACT_TEST_PASSWORD") ?? "";
+  return {
+    usuarioTrajoElPrefijoGTCompleto: /^GT\.\d{12}\./i.test(u.trim()), usuarioSeUsoSinPrefijo: soloUsuario(u) !== u.trim() ? "se quitó el prefijo" : "tal cual",
+    usuarioConEspaciosOSaltos: /\s/.test(u), nitSoloDigitos: /^\d+$/.test(n.trim()), nitConEspaciosOSaltos: n !== n.trim(),
+    claveVacia: c.length === 0, claveConEspaciosOSaltosAlInicioOFinal: c !== c.trim(), claveContieneSaltoDeLinea: /[\r\n]/.test(c),
+  };
 }
 const errorLegible = (e: unknown) => e instanceof ErrorDigifact ? { tipo: e.tipo, estadoHttp: e.estadoHttp ?? null, mensaje: e.message } : { tipo: "inesperado", mensaje: e instanceof Error ? e.name : "error" };
 
@@ -35,7 +44,7 @@ async function main() {
     case "autenticar": {   // PRUEBA 1
       const c = cliente("raw");
       try { await c.token(); const s = c.estadoSesion(); out({ prueba: "autenticar", ok: true, tokenObtenido: s.activa, venceEnSegundos: s.venceEnS, ambiente: "TEST", nitConsultado: nit12(Deno.env.get("DIGIFACT_TEST_NIT")!) }); }
-      catch (e) { out({ prueba: "autenticar", ok: false, error: errorLegible(e) }); Deno.exit(1); }
+      catch (e) { out({ prueba: "autenticar", ok: false, error: errorLegible(e), ...(e instanceof ErrorDigifact && e.tipo === "autenticacion" ? { diagnosticoDeForma: formaDeCredenciales() } : {}) }); Deno.exit(1); }
       return;
     }
     case "consultar-nit": {   // PRUEBA 2 (GET seguro: se prueba sin prefijo y, si Digifact lo rechaza con 401, con «Bearer»)

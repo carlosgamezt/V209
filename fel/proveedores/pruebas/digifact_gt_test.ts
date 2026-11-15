@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12, usuarioLogin, URL_BASE } from "../src/digifact_gt.ts";
+import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12, soloUsuario, usuarioLogin, URL_BASE } from "../src/digifact_gt.ts";
 import type { PeticionHttp, RespuestaHttp, Transporte } from "../src/digifact.ts";
 import { construirNuc } from "../src/nuc_gt.ts";
 import { facturaPrueba, REF_PRUEBA } from "./digifact_gt_fixture.ts";
@@ -27,6 +27,16 @@ Deno.test("Digifact: NIT de 12 dígitos y usuario de inicio de sesión como pide
   assert.equal(usuarioLogin("5888492", "USUARIO_TEST"), "GT.000005888492.USUARIO_TEST");
   assert.throws(() => nit12("1234567890123"), ErrorDigifact); assert.throws(() => nit12("58-88"), ErrorDigifact); assert.throws(() => usuarioLogin("1", "a b"), ErrorDigifact);
   assert.equal(URL_BASE.test, "https://testnucgt.digifact.com/api");
+});
+
+Deno.test("Digifact: si el secreto del usuario ya trae «GT.<NIT>.», no se repite el prefijo (login y parámetro USERNAME)", async () => {
+  assert.equal(soloUsuario("GT.000005888492.USUARIO_TEST"), "USUARIO_TEST"); assert.equal(soloUsuario("  USUARIO_TEST "), "USUARIO_TEST"); assert.equal(soloUsuario("USUARIO.CON.PUNTOS"), "USUARIO.CON.PUNTOS");
+  assert.equal(usuarioLogin("5888492", "GT.000005888492.USUARIO_TEST"), "GT.000005888492.USUARIO_TEST");
+  const llamadas: PeticionHttp[] = [];
+  const c = new DigifactGt({ nit: "5888492", usuario: "GT.000005888492.USUARIO_TEST", obtenerClave: () => CLAVE, transporte: (p) => { llamadas.push(p); return Promise.resolve(p.ruta === "/login/get_token" ? loginOk() : ok({ RESPONSE: [] })); } });
+  await c.consultarNit("44653948");
+  assert.equal(JSON.parse(llamadas[0].cuerpo!).Username, "GT.000005888492.USUARIO_TEST");
+  assert.equal(new URL("https://x" + llamadas[1].ruta).searchParams.get("USERNAME"), "USUARIO_TEST");
 });
 
 Deno.test("Digifact: producción está BLOQUEADA y las credenciales de TEST no pueden apuntar a otro servidor", () => {
