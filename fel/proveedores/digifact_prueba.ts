@@ -54,6 +54,16 @@ export function facturaDePruebaTest(e: DatosEmisor, referenciaInterna: string, f
 
 /** Busca en el reporte de acuses (solo lectura) un DTE ya certificado del establecimiento 2 (prefiere los ACEPTADOS por SAT) y lee de su XML los datos del emisor. Máx. ~45 consultas. Si no hay nada, informa qué SÍ existe (solo conteos y códigos). */
 async function descubrirEmisor(c: DigifactGt) {
+  // Fuente indicada por el usuario: la autorización (UUID) de un DTE de TEST ya certificado para este NIT. Es la fuente más directa y la preferida.
+  const aut = Deno.env.get("DIGIFACT_AUTORIZACION");
+  if (aut) {
+    const r = await c.consultarDte(aut);
+    if (!r.encontrado) return { ok: false as const, motivo: "el DTE indicado no se encontró con estas credenciales (¿otro NIT o UUID mal copiado?)", etiquetasVistas: [] as string[], fuente: null, hallazgos: null };
+    if (!r.xmlB64) return { ok: false as const, motivo: "el DTE indicado no devolvió su XML", etiquetasVistas: [] as string[], fuente: { documento: aut, tipoDte: r.tipoDte }, hallazgos: null };
+    const e = extraerEmisorDeDte(r.xmlB64);
+    const fuente = { documento: r.autorizacion, tipoDte: r.tipoDte, serie: r.serie, numero: r.numero, fechaEmision: r.fechaEmision };
+    return e.ok ? { ok: true as const, datos: e.datos, fuente } : { ok: false as const, motivo: e.motivo, etiquetasVistas: e.etiquetasVistas, fuente, hallazgos: null };
+  }
   const rangos: Array<[string, string]> = [];
   for (let i = 0; i < 20; i++) rangos.push([fechaGt(-(i * 2 + 2) * 86_400_000), fechaGt(-(i * 2) * 86_400_000)]);
   rangos.push(["2026-10-05", "2026-10-07"]);   // fechas del ejemplo de la guía oficial de Digifact

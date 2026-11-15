@@ -331,7 +331,7 @@ Deno.test("Digifact [punto 3]: los datos del emisor se leen del DTE ya aceptado 
   assert.equal(await huellaEmisor(r.datos), await huellaEmisor({ ...EMISOR, frases: [...EMISOR.frases] }), "la huella es estable"); assert.match(await huellaEmisor(EMISOR), /^[0-9a-f]{16}$/);
   assert.notEqual(await huellaEmisor(EMISOR), await huellaEmisor({ ...EMISOR, direccion: { ...EMISOR.direccion, direccion: "OTRA" } }), "cualquier cambio de dirección cambia la huella");
   assert.equal(verificarEmisorEsperado({ ...EMISOR, afiliacionIva: "PEQ" }).length, 1); assert.equal(verificarEmisorEsperado({ ...EMISOR, codigoEstablecimiento: "1" }).length, 1); assert.equal(verificarEmisorEsperado({ ...EMISOR, frases: [{ tipo: 1, escenario: 1 }] }).length, 1);
-  const malo = extraerEmisorDeDte(btoa("<a:Raiz><a:Otro X=\"1\"/></a:Raiz>")); assert.ok(!malo.ok); if (!malo.ok) assert.deepEqual(malo.etiquetasVistas, ["a:Raiz", "a:Otro"], "si no coincide, solo informa nombres de etiquetas: no adivina");
+  const malo = extraerEmisorDeDte(btoa("<a:Raiz><a:Otro X=\"1\"/></a:Raiz>")); assert.ok(!malo.ok); if (!malo.ok) assert.deepEqual(malo.etiquetasVistas, ["a:Raiz", "a:Otro(X)"], "si no coincide, solo informa nombres de etiquetas y de atributos (nunca valores): no adivina");
   assert.ok(!extraerEmisorDeDte("%%%no-base64%%%").ok);
   const incompleto = extraerEmisorDeDte(btoa('<dte:Emisor NITEmisor="1" NombreEmisor="X"></dte:Emisor>')); assert.ok(!incompleto.ok);
 });

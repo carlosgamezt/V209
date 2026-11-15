@@ -14,7 +14,10 @@ const hijo = (xml: string, nombre: string): string => { const m = new RegExp(`<(
 
 export function extraerEmisorDeDte(xmlB64: string): ResultadoEmisor {
   let xml: string; try { xml = decodificar(xmlB64); } catch { return { ok: false, motivo: "el DTE no es base64 válido", etiquetasVistas: [] }; }
-  const etiquetas = [...new Set([...xml.matchAll(/<\/?((?:[\w.-]+:)?[\w.-]+)/g)].map((m) => m[1]))].slice(0, 60);
+  // solo NOMBRES de etiquetas y de sus atributos (nunca valores): sirve para adaptar el lector si el XML real difiere
+  const vistas = new Map<string, Set<string>>();
+  for (const m of xml.matchAll(/<((?:[\w.-]+:)?[\w.-]+)((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*\/?>/g)) { const s = vistas.get(m[1]) ?? new Set<string>(); for (const at of m[2].matchAll(/\s([\w.:-]+)\s*=/g)) s.add(at[1]); vistas.set(m[1], s); }
+  const etiquetas = [...vistas].map(([t, at]) => (at.size ? `${t}(${[...at].slice(0, 12).join(",")})` : t)).slice(0, 60);
   const em = /<(?:[\w.-]+:)?Emisor\s([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?Emisor>/i.exec(xml);
   if (!em) return { ok: false, motivo: "no se encontró el elemento Emisor", etiquetasVistas: etiquetas };
   const a = (n: string) => atributo(em[1], n), dir = em[2];
