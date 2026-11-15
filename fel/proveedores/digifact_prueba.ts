@@ -24,7 +24,7 @@ function formaDeCredenciales() {
     claveVacia: c.length === 0, claveConEspaciosOSaltosAlInicioOFinal: c !== c.trim(), claveContieneSaltoDeLinea: /[\r\n]/.test(c),
   };
 }
-const errorLegible = (e: unknown) => e instanceof ErrorDigifact ? { tipo: e.tipo, estadoHttp: e.estadoHttp ?? null, mensaje: e.message } : { tipo: "inesperado", mensaje: e instanceof Error ? e.name : "error" };
+const errorLegible = (e: unknown) => e instanceof ErrorDigifact ? { tipo: e.tipo, estadoHttp: e.estadoHttp ?? null, mensaje: e.message, ...(e.detalle ? { respuestaDeDigifact: e.detalle } : {}) } : { tipo: "inesperado", mensaje: e instanceof Error ? e.name : "error" };
 
 /** Factura de PRUEBA (TEST): datos del emisor TEST entregados por Digifact. La dirección del establecimiento es la del ejemplo oficial hasta confirmar la real. Montos desglosados a mano (NEXA no calcula IVA). */
 export function facturaDePruebaTest(nit: string, referenciaInterna: string, nombreEmisor = "EMISOR DE PRUEBA NEXA FEL"): FacturaGt {

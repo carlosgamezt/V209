@@ -12,7 +12,8 @@ import type { MotivoDesconocido } from "./tipos.ts";
 
 export type TipoErrorDigifact = "autenticacion" | "no_autorizado" | "limite" | "servidor" | "solicitud" | "tiempo_agotado" | "corte_de_red" | "respuesta_invalida" | "no_permitido";
 export class ErrorDigifact extends Error {
-  constructor(public tipo: TipoErrorDigifact, mensaje: string, public estadoHttp?: number) { super(mensaje); this.name = "ErrorDigifact"; }
+  /** Texto que Digifact devolvió en el cuerpo, ya limpio de contraseña y token (puede explicar «usuario bloqueado», «contraseña vencida»…). */
+  constructor(public tipo: TipoErrorDigifact, mensaje: string, public estadoHttp?: number, public detalle?: string) { super(mensaje); this.name = "ErrorDigifact"; }
 }
 
 export const URL_BASE = { test: "https://testnucgt.digifact.com/api", produccion: "https://nucgt.digifact.com/gt.com.apinuc/api" } as const;
@@ -125,7 +126,7 @@ export class DigifactGt {
         try {
           r = await this.c.transporte({ metodo: "POST", ruta: "/login/get_token", cabeceras: { "content-type": "application/json" }, cuerpo: JSON.stringify({ Username: usuarioLogin(this.c.nit, this.c.usuario), Password: this.c.obtenerClave() }) });
         } catch (e) { throw this.#errorTransporte(e); }
-        if (r.estado === 401 || r.estado === 403) throw new ErrorDigifact("autenticacion", "Digifact rechazó el usuario o la contraseña", r.estado);
+        if (r.estado === 401 || r.estado === 403) throw new ErrorDigifact("autenticacion", "Digifact rechazó el usuario o la contraseña", r.estado, this.#limpio(r.cuerpo) || undefined);
         if (r.estado !== 200) throw this.#porEstado(r, "Inicio de sesión");
         let j: { token?: unknown } | null = null; try { j = JSON.parse(r.cuerpo); } catch { /* respuesta ilegible */ }
         if (!j || typeof j.token !== "string" || j.token.length < 10) throw new ErrorDigifact("respuesta_invalida", "La respuesta de inicio de sesión no trae un token");

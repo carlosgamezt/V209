@@ -106,6 +106,13 @@ Deno.test("Digifact: errores de inicio de sesión (401, 403, 429, 5xx, tiempo, r
   for (const r of [ok("", 401), red, tiempo, ok({ token: "" })]) { const e = await caso(r); assert.ok(!e.message.includes(CLAVE) && !JSON.stringify(e).includes(CLAVE), "ningún error contiene la contraseña"); }
 });
 
+Deno.test("Digifact: el 401 del inicio de sesión conserva lo que Digifact explique, limpio de secretos", async () => {
+  const caso = async (cuerpo: string) => { const m = mundo(() => ok(cuerpo, 401)); try { await m.c.token(); } catch (e) { return e as ErrorDigifact; } throw new Error("debía fallar"); };
+  assert.equal((await caso("Usuario bloqueado")).detalle, "Usuario bloqueado");
+  const eco = await caso(`clave ${CLAVE} incorrecta`); assert.ok(eco.detalle && !eco.detalle.includes(CLAVE) && !eco.message.includes(CLAVE));
+  assert.equal((await caso("")).detalle, undefined);
+});
+
 Deno.test("Digifact: certificar — dirección, parámetros y cabecera según la documentación; resultado certificado con todos los datos fiscales", async () => {
   const m = mundo((p) => (esLogin(p) ? loginOk() : ok(certOk)));
   const r = await m.c.certificar(nuc(), { referencia: REF_PRUEBA, formatos: ["PDF", "HTML", "XML"] });
