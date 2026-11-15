@@ -72,10 +72,16 @@ if "destinos-demo.sh" in sh and "destinos-demo.sh" in sb and 'REF" = "$REF_ESPER
 else: mal("los scripts no validan contra destinos-demo.sh")
 if r"pooler\.supabase\.com" in sb and "postgres\\.${REF}" in sb and "(6543|5432)" in sb and ":5432/postgres" in sb: ok("la URL de base de datos se valida contra el pooler compartido de nexa-demo y se deriva al puerto 5432 (Session Pooler, IPv4)")
 else: mal("falta la validación/derivación del Session Pooler")
-dg = sb[sb.index("  diagnostico)"):sb.index("  migraciones)")]
+dg = sb[sb.index("  diagnostico)"):sb.index("  estado)")]
 if "-c 'select 1'" in dg and "psql" in dg and dg.count("psql ") >= 1 and not re.search(r"insert|update|delete|drop|create|alter|--yes", dg, re.I): ok("el diagnóstico de contraseña solo hace «select 1» (lectura) y no usa --yes")
 else: mal("el diagnóstico de contraseña debe ser solo lectura")
 dg_sin_mascara = "\n".join(l for l in dg.splitlines() if "::add-mask::" not in l)   # «::add-mask::» OCULTA el valor en el registro de GitHub; no lo imprime
 if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_DB|CLAVE_BD)\b', dg_sin_mascara): ok("el diagnóstico de contraseña nunca imprime las contraseñas (solo SI/NO)")
 else: mal("el diagnóstico imprime una contraseña")
+es = sb[sb.index("  estado)"):sb.index("  migraciones)")]
+if "default_transaction_read_only=on" in es and not re.search(r"insert |update |delete |drop |create |alter |truncate |grant |revoke |copy |--yes", es, re.I): ok("el reconocimiento del estado de la base es solo lectura de metadatos (sesión con default_transaction_read_only=on, solo SELECT)")
+else: mal("el reconocimiento del estado de la base debe ser solo lectura")
+es_sin_mascara = "\n".join(l for l in es.splitlines() if "::add-mask::" not in l)
+if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD)\b', es_sin_mascara): ok("el reconocimiento del estado nunca imprime la contraseña")
+else: mal("el reconocimiento del estado imprime la contraseña")
 sys.exit(1 if fallos else 0)

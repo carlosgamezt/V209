@@ -15,7 +15,7 @@ SH
 cat > "$W/psql" <<'SH'
 #!/usr/bin/env bash
 # psql FALSO: «autentica» solo si PGPASSWORD es la contraseña buena; registra los argumentos. Su error INCLUYE la contraseña a propósito (peor caso) para probar que el diagnóstico la oculta.
-echo "$*" >> "$REG_PSQL"
+echo "[$PGOPTIONS] $*" >> "$REG_PSQL"
 if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then echo 1; exit 0; fi
 echo "psql: error: connection to server failed: FATAL:  password authentication failed for user x ($PGPASSWORD)" >&2; exit 2
 SH
@@ -86,4 +86,12 @@ for v in "$MALA1" "$MALA2"; do ! grep -q "$v" "$W/salida.txt" || mal "el diagnó
 rm -f "$REG_PSQL"; unset DBPW; base "$REF" diagnostico; grep -q "no está definida" "$W/salida.txt" && ok "diagnóstico: sin DEMO_SUPABASE_DB_PASSWORD lo dice" || mal "no informa que falta"
 base "$REF" diagnostico "postgresql://postgres.$REF:[YOUR-PASSWORD]@$HOST:6543/postgres"; grep -q "marcador sin reemplazar (\[YOUR-PASSWORD\]) \.* SI" "$W/salida.txt" && ok "diagnóstico: detecta el marcador [YOUR-PASSWORD] sin reemplazar" || mal "marcador"
 rm -f "$REG_PSQL"; base "abcdefghijklmnopqrst" diagnostico; [ $? = 2 ] && [ ! -e "$REG_PSQL" ] && ok "diagnóstico: con otra referencia se rechaza sin conectar" || mal "diagnóstico con otra referencia"
+# --- estado de la base (psql falso): solo metadatos, solo SELECT, sesión de solo lectura, sin contraseñas
+rm -f "$REG_PSQL"; DBPW="$CLAVE" base "$REF" estado; r=$?
+[ $r = 0 ] && grep -q "Estado de la base de nexa-demo (solo lectura" "$W/salida.txt" && ok "estado: termina bien y presenta el estado de la base" || { mal "estado"; cat "$W/salida.txt"; }
+[ "$(nps)" -ge 5 ] && ! grep -v "default_transaction_read_only=on" "$REG_PSQL" | grep -q . && ok "estado: TODAS las consultas van con la sesión forzada a solo lectura (default_transaction_read_only=on)" || { mal "estado sin sesión de solo lectura"; cat "$REG_PSQL" | head -3; }
+! grep -i -E "insert |update |delete |drop |create |alter |truncate |grant |revoke |copy " "$REG_PSQL" && ok "estado: solo consultas SELECT (ninguna escritura)" || mal "estado con una orden de escritura"
+! grep -q "$CLAVE" "$W/salida.txt" && ok "estado: ninguna contraseña aparece en la salida" || mal "estado imprime la contraseña"
+grep -q "Migraciones en el repositorio" "$W/salida.txt" && ok "estado: informa las migraciones del repositorio y las pendientes" || mal "estado sin migraciones"
+rm -f "$REG_PSQL"; base "abcdefghijklmnopqrst" estado; [ $? = 2 ] && [ ! -e "$REG_PSQL" ] && ok "estado: con otra referencia se rechaza sin conectar" || mal "estado con otra referencia"
 [ "$fallos" = 0 ] && echo "SUPABASE HOSPEDADO (SESSION POOLER IPv4, SINTAXIS v3 Y DESTINO FIJO) OK" || { echo "$fallos fallo(s)"; exit 1; }
