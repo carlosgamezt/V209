@@ -285,9 +285,70 @@ Deno.test("Digifact: la contraseña y el token no aparecen en ninguna parte de l
   assert.ok(!volcado.includes(tk) && !volcado.includes(CLAVE));
 });
 
-Deno.test("Digifact: la factura de prueba del script de pruebas reales produce un NUC válido (sin tocar la red)", async () => {
-  const { facturaDePruebaTest } = await import("../digifact_prueba.ts");
-  const n = construirNuc(facturaDePruebaTest("5888492", REF_PRUEBA)) as Record<string, any>;
-  assert.equal(n.Seller.TaxID, "5888492"); assert.equal(n.Header.DocType, "FACT"); assert.match(n.Header.IssuedDateTime, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-06:00$/);
-  assert.equal(n.AdditionalDocumentInfo.AdditionalInfo[0].Code, REF_PRUEBA);
+/* ------------- Verificaciones previas a la primera certificación en TEST (puntos 1, 2 y 4 de la solicitud) ------------- */
+import { extraerEmisorDeDte, huellaEmisor, type DatosEmisor } from "../src/datos_emisor.ts";
+import { facturaDePruebaTest, verificarEmisorEsperado } from "../digifact_prueba.ts";
+import esquemaOficial from "../digifact/NUCSchema.gt.json" with { type: "json" };
+
+const EMISOR: DatosEmisor = { nit: "5888492", nombre: "NOMBRE DEL EMISOR DE PRUEBA", nombreComercial: "ESTABLECIMIENTO DE PRUEBA", afiliacionIva: "GEN", codigoEstablecimiento: "2", correo: "",
+  direccion: { direccion: "CALLE DE PRUEBA 1-23 ZONA 4", codigoPostal: "01004", municipio: "Guatemala", departamento: "Guatemala", pais: "GT" }, frases: [{ tipo: 1, escenario: 2 }] };
+// DTE «según el esquema público de SAT» (dte:Emisor / dte:DireccionEmisor / dte:Frases): se confirmará con el XML real de TEST
+const dteXml = (e: DatosEmisor) => btoa(`<?xml version="1.0" encoding="UTF-8"?><dte:GTDocumento xmlns:dte="http://www.sat.gob.gt/dte/fel/0.2.0" Version="0.1"><dte:SAT ClaseDocumento="dte"><dte:DTE ID="DatosCertificados"><dte:DatosEmision ID="DatosEmision"><dte:Emisor AfiliacionIVA="${e.afiliacionIva}" CodigoEstablecimiento="${e.codigoEstablecimiento}" CorreoEmisor="${e.correo}" NITEmisor="${e.nit}" NombreComercial="${e.nombreComercial}" NombreEmisor="${e.nombre}"><dte:DireccionEmisor><dte:Direccion>${e.direccion.direccion}</dte:Direccion><dte:CodigoPostal>${e.direccion.codigoPostal}</dte:CodigoPostal><dte:Municipio>${e.direccion.municipio}</dte:Municipio><dte:Departamento>${e.direccion.departamento}</dte:Departamento><dte:Pais>${e.direccion.pais}</dte:Pais></dte:DireccionEmisor></dte:Emisor><dte:Frases>${e.frases.map((f) => `<dte:Frase CodigoEscenario="${f.escenario}" TipoFrase="${f.tipo}"/>`).join("")}</dte:Frases></dte:DatosEmision></dte:DTE></dte:SAT></dte:GTDocumento>`);
+
+Deno.test("Digifact [punto 1]: TODA petición va a https://testnucgt.digifact.com/api/ y a ningún otro servidor", async () => {
+  const urls: string[] = [];
+  const fetchFalso = ((u: string | URL | Request) => { urls.push(String(u)); const ruta = String(u); return Promise.resolve(new Response(ruta.endsWith("/login/get_token") ? JSON.stringify({ Token: jwt(Math.floor(Date.now() / 1000) + 3600) }) : JSON.stringify({ RESPONSE: [] }), { status: 200 })); }) as unknown as typeof fetch;
+  const c = crearDigifactGt({ ambiente: "test", nit: "5888492", usuario: "USUARIO_TEST", obtenerClave: () => CLAVE, fetchImpl: fetchFalso });
+  await c.consultarNit("44653948"); await c.certificar(construirNuc(facturaDePruebaTest(EMISOR, REF_PRUEBA)), { referencia: REF_PRUEBA }); await c.obtenerDocumento(AUT); await c.reporteAcuses("2026-11-14");
+  assert.ok(urls.length >= 5);
+  for (const u of urls) assert.ok(u.startsWith("https://testnucgt.digifact.com/api/"), `fuera de TEST: ${u.split("?")[0]}`);
+  assert.ok(urls.every((u) => !u.includes("nucgt.digifact.com/gt.com.apinuc")), "ninguna llamada al servidor productivo");
+});
+
+Deno.test("Digifact [punto 2]: la factura que se certificará cumple el esquema OFICIAL vigente (NUC V2.0.3) y las reglas de la documentación", () => {
+  // validador mínimo del JSON Schema oficial (las mismas palabras clave que usa el esquema)
+  // deno-lint-ignore no-explicit-any
+  const val = (v: any, e: any, ruta: string, errs: string[]) => {
+    const t = v === null ? "null" : Array.isArray(v) ? "array" : Number.isInteger(v) ? "integer" : typeof v;
+    if (e.type && !([] as string[]).concat(e.type).some((x) => x === t || (x === "number" && t === "integer"))) { errs.push(`${ruta}: tipo ${t}`); return; }
+    if (v === null || v === undefined) return;
+    if (Array.isArray(v)) { if (e.minItems !== undefined && v.length < e.minItems) errs.push(`${ruta}: pocos elementos`); if (e.maxItems !== undefined && v.length > e.maxItems) errs.push(`${ruta}: muchos elementos`); if (e.items) v.forEach((x, i) => val(x, e.items, `${ruta}[${i}]`, errs)); }
+    else if (typeof v === "object") { for (const r of e.required ?? []) if (!(r in v)) errs.push(`${ruta}.${r}: obligatorio`); for (const [k, sub] of Object.entries(e.properties ?? {})) if (k in v) val(v[k], sub, `${ruta}.${k}`, errs); }
+  };
+  const nuc = construirNuc(facturaDePruebaTest(EMISOR, REF_PRUEBA, "2026-11-14T10:30:00-06:00")) as Record<string, any>;
+  const errs: string[] = []; val(nuc, esquemaOficial, "NUC", errs); assert.deepEqual(errs, []);
+  assert.equal(nuc.Version, "1.00"); assert.equal(nuc.CountryCode, "GT"); assert.equal(nuc.Header.DocType, "FACT"); assert.equal(nuc.Header.Currency, "GTQ");
+  assert.equal(nuc.Seller.TaxIDAdditionalInfo[0].Value, "GEN"); assert.equal(nuc.Seller.BranchInfo.Code, "2"); assert.deepEqual(nuc.Seller.AdditionlInfo.map((x: { Name: string; Value: string }) => `${x.Name}=${x.Value}`), ["TipoFrase=1", "Escenario=2"]);
+  assert.ok(nuc.AdditionalDocumentInfo.AdditionalInfo[0].Code.length === 36, "AdditionalDocumentInfo es obligatorio con GUID de 36");
+  assert.equal(nuc.Totals.GrandTotal.InvoiceTotal, "100.000000");
+  // y TODOS los datos del emisor salen del DTE aceptado por SAT, ninguno inventado
+  assert.equal(nuc.Seller.Name, EMISOR.nombre); assert.equal(nuc.Seller.BranchInfo.AddressInfo.Address, EMISOR.direccion.direccion); assert.equal(nuc.Seller.BranchInfo.AddressInfo.City, EMISOR.direccion.codigoPostal);
+});
+
+Deno.test("Digifact [punto 3]: los datos del emisor se leen del DTE ya aceptado por SAT y se compara contra lo esperado (GEN, establecimiento 2, frase 1/2)", async () => {
+  const r = extraerEmisorDeDte(dteXml(EMISOR)); assert.ok(r.ok); if (!r.ok) return;
+  assert.deepEqual(r.datos, EMISOR); assert.deepEqual(verificarEmisorEsperado(r.datos), []);
+  assert.equal(await huellaEmisor(r.datos), await huellaEmisor({ ...EMISOR, frases: [...EMISOR.frases] }), "la huella es estable"); assert.match(await huellaEmisor(EMISOR), /^[0-9a-f]{16}$/);
+  assert.notEqual(await huellaEmisor(EMISOR), await huellaEmisor({ ...EMISOR, direccion: { ...EMISOR.direccion, direccion: "OTRA" } }), "cualquier cambio de dirección cambia la huella");
+  assert.equal(verificarEmisorEsperado({ ...EMISOR, afiliacionIva: "PEQ" }).length, 1); assert.equal(verificarEmisorEsperado({ ...EMISOR, codigoEstablecimiento: "1" }).length, 1); assert.equal(verificarEmisorEsperado({ ...EMISOR, frases: [{ tipo: 1, escenario: 1 }] }).length, 1);
+  const malo = extraerEmisorDeDte(btoa("<a:Raiz><a:Otro X=\"1\"/></a:Raiz>")); assert.ok(!malo.ok); if (!malo.ok) assert.deepEqual(malo.etiquetasVistas, ["a:Raiz", "a:Otro"], "si no coincide, solo informa nombres de etiquetas: no adivina");
+  assert.ok(!extraerEmisorDeDte("%%%no-base64%%%").ok);
+  const incompleto = extraerEmisorDeDte(btoa('<dte:Emisor NITEmisor="1" NombreEmisor="X"></dte:Emisor>')); assert.ok(!incompleto.ok);
+});
+
+Deno.test("Digifact [punto 4]: no hay forma de ejecutar una operación productiva ni fiscal no autorizada", async () => {
+  assert.throws(() => crearDigifactGt({ ambiente: "produccion", nit: "5888492", usuario: "USUARIO_TEST", obtenerClave: () => CLAVE }), (e: unknown) => e instanceof ErrorDigifact && e.tipo === "no_permitido");
+  const c = crearDigifactGt({ ambiente: "test", nit: "5888492", usuario: "USUARIO_TEST", obtenerClave: () => CLAVE, fetchImpl: (() => { throw new Error("no debe salir a la red"); }) as unknown as typeof fetch });
+  await assert.rejects(() => c.anular({ autorizacion: AUT, nitReceptor: "CF", fechaEmision: "2026-11-14T10:00:00", motivo: "prueba", confirmacion: "ANULAR" }), (e: unknown) => e instanceof ErrorDigifact && e.tipo === "no_permitido");
+  await assert.rejects(() => c.notaCreditoTotal({ autorizacion: AUT, fechaEmision: "2026-11-14 10:00:00", motivo: "prueba", confirmacion: "NOTA-CREDITO-TOTAL" }), (e: unknown) => e instanceof ErrorDigifact && e.tipo === "no_permitido");
+  // (los controles del flujo de trabajo —solo TEST, aprobación en demo-privada— los comprueba verificar-publicacion.py en el CI)
+});
+
+Deno.test("Digifact: reporte de acuses — fechas, rango máximo de 2 días y lectura de filas", async () => {
+  const m = mundo((p) => (esLogin(p) ? loginOk() : ok({ REQUEST_DATA: [{ Respuesta: 1 }], RESPONSE: [{ GUID: AUT.toLowerCase(), SERIE: "A", NUMERO: "7", TIPO_DTE: "FACT", NE: "2", NOMBRE: "ESTABLECIMIENTO", ACUSE_RECEPCION_ESTADO: "ACEPTADO_SAT", FECHA_DE_CERTIFICACION: "x", REFERENCIA_INTERNA: "R" }] })));
+  const f = await m.c.reporteAcuses("2026-11-12", { hasta: "2026-11-14", establecimiento: 2, estadoAcuse: "ACEPTADO_SAT", limite: 3 });
+  assert.equal(f[0].autorizacion, AUT); assert.equal(f[0].establecimiento, "2");
+  assert.equal(new URL("https://x" + m.llamadas[1].ruta).searchParams.get("DATA2"), "FECHA|2026-11-12|FECHAFIN|2026-11-14|ESTABLECIMIENTO|2|ESTADOACUSE|ACEPTADO_SAT|LIMITE|3");
+  await assert.rejects(() => m.c.reporteAcuses("2026-11-10", { hasta: "2026-11-14" }), ErrorDigifact); await assert.rejects(() => m.c.reporteAcuses("14-11-2026"), ErrorDigifact);
+  const vacio = mundo((p) => (esLogin(p) ? loginOk() : ok({ REQUEST_DATA: [{ Respuesta: 0 }], RESPONSE: [] }))); assert.deepEqual(await vacio.c.reporteAcuses("2026-11-14"), []);
 });

@@ -1,20 +1,24 @@
 // Pruebas REALES contra Digifact TEST (solo TEST; producción está bloqueada en el cliente). Se ejecutan a mano desde el workflow «NEXA FEL · Digifact TEST» o en un servidor con las variables definidas.
-//   deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_EMISOR_NOMBRE --allow-read --allow-write=./salida digifact_prueba.ts <paso>
-// Pasos:  autenticar · consultar-nit · validar-nuc · certificar-test · consulta-posterior · descargar
-// NUNCA imprime la contraseña ni el token; solo «sí/no», códigos, UUID, serie, número y fechas.
+//   deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_REFERENCIA,DIGIFACT_HUELLA_EMISOR --allow-read --allow-write=./salida digifact_prueba.ts <paso>
+// Pasos:  autenticar · consultar-nit · validar-nuc · datos-emisor · certificar-test · consulta-posterior · descargar
+// NUNCA imprime la contraseña ni el token; solo «sí/no», códigos, UUID, serie, número, fechas y datos fiscales NO sensibles del emisor de prueba.
 import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12, soloUsuario } from "./src/digifact_gt.ts";
 import { construirNuc, NucInvalido, type FacturaGt } from "./src/nuc_gt.ts";
+import { type DatosEmisor, extraerEmisorDeDte, huellaEmisor } from "./src/datos_emisor.ts";
 
 const NECESARIAS = ["DIGIFACT_TEST_USERNAME", "DIGIFACT_TEST_PASSWORD", "DIGIFACT_TEST_NIT"] as const;
+const UUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const salir = (m: string, c = 1): never => { console.error(m); Deno.exit(c); };
 const out = (o: Record<string, unknown>) => console.log(JSON.stringify(o, null, 2));
 const paso = Deno.args[0] ?? "";
+const fechaGt = (msDesplazados = 0) => new Date(Date.now() - 6 * 3600_000 + msDesplazados).toISOString().slice(0, 10);
 
 function cliente(esquema: "raw" | "bearer"): DigifactGt {
   const faltan = NECESARIAS.filter((n) => !Deno.env.get(n));
   if (faltan.length) salir(`Faltan variables de entorno (solo se indican los NOMBRES): ${faltan.join(", ")}`, 2);
   return crearDigifactGt({ ambiente: "test", nit: Deno.env.get("DIGIFACT_TEST_NIT")!, usuario: Deno.env.get("DIGIFACT_TEST_USERNAME")!, obtenerClave: () => Deno.env.get("DIGIFACT_TEST_PASSWORD")!, esquemaAutorizacion: esquema, tiempoMaximoMs: 30_000 });
 }
+const errorLegible = (e: unknown) => e instanceof ErrorDigifact ? { tipo: e.tipo, estadoHttp: e.estadoHttp ?? null, mensaje: e.message, ...(e.detalle ? { respuestaDeDigifact: e.detalle } : {}) } : { tipo: "inesperado", mensaje: e instanceof Error ? e.name : "error" };
 /** Solo la FORMA de los datos (sí/no), nunca valores ni longitudes: ayuda a descubrir un secreto mal pegado sin exponerlo. */
 function formaDeCredenciales() {
   const u = Deno.env.get("DIGIFACT_TEST_USERNAME") ?? "", n = Deno.env.get("DIGIFACT_TEST_NIT") ?? "", c = Deno.env.get("DIGIFACT_TEST_PASSWORD") ?? "";
@@ -24,19 +28,46 @@ function formaDeCredenciales() {
     claveVacia: c.length === 0, claveConEspaciosOSaltosAlInicioOFinal: c !== c.trim(), claveContieneSaltoDeLinea: /[\r\n]/.test(c),
   };
 }
-const errorLegible = (e: unknown) => e instanceof ErrorDigifact ? { tipo: e.tipo, estadoHttp: e.estadoHttp ?? null, mensaje: e.message, ...(e.detalle ? { respuestaDeDigifact: e.detalle } : {}) } : { tipo: "inesperado", mensaje: e instanceof Error ? e.name : "error" };
 
-/** Factura de PRUEBA (TEST): datos del emisor TEST entregados por Digifact. La dirección del establecimiento es la del ejemplo oficial hasta confirmar la real. Montos desglosados a mano (NEXA no calcula IVA). */
-export function facturaDePruebaTest(nit: string, referenciaInterna: string, nombreEmisor = "EMISOR DE PRUEBA NEXA FEL"): FacturaGt {
+/** Datos exigidos de nuestro emisor TEST (los entregó Digifact): si el DTE ya aceptado por SAT no los confirma, NO se certifica nada. */
+export const EMISOR_TEST_ESPERADO = { afiliacionIva: "GEN", establecimiento: "2", frase: { tipo: 1, escenario: 2 } } as const;
+export function verificarEmisorEsperado(d: DatosEmisor): string[] {
+  const p: string[] = [];
+  if (d.afiliacionIva !== EMISOR_TEST_ESPERADO.afiliacionIva) p.push(`afiliación IVA del DTE aceptado = ${d.afiliacionIva}, se esperaba ${EMISOR_TEST_ESPERADO.afiliacionIva}`);
+  if (d.codigoEstablecimiento !== EMISOR_TEST_ESPERADO.establecimiento) p.push(`establecimiento del DTE aceptado = ${d.codigoEstablecimiento}, se esperaba ${EMISOR_TEST_ESPERADO.establecimiento}`);
+  if (!d.frases.some((f) => f.tipo === EMISOR_TEST_ESPERADO.frase.tipo && f.escenario === EMISOR_TEST_ESPERADO.frase.escenario)) p.push(`las frases del DTE aceptado (${d.frases.map((f) => `${f.tipo}/${f.escenario}`).join(", ") || "ninguna"}) no incluyen tipo ${EMISOR_TEST_ESPERADO.frase.tipo} escenario ${EMISOR_TEST_ESPERADO.frase.escenario}`);
+  return p;
+}
+
+/** Factura de PRUEBA (TEST) armada SOLO con datos del emisor leídos de un DTE que SAT ya aceptó. Montos de IVA desglosados a mano para Q100.00 (NEXA no calcula IVA). */
+export function facturaDePruebaTest(e: DatosEmisor, referenciaInterna: string, fechaEmision?: string): FacturaGt {
   return {
-    tipoDoc: "FACT", fechaEmision: new Date(Date.now() - 6 * 3600_000).toISOString().replace(/\.\d{3}Z$/, "-06:00"), moneda: "GTQ", referenciaInterna,
+    tipoDoc: "FACT", fechaEmision: fechaEmision ?? new Date(Date.now() - 6 * 3600_000).toISOString().replace(/\.\d{3}Z$/, "-06:00"), moneda: "GTQ", referenciaInterna,
     emisor: {
-      nit: String(Number(nit)), nombre: nombreEmisor, afiliacionIva: "GEN", frases: [{ tipo: 1, escenario: 2 }],
-      establecimiento: { codigo: 2, nombre: "ESTABLECIMIENTO DE PRUEBA", direccion: { direccion: "4 AVENIDA 15-70 ZONA 10 LOCAL 3 EDIFICIO PALADIUM", codigoPostal: "01010", municipio: "Guatemala", departamento: "Guatemala", pais: "GT" } },
+      nit: String(Number(e.nit)), nombre: e.nombre, afiliacionIva: e.afiliacionIva as FacturaGt["emisor"]["afiliacionIva"], frases: e.frases,
+      establecimiento: { codigo: Number(e.codigoEstablecimiento), ...(e.nombreComercial ? { nombre: e.nombreComercial } : {}), direccion: { direccion: e.direccion.direccion, codigoPostal: e.direccion.codigoPostal, municipio: e.direccion.municipio, departamento: e.direccion.departamento, pais: e.direccion.pais || "GT" } },
     },
-    receptor: { tipoId: "CF", id: "CF", nombre: "CONSUMIDOR FINAL", direccion: { direccion: "CIUDAD", codigoPostal: "01010", municipio: "GUATEMALA", departamento: "GUATEMALA", pais: "GT" } },
+    receptor: { tipoId: "CF", id: "CF", nombre: "CONSUMIDOR FINAL" },
     items: [{ tipo: "Servicio", descripcion: "Servicio de prueba NEXA FEL (TEST)", cantidad: "1", unidad: "SER", precioUnitario: "100", descuento: "0", impuestos: [{ codigoUnidadGravable: 1, nombre: "IVA", gravable: "89.285714", monto: "10.714286" }], totalItem: "100" }],
   };
+}
+
+/** Busca en el reporte de acuses (solo lectura) un DTE ya ACEPTADO por SAT del establecimiento 2 y lee de su XML los datos del emisor. Máx. 17 consultas. */
+async function descubrirEmisor(c: DigifactGt) {
+  const rangos: Array<[string, string]> = [];
+  for (let i = 0; i < 15; i++) rangos.push([fechaGt(-(i * 2 + 2) * 86_400_000), fechaGt(-(i * 2) * 86_400_000)]);
+  rangos.push(["2026-10-05", "2026-10-07"]);   // fechas del ejemplo de la guía oficial de Digifact (NIT de prueba con 32 documentos)
+  for (const [d, h] of rangos) {
+    const filas = await c.reporteAcuses(d, { hasta: h, establecimiento: 2, estadoAcuse: "ACEPTADO_SAT", limite: 3 });
+    for (const f of filas.filter((x) => x.autorizacion)) {
+      const r = await c.consultarDte(f.autorizacion);
+      if (!r.encontrado || !r.xmlB64) continue;
+      const e = extraerEmisorDeDte(r.xmlB64);
+      if (e.ok) return { ok: true as const, datos: e.datos, fuente: { rango: `${d} a ${h}`, tipoDte: f.tipoDte, establecimiento: f.establecimiento, nombreEstablecimiento: f.nombreEstablecimiento, estadoAcuse: f.estadoAcuse } };
+      return { ok: false as const, motivo: e.motivo, etiquetasVistas: e.etiquetasVistas, fuente: { rango: `${d} a ${h}`, tipoDte: f.tipoDte } };
+    }
+  }
+  return { ok: false as const, motivo: "no se encontró ningún DTE aceptado del establecimiento 2 en los últimos 30 días ni en las fechas de la guía", etiquetasVistas: [] as string[], fuente: null };
 }
 
 async function main() {
@@ -47,7 +78,7 @@ async function main() {
       catch (e) { out({ prueba: "autenticar", ok: false, error: errorLegible(e), ...(e instanceof ErrorDigifact && e.tipo === "autenticacion" ? { diagnosticoDeForma: formaDeCredenciales() } : {}) }); Deno.exit(1); }
       return;
     }
-    case "consultar-nit": {   // PRUEBA 2 (GET seguro: se prueba sin prefijo y, si Digifact lo rechaza con 401, con «Bearer»)
+    case "consultar-nit": {   // PRUEBA 2
       const nit = Deno.env.get("DIGIFACT_NIT_CONSULTA") || Deno.env.get("DIGIFACT_TEST_NIT")!;
       for (const esq of ["raw", "bearer"] as const) {
         const c = cliente(esq);
@@ -56,26 +87,45 @@ async function main() {
       }
       return;
     }
-    case "validar-nuc": {   // PRUEBA 3 (sin red): construye y valida la factura de prueba
-      try { const ref = crypto.randomUUID(); const n = construirNuc(facturaDePruebaTest(Deno.env.get("DIGIFACT_TEST_NIT") ?? "5888492", ref, Deno.env.get("DIGIFACT_EMISOR_NOMBRE") || undefined)); out({ prueba: "validar-nuc", ok: true, camposRaiz: Object.keys(n), items: (n.Items as unknown[]).length }); }
+    case "validar-nuc": {   // PRUEBA 3 (sin red): con un emisor de EJEMPLO, solo para comprobar la estructura
+      const ej: DatosEmisor = { nit: "5888492", nombre: "EMISOR DE EJEMPLO", nombreComercial: "ESTABLECIMIENTO DE EJEMPLO", afiliacionIva: "GEN", codigoEstablecimiento: "2", correo: "", direccion: { direccion: "DIRECCION DE EJEMPLO", codigoPostal: "01010", municipio: "Guatemala", departamento: "Guatemala", pais: "GT" }, frases: [{ tipo: 1, escenario: 2 }] };
+      try { const n = construirNuc(facturaDePruebaTest(ej, crypto.randomUUID())); out({ prueba: "validar-nuc", ok: true, camposRaiz: Object.keys(n), items: (n.Items as unknown[]).length, nota: "emisor de ejemplo: solo valida la estructura" }); }
       catch (e) { out({ prueba: "validar-nuc", ok: false, errores: e instanceof NucInvalido ? e.errores : [String(e)] }); Deno.exit(1); }
       return;
     }
-    case "certificar-test": {   // PRUEBA 4: UNA certificación en TEST, solo con la confirmación literal
+    case "datos-emisor": {   // PREPARACIÓN de la certificación: SOLO LECTURA. Muestra los datos validados y la factura exacta que se enviaría
+      const ref = Deno.env.get("DIGIFACT_REFERENCIA") ?? ""; if (!UUID.test(ref)) salir("Falta DIGIFACT_REFERENCIA (GUID de 36 caracteres) para mostrar la factura exacta", 2);
+      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw");
+      let r; try { r = await descubrirEmisor(c); } catch (e) { out({ prueba: "datos-emisor", ok: false, error: errorLegible(e) }); Deno.exit(1); }
+      if (!r.ok) { out({ prueba: "datos-emisor", ok: false, motivo: r.motivo, etiquetasVistas: r.etiquetasVistas, fuente: r.fuente }); Deno.exit(1); }
+      const problemas = verificarEmisorEsperado(r.datos);
+      let nuc: Record<string, unknown> | null = null, errores: unknown = null;
+      try { nuc = construirNuc(facturaDePruebaTest(r.datos, ref)); } catch (e) { errores = e instanceof NucInvalido ? e.errores : [String(e)]; }
+      out({ prueba: "datos-emisor", ok: problemas.length === 0 && nuc !== null, fuente: r.fuente, emisorValidado: r.datos, huellaEmisor: await huellaEmisor(r.datos), discrepanciasConLoEsperado: problemas, errores, facturaQueSeEnviaria: nuc, nota: "IssuedDateTime se fija al momento de ejecutar (hora de Guatemala)" });
+      if (problemas.length || !nuc) Deno.exit(1);
+      return;
+    }
+    case "certificar-test": {   // PRUEBA 4: UNA certificación en TEST, solo con la confirmación literal, la referencia mostrada y la huella del emisor aprobada
       if (Deno.env.get("DIGIFACT_CONFIRMAR") !== "CERTIFICAR-TEST") salir("Falta la confirmación explícita: DIGIFACT_CONFIRMAR=CERTIFICAR-TEST", 3);
-      const esq = Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"; const c = cliente(esq);
-      const ref = crypto.randomUUID();
-      let nuc: Record<string, unknown>; try { nuc = construirNuc(facturaDePruebaTest(Deno.env.get("DIGIFACT_TEST_NIT")!, ref, Deno.env.get("DIGIFACT_EMISOR_NOMBRE") || undefined)); } catch (e) { out({ prueba: "certificar-test", ok: false, errores: e instanceof NucInvalido ? e.errores : [String(e)] }); Deno.exit(1); }
-      let r; try { r = await c.certificar(nuc, { referencia: ref, formatos: ["XML", "PDF"] }); } catch (e) { out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, noSeProceso: true, error: errorLegible(e) }); Deno.exit(1); }
-      if (r.tipo === "certificado") {
+      const ref = Deno.env.get("DIGIFACT_REFERENCIA") ?? ""; if (!UUID.test(ref)) salir("Falta DIGIFACT_REFERENCIA (la referencia interna que se mostró para aprobar)", 2);
+      const aprobada = Deno.env.get("DIGIFACT_HUELLA_EMISOR") ?? ""; if (!/^[0-9a-f]{16}$/.test(aprobada)) salir("Falta DIGIFACT_HUELLA_EMISOR (la huella de los datos del emisor que aprobaste)", 2);
+      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw");
+      let r; try { r = await descubrirEmisor(c); } catch (e) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, error: errorLegible(e) }); Deno.exit(1); }
+      if (!r.ok) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, motivo: r.motivo }); Deno.exit(1); }
+      const huella = await huellaEmisor(r.datos), problemas = verificarEmisorEsperado(r.datos);
+      if (huella !== aprobada || problemas.length) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, motivo: huella !== aprobada ? "los datos del emisor ya no coinciden con los que se aprobaron" : "el emisor no coincide con lo esperado", problemas }); Deno.exit(1); }
+      let nuc: Record<string, unknown>; try { nuc = construirNuc(facturaDePruebaTest(r.datos, ref)); } catch (e) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, errores: e instanceof NucInvalido ? e.errores : [String(e)] }); Deno.exit(1); }
+      let res; try { res = await c.certificar(nuc, { referencia: ref, formatos: ["XML", "PDF"] }); } catch (e) { out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, noSeProceso: true, error: errorLegible(e) }); Deno.exit(1); }
+      if (res.tipo === "certificado") {
         const dir = Deno.env.get("DIGIFACT_SALIDA") ?? "./salida"; await Deno.mkdir(dir, { recursive: true });
         const guarda = async (n: string, b64?: string) => { if (b64) await Deno.writeFile(`${dir}/${n}`, Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0))); return !!b64; };
-        const xml = await guarda(`${r.autorizacion}.xml`, r.artefactos.xml), pdf = await guarda(`${r.autorizacion}.pdf`, r.artefactos.pdf);
-        out({ prueba: "certificar-test", ok: true, referenciaInterna: ref, autorizacion: r.autorizacion, serie: r.serie, numero: r.numero, fechaCertificacion: r.fechaCertificacion, xmlRecibido: xml, pdfRecibido: pdf });
-      } else if (r.tipo === "rechazado_confirmado") { out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, rechazo: { codigo: r.codigo, mensaje: r.mensaje } }); Deno.exit(1); }
-      else {   // desconocido: NO se reenvía; se concilia por la referencia interna
-        const hoy = new Date(Date.now() - 6 * 3600_000).toISOString().slice(0, 10);
-        out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, resultado: "desconocido", motivo: r.motivo, conciliacion: await c.conciliarPorReferencia(hoy, ref, 2) }); Deno.exit(1);
+        const xml = await guarda(`${res.autorizacion}.xml`, res.artefactos.xml), pdf = await guarda(`${res.autorizacion}.pdf`, res.artefactos.pdf);
+        out({ prueba: "certificar-test", ok: true, referenciaInterna: ref, codigoDeRespuesta: res.crudoSaneado.code ?? null, mensaje: res.crudoSaneado.message ?? null, autorizacionUuid: res.autorizacion, serie: res.serie, numero: res.numero, fechaCertificacion: res.fechaCertificacion, xmlRecibido: xml, pdfRecibido: pdf });
+      } else if (res.tipo === "rechazado_confirmado") { out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, rechazo: { codigo: res.codigo, mensaje: res.mensaje } }); Deno.exit(1); }
+      else {   // desconocido: NUNCA se reenvía; se consulta y se concilia por la referencia interna (hasta 4 consultas espaciadas)
+        let conciliacion: unknown = null;
+        for (let i = 0; i < 4; i++) { if (i) await new Promise((x) => setTimeout(x, 5000 * i)); const q = await c.conciliarPorReferencia(fechaGt(), ref, 2); conciliacion = q; if (q.tipo === "encontrado") break; }
+        out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, resultado: "desconocido", motivo: res.motivo, noSeReenvio: true, conciliacion }); Deno.exit(1);
       }
       return;
     }
@@ -93,7 +143,7 @@ async function main() {
       catch (e) { out({ prueba: "descargar", ok: false, error: errorLegible(e) }); Deno.exit(1); }
       return;
     }
-    default: salir("Uso: digifact_prueba.ts <autenticar|consultar-nit|validar-nuc|certificar-test|consulta-posterior|descargar>", 2);
+    default: salir("Uso: digifact_prueba.ts <autenticar|consultar-nit|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar>", 2);
   }
 }
 if (import.meta.main) await main();

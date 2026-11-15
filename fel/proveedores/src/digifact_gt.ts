@@ -64,6 +64,7 @@ export type ResultadoAnulacionGt =
   | { tipo: "desconocido"; motivo: MotivoDesconocido };
 export type EstadoAcuse = "ACEPTADO_SAT" | "PENDIENTE_SAT" | "RECHAZADO_SAT";
 export interface DocumentoReporte { autorizacion: string; serie: string; numero: string; tipoDte: string; fechaCertificacion: string; referenciaInterna: string; estadoAcuse: string; anulado: boolean; total: string }
+export interface FilaAcuse { autorizacion: string; serie: string; numero: string; tipoDte: string; establecimiento: string; nombreEstablecimiento: string; estadoAcuse: string; fechaCertificacion: string; referenciaInterna: string }
 export type ResultadoConciliacionGt = { tipo: "encontrado"; documento: DocumentoReporte } | { tipo: "no_encontrado" } | { tipo: "indeterminado"; motivo: string };
 
 function base64Url(s: string): string { return atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")); }
@@ -268,6 +269,19 @@ export class DigifactGt {
     const hallada = filas.find((f) => num(f.REFERENCIA_INTERNA).toUpperCase() === referenciaInterna.toUpperCase());
     if (!hallada) return { tipo: "no_encontrado" };
     return { tipo: "encontrado", documento: { autorizacion: num(hallada.GUID).toUpperCase(), serie: num(hallada.SERIE), numero: num(hallada.NUMERO), tipoDte: num(hallada.TIPO_DTE), fechaCertificacion: num(hallada.FECHA_DE_CERTIFICACION), referenciaInterna: num(hallada.REFERENCIA_INTERNA), estadoAcuse: num(hallada.ACUSE_RECEPCION_ESTADO), anulado: num(hallada.ESTATUS).toUpperCase() === "ANULADO", total: num(hallada.TOTAL) } };
+  }
+
+  /** Lectura del reporte diario de acuses (solo consulta). El rango no puede pasar de 2 días (regla de Digifact). Sin documentos → lista vacía. */
+  async reporteAcuses(desde: string, o: { hasta?: string; establecimiento?: number; estadoAcuse?: EstadoAcuse; limite?: number } = {}): Promise<FilaAcuse[]> {
+    if (!FECHA_DIA.test(desde) || (o.hasta !== undefined && !FECHA_DIA.test(o.hasta))) throw new ErrorDigifact("solicitud", "Las fechas deben ser AAAA-MM-DD");
+    if (o.hasta !== undefined && (Date.parse(o.hasta) - Date.parse(desde) > 2 * 86_400_000 || Date.parse(o.hasta) < Date.parse(desde))) throw new ErrorDigifact("solicitud", "El rango debe ir de 0 a 2 días");
+    let f = `FECHA|${desde}`;
+    if (o.hasta !== undefined) f += `|FECHAFIN|${o.hasta}`;
+    if (o.establecimiento !== undefined) f += `|ESTABLECIMIENTO|${Math.trunc(o.establecimiento)}`;
+    if (o.estadoAcuse !== undefined) f += `|ESTADOACUSE|${o.estadoAcuse}`;
+    if (o.limite !== undefined) f += `|LIMITE|${Math.max(1, Math.trunc(o.limite))}`;
+    const { j } = await this.#shared("SHARED_GETREPORTDAILYACUSES", f);
+    return DigifactGt.#filas(j!).map((h) => ({ autorizacion: num(h.GUID).toUpperCase(), serie: num(h.SERIE), numero: num(h.NUMERO), tipoDte: num(h.TIPO_DTE), establecimiento: num(h.NE), nombreEstablecimiento: this.#limpio(num(h.NOMBRE)), estadoAcuse: num(h.ACUSE_RECEPCION_ESTADO), fechaCertificacion: num(h.FECHA_DE_CERTIFICACION), referenciaInterna: num(h.REFERENCIA_INTERNA) }));
   }
 
   /* ------------------------------ descarga (GET /GetDocument) ------------------------------ */
