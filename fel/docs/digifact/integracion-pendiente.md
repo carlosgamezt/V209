@@ -44,7 +44,7 @@ Observaciones de la propia documentación: (a) «los links» del portal apuntan 
 | Servicio | Endpoint | Estado en el cliente (`src/digifact_gt.ts`) | Pendiente de confirmar |
 |---|---|---|---|
 | Token (**encabezado `Authorization` = token sin prefijo, CONFIRMADO en la Prueba 2**) | `POST /login/get_token` · cuerpo `{Username, Password}` · respuesta `{token}` según la documentación | **Probado contra TEST el 15/11/2026: OK.** La respuesta real trae la clave **`Token`** (mayúscula), no `token`; el cliente acepta ambas. Vigencia observada ≈ **30 días** (2.591.999 s) | Límite de inicios de sesión; formato del encabezado `Authorization` (Prueba 2) |
-| Certificar | `POST /v2/transform/nuc_json?TAXID&FORMAT&USERNAME` (JSON). El XML va a `/v2/transform/nuc` (no usado) | Implementado; **no ejecutado contra TEST** | Códigos de `code`; tiempos; idempotencia |
+| Certificar | `POST /v2/transform/nuc_json?TAXID&FORMAT&USERNAME` (JSON). El XML va a `/v2/transform/nuc` (no usado) | **Probado contra TEST el 15/11/2026: OK** (1 factura FACT, `code` 1, UUID, serie, número, fecha, XML y PDF). Respuesta en ≈ 24 s | Resto de códigos de `code`; idempotencia |
 | Consultar NIT | `GET /Shared` · `DATA1=SHARED_GETINFONITcom` · `DATA2=NIT\|<nit>` | **Probado contra TEST el 15/11/2026: OK** (devuelve la razón social registrada en SAT) | — |
 | Consultar DTE | `GET /Shared` · `DATA1=SHARED_GETDTEINFO` · `DATA2=AUTHNUMBER\|<uuid>` | Implementado | — |
 | Descargar | `GET /GetDocument?AUTHNUMBER&TAXID&FORMAT&USERNAME` (XML, HTML, PDF, JSON) | Implementado (XML/HTML/PDF) | Si `JSON` se necesita y dónde llega |
@@ -100,7 +100,7 @@ El cliente distingue: **certificado** (código 1 y autorización, serie y númer
 | 1 | Autenticación (JWT válido) | Workflow `Digifact TEST` → `autenticar` | **HECHO 15/11/2026**: token obtenido en la 4.ª ejecución (las 3 primeras: 2 por contraseña mal escrita y 1 por la clave `Token`) |
 | 2 | Consulta de NIT | `consultar-nit` | **HECHO 15/11/2026** (token sin prefijo; devuelve la razón social del NIT) |
 | 3 | Validación del NUC (sin red) | `validar-nuc` | Se ejecuta en CI en cada commit |
-| 4 | Certificación TEST (1 factura) | `certificar-test` con `CERTIFICAR-TEST` | Pendiente de autorización explícita |
+| 4 | Certificación TEST (1 factura) | `certificar-test` con `CERTIFICAR-TEST` | **HECHO 15/11/2026**: `code` 1, serie y número entregados, XML y PDF recibidos. Datos del emisor leídos del XML de un DTE ya aceptado (no del ejemplo). El documento de TEST lleva la marca «Documento de Prueba» |
 | 5 | Consulta posterior y descarga | `consulta-posterior`, `descargar` | Pendiente |
 | 6 | Misma referencia dos veces (con `VALIDAR` y con `NO_VALIDAR`) | manual, con autorización | Pendiente |
 | 7 | Conciliación por referencia tras una certificación | `conciliarPorReferencia` | Pendiente |
