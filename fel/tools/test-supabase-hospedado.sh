@@ -94,4 +94,13 @@ rm -f "$REG_PSQL"; DBPW="$CLAVE" base "$REF" estado; r=$?
 ! grep -q "$CLAVE" "$W/salida.txt" && ok "estado: ninguna contraseña aparece en la salida" || mal "estado imprime la contraseña"
 grep -q "Migraciones en el repositorio" "$W/salida.txt" && ok "estado: informa las migraciones del repositorio y las pendientes" || mal "estado sin migraciones"
 rm -f "$REG_PSQL"; base "abcdefghijklmnopqrst" estado; [ $? = 2 ] && [ ! -e "$REG_PSQL" ] && ok "estado: con otra referencia se rechaza sin conectar" || mal "estado con otra referencia"
+# --- explicación de por qué se rechazó una cadena (solo SI/NO)
+rm -f "$REGISTRO"; base "$REF" validar "postgresql://postgres:$CLAVE@db.$REF.supabase.co:5432/postgres"; r=$?
+[ $r = 2 ] && grep -q "usuario es solo «postgres» (conexión DIRECTA) \.* SI" "$W/salida.txt" && grep -q "host es el DIRECTO db.<ref>.supabase.co (solo IPv6) SI" "$W/salida.txt" && grep -q "host termina en .pooler.supabase.com \.* NO" "$W/salida.txt" && ok "explicación: detecta la conexión DIRECTA (usuario postgres + host db.<ref>.supabase.co)" || { mal "explicación conexión directa"; cat "$W/salida.txt"; }
+base "$REF" validar "$URL_TX?sslmode=require"; grep -q "parámetros después de «?» (debe ser NO) \.* SI" "$W/salida.txt" && ok "explicación: detecta parámetros en la cadena" || mal "explicación parámetros"
+base "$REF" validar "postgresql://postgres.$REF@$HOST:6543/postgres"; grep -q "trae usuario y contraseña (usuario:contraseña@) \.* NO" "$W/salida.txt" && ok "explicación: detecta que falta la contraseña" || mal "explicación sin contraseña"
+base "$REF" validar "postgresql://postgres.otroproyecto12345:$CLAVE@$HOST:6543/postgres"; grep -q "usuario es exactamente postgres.<ref de nexa-demo> NO" "$W/salida.txt" && ok "explicación: detecta un usuario de OTRO proyecto" || mal "explicación otro proyecto"
+base "$REF" validar "postgresql://postgres.$REF:$CLAVE@$HOST:7777/otrabase"; grep -q "puerto es 6543 o 5432 \.* NO" "$W/salida.txt" && grep -q "base es «postgres» \.* NO" "$W/salida.txt" && ok "explicación: detecta puerto y base incorrectos" || mal "explicación puerto/base"
+for v in "$CLAVE" "otroproyecto12345" "db.$REF" "$HOST"; do ! grep -q "$v" "$W/salida.txt" || mal "la explicación imprimió un valor ($v)"; done; ok "explicación: no imprime ningún valor (ni usuario, ni host, ni contraseña)"
+base "$REF" validar "$URL_TX"; [ $? = 0 ] && ok "explicación: una cadena correcta sigue aceptándose" || mal "cadena correcta rechazada"
 [ "$fallos" = 0 ] && echo "SUPABASE HOSPEDADO (SESSION POOLER IPv4, SINTAXIS v3 Y DESTINO FIJO) OK" || { echo "$fallos fallo(s)"; exit 1; }

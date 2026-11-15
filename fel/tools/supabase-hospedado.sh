@@ -20,13 +20,33 @@ source tools/destinos-demo.sh
 REF="${FEL_DEMO_PROYECTO_REF:-}"
 [[ "$REF" =~ ^[a-z0-9]{20}$ ]] && [ "$REF" = "$REF_ESPERADA" ] || { echo "PROHIBIDO: la referencia no es la del proyecto nexa-demo ($REF_ESPERADA). No se hace nada."; exit 2; }
 
+# Explica POR QUÉ no se aceptó la cadena: solo SI/NO por requisito, nunca valores (ni usuario, ni host, ni contraseña).
+explicar_url() {
+  local u="${FEL_DEMO_BD_URL:-}" resto cred user hostpart host despues puerto base si="SI" no="NO"
+  resto="${u#*://}"; hostpart="${resto##*@}"; cred="${resto%@*}"; [ "$resto" = "$hostpart" ] && cred=""
+  user="${cred%%:*}"; host="${hostpart%%[:/?]*}"; despues="${hostpart#"$host"}"
+  puerto=""; [[ "$despues" == :* ]] && { puerto="${despues#:}"; puerto="${puerto%%[/?]*}"; }
+  base="${despues#*/}"; [[ "$despues" == */* ]] || base=""; base="${base%%\?*}"
+  echo "  Forma de DEMO_BD_URL (solo SI/NO, sin valores):"
+  echo "    empieza por postgresql:// o postgres:// ............ $(if [[ "$u" == postgresql://* || "$u" == postgres://* ]]; then echo SI; else echo NO; fi)"
+  echo "    trae usuario y contraseña (usuario:contraseña@) .... $(if [[ "$cred" == *:* && -n "${cred#*:}" ]]; then echo SI; else echo NO; fi)"
+  echo "    el usuario es exactamente postgres.<ref de nexa-demo> $(if [ "$user" = "postgres.$REF" ]; then echo SI; else echo NO; fi)"
+  echo "    el usuario es solo «postgres» (conexión DIRECTA) ..... $(if [ "$user" = "postgres" ]; then echo SI; else echo NO; fi)"
+  echo "    el host termina en .pooler.supabase.com ............ $(if [[ "$host" == *.pooler.supabase.com ]]; then echo SI; else echo NO; fi)"
+  echo "    el host es el DIRECTO db.<ref>.supabase.co (solo IPv6) $(if [[ "$host" == db.*.supabase.co ]]; then echo SI; else echo NO; fi)"
+  echo "    el puerto es 6543 o 5432 ........................... $(if [[ "$puerto" == 6543 || "$puerto" == 5432 ]]; then echo SI; else echo NO; fi)"
+  echo "    la base es «postgres» .............................. $(if [ "$base" = "postgres" ]; then echo SI; else echo NO; fi)"
+  echo "    trae parámetros después de «?» (debe ser NO) ....... $(if [[ "$u" == *"?"* ]]; then echo SI; else echo NO; fi)"
+  echo "    trae espacios o saltos de línea (debe ser NO) ...... $(if [[ "$u" == *[[:space:]]* ]]; then echo SI; else echo NO; fi)"
+}
+
 # Cadena de conexión → URL del Session Pooler (puerto 5432). Se rechaza todo lo que no sea exactamente el pooler compartido del proyecto fijado.
 derivar_url_sesion() {
   local u="${FEL_DEMO_BD_URL:-}" re
   [ -n "$u" ] || { echo "Falta FEL_DEMO_BD_URL"; exit 2; }
   re="^postgres(ql)?://postgres\.${REF}:([^@/:?#[:space:]]+)@([a-z0-9-]+\.pooler\.supabase\.com):(6543|5432)/postgres$"
   if [[ ! "$u" =~ $re ]]; then
-    echo "PROHIBIDO: FEL_DEMO_BD_URL no es la cadena del pooler compartido de nexa-demo (usuario postgres.<ref>, host *.pooler.supabase.com, puerto 6543 o 5432, base postgres, sin parámetros). No se hace nada."; exit 2
+    echo "PROHIBIDO: FEL_DEMO_BD_URL no es la cadena del pooler compartido de nexa-demo (usuario postgres.<ref>, host *.pooler.supabase.com, puerto 6543 o 5432, base postgres, sin parámetros). No se hace nada."; explicar_url; exit 2
   fi
   CLAVE_BD="${BASH_REMATCH[2]}"; HOST_BD="${BASH_REMATCH[3]}"
   URL_SESION="postgresql://postgres.${REF}:${CLAVE_BD}@${HOST_BD}:5432/postgres"
