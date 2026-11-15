@@ -71,6 +71,25 @@ function base64Url(s: string): string { return atob(s.replace(/-/g, "+").replace
 function expDeJwt(t: string): number | null {
   try { const p = JSON.parse(base64Url(t.split(".")[1] ?? "")); return typeof p.exp === "number" ? p.exp : null; } catch { return null; }
 }
+const PARECE_JWT = /^[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*$/;
+const CLAVES_TOKEN = ["token", "access_token", "accesstoken", "jwt", "id_token", "bearer"];
+/** Forma de la respuesta de inicio de sesión SIN valores (solo nombres de claves, tipos y si «parece JWT»): sirve para descubrir cómo responde realmente Digifact. */
+export function formaDeRespuestaLogin(cuerpo: string): string {
+  const t = String(cuerpo).trim(); if (!t) return "vacía";
+  let j: unknown; try { j = JSON.parse(t); } catch { return `texto${PARECE_JWT.test(t) ? " con forma de JWT" : ""}`; }
+  if (typeof j === "string") return `cadena JSON${PARECE_JWT.test(j) ? " con forma de JWT" : ""}`;
+  if (j && typeof j === "object" && !Array.isArray(j)) return "objeto{" + Object.entries(j as Record<string, unknown>).slice(0, 12).map(([k, v]) => `${k.slice(0, 30)}:${typeof v === "string" ? (PARECE_JWT.test(v) ? "JWT" : "texto") : Array.isArray(v) ? "lista" : v === null ? "nulo" : typeof v}`).join(",") + "}";
+  return Array.isArray(j) ? "lista" : typeof j;
+}
+/** Busca el token en las formas razonables: {token}, {Token}, {access_token}… (cualquier mayúscula), una cadena JSON o el JWT en texto plano. La documentación oficial solo muestra {"token": "..."}. */
+function extraerToken(cuerpo: string): { token: string; como: string } | null {
+  const t = String(cuerpo).trim(); let j: unknown; try { j = JSON.parse(t); } catch { return PARECE_JWT.test(t) ? { token: t, como: "texto plano" } : null; }
+  if (typeof j === "string") return PARECE_JWT.test(j) ? { token: j, como: "cadena JSON" } : null;
+  if (j && typeof j === "object" && !Array.isArray(j)) {
+    for (const [k, v] of Object.entries(j as Record<string, unknown>)) if (CLAVES_TOKEN.includes(k.toLowerCase()) && typeof v === "string" && v.length >= 10) return { token: v, como: `clave «${k}»` };
+  }
+  return null;
+}
 const num = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 const FECHA_DIA = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
@@ -81,6 +100,8 @@ export class DigifactGt {
   #ahora: () => number; #margen: number; #vigencia: number; #esquema: "raw" | "bearer";
   /** Cuántos inicios de sesión se han hecho (para pruebas y para vigilar que no haya tormentas de autenticación). */
   logins = 0;
+  /** Cómo vino el token en la última autenticación (p. ej. «clave «token»»), sin el valor. */
+  formaLogin: string | null = null;
   private c: ConfigDigifactGt;
   constructor(c0: ConfigDigifactGt) {
     let c = c0;
@@ -128,17 +149,17 @@ export class DigifactGt {
         } catch (e) { throw this.#errorTransporte(e); }
         if (r.estado === 401 || r.estado === 403) throw new ErrorDigifact("autenticacion", "Digifact rechazó el usuario o la contraseña", r.estado, this.#limpio(r.cuerpo) || undefined);
         if (r.estado !== 200) throw this.#porEstado(r, "Inicio de sesión");
-        let j: { token?: unknown } | null = null; try { j = JSON.parse(r.cuerpo); } catch { /* respuesta ilegible */ }
-        if (!j || typeof j.token !== "string" || j.token.length < 10) throw new ErrorDigifact("respuesta_invalida", "La respuesta de inicio de sesión no trae un token");
-        const exp = expDeJwt(j.token);
-        this.#token = j.token; this.#expira = exp !== null ? exp * 1000 : this.#ahora() + this.#vigencia * 1000;
-        return j.token;
+        const hallado = extraerToken(r.cuerpo);
+        if (!hallado) throw new ErrorDigifact("respuesta_invalida", `La respuesta de inicio de sesión no trae un token reconocible (forma: ${formaDeRespuestaLogin(r.cuerpo)})`);
+        const exp = expDeJwt(hallado.token);
+        this.#token = hallado.token; this.#expira = exp !== null ? exp * 1000 : this.#ahora() + this.#vigencia * 1000; this.formaLogin = hallado.como;
+        return hallado.token;
       } finally { this.#pendiente = null; }
     })();
     return this.#pendiente;
   }
   /** Estado de la sesión sin exponer el token (para el script de prueba). */
-  estadoSesion(): { activa: boolean; venceEnS: number | null } { return this.#token ? { activa: true, venceEnS: Math.round((this.#expira - this.#ahora()) / 1000) } : { activa: false, venceEnS: null }; }
+  estadoSesion(): { activa: boolean; venceEnS: number | null; tokenVinoComo: string | null } { return this.#token ? { activa: true, venceEnS: Math.round((this.#expira - this.#ahora()) / 1000), tokenVinoComo: this.formaLogin } : { activa: false, venceEnS: null, tokenVinoComo: null }; }
 
   #cabeceras(tk: string, json: boolean): Record<string, string> {
     return { authorization: this.#esquema === "bearer" ? `Bearer ${tk}` : tk, ...(json ? { "content-type": "application/json" } : {}) };

@@ -43,7 +43,7 @@ async function main() {
   switch (paso) {
     case "autenticar": {   // PRUEBA 1
       const c = cliente("raw");
-      try { await c.token(); const s = c.estadoSesion(); out({ prueba: "autenticar", ok: true, tokenObtenido: s.activa, venceEnSegundos: s.venceEnS, ambiente: "TEST", nitConsultado: nit12(Deno.env.get("DIGIFACT_TEST_NIT")!) }); }
+      try { await c.token(); const s = c.estadoSesion(); out({ prueba: "autenticar", ok: true, tokenObtenido: s.activa, tokenVinoComo: s.tokenVinoComo, venceEnSegundos: s.venceEnS, ambiente: "TEST", nitConsultado: nit12(Deno.env.get("DIGIFACT_TEST_NIT")!) }); }
       catch (e) { out({ prueba: "autenticar", ok: false, error: errorLegible(e), ...(e instanceof ErrorDigifact && e.tipo === "autenticacion" ? { diagnosticoDeForma: formaDeCredenciales() } : {}) }); Deno.exit(1); }
       return;
     }

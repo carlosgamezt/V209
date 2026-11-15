@@ -106,6 +106,20 @@ Deno.test("Digifact: errores de inicio de sesión (401, 403, 429, 5xx, tiempo, r
   for (const r of [ok("", 401), red, tiempo, ok({ token: "" })]) { const e = await caso(r); assert.ok(!e.message.includes(CLAVE) && !JSON.stringify(e).includes(CLAVE), "ningún error contiene la contraseña"); }
 });
 
+Deno.test("Digifact: el token se reconoce en las formas razonables de la respuesta y la forma se informa SIN el valor", async () => {
+  const tk = jwt(Math.floor(Date.now() / 1000) + 3600, "forma");
+  const caso = async (cuerpo: string) => { const m = mundo(() => ok(cuerpo)); await m.c.token(); return m.c.estadoSesion(); };
+  assert.equal((await caso(JSON.stringify({ token: tk }))).tokenVinoComo, "clave «token»");
+  assert.equal((await caso(JSON.stringify({ Token: tk }))).tokenVinoComo, "clave «Token»");
+  assert.equal((await caso(JSON.stringify({ access_token: tk, token_type: "bearer" }))).tokenVinoComo, "clave «access_token»");
+  assert.equal((await caso(tk)).tokenVinoComo, "texto plano"); assert.equal((await caso(JSON.stringify(tk))).tokenVinoComo, "cadena JSON");
+  const rara = async (cuerpo: string) => { const m = mundo(() => ok(cuerpo)); try { await m.c.token(); } catch (e) { return e as ErrorDigifact; } throw new Error("debía fallar"); };
+  const e1 = await rara(JSON.stringify({ resultado: "ok", datos: { x: 1 }, valor: "abc", nada: null }));
+  assert.equal(e1.tipo, "respuesta_invalida"); assert.match(e1.message, /objeto\{resultado:texto,datos:object,valor:texto,nada:nulo\}/);
+  assert.match((await rara("<html>")).message, /forma: texto\)/); assert.match((await rara("")).message, /forma: vacía\)/);
+  const e2 = await rara(JSON.stringify({ data: tk })); assert.ok(!e2.message.includes(tk) && e2.message.includes("data:JWT"), "el valor del token jamás aparece, solo que «parece JWT»");
+});
+
 Deno.test("Digifact: el 401 del inicio de sesión conserva lo que Digifact explique, limpio de secretos", async () => {
   const caso = async (cuerpo: string) => { const m = mundo(() => ok(cuerpo, 401)); try { await m.c.token(); } catch (e) { return e as ErrorDigifact; } throw new Error("debía fallar"); };
   assert.equal((await caso("Usuario bloqueado")).detalle, "Usuario bloqueado");
