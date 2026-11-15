@@ -9,7 +9,11 @@ name: NEXA FEL · Digifact TEST (manual)
 #  · consulta-posterior  Prueba 5: consulta el DTE certificado por su autorización (UUID).
 #  · descargar           Descarga XML/PDF de un DTE de TEST por su autorización.
 # Secretos de ENTORNO (prefijo DEMO_, solo en este entorno): DEMO_DIGIFACT_TEST_USERNAME, DEMO_DIGIFACT_TEST_PASSWORD, DEMO_DIGIFACT_TEST_NIT.
+# El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (un flujo que nunca ha tenido una ejecución no se puede lanzar por API desde una rama).
+# Está limitado a este mismo archivo y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual: ese camino nunca pide aprobación ni recibe secretos.
 on:
+  push:
+    paths: ['.github/workflows/digifact-test.yml']
   workflow_dispatch:
     inputs:
       paso:
@@ -37,7 +41,7 @@ concurrency:
 jobs:
   digifact:
     name: Digifact TEST
-    if: github.ref == 'refs/heads/fel-proveedores-diseno'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fel-proveedores-diseno'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: demo-privada

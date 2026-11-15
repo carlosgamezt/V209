@@ -4,12 +4,18 @@ import glob, re, sys, yaml
 R = ".github/workflows/publicar-nube.yml"; DF = ".github/workflows/digifact-test.yml"; fallos = []
 def mal(m): fallos.append(m); print("FALLO", m)
 def ok(m): print("OK   ", m)
-def verificar_flujo(ruta, etiqueta, palabra, entrada):
+def verificar_flujo(ruta, etiqueta, palabra, entrada, push_de_registro=False):
     """Las MISMAS garantías para todo flujo que recibe secretos DEMO_: solo manual, un trabajo, entorno protegido, rama fija, secretos aislados en un solo paso y confirmación explícita."""
     w = yaml.safe_load(open(ruta, encoding="utf-8").read()); disparo = w.get(True, w.get("on"))   # PyYAML lee «on» como True
-    if set(disparo) == {"workflow_dispatch"}: ok(f"[{etiqueta}] solo se activa a mano (workflow_dispatch): sin push, pull_request, schedule, workflow_run ni repository_dispatch")
-    else: mal(f"[{etiqueta}] disparadores no permitidos: {sorted(set(disparo) - {'workflow_dispatch'})}")
     jobs = w["jobs"]
+    if not push_de_registro:
+        if set(disparo) == {"workflow_dispatch"}: ok(f"[{etiqueta}] solo se activa a mano (workflow_dispatch): sin push, pull_request, schedule, workflow_run ni repository_dispatch")
+        else: mal(f"[{etiqueta}] disparadores no permitidos: {sorted(set(disparo) - {'workflow_dispatch'})}")
+    else:
+        # un «push» limitado a ESTE archivo solo sirve para registrar el flujo; el trabajo debe omitirse si el evento no es manual (así ese camino jamás recibe secretos ni pide aprobación)
+        j0 = next(iter(jobs.values()))
+        if set(disparo) == {"workflow_dispatch", "push"} and disparo["push"].get("paths") == [ruta] and not disparo["push"].get("branches") and "github.event_name == 'workflow_dispatch'" in str(j0.get("if", "")): ok(f"[{etiqueta}] solo se ejecuta a mano; el único «push» permitido es sobre este archivo y el trabajo se omite si el evento no es manual (solo registra el flujo)")
+        else: mal(f"[{etiqueta}] disparadores no permitidos o el trabajo no se omite fuera del lanzamiento manual: {sorted(set(disparo))}")
     if len(jobs) == 1: ok(f"[{etiqueta}] un único trabajo")
     else: mal(f"[{etiqueta}] debe haber un único trabajo")
     j = next(iter(jobs.values()))
@@ -30,7 +36,7 @@ def verificar_flujo(ruta, etiqueta, palabra, entrada):
     else: mal(f"[{etiqueta}] falta la confirmación explícita")
     return texto
 verificar_flujo(R, "publicar-nube", "PUBLICAR", "inputs.confirmar")
-txt_df = verificar_flujo(DF, "digifact-test", "CERTIFICAR-TEST", "inputs.confirmar")
+txt_df = verificar_flujo(DF, "digifact-test", "CERTIFICAR-TEST", "inputs.confirmar", push_de_registro=True)
 if "testnucgt.digifact.com" in txt_df and "nucgt.digifact.com/gt.com.apinuc" not in txt_df and "--allow-net=testnucgt.digifact.com" in txt_df: ok("[digifact-test] solo puede salir a testnucgt.digifact.com (producción de Digifact no está permitida)")
 else: mal("[digifact-test] debe limitar la red a testnucgt.digifact.com")
 if "Digifact" in txt_df and "echo ${{ secrets" not in txt_df and "::add-mask" not in txt_df: ok("[digifact-test] ningún paso imprime secretos")
