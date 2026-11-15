@@ -46,8 +46,8 @@ Observaciones de la propia documentación: (a) «los links» del portal apuntan 
 | Token (**encabezado `Authorization` = token sin prefijo, CONFIRMADO en la Prueba 2**) | `POST /login/get_token` · cuerpo `{Username, Password}` · respuesta `{token}` según la documentación | **Probado contra TEST el 15/11/2026: OK.** La respuesta real trae la clave **`Token`** (mayúscula), no `token`; el cliente acepta ambas. Vigencia observada ≈ **30 días** (2.591.999 s) | Límite de inicios de sesión; formato del encabezado `Authorization` (Prueba 2) |
 | Certificar | `POST /v2/transform/nuc_json?TAXID&FORMAT&USERNAME` (JSON). El XML va a `/v2/transform/nuc` (no usado) | **Probado contra TEST el 15/11/2026: OK** (1 factura FACT, `code` 1, UUID, serie, número, fecha, XML y PDF). Respuesta en ≈ 24 s | Resto de códigos de `code`; idempotencia |
 | Consultar NIT | `GET /Shared` · `DATA1=SHARED_GETINFONITcom` · `DATA2=NIT\|<nit>` | **Probado contra TEST el 15/11/2026: OK** (devuelve la razón social registrada en SAT) | — |
-| Consultar DTE | `GET /Shared` · `DATA1=SHARED_GETDTEINFO` · `DATA2=AUTHNUMBER\|<uuid>` | Implementado | — |
-| Descargar | `GET /GetDocument?AUTHNUMBER&TAXID&FORMAT&USERNAME` (XML, HTML, PDF, JSON) | Implementado (XML/HTML/PDF) | Si `JSON` se necesita y dónde llega |
+| Consultar DTE | `GET /Shared` · `DATA1=SHARED_GETDTEINFO` · `DATA2=AUTHNUMBER\|<uuid>` | **Probado contra TEST el 15/11/2026: OK** (UUID, serie, número, fecha, comprador y total coinciden con lo certificado; trae el XML) | — |
+| Descargar | `GET /GetDocument?AUTHNUMBER&TAXID&FORMAT&USERNAME` (XML, HTML, PDF, JSON) | **Probado contra TEST el 15/11/2026: OK** (XML y PDF) | Si `JSON` se necesita y dónde llega |
 | Conciliar | `GET /Shared` · `DATA1=SHARED_GETREPORTDAILYACUSES` · `DATA2=FECHA\|aaaa-mm-dd[\|ESTABLECIMIENTO\|n]` | Implementado (por `REFERENCIA_INTERNA`) | Retardo; disponibilidad en PRODUCCIÓN (la guía dice «por ahora solo TEST») |
 | Anular | `POST /CancelFelGT` | Implementado y **cerrado** (habilitación + confirmación `ANULAR`) | `Taxid` con o sin ceros; plazos; efecto en consumo |
 | Nota de crédito total | `POST /cert/ncredtotal` | Implementado y **cerrado** (habilitación + confirmación `NOTA-CREDITO-TOTAL`) | `Staxid` con o sin ceros; alcance (¿solo DTE de Digifact?); plazos |
@@ -101,7 +101,7 @@ El cliente distingue: **certificado** (código 1 y autorización, serie y númer
 | 2 | Consulta de NIT | `consultar-nit` | **HECHO 15/11/2026** (token sin prefijo; devuelve la razón social del NIT) |
 | 3 | Validación del NUC (sin red) | `validar-nuc` | Se ejecuta en CI en cada commit |
 | 4 | Certificación TEST (1 factura) | `certificar-test` con `CERTIFICAR-TEST` | **HECHO 15/11/2026**: `code` 1, serie y número entregados, XML y PDF recibidos. Datos del emisor leídos del XML de un DTE ya aceptado (no del ejemplo). El documento de TEST lleva la marca «Documento de Prueba» |
-| 5 | Consulta posterior y descarga | `consulta-posterior`, `descargar` | Pendiente |
+| 5 | Consulta posterior y descarga | `consulta-posterior`, `descargar` | **HECHO 15/11/2026**: la consulta coincide con lo certificado y la descarga entrega XML y PDF |
 | 6 | Misma referencia dos veces (con `VALIDAR` y con `NO_VALIDAR`) | manual, con autorización | Pendiente |
 | 7 | Conciliación por referencia tras una certificación | `conciliarPorReferencia` | Pendiente |
 | 8 | Anulación y nota de crédito total en TEST | requieren habilitación explícita | Pendiente |
