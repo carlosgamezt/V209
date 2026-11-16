@@ -218,3 +218,17 @@ body{min-height:100vh}
 
 /* Móvil: nada debe ensanchar la página (Firefox calcula el ancho mínimo de entradas, tablas y filas flexibles distinto a Chromium) */
 @media(max-width:600px){.pantalla,.card,.barra,.acciones-fila,.tabla-simple,details{min-width:0;max-width:100%}.acciones-fila>*{max-width:100%}.acciones-fila .btn,.acciones-fila button{white-space:normal}input,select,textarea{min-width:0;max-width:100%}.card p,.card td,.card th{overflow-wrap:anywhere}}
+
+/* acceso anticipado: rótulo DEMO, navegación móvil 4 + «Más», reporte de problemas, barra de acciones del formulario compacta */
+.tag-demo{background:#fff;color:#92400e;border:1px dashed #92400e;border-radius:999px;padding:1px 10px;font-weight:800;font-size:12px;white-space:nowrap}
+.enlace-btn{background:none;border:0;padding:0;color:var(--azul,#4654F5);text-decoration:underline;font:inherit;cursor:pointer}
+.nav-movil .nv-mas{background:none;border:0;font:inherit;font-size:12px;font-weight:600;color:inherit;cursor:pointer}
+.hoja-mas{position:absolute;right:8px;bottom:calc(100% + 8px);min-width:220px;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;z-index:50}
+.hoja-mas .nv{flex-direction:row;justify-content:flex-start;gap:10px;width:100%;background:none;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+@media(max-width:900px){.nav-movil{overflow:visible}}
+@media(max-width:600px){
+  .barra-acciones{flex-wrap:nowrap;gap:6px}
+  .barra-acciones .btn{padding:0 10px;font-size:14px;flex:1 1 0;min-width:0;white-space:nowrap}
+  .barra-acciones .btn svg{display:none}
+  .banda-simulado{flex-wrap:wrap;gap:4px 8px}
+}

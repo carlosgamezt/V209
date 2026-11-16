@@ -16,6 +16,16 @@ import { pantallaUsuarios } from "./usuarios.js";
 import { pantallaEmpresas, pantallaEmpresa, pantallaPlanes, pantallaBolson } from "./plataforma.js";
 
 const raiz = document.getElementById("app");
+const VERSION_DEMO = "demo-ea1";   // acceso anticipado, 1.ª iteración
+// Registro mínimo de errores de la sesión (solo mensajes técnicos; nunca datos de facturas) para el botón «Reportar un problema»
+const ERRORES = [];
+const anotar = (t) => { ERRORES.push(`${new Date().toISOString().slice(11, 19)} ${String(t).slice(0, 160)}`); if (ERRORES.length > 8) ERRORES.shift(); };
+window.addEventListener("error", (e) => anotar(`error: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => anotar(`promesa: ${e.reason?.message ?? e.reason}`));
+async function copiar(texto) {
+  try { await navigator.clipboard.writeText(texto); return true; } catch { /* sin permiso: alternativa */ }
+  try { const t = h("textarea", { style: "position:fixed;opacity:0" }); t.value = texto; document.body.append(t); t.select(); const ok = document.execCommand("copy"); t.remove(); return ok; } catch { return false; }
+}
 let alCambiarRuta = null;
 const NAV = [
   { ruta: "/panel", titulo: "Panel", icon: "file", permiso: "borradores.ver", practico: true },
@@ -44,6 +54,12 @@ async function iniciar(estadoInicial) {
     cambiarUsuario(e.target.value);
     try { estado = await api.estado(); await pintarTodo(); toast(`Ahora actúas como ${estado.usuario.nombre} (${estado.usuario.rol})`); } catch (x) { toast(mensajeError(x), "error"); }
   } });
+  let masAbierto = false;
+  const reportar = async () => {
+    const texto = ["REPORTE NEXA FEL (DEMO)", `versión: ${VERSION_DEMO}`, `pantalla: #${rutaActual()}`, `persona/rol: ${estado.usuario?.nombre ?? "?"} / ${estado.usuario?.rol ?? "plataforma"}`,
+      `ventana: ${innerWidth}x${innerHeight} · ${navigator.userAgent}`, `hora: ${new Date().toISOString()}`, `errores recientes: ${ERRORES.length ? "" : "ninguno"}`, ...ERRORES, "(no incluye datos de facturas ni clientes) · ¿Qué esperabas y qué pasó? →"].join("\n");
+    toast((await copiar(texto)) ? "Datos del problema copiados. Pégalos en el chat con tu descripción." : "No pude copiar automáticamente; indica pantalla, rol y qué pasó.", "ok");
+  };
   const cab = h("header", { class: "cab-demo" }), nav = h("nav", { class: "nav", "aria-label": "Secciones" }), usuarioCard = h("div", { class: "usuario" }), movil = h("nav", { class: "nav-movil", "aria-label": "Secciones" });
   const lateral = h("aside", { class: "lateral" }, h("a", { class: "marca", href: "#/", "aria-label": "Inicio" }, h("span", { class: "marca-logo" }, "N"), h("strong", {}, "Nexa")), h("p", { class: "lat-seccion" }, "FEL"), nav, usuarioCard);
   const ctx = {
@@ -63,7 +79,11 @@ async function iniciar(estadoInicial) {
   function pintarMenu() {
     const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin));
     const enlaces = (clase) => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null }, icono(n.icon), h("span", {}, n.titulo)));
-    poner(nav, ...enlaces()); poner(movil, ...enlaces());
+    const todos = enlaces(), principales = todos.slice(0, 4), resto = todos.slice(4), restoActivo = items.slice(4).some((n) => activa(n, r));
+    poner(nav, ...enlaces());
+    const masBtn = h("button", { type: "button", class: `nv nv-mas${restoActivo || masAbierto ? " act" : ""}`, id: "nav-mas", "aria-expanded": String(masAbierto), "aria-label": "Más secciones", onclick: () => { masAbierto = !masAbierto; pintarMenu(); } }, icono("info"), h("span", {}, "Más"));
+    const hoja = h("div", { class: "hoja-mas", role: "menu", hidden: !masAbierto, onclick: () => { masAbierto = false; } }, ...resto, h("button", { type: "button", class: "nv", id: "reportar-problema-mas", onclick: reportar }, icono("info"), h("span", {}, "Reportar un problema")));
+    poner(movil, ...principales, ...(resto.length ? [masBtn, hoja] : []));
     poner(usuarioCard, h("span", { class: "avatar" }, iniciales(estado.usuario.nombre)), h("div", {}, h("strong", {}, estado.usuario.nombre), h("small", {}, maestro ? "Administrador de la plataforma" : estado.usuario.rol)),
       conLogin ? h("button", { type: "button", class: "icon-btn", id: "cerrar-sesion", title: "Cerrar sesión", "aria-label": "Cerrar sesión", onclick: salir }, icono("logout")) : null);
   }
@@ -85,7 +105,7 @@ async function iniciar(estadoInicial) {
           h("div", { class: "emp-sel", title: maestro ? "Plataforma" : "Empresa ficticia de la demostración" }, icono("building"), h("strong", {}, (maestro ? "PLATAFORMA" : estado.empresa.nombre_comercial).toUpperCase())),
           campana,
           conLogin ? h("span", { class: "cab-usuario", id: "usuario-actual" }, estado.usuario.nombre, h("button", { type: "button", class: "btn btn-sec cab-salir", id: "cerrar-sesion-cab", onclick: salir }, "Salir")) : h("label", { class: "cab-usuario" }, h("span", { class: "mut" }, "Actuar como"), selUsuario))),
-      h("div", { class: "banda-simulado", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", {}, "No se conecta a SAT ni a ningún certificador; nada de lo que ves se emite de verdad.")));
+      h("div", { class: "banda-simulado", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", { class: "tag-demo" }, estado.persistente ? "DEMO · datos persistentes de prueba" : "DEMO · datos NO persistentes"), h("span", {}, "No se conecta a SAT ni a ningún certificador; nada de lo que ves se emite de verdad.")));
   }
   function pintar() {
     const ruta = rutaActual();
@@ -110,7 +130,7 @@ async function iniciar(estadoInicial) {
   }
   async function pintarTodo() { pintarCab(); pintar(); }
   pintarCab();
-  poner(raiz, h("div", { class: "shell" }, lateral, h("main", { class: "principal" }, cab, contenido, h("footer", { class: "pie-demo" }, "Empresa y personas ficticias. Los datos viven solo en la memoria de este programa y se pierden al cerrarlo."))), movil);
+  poner(raiz, h("div", { class: "shell" }, lateral, h("main", { class: "principal" }, cab, contenido, h("footer", { class: "pie-demo" }, estado.persistente ? "Empresa y personas ficticias. Datos de prueba persistentes." : "Empresa y personas ficticias. Los datos viven solo en la memoria de este programa y se pierden al cerrarlo.", " · ", h("button", { type: "button", class: "enlace-btn", id: "reportar-problema", onclick: reportar }, "Reportar un problema"), ` · ${VERSION_DEMO}`))), movil);
   if (alCambiarRuta) window.removeEventListener("hashchange", alCambiarRuta);
   alCambiarRuta = () => { pintar(); contenido.focus({ preventScroll: true }); }; window.addEventListener("hashchange", alCambiarRuta);
   pintar();

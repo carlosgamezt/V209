@@ -131,7 +131,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]);
       const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
-      return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
+      return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, persistente: bd.tipo === "pg", practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
         permisos, establecimientos, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
