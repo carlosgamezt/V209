@@ -10,7 +10,9 @@ permissions:
 jobs:
   navegador:
     name: E2E en ${{ matrix.navegador }}
-    runs-on: ubuntu-latest
+    # Imagen FIJA: Playwright 1.49.1 solo trae dependencias de sistema para Ubuntu 20.04, 22.04 y 24.04 (y Debian 11/12). Con «ubuntu-latest» el ejecutor pasó a una versión más nueva
+    # y «install --with-deps webkit» falló (paquetes libicu74, libvpx9, libx264-164 no disponibles). 24.04 es la que coincide con la lista de dependencias de esa versión de Playwright.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
