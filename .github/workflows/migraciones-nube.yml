@@ -1,0 +1,59 @@
+name: NEXA FEL · solo migraciones (manual, por etapas)
+# SOLO aplica MIGRACIONES de base de datos al proyecto Supabase «nexa-demo», por etapas y con parada entre ellas. NO despliega ninguna función, NO publica el frontend, NO carga secretos de función, NO toca Cloudflare.
+# SOLO se ejecuta cuando TÚ la lanzas a mano; ningún push, pull request ni programación la activa. Aun lanzada, el trabajo queda en espera hasta que TÚ lo apruebes en el entorno protegido «demo-privada».
+#  · acción «verificar-etapa»  : SOLO LECTURA (sesión forzada a solo lectura): comprueba historial, tablas, RLS, dependencias de Auth y, en la etapa 2, el catálogo de la migración 28.
+#  · acción «migraciones-etapa»: aplica la etapa y, al terminar, corre la verificación de esa etapa. Exige escribir APLICAR-MIGRACIONES.
+#      etapa 1 = migraciones 1 a 27 (exige base VACÍA y sin historial)   ·   etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27)
+# Cada etapa es una ejecución distinta con su propia aprobación. Secretos (solo en el paso que los usa): DEMO_SUPABASE_PROYECTO_REF, DEMO_SUPABASE_ACCESS_TOKEN, DEMO_SUPABASE_DB_PASSWORD, DEMO_BD_URL.
+# El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en digifact-test): está limitado a este mismo archivo y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual; ese camino jamás pide aprobación ni recibe secretos.
+on:
+  push:
+    paths: ['.github/workflows/migraciones-nube.yml']
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: "verificar-etapa (solo lectura) o migraciones-etapa (aplica)"
+        type: choice
+        options: [verificar-etapa, migraciones-etapa]
+        default: verificar-etapa
+      etapa:
+        description: "Etapa: 1 = migraciones 1–27 · 2 = migración 28"
+        type: choice
+        options: ["1", "2"]
+        default: "1"
+      confirmar:
+        description: "Para «migraciones-etapa», escribe APLICAR-MIGRACIONES"
+        type: string
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: publicar-nube
+  cancel-in-progress: false
+jobs:
+  migraciones:
+    name: Solo migraciones (Supabase nexa-demo)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fel-proveedores-diseno'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: demo-privada
+    steps:
+      - name: Confirmación explícita
+        if: inputs.accion == 'migraciones-etapa' && inputs.confirmar != 'APLICAR-MIGRACIONES'
+        run: echo "Para aplicar migraciones hay que escribir APLICAR-MIGRACIONES en «confirmar»."; exit 1
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/supabase-cli
+      # los secretos solo existen en ESTE paso (no en las acciones de arriba)
+      - name: Ejecutar (${{ inputs.accion }} · etapa ${{ inputs.etapa }})
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DEMO_SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.DEMO_SUPABASE_DB_PASSWORD }}
+          FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
+          FEL_CONFIRMAR_MIGRACIONES: ${{ inputs.confirmar }}
+          ACCION: ${{ inputs.accion }}
+          ETAPA: ${{ inputs.etapa }}
+        run: |
+          case "$ACCION" in verificar-etapa|migraciones-etapa) ;; *) echo "Acción no válida"; exit 2;; esac
+          case "$ETAPA" in 1|2) ;; *) echo "Etapa no válida"; exit 2;; esac
+          cd fel && bash tools/supabase-hospedado.sh "$ACCION" "$ETAPA"

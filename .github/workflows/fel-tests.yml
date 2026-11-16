@@ -132,6 +132,11 @@ jobs:
           PGPASSWORD: postgres
           PSQL_CMD: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres
         run: bash fel/supabase/tests/concurrencia.sh
+      - name: Procedimiento excepcional de eliminación de empresas (solo una empresa vacía; todo o nada)
+        env:
+          PGPASSWORD: postgres
+          PSQL_CMD: psql -h 127.0.0.1 -p 54322 -U postgres -d postgres
+        run: bash fel/supabase/tests/procedimiento_excepcional_empresas.sh
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x

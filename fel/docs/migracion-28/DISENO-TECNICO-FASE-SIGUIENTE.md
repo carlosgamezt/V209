@@ -5,13 +5,17 @@ Lo marcado **«a verificar»** no se ha comprobado. Producción fiscal, certific
 
 ## 1. Secretos por empresa: Supabase Vault y evaluación de alternativas
 ### Estado de la verificación de Vault
+Documentación oficial leída (ver `INFORME-AUDITORIA-28.md` §8):
 | Dato | Estado |
 |---|---|
-| Supabase recomienda Vault y marca pgsodium como «pending deprecation» | Visto en resultados de búsqueda de la documentación oficial; **la página oficial no se pudo abrir desde esta sesión** (el host `supabase.com` no está permitido en la red de la sesión). |
-| Cualquiera con acceso a `vault.decrypted_secrets` ve los secretos en claro | Misma fuente. Obliga a cerrar permisos y a leer solo con una función de servidor. |
-| Los permisos de Vault cambiaron entre versiones (el rol de servicio gestionaba secretos en versiones antiguas) | Visto en un commit del repositorio de Supabase vía búsqueda; **a verificar** en la versión instalada. |
-| Disponibilidad en el plan Free y versión instalada en `nexa-demo` | **A verificar.** |
-**Cómo se cerrará la verificación (sin modificar nada):** (1) leer la documentación oficial (requiere permitir `supabase.com` o que me pegues la página); (2) una consulta de solo lectura en `nexa-demo` con el flujo «verificar»: `pg_available_extensions` para `supabase_vault` y `pgsodium` (versión disponible e instalada) y los privilegios de los roles sobre el esquema `vault`. Vault no se puede emular localmente: las pruebas locales usarán un doble de prueba del esquema `vault` marcado como tal, y la prueba real se hace tras aplicar en la demo, con un secreto de mentira.
+| Cifrado autenticado con datos asociados (libsodium); copias y réplicas conservan el cifrado; clave raíz por proyecto, gestionada por Supabase y fuera de la base | **Verificado** en la documentación oficial |
+| «Quien tenga acceso a `vault.decrypted_secrets` tiene acceso a los secretos descifrados»; hay que decidir con cuidado qué roles acceden a `vault.secrets` | **Verificado** (advertencia literal) |
+| `service_role` omite RLS (rol de acceso elevado de la API) | **Verificado** en la página de roles; la página de Vault no habla de `service_role` |
+| Vault no depende de pgsodium (en obsolescencia) | **Verificado** |
+| Restaurar a otro proyecto con `pg_dump` manual exige copiar la clave raíz | **Verificado**; implica un procedimiento de continuidad (clave raíz y respaldo) |
+| Disponibilidad en el plan Free, versión instalada en `nexa-demo` y privilegios por defecto del esquema `vault` | **A verificar:** `verificar-etapa` lo informa en solo lectura sin modificar nada |
+Vault no se puede emular localmente: las pruebas locales usarán un doble del esquema `vault`, marcado como tal, y la prueba real se hace tras aplicar en la demo con un secreto de mentira.
+**Consecuencia de diseño (por la advertencia):** ni `anon`, ni `authenticated`, ni `service_role` tendrán privilegios sobre el esquema `vault`; los secretos se leerán solo con funciones `SECURITY DEFINER` puestas en un **esquema privado no expuesto por la API de datos**, ejecutables por un **rol dedicado** (no por `service_role`), de modo que una llave de servicio filtrada **no** pueda llamarlas. Cada lectura queda auditada.
 
 ### Evaluación de alternativas (se presenta antes de cualquier cifrado propio)
 | Criterio | Supabase Vault | Cifrado por sobre en la aplicación (clave en el entorno) | Gestor externo (AWS/GCP Secret Manager, etc.) | Secretos de plataforma (GitHub/Edge) por empresa |
@@ -22,11 +26,11 @@ Lo marcado **«a verificar»** no se ha comprobado. Producción fiscal, certific
 | Custodia de la clave | La gestiona Supabase (**a verificar** modelo exacto) | **La custodiamos nosotros** (riesgo principal) | Proveedor externo | Plataforma |
 | Complejidad | Baja | Alta y delicada | Media; cuenta y red nuevas | Baja pero inviable |
 | Costo y disponibilidad | **A verificar** en Free | Sin costo | Costo y nueva dependencia | Sin costo |
-**Recomendación:** Vault, solo si la verificación confirma disponibilidad y permisos. Si no, volver contigo con esta tabla antes de implementar nada propio.
+**Recomendación:** Vault, solo si la verificación confirma disponibilidad y privilegios en `nexa-demo`. Si no, volver contigo con esta tabla antes de implementar nada propio.
 
 ### Diseño (migración posterior a la 28; cada objeto con prueba)
 - `empresa_credenciales`: `empresa_id`, `proveedor_id`, `ambiente`, `secreto_id` (referencia a Vault), `nit`, `estado`, `version`, rotada/creada por y en. Único activo por `(empresa_id, proveedor_id, ambiente)`. **Nunca guarda el valor.** RLS: quien tenga `canales.configurar` ve solo los metadatos de SU empresa; ningún rol de la API ve secretos.
-- `fel_op_credencial_guardar(...)`: exige permiso y aal2, escribe en Vault, audita (sin valores). `fel_sys_credencial_obtener(empresa, proveedor, ambiente)`: `SECURITY DEFINER`, ejecutable solo por el rol de servicio, audita cada lectura y valida que el NIT del secreto coincide con el de la empresa.
+- `fel_op_credencial_guardar(...)`: exige permiso y aal2, escribe en Vault, audita (sin valores). `fel_sys_credencial_obtener(empresa, proveedor, ambiente)`: `SECURITY DEFINER` en un esquema privado, ejecutable solo por un **rol dedicado** (no por `service_role`), audita cada lectura y valida que el NIT del secreto coincide con el de la empresa.
 - En el servidor: un cliente Digifact **por empresa**, token en memoria con clave `(empresa, versión)`, nunca compartido; al rotar o revocar se descarta; sin registrar secretos.
 - Pruebas: dos empresas con secretos distintos no se cruzan; sin permiso o sin aal2 no se guarda; ni `authenticated` ni `anon` leen nada; la lectura queda auditada; rotación sin cortes.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Garantías estáticas de la publicación privada (se ejecutan en el CI): ninguna ejecución automática puede publicar y los secretos de la demostración no se filtran a otros trabajos."""
 import glob, re, sys, yaml
-R = ".github/workflows/publicar-nube.yml"; DF = ".github/workflows/digifact-test.yml"; fallos = []
+R = ".github/workflows/publicar-nube.yml"; DF = ".github/workflows/digifact-test.yml"; MG = ".github/workflows/migraciones-nube.yml"; fallos = []
 def mal(m): fallos.append(m); print("FALLO", m)
 def ok(m): print("OK   ", m)
 def verificar_flujo(ruta, etiqueta, palabra, entrada, push_de_registro=False):
@@ -41,7 +41,7 @@ if "testnucgt.digifact.com" in txt_df and "nucgt.digifact.com/gt.com.apinuc" not
 else: mal("[digifact-test] debe limitar la red a testnucgt.digifact.com")
 if "Digifact" in txt_df and "echo ${{ secrets" not in txt_df and "::add-mask" not in txt_df: ok("[digifact-test] ningún paso imprime secretos")
 else: mal("[digifact-test] un paso podría imprimir secretos")
-PERMITIDOS = {R, DF}
+PERMITIDOS = {R, DF, MG}
 for f in glob.glob(".github/workflows/*.yml"):
     if f not in PERMITIDOS and re.search(r"secrets\.DEMO_", open(f, encoding="utf-8").read()): mal(f"{f} usa secretos DEMO_")
 else: ok("ningún otro flujo de trabajo usa los secretos DEMO_")
@@ -66,7 +66,7 @@ def _bien(l):
         if '--remote="$URL_SESION"' not in l: return False
         return ("--dry-run" in l and "--yes" not in l) or ("--yes" in l and "--dry-run" not in l)
     return '--remote="$REF"' in l and "--yes" in l
-if len(hospedadas) == 4 and all(_bien(l) for l in hospedadas) and sum("--dry-run" in l for l in hospedadas) == 1: ok("las 4 órdenes hospedadas llevan destino explícito: db push por --remote=\"$URL_SESION\" (la de conexión solo con --dry-run, sin --yes; la de migraciones con --yes), y secrets/functions con --remote=<ref> y --yes; sin --project-ref obsoleto")
+if len(hospedadas) == 5 and all(_bien(l) for l in hospedadas) and sum("--dry-run" in l for l in hospedadas) == 1: ok("las 5 órdenes hospedadas llevan destino explícito: db push por --remote=\"$URL_SESION\" (la de conexión solo con --dry-run, sin --yes; la de migraciones con --yes), y secrets/functions con --remote=<ref> y --yes; sin --project-ref obsoleto")
 else: mal(f"órdenes hospedadas sin destino explícito: {hospedadas}")
 if "destinos-demo.sh" in sh and "destinos-demo.sh" in sb and 'REF" = "$REF_ESPERADA"' in sb: ok("ambos scripts usan los destinos únicos y rechazan otra referencia")
 else: mal("los scripts no validan contra destinos-demo.sh")
@@ -84,4 +84,26 @@ else: mal("el reconocimiento del estado de la base debe ser solo lectura")
 es_sin_mascara = "\n".join(l for l in es.splitlines() if "::add-mask::" not in l)
 if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD)\b', es_sin_mascara): ok("el reconocimiento del estado nunca imprime la contraseña")
 else: mal("el reconocimiento del estado imprime la contraseña")
+
+# ---------------------------------------------------------------- flujo «solo migraciones» (por etapas): no puede desplegar nada más
+txt_mg = verificar_flujo(MG, "migraciones-nube", "APLICAR-MIGRACIONES", "inputs.confirmar", push_de_registro=True)
+PERMITIDOS_MG = {"DEMO_SUPABASE_PROYECTO_REF", "DEMO_SUPABASE_ACCESS_TOKEN", "DEMO_SUPABASE_DB_PASSWORD", "DEMO_BD_URL"}
+usados_mg = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", txt_mg))
+if usados_mg and usados_mg <= PERMITIDOS_MG: ok(f"[migraciones-nube] solo recibe {len(usados_mg)} secretos de base de datos; ninguno de la función, Cloudflare, el intermediario ni las claves de la demostración")
+else: mal(f"[migraciones-nube] secretos no permitidos: {sorted(usados_mg - PERMITIDOS_MG)}")
+cuerpo_mg = "\n".join(l for l in txt_mg.splitlines() if not l.lstrip().startswith("#"))
+if not re.search(r"wrangler|cloudflare|pages|functions deploy|secrets set|publicar-nube\.sh|setup-deno|setup-node|SERVICE_ROLE", cuerpo_mg, re.I): ok("[migraciones-nube] el flujo no menciona función, Cloudflare/Pages, Wrangler, publicación ni clave service_role")
+else: mal("[migraciones-nube] el flujo menciona algo que despliega o que no necesita")
+if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones)\b(?!-)", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones migraciones-etapa y verificar-etapa del script (no «migraciones» completa ni «funcion»)")
+else: mal("[migraciones-nube] invoca acciones del script no permitidas")
+me = sb[sb.index("  migraciones-etapa|verificar-etapa)"):sb.index("  funcion)")]
+me_sin_comentarios = "\n".join(l for l in me.splitlines() if not l.lstrip().startswith("#"))
+if not re.search(r"functions deploy|secrets set|wrangler|--include-all|--project-ref=|\bdb reset\b|\bdb remote\b", me_sin_comentarios): ok("[etapas] las acciones por etapas no despliegan función, no cargan secretos, no usan --include-all y no reinician la base")
+else: mal("[etapas] las acciones por etapas contienen una orden no permitida")
+if 'db push --remote="$URL_SESION" --yes --workdir "$SUB"' in me and me.count("db push") == 1 and 'FEL_CONFIRMAR_MIGRACIONES:-}" = "APLICAR-MIGRACIONES"' in me: ok("[etapas] un único «db push», sobre la carpeta temporal con SOLO las migraciones de la etapa, y con la confirmación literal exigida también dentro del script")
+else: mal("[etapas] el «db push» no está acotado a la carpeta de la etapa o falta la confirmación literal")
+if me.count("PGOPTIONS=") >= 2 and not re.search(r"psql [^\n]*(?<!read_only=on)\"? -c \"(insert|update|delete|create|alter|drop|truncate)", me_sin_comentarios, re.I) and all("default_transaction_read_only=on" in l for l in me.splitlines() if "psql \"host=" in l): ok("[etapas] todas las consultas de precondición y verificación usan la sesión forzada a solo lectura")
+else: mal("[etapas] alguna consulta no está forzada a solo lectura")
+if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD|URL_SESION)\b', "\n".join(l for l in me_sin_comentarios.splitlines() if "::add-mask::" not in l)): ok("[etapas] ninguna salida imprime la contraseña ni la URL de conexión")
+else: mal("[etapas] una salida imprime la contraseña o la URL")
 sys.exit(1 if fallos else 0)

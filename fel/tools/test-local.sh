@@ -19,4 +19,6 @@ for f in supabase/migrations/*.sql; do echo "migración: $(basename "$f")"; "${P
 for f in supabase/tests/*.sql; do echo "prueba:    $(basename "$f")"; "${PSQL[@]}" -f "$f"; done
 echo "prueba:    concurrencia.sh"
 PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/concurrencia.sh
+echo "prueba:    procedimiento_excepcional_empresas.sh"
+PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/procedimiento_excepcional_empresas.sh
 echo "TODO OK"

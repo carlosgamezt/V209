@@ -12,6 +12,9 @@
 #   bash tools/supabase-hospedado.sh estado         → SOLO LECTURA de METADATOS (sesión forzada a solo lectura): tablas existentes, RLS, historial de migraciones y cuáles faltan; no lee datos de negocio
 #   bash tools/supabase-hospedado.sh migraciones    → enlaza y aplica las migraciones pendientes
 #   bash tools/supabase-hospedado.sh funcion        → carga los secretos de la función y la despliega
+#   bash tools/supabase-hospedado.sh migraciones-etapa 1|2   → SOLO MIGRACIONES, por etapas y con parada: etapa 1 = migraciones 1–27 (exige base VACÍA y sin historial), etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27).
+#                                                          Exige FEL_CONFIRMAR_MIGRACIONES=APLICAR-MIGRACIONES. NO carga secretos de función, NO despliega función ni frontend. Al terminar corre la verificación de solo lectura de esa etapa.
+#   bash tools/supabase-hospedado.sh verificar-etapa 1|2     → SOLO LECTURA: comprueba lo que debe cumplirse tras la etapa (historial, tablas, RLS, dependencias de Auth; en la 2, el catálogo de la migración 28)
 # Entradas: FEL_DEMO_PROYECTO_REF (debe ser exactamente la de nexa-demo), FEL_DEMO_BD_URL, SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD; y para «funcion»: FEL_DEMO_HOSTS, FEL_DEMO_MFA_SEMILLAS, FEL_PROXY_SECRETO.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -124,11 +127,69 @@ case "${1:-}" in
     derivar_url_sesion
     supabase link --project-ref "$REF" --workdir . >/dev/null
     supabase db push --remote="$URL_SESION" --yes --workdir .;;
+  migraciones-etapa|verificar-etapa)
+    ACCION="$1"; ETAPA="${2:-}"
+    case "$ETAPA" in
+      1) HASTA=20261112001000; ESPERADAS=27; DESCRIPCION="etapa 1: migraciones 1 a 27";;
+      2) HASTA=20261113000100; ESPERADAS=28; DESCRIPCION="etapa 2: migración 28";;
+      *) echo "Uso: supabase-hospedado.sh $ACCION 1|2"; exit 2;;
+    esac
+    derivar_url_sesion
+    command -v psql >/dev/null || { echo "Falta psql: sin él no se pueden comprobar las precondiciones (de solo lectura). No se hace nada."; exit 2; }
+    CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
+    # TODAS las consultas de esta acción van con la sesión forzada a solo lectura; un fallo devuelve «(no se pudo leer…)» sin secretos
+    qro() { local salida; if salida="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -tA -c "$1" 2>&1)"; then printf '%s' "$salida"; else salida="$(printf '%s' "$salida" | head -1)"; salida="${salida//"$CLAVE_URL"/***}"; echo "(no se pudo leer: $salida)"; fi; }
+    # versiones locales de esta etapa (todas las que no pasan de HASTA) y su cantidad: si el repositorio ya no coincide con la etapa, no se hace nada
+    LOCALES_ETAPA="$(for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; if [ "$v" -le "$HASTA" ]; then echo "$v"; fi; done | sort)"
+    [ "$(printf '%s\n' "$LOCALES_ETAPA" | grep -c .)" = "$ESPERADAS" ] || { echo "PROHIBIDO: el repositorio no tiene exactamente $ESPERADAS migraciones hasta la versión $HASTA. No se hace nada."; exit 2; }
+    HIST="$(qro "select to_regclass('supabase_migrations.schema_migrations') is not null")"
+    case "$HIST" in t|f) ;; *) echo "No se pudo leer el historial de migraciones; no se hace nada. $HIST"; exit 2;; esac
+    if [ "$HIST" = "t" ]; then APLICADAS="$(qro "select coalesce(string_agg(version, ' ' order by version), '') from supabase_migrations.schema_migrations")"; else APLICADAS=""; fi
+    [[ "$APLICADAS" == "(no se pudo leer"* ]] && { echo "No se pudo leer el historial de migraciones; no se hace nada."; exit 2; }
+    NAPL="$(printf '%s' "$APLICADAS" | wc -w | tr -d ' ')"
+    NTAB="$(qro "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r','p')")"
+    echo "== NEXA FEL · $DESCRIPCION ($ACCION). Migraciones ya registradas: $NAPL · tablas en public: $NTAB"
+    verificacion() {   # SOLO LECTURA: lo que debe cumplirse DESPUÉS de la etapa
+      local fallo=0 ap tab rls
+      ap="$(qro "select count(*) from supabase_migrations.schema_migrations")"
+      if [ "$ap" = "$ESPERADAS" ]; then echo "  OK    historial: $ap migraciones registradas"; else echo "  FALLO historial: $ap registradas, se esperaban $ESPERADAS"; fallo=1; fi
+      tab="$(qro "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r','p')")"
+      rls="$(qro "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r','p') and c.relrowsecurity")"
+      if [ "$tab" = "$rls" ] && [ "$tab" != "0" ]; then echo "  OK    RLS activado en las $rls tablas de public"; else echo "  FALLO RLS: $rls de $tab tablas"; fallo=1; fi
+      local dep; dep="$(qro "select count(*) filter (where not ok) from public.fel_verificar_dependencias_auth()")"
+      if [ "$dep" = "0" ]; then echo "  OK    dependencias de Supabase Auth (fel_verificar_dependencias_auth): sin faltantes"; else echo "  FALLO dependencias de Auth: $dep comprobaciones fallan"; fallo=1; fi
+      # INFORMATIVO (nunca hace fallar la etapa): ¿está disponible Vault en este proyecto y quién puede usar su esquema? Sirve para cerrar la verificación de Vault sin modificar nada.
+      echo "  INFO  extensiones de cifrado: $(qro "select coalesce(string_agg(name || ' (disponible ' || coalesce(default_version, '-') || ', instalada ' || coalesce(installed_version, 'no') || ')', '; '), 'ninguna disponible') from pg_available_extensions where name in ('supabase_vault', 'pgsodium')")"
+      echo "  INFO  privilegios sobre el esquema vault (USAGE) anon/authenticated/service_role: $(qro "select case when to_regnamespace('vault') is null then 'el esquema vault no existe' else (select string_agg(r || '=' || has_schema_privilege(r, 'vault', 'USAGE')::text, ' ') from unnest(array['anon','authenticated','service_role']) r) end")"
+      if [ "$ETAPA" = "2" ]; then
+        local sal; if sal="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f docs/migracion-28/verificacion-posterior-28.sql 2>&1)"; then echo "  OK    catálogo de la migración 28 (verificacion-posterior-28.sql, solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO catálogo de la migración 28: ${sal:0:200}"; fallo=1; fi
+      fi
+      return $fallo
+    }
+    if [ "$ACCION" = "verificar-etapa" ]; then verificacion && echo "VERIFICACIÓN DE LA ETAPA $ETAPA: OK" || { echo "VERIFICACIÓN DE LA ETAPA $ETAPA: FALLÓ"; exit 1; }; exit 0; fi
+    # ---- aplicar: confirmación literal y precondiciones exactas de ESTA etapa
+    [ "${FEL_CONFIRMAR_MIGRACIONES:-}" = "APLICAR-MIGRACIONES" ] || { echo "PROHIBIDO: falta la confirmación literal APLICAR-MIGRACIONES. No se hace nada."; exit 2; }
+    if [ "$ETAPA" = "1" ]; then
+      [ "$NAPL" = "0" ] && [ "$NTAB" = "0" ] || { echo "PROHIBIDO: la etapa 1 exige una base VACÍA y sin historial (registradas: $NAPL, tablas: $NTAB). No se hace nada."; exit 2; }
+    else
+      [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort | grep -c .)" = "27" ] && [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort)" = "$(printf '%s\n' "$LOCALES_ETAPA" | grep -v "^$HASTA$")" ] \
+        || { echo "PROHIBIDO: la etapa 2 exige que estén registradas EXACTAMENTE las 27 migraciones anteriores (registradas: $NAPL). No se hace nada."; exit 2; }
+    fi
+    # carpeta de trabajo TEMPORAL con solo las migraciones de esta etapa: la CLI nunca ve (ni aplica) las posteriores
+    SUB="$(mktemp -d)"; trap 'rm -rf -- "$SUB"' EXIT
+    mkdir -p "$SUB/supabase/migrations"; cp supabase/config.toml "$SUB/supabase/config.toml"
+    for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; if [ "$v" -le "$HASTA" ]; then cp "$f" "$SUB/supabase/migrations/"; fi; done
+    [ "$(ls "$SUB/supabase/migrations" | wc -l | tr -d ' ')" = "$ESPERADAS" ] || { echo "PROHIBIDO: la carpeta de la etapa no tiene las $ESPERADAS migraciones esperadas. No se hace nada."; exit 2; }
+    supabase link --project-ref "$REF" --workdir "$SUB" >/dev/null
+    supabase db push --remote="$URL_SESION" --yes --workdir "$SUB"
+    echo "== Migraciones aplicadas ($DESCRIPCION). Verificación de solo lectura:"
+    verificacion && echo "VERIFICACIÓN DE LA ETAPA $ETAPA: OK. SE DETIENE AQUÍ: la siguiente etapa necesita una nueva aprobación." || { echo "VERIFICACIÓN DE LA ETAPA $ETAPA: FALLÓ. No se sigue."; exit 1; };;
   funcion)
     for v in FEL_DEMO_BD_URL FEL_DEMO_HOSTS FEL_DEMO_MFA_SEMILLAS FEL_PROXY_SECRETO; do [ -n "${!v:-}" ] || { echo "Falta $v"; exit 2; }; done
     ENVF="$(mktemp)"; chmod 600 "$ENVF"; trap 'rm -f "$ENVF"' EXIT
     { echo "FEL_DEMO_BD_URL=$FEL_DEMO_BD_URL"; echo "FEL_DEMO_HOSTS=$FEL_DEMO_HOSTS"; echo "FEL_DEMO_MFA_SEMILLAS=$FEL_DEMO_MFA_SEMILLAS"; echo "FEL_PROXY_SECRETO=$FEL_PROXY_SECRETO"; } > "$ENVF"
     supabase secrets set --env-file "$ENVF" --remote="$REF" --yes >/dev/null
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
-  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|funcion"; exit 2;;
+  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
 esac

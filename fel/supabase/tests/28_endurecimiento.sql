@@ -134,5 +134,23 @@ do $$ declare t text[]; begin
   assert t is null, 'claves foráneas entre empresas sin empresa_id: ' || t::text;
 end $$;
 
+
+-- 16. la protección de «empresas» NO impide las operaciones administrativas legítimas: crear, habilitar, suspender, cambiar régimen y datos de contacto siguen funcionando
+do $$ declare a uuid := gen_random_uuid(); o uuid := gen_random_uuid(); e uuid; r uuid; begin
+  insert into auth.users (id, email) values (a, 'admin28@example.test'), (o, 'propietario28@example.test');
+  insert into public.perfiles (user_id) values (a), (o) on conflict (user_id) do nothing;
+  insert into public.plataforma_admins (user_id) values (a);
+  select id into r from public.regimenes_fiscales where estado <> 'obsoleto' limit 1;
+  e := public.fel_admin_empresa_crear(a, 'Prueba 28 admin', 'Prueba 28 admin, S.A.', '8888888-8', r);
+  perform public.fel_admin_empresa_estado(a, e, 'habilitada', 'habilitación de la prueba 28');
+  insert into public.miembros (empresa_id, user_id, rol) values (e, o, 'propietario');   -- los datos de contacto los edita la empresa, no la plataforma
+  perform public.fel_op_empresa_datos_guardar(o, e, 'Prueba 28 admin', 'Dirección de prueba 1', '2222-0000', 'prueba28@example.test');
+  perform public.fel_admin_empresa_estado(a, e, 'suspendida', 'suspensión de la prueba 28');
+  perform public.fel_admin_empresa_regimen(a, e, r, 'reasignación de la prueba 28');
+  assert (select estado from public.empresas where id = e) = 'suspendida', 'la suspensión se aplicó';
+  -- y borrar sigue prohibido incluso para una empresa con historial administrativo creada por la función
+  begin delete from public.empresas where id = e; raise exception 'NO DEBIÓ BORRAR'; exception when others then assert sqlerrm like 'FEL_REGLA:%no se borran%', 'mensaje: ' || sqlerrm; end;
+end $$;
+
 rollback;
 select 'ENDURECIMIENTO 28 OK' as resultado;
