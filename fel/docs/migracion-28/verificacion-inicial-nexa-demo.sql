@@ -16,7 +16,40 @@ union all select 'función auth.uid() existe', exists (select 1 from pg_proc p j
        case when exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'auth' and p.proname = 'uid') then 'OK' else 'REVISAR' end
 -- la base debe estar VACÍA y sin historial (la etapa 1 lo exige)
 union all select 'tablas en public', (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm'))::text, '0', case when (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm')) = 0 then 'OK' else 'REVISAR' end
-union all select 'funciones propias en public', (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e'))::text, '0', case when (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')) = 0 then 'OK' else 'REVISAR' end
+-- funciones propias en public: SOLO se reconoce (como función de la plataforma) public.rls_auto_enable() cuando coincide TODO esto: propietario postgres/supabase_admin, SECURITY DEFINER, plpgsql, volátil, devuelve event_trigger,
+-- configuración exactamente search_path=pg_catalog, huella SHA-256 del cuerpo = la de la definición verificada (supabase/tests/plataforma/rls_auto_enable_real.sql) y el disparador de evento «ensure_rls» activo en ddl_command_end con
+-- exactamente las etiquetas CREATE TABLE / CREATE TABLE AS / SELECT INTO. Cualquier otra función, o esa misma modificada en algo, cuenta como REVISAR (falla cerrado).
+union all select 'funciones propias en public (no reconocidas)', count(*) filter (where not f.reconocida)::text || coalesce(' → ' || left(string_agg(f.proname, ', ' order by f.proname) filter (where not f.reconocida), 200), ''), '0',
+       case when count(*) filter (where not f.reconocida) = 0 then 'OK' else 'REVISAR' end
+  from (select p.proname, p.oid, encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as huella,
+         (p.proname = 'rls_auto_enable' and p.pronargs = 0 and p.prorettype = 'event_trigger'::regtype and p.prosecdef and p.provolatile = 'v'
+          and p.prolang = (select oid from pg_language where lanname = 'plpgsql') and pg_get_userbyid(p.proowner) in ('postgres', 'supabase_admin')
+          and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog']
+          and encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') = '325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9'
+          and exists (select 1 from pg_event_trigger e where e.evtname = 'ensure_rls' and e.evtfoid = p.oid and e.evtevent = 'ddl_command_end' and e.evtenabled = 'O'
+                       and e.evttags @> array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO'] and e.evttags <@ array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO'])) as reconocida
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')) f
+union all select 'función de plataforma reconocida', coalesce(string_agg('public.' || f.proname || '() (huella SHA-256 coincide con la verificada)', ', '), '(ninguna)'), 'informativo', 'INFO'
+  from (select p.proname, p.oid, encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as huella,
+         (p.proname = 'rls_auto_enable' and p.pronargs = 0 and p.prorettype = 'event_trigger'::regtype and p.prosecdef and p.provolatile = 'v'
+          and p.prolang = (select oid from pg_language where lanname = 'plpgsql') and pg_get_userbyid(p.proowner) in ('postgres', 'supabase_admin')
+          and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog']
+          and encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') = '325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9'
+          and exists (select 1 from pg_event_trigger e where e.evtname = 'ensure_rls' and e.evtfoid = p.oid and e.evtevent = 'ddl_command_end' and e.evtenabled = 'O'
+                       and e.evttags @> array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO'] and e.evttags <@ array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO'])) as reconocida
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')) f where f.reconocida
+union all select 'función rls_auto_enable NO reconocida: huella SHA-256 real del cuerpo', f.huella, 'huella verificada 325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9', 'INFO'
+  from (select p.proname, p.oid, encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') as huella,
+         (p.proname = 'rls_auto_enable' and p.pronargs = 0 and p.prorettype = 'event_trigger'::regtype and p.prosecdef and p.provolatile = 'v'
+          and p.prolang = (select oid from pg_language where lanname = 'plpgsql') and pg_get_userbyid(p.proowner) in ('postgres', 'supabase_admin')
+          and coalesce(p.proconfig, '{}'::text[]) = array['search_path=pg_catalog']
+          and encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') = '325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9'
+          and exists (select 1 from pg_event_trigger e where e.evtname = 'ensure_rls' and e.evtfoid = p.oid and e.evtevent = 'ddl_command_end' and e.evtenabled = 'O'
+                       and e.evttags @> array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO'] and e.evttags <@ array['CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO'])) as reconocida
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')) f where f.proname = 'rls_auto_enable' and not f.reconocida
 union all select 'historial de migraciones', case when to_regclass('supabase_migrations.schema_migrations') is null then 'no existe' else 'existe' end, 'no existe (o vacío)', case when to_regclass('supabase_migrations.schema_migrations') is null then 'OK' else 'REVISAR' end
 -- extensiones: Vault y pgsodium (informativo; Vault no se usa todavía)
 union all select 'extensión ' || e, coalesce((select 'disponible ' || default_version || ', instalada ' || coalesce(installed_version, 'no') from pg_available_extensions where name = e), 'no disponible'), 'informativo', 'INFO' from unnest(array['supabase_vault', 'pgsodium', 'pgcrypto']) e

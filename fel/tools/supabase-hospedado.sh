@@ -12,6 +12,8 @@
 #   bash tools/supabase-hospedado.sh estado         → SOLO LECTURA de METADATOS (sesión forzada a solo lectura): tablas existentes, RLS, historial de migraciones y cuáles faltan; no lee datos de negocio
 #   bash tools/supabase-hospedado.sh migraciones    → enlaza y aplica las migraciones pendientes
 #   bash tools/supabase-hospedado.sh funcion        → carga los secretos de la función y la despliega
+#   bash tools/supabase-hospedado.sh verificar-api-vault   → SOLO LECTURA: ¿expone la API de Supabase el esquema «vault»? Un GET a la RAÍZ de la API REST (nunca a una tabla) con «Accept-Profile: vault» y la clave «anon» PÚBLICA
+#                                                          (FEL_DEMO_ANON_KEY; se comprueba que sea de rol anon y de este proyecto: jamás se envía una clave de servicio). Sin base de datos, sin CLI, sin escrituras.
 #   bash tools/supabase-hospedado.sh diagnostico-inicial   → SOLO LECTURA ESTRICTA (mismas 4 capas y mismos 2 secretos que verificar-inicial): ejecuta docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql (solo SELECT sobre el catálogo):
 #                                                          función propia en public, disparadores de evento y privilegios sobre Vault. Informativo: no falla por hallazgos. NO llama a la CLI, NO tiene ruta hacia migraciones ni escrituras.
 #   bash tools/supabase-hospedado.sh verificar-inicial     → SOLO LECTURA ESTRICTA de «nexa-demo» ANTES de migrar: ejecuta docs/migracion-28/verificacion-inicial-nexa-demo.sql (solo SELECT sobre el catálogo) dentro de «begin transaction read only … rollback»
@@ -131,6 +133,47 @@ case "${1:-}" in
     derivar_url_sesion
     supabase link --project-ref "$REF" --workdir . >/dev/null
     supabase db push --remote="$URL_SESION" --yes --workdir .;;
+  verificar-api-vault)
+    # SOLO LECTURA. No usa psql, ni la CLI de Supabase, ni claves de servicio. Solo peticiones GET a la raíz «/rest/v1/» del proyecto fijado.
+    ANON="${FEL_DEMO_ANON_KEY:-}"
+    [ -n "$ANON" ] || { echo "Falta FEL_DEMO_ANON_KEY (la clave «anon» pública del proyecto). No se hace nada."; exit 2; }
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$ANON"; fi
+    # la clave debe ser PÚBLICA: o la clave «publicable» (sb_publishable_…) o el JWT del rol «anon» de ESTE proyecto. Una clave secreta (sb_secret_…), una de servicio u otra se rechaza SIN enviarla a ningún sitio
+    TIPO_CLAVE=""
+    if [[ "$ANON" == sb_secret_* ]]; then echo "PROHIBIDO: FEL_DEMO_ANON_KEY es una clave SECRETA (sb_secret_…). Solo se admite la clave pública. No se hace nada."; exit 2
+    elif [[ "$ANON" =~ ^sb_publishable_[A-Za-z0-9_-]+$ ]]; then TIPO_CLAVE="publicable"
+    elif A="$ANON" R="$REF" python3 - <<'PY'
+import base64, json, os, re, sys
+t = os.environ["A"]
+if not re.fullmatch(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", t): sys.exit(1)
+try: p = json.loads(base64.urlsafe_b64decode(t.split(".")[1] + "=" * (-len(t.split(".")[1]) % 4)))
+except Exception: sys.exit(1)
+sys.exit(0 if p.get("role") == "anon" and p.get("ref") == os.environ["R"] else 1)
+PY
+    then TIPO_CLAVE="jwt"
+    else echo "PROHIBIDO: FEL_DEMO_ANON_KEY no es la clave pública (publicable o JWT del rol «anon») de nexa-demo. No se hace nada (nunca se envía otra clave)."; exit 2; fi
+    CUERPO="$(mktemp)"; trap 'rm -f -- "$CUERPO"' EXIT
+    sonda() {   # $1 = perfil de esquema; imprime el código HTTP y deja la respuesta en $CUERPO. Solo GET a la raíz; la clave va por la entrada estándar (no en los argumentos)
+      local cod; cod="$({ printf 'header = "apikey: %s"\n' "$ANON"; [ "$TIPO_CLAVE" = jwt ] && printf 'header = "Authorization: Bearer %s"\n' "$ANON"; printf 'header = "Accept-Profile: %s"\n' "$1"; } | curl -sS -K - -m 25 -o "$CUERPO" -w '%{http_code}' "https://${REF}.supabase.co/rest/v1/" 2>/dev/null || true)"
+      printf '%s' "${cod: -3}"
+    }
+    echo "== NEXA FEL · ¿expone la API de nexa-demo el esquema vault? (SOLO LECTURA: GET a la raíz de la API con la clave anon pública)"
+    BASE_COD="$(sonda public)"
+    [ "$BASE_COD" = "200" ] || { echo "API de datos: NO VERIFICADO (la sonda de control con el esquema public respondió HTTP $BASE_COD; no se puede interpretar la de vault)."; exit 1; }
+    echo "  OK    sonda de control: el esquema public responde (HTTP 200) con la clave anon"
+    VAULT_COD="$(sonda vault)"; RESP="$(head -c 2000 "$CUERPO" | tr -d '\r')"
+    if [ "$VAULT_COD" = "200" ]; then echo "  REVISAR el esquema vault ESTÁ EXPUESTO por la API de datos (HTTP 200 con Accept-Profile: vault)."; echo "API de datos: REVISAR. No se debe guardar nada en Vault ni aplicar migraciones hasta cerrarlo."; exit 1; fi
+    if [ "$VAULT_COD" = "406" ] && printf '%s' "$RESP" | grep -q "PGRST106"; then
+      LISTA="$(printf '%s' "$RESP" | python3 -c 'import json,sys,re
+try: m=json.load(sys.stdin).get("message","")
+except Exception: m=""
+x=re.search(r"must be one of the following:\s*(.*)$", m); print(x.group(1).strip() if x else "")')"
+      if [ -z "$LISTA" ]; then echo "API de datos: NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista de esquemas expuestos)."; exit 1; fi
+      if printf '%s' "$LISTA" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -qx "vault"; then echo "  REVISAR la lista de esquemas expuestos incluye vault: $LISTA"; exit 1; fi
+      echo "  OK    el esquema vault NO está expuesto (HTTP 406, PGRST106). Esquemas expuestos por la API: $LISTA"
+      echo "API de datos: OK (solo lectura). Nada se modificó."; exit 0
+    fi
+    echo "API de datos: NO VERIFICADO (respuesta inesperada HTTP $VAULT_COD)."; exit 1;;
   diagnostico-inicial)
     # Igual que verificar-inicial: NO usa la CLI de Supabase, NO lee SUPABASE_ACCESS_TOKEN ni FEL_CONFIRMAR_MIGRACIONES y NO contiene «db push», «link», función ni escrituras. Solo informa.
     derivar_url_sesion
@@ -242,5 +285,5 @@ case "${1:-}" in
     { echo "FEL_DEMO_BD_URL=$FEL_DEMO_BD_URL"; echo "FEL_DEMO_HOSTS=$FEL_DEMO_HOSTS"; echo "FEL_DEMO_MFA_SEMILLAS=$FEL_DEMO_MFA_SEMILLAS"; echo "FEL_PROXY_SECRETO=$FEL_PROXY_SECRETO"; } > "$ENVF"
     supabase secrets set --env-file "$ENVF" --remote="$REF" --yes >/dev/null
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
-  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
+  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|verificar-api-vault|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
 esac

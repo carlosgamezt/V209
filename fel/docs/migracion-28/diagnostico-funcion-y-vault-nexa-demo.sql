@@ -14,7 +14,7 @@ union all select 'A1 función', 'seguridad / configuración', case when p.prosec
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
 union all select 'A1 función', 'comentario', coalesce(obj_description(p.oid, 'pg_proc'), '(sin comentario)')
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
-union all select 'A1 función', 'ACL (privilegios)', coalesce(p.proacl::text, '(por defecto: solo el propietario)')
+union all select 'A1 función', 'ACL (privilegios)', coalesce(p.proacl::text, '(ACL por defecto de PostgreSQL: EXECUTE para PUBLIC y para el propietario)')
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')
 union all select 'A1 función', 'EXECUTE efectivo: ' || r, has_function_privilege(r, p.oid, 'EXECUTE')::text
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace, unnest(array['anon', 'authenticated', 'service_role']) r where n.nspname = 'public' and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')

@@ -4,10 +4,11 @@ name: NEXA FEL · solo migraciones (manual, por etapas)
 #  · acción «verificar-inicial» (por defecto): SOLO LECTURA ESTRICTA de nexa-demo ANTES de migrar (transacción de solo lectura + sesión forzada a solo lectura). Recibe SOLO 2 secretos, no instala la CLI de
 #      Supabase, no pide confirmación y NO tiene ninguna ruta hacia migraciones: su paso ejecuta únicamente «verificar-inicial» y los pasos que aplican están excluidos por su condición.
 #  · acción «diagnostico-inicial»: SOLO LECTURA ESTRICTA con las mismas 4 capas y los mismos 2 secretos: función propia en public, disparadores de evento y privilegios efectivos sobre Vault (informativo).
+#  · acción «verificar-api-vault»: SOLO LECTURA: ¿expone la API de Supabase el esquema vault? Un GET a la raíz de la API con la clave «anon» PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY, que debes crear; no es una clave de servicio).
 #  · acción «verificar-etapa»  : SOLO LECTURA: comprueba historial, tablas, RLS, dependencias de Auth y, en la etapa 2, el catálogo de la migración 28.
 #  · acción «migraciones-etapa»: aplica la etapa y, al terminar, corre la verificación de esa etapa. Exige escribir APLICAR-MIGRACIONES.
 #      etapa 1 = migraciones 1 a 27 (exige base VACÍA y sin historial)   ·   etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27)
-# Cada etapa es una ejecución distinta con su propia aprobación. Secretos (solo en el paso que los usa): verificar-inicial → DEMO_SUPABASE_PROYECTO_REF y DEMO_BD_URL;
+# Cada etapa es una ejecución distinta con su propia aprobación. Secretos (solo en el paso que los usa): verificar-inicial y diagnostico-inicial → DEMO_SUPABASE_PROYECTO_REF y DEMO_BD_URL; verificar-api-vault → DEMO_SUPABASE_PROYECTO_REF y DEMO_SUPABASE_ANON_KEY;
 # etapas → además DEMO_SUPABASE_ACCESS_TOKEN y DEMO_SUPABASE_DB_PASSWORD.
 # El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en digifact-test): está limitado a este mismo archivo y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual; ese camino jamás pide aprobación ni recibe secretos.
 on:
@@ -16,9 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       accion:
-        description: "verificar-inicial y diagnostico-inicial (solo lectura, antes de migrar) · verificar-etapa (solo lectura) · migraciones-etapa (aplica)"
+        description: "verificar-inicial, diagnostico-inicial y verificar-api-vault (solo lectura, antes de migrar) · verificar-etapa (solo lectura) · migraciones-etapa (aplica)"
         type: choice
-        options: [verificar-inicial, diagnostico-inicial, verificar-etapa, migraciones-etapa]
+        options: [verificar-inicial, diagnostico-inicial, verificar-api-vault, verificar-etapa, migraciones-etapa]
         default: verificar-inicial
       etapa:
         description: "Etapa (solo para verificar-etapa y migraciones-etapa): 1 = migraciones 1–27 · 2 = migración 28"
@@ -48,7 +49,7 @@ jobs:
       - uses: actions/checkout@v4
       # la CLI de Supabase solo se instala si la acción puede usarla: la verificación inicial NO la necesita ni la instala
       - uses: ./.github/actions/supabase-cli
-        if: inputs.accion != 'verificar-inicial' && inputs.accion != 'diagnostico-inicial'
+        if: inputs.accion != 'verificar-inicial' && inputs.accion != 'diagnostico-inicial' && inputs.accion != 'verificar-api-vault'
       # ---- verificación inicial: SOLO LECTURA, 2 secretos, sin CLI, sin confirmación, sin etapa
       - name: Verificación inicial de nexa-demo (solo lectura)
         if: inputs.accion == 'verificar-inicial'
@@ -63,6 +64,13 @@ jobs:
           FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
           FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
         run: bash fel/tools/supabase-hospedado.sh diagnostico-inicial
+      # ---- ¿expone la API de datos el esquema vault? SOLO LECTURA: GET a la raíz de la API con la clave anon PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY); sin base de datos, sin CLI, sin clave de servicio
+      - name: API de datos y esquema vault (solo lectura)
+        if: inputs.accion == 'verificar-api-vault'
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          FEL_DEMO_ANON_KEY: ${{ secrets.DEMO_SUPABASE_ANON_KEY }}
+        run: bash fel/tools/supabase-hospedado.sh verificar-api-vault
       # ---- etapas (verificar-etapa / migraciones-etapa): solo se ejecutan si la acción NO es verificar-inicial
       - name: Etapas (${{ inputs.accion }} · etapa ${{ inputs.etapa }})
         if: inputs.accion == 'verificar-etapa' || inputs.accion == 'migraciones-etapa'

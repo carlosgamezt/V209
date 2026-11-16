@@ -23,4 +23,6 @@ echo "prueba:    procedimiento_excepcional_empresas.sh"
 PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/procedimiento_excepcional_empresas.sh
 echo "prueba:    verificacion_inicial_solo_lectura.sh"
 PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/verificacion_inicial_solo_lectura.sh
+echo "prueba:    test-plataforma-ensure-rls.sh (función real de la plataforma; su propio PostgreSQL temporal)"
+FEL_PGDATA=/tmp/fel-pgdata-ensure FEL_PGPORT=54395 bash tools/test-plataforma-ensure-rls.sh
 echo "TODO OK"

@@ -244,4 +244,60 @@ ACCION_INI=diagnostico-inicial FAKE_INICIAL_ERR=1 inicial "$REF"; r=$?
 rm -f "$REG_PSQL"; ACCION_INI=diagnostico-inicial inicial "abcdefghijklmnopqrst"; [ $? = 2 ] && [ ! -e "$REG_PSQL" ] && ok "diagnostico-inicial: con otra referencia de proyecto se rechaza sin conectar" || mal "diagnostico con otra referencia"
 ACCION_INI=diagnostico-inicial ACTIONS=1 FAKE_INICIAL_SALIDA="$W/diag_ok.txt" inicial "$REF"; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "diagnostico-inicial en GitHub Actions: se enmascara la contraseña" || mal "diagnostico sin enmascarar"
 python3 "$V" "$R/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql" >/dev/null && ok "el SQL de diagnóstico pasa el verificador (solo SELECT)" || mal "el SQL de diagnóstico no pasa el verificador"
+
+# --- verificar-api-vault: SOLO LECTURA (GET a la raíz de la API con la clave pública); sin psql, sin CLI, sin claves de servicio
+mkdir -p "$W/solo_curl"
+cat > "$W/solo_curl/curl" <<'SH'
+#!/usr/bin/env bash
+# curl FALSO: registra argumentos y la configuración recibida por la entrada estándar (donde va la clave) y contesta según FAKE_API.
+echo "$*" >> "$CURL_ARGS"; cfg="$(cat)"; printf '%s\n---\n' "$cfg" >> "$CURL_STDIN"
+salida=""; prev=""; for a in "$@"; do [ "$prev" = "-o" ] && salida="$a"; prev="$a"; done
+perfil="$(printf '%s' "$cfg" | sed -n 's/^header = "Accept-Profile: \(.*\)"$/\1/p')"
+resp() { printf '%s' "$2" > "$salida"; printf '%s' "$1"; }
+case "${FAKE_API:-ok}" in
+  red) exit 28;;
+  sin_clave) resp 401 '{"message":"Invalid API key"}';;
+  *) if [ "$perfil" = public ]; then resp 200 '{"swagger":"2.0"}'
+     else case "${FAKE_API}" in
+       ok) resp 406 '{"code":"PGRST106","details":null,"hint":null,"message":"The schema must be one of the following: public, graphql_public"}';;
+       lista_con_vault) resp 406 '{"code":"PGRST106","details":null,"hint":null,"message":"The schema must be one of the following: public, vault"}';;
+       expuesto) resp 200 '{"swagger":"2.0","info":{"title":"vault"}}';;
+       raro) resp 500 '{"message":"boom"}';;
+       sin_lista) resp 406 '{"code":"PGRST106","message":"otra cosa"}';;
+     esac; fi;;
+esac
+SH
+chmod +x "$W/solo_curl/curl"
+b64u() { python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$1"; }
+JWT_ANON="$(b64u '{"alg":"HS256","typ":"JWT"}').$(b64u "{\"role\":\"anon\",\"ref\":\"$REF\"}").firma-publica-de-prueba"
+JWT_SERV="$(b64u '{"alg":"HS256","typ":"JWT"}').$(b64u "{\"role\":\"service_role\",\"ref\":\"$REF\"}").firma-de-servicio-de-prueba"
+JWT_OTRO="$(b64u '{"alg":"HS256","typ":"JWT"}').$(b64u '{"role":"anon","ref":"otroproyecto12345678"}').firma-otro-proyecto"
+export CURL_ARGS="$W/curl_args.txt" CURL_STDIN="$W/curl_stdin.txt"
+api() { # $1 ref, $2 clave; FAKE_API y ACTIONS vienen del entorno de la llamada
+  env -i PATH="$W/solo_curl:/usr/bin:/bin" HOME="$W" CURL_ARGS="$CURL_ARGS" CURL_STDIN="$CURL_STDIN" FAKE_API="${FAKE_API:-ok}" FEL_DEMO_PROYECTO_REF="$1" ${2:+FEL_DEMO_ANON_KEY=$2} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" verificar-api-vault >"$W/salida.txt" 2>&1; }
+limpia_api() { rm -f "$CURL_ARGS" "$CURL_STDIN"; }
+limpia_api; api "$REF" "$JWT_ANON"; r=$?
+[ $r = 0 ] && grep -q "API de datos: OK (solo lectura). Nada se modificó." "$W/salida.txt" && grep -q "Esquemas expuestos por la API: public, graphql_public" "$W/salida.txt" && ok "verificar-api-vault: vault NO expuesto (406 PGRST106) → OK y muestra los esquemas expuestos" || { mal "api-vault OK"; cat "$W/salida.txt"; }
+[ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 2 ] && ! grep -qE -- "-X|--request|-d |--data|-T |--upload|-F |PUT|POST|DELETE|PATCH" "$CURL_ARGS" && grep -c "https://$REF.supabase.co/rest/v1/\$" "$CURL_ARGS" | grep -qx 2 && ok "verificar-api-vault: DOS peticiones GET, ambas a la RAÍZ «/rest/v1/» del proyecto fijado (ninguna a una tabla, ninguna con método de escritura)" || { mal "api-vault: peticiones"; cat "$CURL_ARGS"; }
+! grep -q "firma-publica" "$CURL_ARGS" && grep -q "apikey: $JWT_ANON" "$CURL_STDIN" && ok "verificar-api-vault: la clave va por la entrada estándar, NUNCA en los argumentos del proceso" || mal "la clave aparece en los argumentos"
+grep -q "Authorization: Bearer" "$CURL_STDIN" && grep -q "Accept-Profile: vault" "$CURL_STDIN" && grep -q "Accept-Profile: public" "$CURL_STDIN" && ok "verificar-api-vault: sonda de control (public) y sonda de vault, con la clave JWT anon" || mal "perfiles de la sonda"
+! grep -q "firma-publica" "$W/salida.txt" && ok "verificar-api-vault: la clave no aparece en la salida" || mal "api-vault imprime la clave"
+limpia_api; FAKE_API=expuesto api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "REVISAR el esquema vault ESTÁ EXPUESTO" "$W/salida.txt" && ok "verificar-api-vault: vault responde 200 → REVISAR (expuesto) y falla" || mal "no detecta vault expuesto"
+limpia_api; FAKE_API=lista_con_vault api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "REVISAR la lista de esquemas expuestos incluye vault" "$W/salida.txt" && ok "verificar-api-vault: si la lista de esquemas expuestos incluye vault → REVISAR" || mal "no detecta vault en la lista"
+limpia_api; FAKE_API=sin_clave api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "NO VERIFICADO (la sonda de control" "$W/salida.txt" && [ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 1 ] && ok "verificar-api-vault: clave rechazada por la API (401) → NO VERIFICADO, sin probar vault" || mal "401 no es NO VERIFICADO"
+limpia_api; FAKE_API=red api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO" "$W/salida.txt" && ok "verificar-api-vault: sin red → NO VERIFICADO (nunca OK)" || mal "sin red no es NO VERIFICADO"
+limpia_api; FAKE_API=raro api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (respuesta inesperada HTTP 500)" "$W/salida.txt" && ok "verificar-api-vault: respuesta inesperada → NO VERIFICADO" || mal "respuesta rara no es NO VERIFICADO"
+limpia_api; FAKE_API=sin_lista api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista" "$W/salida.txt" && ok "verificar-api-vault: 406 sin lista de esquemas → NO VERIFICADO" || mal "406 sin lista no es NO VERIFICADO"
+# claves NO públicas: se rechazan SIN enviarlas a ningún sitio
+for caso in "clave secreta sb_secret_|sb_secret_abcdefghijklmnop" "JWT del rol service_role|$JWT_SERV" "JWT anon de OTRO proyecto|$JWT_OTRO" "texto cualquiera|esto-no-es-una-clave" "vacía|"; do
+  desc="${caso%%|*}"; clave="${caso#*|}"; limpia_api; api "$REF" "$clave"; r=$?
+  [ $r = 2 ] && [ ! -e "$CURL_ARGS" ] && ok "verificar-api-vault: $desc → se rechaza SIN llamar a curl" || { mal "api-vault aceptó: $desc"; cat "$W/salida.txt" | head -3; }
+done
+limpia_api; api "$REF" "sb_publishable_abcdefghijklmnop"; r=$?
+[ $r = 0 ] && ! grep -q "Authorization" "$CURL_STDIN" && grep -q "apikey: sb_publishable_abcdefghijklmnop" "$CURL_STDIN" && ok "verificar-api-vault: la clave «publicable» se admite y se envía solo como apikey (sin Authorization)" || { mal "clave publicable"; cat "$W/salida.txt" | head -3; }
+limpia_api; api "abcdefghijklmnopqrst" "$JWT_ANON"; [ $? = 2 ] && [ ! -e "$CURL_ARGS" ] && ok "verificar-api-vault: con otra referencia de proyecto se rechaza sin llamar a curl" || mal "api-vault con otra referencia"
+limpia_api; ACTIONS=1 api "$REF" "$JWT_ANON"; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "firma-publica" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "verificar-api-vault en GitHub Actions: se enmascara la clave" || mal "api-vault sin enmascarar"
 [ "$fallos" = 0 ] && echo "SUPABASE HOSPEDADO (SESSION POOLER IPv4, SINTAXIS v3 Y DESTINO FIJO) OK" || { echo "$fallos fallo(s)"; exit 1; }

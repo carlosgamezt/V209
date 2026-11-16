@@ -260,3 +260,22 @@ jobs:
       - name: Transporte remoto (8a) de extremo a extremo contra NEXA real de prueba por HTTPS
         timeout-minutes: 15
         run: node --test --test-concurrency=1 --test-timeout=240000 fel/agente-local/pruebas/remoto.test.mjs
+
+  salvaguarda-plataforma:
+    name: Salvaguarda de la plataforma «rls_auto_enable» (definición real) y verificación inicial
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      FEL_PG_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconocimiento de la función (12 escenarios) y compatibilidad de las 28 migraciones con ella
+        run: bash fel/tools/test-plataforma-ensure-rls.sh
