@@ -14,6 +14,7 @@ import { crearEndurecimiento } from "./src/endurecimiento.ts";
 import { leerConfigPublicada } from "./src/publicado.ts";
 import { crearApi } from "./src/api.ts";
 import { crearDigifactDesdeEntorno } from "./src/digifact_entorno.ts";
+import { AlmacenGtPg } from "../proveedores/src/almacen_gt_pg.ts";
 import { montarAgente } from "./src/agente_demo.ts";
 import { intervaloDesdeEntorno } from "../proveedores/src/supervisor_ordenes.ts";
 import { PREFIJO_AGENTE } from "../proveedores/src/plano_control_agente.ts";
@@ -61,8 +62,10 @@ else if (sesiones && (ALEATORIAS || Deno.env.get("FEL_DEMO_MFA") === "1")) {
   for (const [u, s] of MFA) console.log(`    ${u.padEnd(9)} clave ${s}\n              ${uriOtp(u, s)}`);
 }
 // Digifact TEST (solo servidor, apagado por defecto): consulta de NIT, validación y certificación con confirmación manual. Ver src/digifact_entorno.ts.
-const digifact = await crearDigifactDesdeEntorno((k) => Deno.env.get(k), { auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
-console.log(`  Digifact TEST: ${digifact.motivo}`);
+// Almacén de las operaciones de Digifact: PERSISTENTE solo si la base es PostgreSQL real y ya tiene la tabla (migración 29, pendiente de autorización); si no, en memoria (prepara y valida, pero NO envía nada real)
+const almacenDigifact = bd.tipo === "pg" && (await bd.filas<{ ok: boolean }>("select to_regclass('public.digifact_operaciones') is not null as ok"))[0]?.ok ? new AlmacenGtPg(bd.filas) : undefined;
+const digifact = await crearDigifactDesdeEntorno((k) => Deno.env.get(k), { almacen: almacenDigifact, auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
+console.log(`  Digifact TEST: ${digifact.motivo}${digifact.servicio ? (almacenDigifact ? " · almacén persistente (PostgreSQL)" : " · almacén en memoria: prepara y valida, NO envía nada real") : ""}`);
 const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio });
 
 async function estatico(ruta: string): Promise<Response> {
