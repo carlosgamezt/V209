@@ -285,6 +285,7 @@ export class ServicioFelGt {
     const items: ItemGt[] = doc.lineas.map((l, i) => {
       const q = aMicro(l.cantidad), p = aMicro(l.precioUnitario), dsc = aMicro(l.descuento || "0");
       if (q === null || p === null || dsc === null) throw new ErrorFelGt("VALIDACION", `Línea ${i + 1}: importes con más de 6 decimales o no numéricos`, [{ campo: `lineas[${i}]`, mensaje: "importes no válidos (máximo 6 decimales)" }]);
+      if (p === 0n) throw new ErrorFelGt("VALIDACION", `Línea ${i + 1}: el precio Q0.00 solo se acepta en la demostración simulada; no es válido para certificar`, [{ campo: `lineas[${i}].precioUnitario`, mensaje: "precio cero no admitido al certificar" }]);   // decisión de DEMO: no se extiende a la certificación real
       const total = prod(q, p) - dsc;
       if (total < 0n) throw new ErrorFelGt("VALIDACION", `Línea ${i + 1}: el descuento supera el importe`, [{ campo: `lineas[${i}].descuento`, mensaje: "supera el importe de la línea" }]);
       return { tipo: l.tipo, descripcion: l.descripcion, cantidad: l.cantidad, ...(l.unidad ? { unidad: l.unidad } : {}), precioUnitario: l.precioUnitario, descuento: l.descuento || "0", impuestos: politica(total, emisor), totalItem: deMicro(total) };

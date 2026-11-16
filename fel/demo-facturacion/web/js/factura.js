@@ -69,9 +69,12 @@ export function pantallaFactura(ctx, id) {
       const nombres = ["Datos", "Ítems", "Vista previa"];
       poner(pasosEl, ...(editable() ? nombres.map((t, i) => h("li", { class: `paso${paso === i + 1 ? " on" : ""}${paso > i + 1 ? " hecho" : ""}` }, h("div", { role: "link", tabindex: "0", class: "paso-i", "aria-current": paso === i + 1 ? "step" : null, "data-ir-paso": String(i + 1), onclick: () => irPaso(i + 1), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); irPaso(i + 1); } } }, h("span", { class: "paso-n" }, String(i + 1)), h("span", {}, t)))) : []));
     }
+    // Q0.00 se acepta SOLO en la demostración simulada (decisión de DEMO); nunca para certificar de verdad
+    const lineasPrecioCero = () => f.lineas.map((l, i) => (RE_MONTO.test(l.precio_unitario) && Number(l.precio_unitario) === 0 ? i + 1 : 0)).filter(Boolean);
+    const avisoPrecioCero = () => { const z = lineasPrecioCero(); return z.length ? h("p", { class: "aviso", id: "aviso-precio-cero", role: "status" }, icono("info"), h("span", {}, `Precio Q0.00 en ${z.length === 1 ? "la línea" : "las líneas"} ${z.join(", ")}: se acepta solo en esta DEMO. No es válido para certificar.`)) : null; };
     function pintarPrevia() {
       if (!editable() || paso !== 3) return poner(cardPrev);
-      poner(cardPrev, h("h2", { class: "card-t" }, "Vista previa"), h("p", { class: "aviso aviso-azul" }, icono("info"), h("span", {}, "Revisa la información antes de continuar. Es una vista previa NO certificada, sin valor fiscal.")), papel({ ctx, doc, f, calc: calcularSeguro(), det: d }));
+      poner(cardPrev, h("h2", { class: "card-t" }, "Vista previa"), h("p", { class: "aviso aviso-azul" }, icono("info"), h("span", {}, "Revisa la información antes de continuar. Es una vista previa NO certificada, sin valor fiscal.")), avisoPrecioCero(), papel({ ctx, doc, f, calc: calcularSeguro(), det: d }));
     }
     function mostrar() {
       const ed = editable(); cardDatos.hidden = ed && paso !== 1; cardItems.hidden = ed && paso !== 2; cardPrev.hidden = !(ed && paso === 3);
@@ -120,6 +123,7 @@ export function pantallaFactura(ctx, id) {
       poner(totales, h("h2", { class: "card-t" }, "Resumen"),
         h("div", { class: "sello" }, icono("lock"), h("div", {}, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, "Vista previa no certificada: sin serie, número ni autorización oficiales."))),
         ...(c.ok ? [fila("Subtotal", quetzales(c.r.subtotal)), fila("Descuentos", quetzales(c.r.descuento_total)), fila("Base imponible", quetzales(c.r.base_imponible), "tot-base")] : [h("p", { class: "mut" }, "Completa cantidad y precio de cada línea para ver los importes.")]),
+        avisoPrecioCero(),
         h("div", { class: "pend" }, icono("info"), h("div", {}, h("strong", {}, "Impuestos y total: pendientes"), h("small", {}, "Se calcularán cuando exista un régimen fiscal verificado con un contador. Hoy no se aplica ninguna fórmula fiscal."))),
         ps.length && (intentoGuardar || !editable()) ? h("div", { class: "validacion", role: "status" }, h("strong", {}, "Antes de guardar:"), h("ul", {}, ...ps.map((x) => h("li", {}, x)))) : ps.length ? h("p", { class: "mut ayuda-val" }, `${ps.length} dato${ps.length > 1 ? "s" : ""} por completar.`) : h("p", { class: "ok-val" }, icono("circleCheck"), h("span", {}, "Datos completos.")));
     }

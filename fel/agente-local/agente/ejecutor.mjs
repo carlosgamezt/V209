@@ -19,6 +19,11 @@ export function decidirDesdeLibro(sesion, libro, sesionId) {
   return null;
 }
 
+/** Sesión y libro se leen con dos peticiones distintas: si la persona confirma justo entre ambas, una lectura puede ver el libro con la emisión y la sesión aún sin confirmar (o al revés).
+ *  Esa discrepancia de UNA sola lectura es transitoria; solo se da por incierta si persiste en lecturas consecutivas. Los duplicados en el libro NUNCA se consideran transitorios. */
+export const LECTURAS_INCOHERENTES_PARA_INCIERTA = 2;
+export const esDiscrepanciaTransitoria = (d) => !!d && d.tipo === "incierta" && (d.motivo === "emision_sin_sesion_confirmada" || d.motivo === "libro_no_coincide");
+
 export function crearEjecutor(dep) {
   const { nexa, sim, almacen, config, log = () => {}, abrirNavegador, reloj = () => Date.now(), dormir = dormirReal, ganchos = {}, cierreSolicitado = () => false } = dep;   // «ganchos»: solo pruebas
   const guardar = (o, extra) => almacen.guardarDiario({ orden: o.orden, token: o.token, referencia: o.orden, t: new Date().toISOString(), ...extra });
@@ -45,7 +50,7 @@ export function crearEjecutor(dep) {
 
   /** Espera la decisión de la persona. Renueva el arrendamiento; todo se resuelve con el libro. */
   async function esperar(o, sesion) {
-    const inicio = reloj(); let ultimoRenovar = inicio, fallos = 0;
+    const inicio = reloj(); let ultimoRenovar = inicio, fallos = 0, incoherentes = 0;
     for (;;) {
       if (cierreSolicitado()) { log("cierre", "cierre ordenado con la vista previa abierta: se cierra la sesión y se resuelve con el libro"); return recuperarPresentada(o, sesion.id); }   // nunca queda una confirmación posible sin agente
       if (reloj() - inicio > config.esperaMaxMs) {
@@ -56,7 +61,9 @@ export function crearEjecutor(dep) {
       try {
         const [s, libro] = await Promise.all([sim.sesion(sesion.id), sim.libro(o.orden)]); fallos = 0;
         const d = decidirDesdeLibro(s, libro, sesion.id);
-        if (d) return await informar(o, d, sesion.id);
+        if (esDiscrepanciaTransitoria(d) && ++incoherentes < LECTURAS_INCOHERENTES_PARA_INCIERTA) log("aviso", `lectura incoherente de sesión y libro (${d.motivo}); se vuelve a leer antes de decidir`);
+        else if (d) return await informar(o, d, sesion.id);
+        else incoherentes = 0;
       } catch (e) {
         if (e instanceof ErrorNexa) throw e;
         if (++fallos >= config.maxFallosSimulador) { log("aviso", "el simulador no responde: resultado sin verificar; no se repite nada"); return { estado: "sin_verificar" }; }

@@ -91,6 +91,14 @@ Deno.test("preparación: guarda la operación pero NO envía; es idempotente y l
   assert.equal(m.envios(), 0);
 });
 
+Deno.test("precio unitario Q0.00: aceptado solo en la demostración; al preparar para certificar se rechaza y no sale nada (los negativos ya no son numéricos válidos)", async () => {
+  const m = mundo();
+  const cero = (precio: string) => doc(EMPRESA_A, "dcero", { lineas: [{ tipo: "Servicio", descripcion: "Cortesía", cantidad: "1", precioUnitario: precio, descuento: "0" }] });
+  await rechaza(m.s.preparar(ctx(), cero("0")), "VALIDACION"); await rechaza(m.s.preparar(ctx(), cero("0.00")), "VALIDACION"); await rechaza(m.s.preparar(ctx(), cero("-5")), "VALIDACION");
+  assert.equal(m.llamadas.length, 0); assert.equal(m.envios(), 0);
+  assert.ok((await m.s.preparar(ctx(), doc())).operacionId, "un documento con precio positivo sigue preparándose");
+});
+
 Deno.test("certificar exige cada garantía por separado y, si falta alguna, NO sale nada hacia Digifact", async () => {
   const m = mundo(); const p = await m.s.preparar(ctx(), doc()); const c = confirmar(p);
   const sinSalida = async (cod: string, f: () => Promise<unknown>) => { const antes = m.llamadas.length; await rechaza(f(), cod); assert.equal(m.llamadas.length, antes, `${cod}: no debe haber red`); assert.equal(m.envios(), 0); };
