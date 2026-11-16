@@ -232,3 +232,25 @@ body{min-height:100vh}
   .barra-acciones .btn svg{display:none}
   .banda-simulado{flex-wrap:wrap;gap:4px 8px}
 }
+
+/* móvil · iteración 2 (auditoría 360/412/1280): barra de acciones compacta, botón flotante «Agregar ítem», banda DEMO de una línea, objetivos táctiles */
+.t-corto,.ab-fab{display:none}
+@media(max-width:900px){
+  .barra-acciones{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px;align-items:stretch}
+  .barra-acciones .ab-ico{flex:0 0 44px;width:44px;padding:0;justify-content:center}
+  .barra-acciones .ab-ico span{display:none}
+  .barra-acciones .ab-ico svg{display:block;width:20px;height:20px}
+  .barra-acciones .ab-volver{display:none}
+  .barra-acciones .sucio{grid-column:1 / -1}
+  .barra-acciones{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(0,1fr)}
+  .barra-acciones .ab-ico{grid-column:auto;min-width:44px;width:44px}
+  .barra-acciones .btn{min-width:0;white-space:nowrap;padding:0 10px}
+  .barra-acciones .t-largo{display:none}.barra-acciones .t-corto{display:inline}
+  .barra-acciones .ab-fab{display:inline-flex;position:absolute;right:2px;bottom:calc(100% + 10px);width:54px;height:54px;min-height:54px;padding:0;border-radius:50%;justify-content:center;box-shadow:0 6px 18px rgba(70,84,245,.4);z-index:30}
+  .barra-acciones .ab-fab svg{display:block;width:26px;height:26px}
+  .banda-simulado .banda-det{display:none}
+  .banda-simulado{padding:6px 14px;gap:6px 10px}
+  .enlace-btn{min-height:44px;display:inline-flex;align-items:center;padding:0 6px}
+  .estrella,.btn-estrella,[aria-label^="Quitar de frecuentes"],[aria-label^="Marcar como frecuente"],[aria-label^="Ver el correo completo"]{min-width:44px;min-height:44px}
+}
+@media(max-width:900px){.acciones-fac .btn-mini,.acciones-fac .icon-btn{min-height:44px;height:44px}.acciones-fac .icon-btn{width:44px}.acciones-fac{gap:8px}}

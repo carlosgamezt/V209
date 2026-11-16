@@ -105,7 +105,7 @@ async function iniciar(estadoInicial) {
           h("div", { class: "emp-sel", title: maestro ? "Plataforma" : "Empresa ficticia de la demostración" }, icono("building"), h("strong", {}, (maestro ? "PLATAFORMA" : estado.empresa.nombre_comercial).toUpperCase())),
           campana,
           conLogin ? h("span", { class: "cab-usuario", id: "usuario-actual" }, estado.usuario.nombre, h("button", { type: "button", class: "btn btn-sec cab-salir", id: "cerrar-sesion-cab", onclick: salir }, "Salir")) : h("label", { class: "cab-usuario" }, h("span", { class: "mut" }, "Actuar como"), selUsuario))),
-      h("div", { class: "banda-simulado", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", { class: "tag-demo" }, estado.persistente ? "DEMO · datos persistentes de prueba" : "DEMO · datos NO persistentes"), h("span", {}, "No se conecta a SAT ni a ningún certificador; nada de lo que ves se emite de verdad.")));
+      h("div", { class: "banda-simulado", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", { class: "tag-demo" }, estado.persistente ? "DEMO · datos persistentes de prueba" : "DEMO · datos NO persistentes"), h("span", { class: "banda-det" }, "No se conecta a SAT ni a ningún certificador; nada de lo que ves se emite de verdad.")));
   }
   function pintar() {
     const ruta = rutaActual();

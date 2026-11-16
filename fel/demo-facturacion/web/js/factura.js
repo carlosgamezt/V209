@@ -129,17 +129,23 @@ export function pantallaFactura(ctx, id) {
     }
     function pintarBarra() {
       const ed = editable(), prep = doc.estado_preparacion, btns = [];
-      btns.push(boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") }));
-      if (ed && paso > 1) btns.push(boton("Atrás", { tipo: "sec", icon: "undo", id: "paso-atras", onclick: () => irPaso(paso - 1) }));
+      // móvil: «Atrás» y «Vista previa» pasan a solo icono (con nombre accesible) y «Volver» se oculta (la barra inferior ya lleva a Facturas); «Guardar»/«Continuar» ocupan el ancho
+      const solo = (b, nombre) => { b.classList.add("ab-ico"); b.setAttribute("aria-label", nombre); return b; };
+      const corto = (b, c) => { b.querySelector("span").className = "t-largo"; b.append(h("span", { class: "t-corto" }, c)); return b; };
+      { const v = boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") }); v.classList.add("ab-volver"); btns.push(v); }
+      if (ed && paso > 1) btns.push(solo(boton("Atrás", { tipo: "sec", icon: "undo", id: "paso-atras", onclick: () => irPaso(paso - 1) }), "Atrás"));
       if (!ed) btns.push(boton("Vista previa", { tipo: "sec", icon: "eye", onclick: () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d }) }));
-      else if (paso < 3) btns.push(boton("Vista previa", { tipo: "sec", icon: "eye", id: "ver-previa", onclick: () => irPaso(3) }));
-      if (ed) btns.push(boton(doc.id ? "Guardar cambios" : "Guardar borrador", { tipo: paso === 3 ? "sec" : "sec", icon: "check", id: "guardar", onclick: guardar }));
+      else if (paso < 3) btns.push(solo(boton("Vista previa", { tipo: "sec", icon: "eye", id: "ver-previa", onclick: () => irPaso(3) }), "Vista previa"));
+      if (ed) btns.push(corto(boton(doc.id ? "Guardar cambios" : "Guardar borrador", { tipo: "sec", icon: "check", id: "guardar", onclick: guardar }), "Guardar"));
       if (ed && paso < 3) btns.push(boton("Continuar", { icon: "check", id: "paso-siguiente", onclick: () => irPaso(paso + 1) }));
       if (doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar")) btns.push(boton("Validar con el proveedor", { tipo: "sec", icon: "shield", disabled: sucio, title: sucio ? "Guarda los cambios antes de validar" : null, onclick: validar }),
         boton("Marcar como revisado", { tipo: "sec", icon: "circleCheck", disabled: sucio, title: sucio ? "Guarda los cambios antes de revisar" : null, onclick: () => cambiar("revisado") }));
       if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) btns.push(boton("Volver a borrador", { tipo: "sec", icon: "undo", onclick: () => cambiar("borrador") }));
       if (doc.id && prep !== "archivado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.archivar")) btns.push(boton("Archivar", { tipo: "peligro", icon: "archive", onclick: archivar }));
-      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, ...btns);
+      // botón flotante «Agregar ítem» al alcance del pulgar (solo móvil, solo en el paso de ítems)
+      const fab = ed && paso === 2 ? boton("", { tipo: "pri", icon: "plus", id: "fab-agregar", "aria-label": "Agregar ítem", onclick: () => { f.lineas.push(linea()); sucio = true; pintarLineas(); pintarBarra(); requestAnimationFrame(() => { const u = [...cuerpoLineas.querySelectorAll(".ln:not(.ln-cab)")].pop(); u?.scrollIntoView({ block: "center", behavior: "smooth" }); u?.querySelector("input")?.focus({ preventScroll: true }); }); } }) : null;
+      if (fab) fab.classList.add("ab-fab");
+      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, ...btns, fab);
     }
     function pintarProceso() {
       poner(proceso, doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));

@@ -52,6 +52,32 @@ function arrancar() {
     await pc.waitForSelector("text=el precio debe ser un número"); assert.equal(await pc.locator("#aviso-precio-cero").count(), 0, "el negativo no recibe el aviso de DEMO: se rechaza");
     await pc.fill('input[aria-label="Precio de la línea 1"]', "0"); await pc.waitForSelector("#aviso-precio-cero");
     await pc.getByRole("button", { name: /Guardar borrador/ }).click(); await pc.waitForSelector("#toasts >> text=/guardad/i");   // en DEMO se puede guardar con Q0.00
+    // ---- responsive en 3 tamaños (móvil pequeño, móvil grande, escritorio): sin desborde, objetivos táctiles, barra de acciones sin texto cortado, botón flotante «Agregar ítem», teclado virtual
+    for (const [nom, vp] of [["móvil pequeño 360", { width: 360, height: 640 }], ["móvil grande 412", { width: 412, height: 915 }], ["escritorio 1280", { width: 1280, height: 800 }]]) {
+      const r = await nav.newContext({ viewport: vp, hasTouch: vp.width < 900, isMobile: vp.width < 900 }); await r.route(/fonts\.(googleapis|gstatic)\.com/, (x) => x.abort()); const q = await r.newPage(); q.on("pageerror", (e) => errores.push(`pageerror: ${e.message}`));
+      const movil = vp.width < 900;
+      for (const ruta of ["/", "/panel", "/clientes", "/conceptos", "/config", "/usuarios", "/plan", "/nueva"]) {
+        await q.goto(srv.url + "/#" + ruta); await q.waitForTimeout(500);
+        const g = await q.evaluate(() => { const vis = (e) => { const c = getComputedStyle(e), b = e.getBoundingClientRect(); return c.display !== "none" && c.visibility !== "hidden" && b.width > 0 && b.height > 0; };
+          const els = [...document.querySelectorAll("button,a.nv,a.btn,input:not([type=hidden]):not([type=checkbox]):not([type=radio]),select,textarea")].filter(vis).filter((e) => !e.matches('select[aria-label="Persona de la demostración"]'));   // el selector de personas solo existe en el modo de pruebas
+          return { desborde: document.documentElement.scrollWidth > innerWidth + 1, chicos: innerWidth < 900 ? els.filter((e) => e.getBoundingClientRect().height < 40).map((e) => (e.getAttribute("aria-label") || e.textContent).trim().slice(0, 30)) : [], fuente: innerWidth < 900 ? els.filter((e) => /INPUT|SELECT|TEXTAREA/.test(e.tagName) && parseFloat(getComputedStyle(e).fontSize) < 16).length : 0 }; });
+        assert.equal(g.desborde, false, `${nom} ${ruta}: desborde horizontal`); assert.deepEqual(g.chicos, [], `${nom} ${ruta}: objetivos táctiles menores de 40 px: ${g.chicos.join(" | ")}`); assert.equal(g.fuente, 0, `${nom} ${ruta}: campos con fuente menor de 16 px (el navegador haría zoom)`);
+      }
+      await q.goto(srv.url + "/#/nueva"); await q.waitForSelector('select[aria-label="Receptor"]'); await q.selectOption('select[aria-label="Receptor"]', { index: 1 }); await q.selectOption('select[aria-label="Establecimiento"]', { index: 1 }); await q.getByRole("button", { name: "Continuar" }).click(); await q.waitForSelector('input[aria-label="Precio de la línea 1"]');
+      assert.deepEqual(await q.locator('input[aria-label^="Cantidad"],input[aria-label^="Precio"]').evaluateAll((l) => l.map((e) => e.getAttribute("inputmode"))), ["decimal", "decimal"], `${nom}: teclado numérico en cantidad y precio`);
+      const trunc = await q.evaluate(() => [...document.querySelectorAll(".barra-acciones .btn")].filter((b) => b.getBoundingClientRect().width > 0 && b.scrollWidth > b.clientWidth + 1).map((b) => (b.getAttribute("aria-label") || b.textContent).trim()));
+      assert.deepEqual(trunc, [], `${nom}: texto cortado en la barra de acciones`);
+      if (movil) {
+        assert.equal(await q.locator("#fab-agregar").isVisible(), true, `${nom}: botón flotante «Agregar ítem» visible`); const cajaF = await q.locator("#fab-agregar").boundingBox(); assert.ok(cajaF.height >= 44 && cajaF.x + cajaF.width <= vp.width, `${nom}: botón flotante táctil y dentro de la pantalla`);
+        for (let i = 0; i < 4; i++) await q.click("#fab-agregar"); assert.equal(await q.locator('input[aria-label^="Descripción de la línea"]').count(), 5, `${nom}: el botón flotante agrega líneas`);
+        await q.waitForTimeout(900);   // el desplazamiento hacia la línea nueva es animado
+        const enFoco = await q.evaluate(() => { const a = document.activeElement; if (!a || a.tagName !== "INPUT") return null; const b = a.getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; }); assert.equal(enFoco, true, `${nom}: la línea nueva queda enfocada y visible`);
+        await q.setViewportSize({ width: vp.width, height: 330 });   // teclado virtual abierto (≈ mitad de la pantalla)
+        await q.locator('input[aria-label="Precio de la línea 5"]').scrollIntoViewIfNeeded(); await q.locator('input[aria-label="Precio de la línea 5"]').click(); await q.waitForTimeout(300);
+        const visible = await q.evaluate(() => { const b = document.activeElement.getBoundingClientRect(), barra = document.querySelector(".barra-acciones").getBoundingClientRect(), nv = document.querySelector(".nav-movil").getBoundingClientRect(); return b.top >= 0 && b.bottom <= Math.min(innerHeight, barra.top > 0 ? barra.top + 1 : innerHeight, nv.top + 1) + 80; }); assert.equal(visible, true, `${nom}: con teclado virtual el campo activo sigue accesible`);
+      } else assert.equal(await q.locator("#fab-agregar").isHidden(), true, "sin botón flotante en escritorio");
+      await r.close();
+    }
     assert.deepEqual(errores, [], `errores de página: ${errores.join(" | ")}`);
     console.log("ACCESO ANTICIPADO E2E OK");
   } finally { await nav.close(); srv.parar(); }
