@@ -2,6 +2,15 @@
 
 Ejecución #5 de «solo migraciones», acción `diagnostico-inicial`, rama `fel-proveedores-diseno`, commit `c61f774`. **Solo lectura** (transacción `READ ONLY` confirmada con `transaction_read_only = on`); de los pasos del flujo solo corrió el del diagnóstico (CLI, verificación inicial y etapas: omitidos). No se leyó ningún valor de secreto y el registro no contiene credenciales. **Nada se modificó. Etapa 1 sigue sin ejecutarse.**
 
+## Actualización: estado de las correcciones aprobadas
+| # | Corrección | Estado |
+|---|---|---|
+| C1 | `verificar-inicial` reconoce `public.rls_auto_enable()` **solo** si coincide: propietario `postgres`/`supabase_admin`, `SECURITY DEFINER`, plpgsql, volátil, devuelve `event_trigger`, configuración exactamente `search_path=pg_catalog`, **huella SHA-256 del cuerpo = `325ae266d9b166715ef5230ceaf7ff9d523e483cf5610dfb9779ab3f183f4af9`** (de la definición verificada, guardada en `supabase/tests/plataforma/rls_auto_enable_real.sql`; una guarda estática comprueba que la huella del SQL coincide con ese archivo) y el disparador `ensure_rls` activo en `ddl_command_end` con exactamente las tres etiquetas. Cualquier otra función, o esa misma modificada, es `REVISAR` y se imprime la huella real. | **Implementada y probada** (12 escenarios) |
+| C2 | Pruebas locales y de CI con la definición real: `tools/test-plataforma-ensure-rls.sh` (reconocimiento + 28 migraciones, 67 tablas con RLS y las 28 suites con la función instalada; el CI usa un PostgreSQL de superusuario). | **Implementada** |
+| C3 | Etiqueta del diagnóstico: «ACL por defecto de PostgreSQL: EXECUTE para PUBLIC y para el propietario». | **Corregida** |
+| C4 | Acción de solo lectura `verificar-api-vault`: un GET a la raíz de la API con la clave **pública** del proyecto (secreto `DEMO_SUPABASE_ANON_KEY`, **que debes crear**; nunca una clave de servicio) para saber si `vault` está expuesto. | **Preparada y probada; no ejecutada** |
+| C5 | Decisión de arquitectura y diseño del cifrado por sobre: `DECISION-CREDENCIALES-DIGIFACT.md`. | **Documentada; sin implementar** |
+
 ## 1. La función de `public`
 | Dato | Valor |
 |---|---|
