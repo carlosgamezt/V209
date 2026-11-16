@@ -12,6 +12,8 @@
 #   bash tools/supabase-hospedado.sh estado         → SOLO LECTURA de METADATOS (sesión forzada a solo lectura): tablas existentes, RLS, historial de migraciones y cuáles faltan; no lee datos de negocio
 #   bash tools/supabase-hospedado.sh migraciones    → enlaza y aplica las migraciones pendientes
 #   bash tools/supabase-hospedado.sh funcion        → carga los secretos de la función y la despliega
+#   bash tools/supabase-hospedado.sh diagnostico-inicial   → SOLO LECTURA ESTRICTA (mismas 4 capas y mismos 2 secretos que verificar-inicial): ejecuta docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql (solo SELECT sobre el catálogo):
+#                                                          función propia en public, disparadores de evento y privilegios sobre Vault. Informativo: no falla por hallazgos. NO llama a la CLI, NO tiene ruta hacia migraciones ni escrituras.
 #   bash tools/supabase-hospedado.sh verificar-inicial     → SOLO LECTURA ESTRICTA de «nexa-demo» ANTES de migrar: ejecuta docs/migracion-28/verificacion-inicial-nexa-demo.sql (solo SELECT sobre el catálogo) dentro de «begin transaction read only … rollback»
 #                                                          y con la sesión forzada a solo lectura. NO llama a la CLI de Supabase, NO usa token ni confirmación, NO tiene ninguna ruta hacia «db push», «link», función ni escrituras. Falla si alguna fila dice REVISAR.
 #   bash tools/supabase-hospedado.sh migraciones-etapa 1|2   → SOLO MIGRACIONES, por etapas y con parada: etapa 1 = migraciones 1–27 (exige base VACÍA y sin historial), etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27).
@@ -129,6 +131,27 @@ case "${1:-}" in
     derivar_url_sesion
     supabase link --project-ref "$REF" --workdir . >/dev/null
     supabase db push --remote="$URL_SESION" --yes --workdir .;;
+  diagnostico-inicial)
+    # Igual que verificar-inicial: NO usa la CLI de Supabase, NO lee SUPABASE_ACCESS_TOKEN ni FEL_CONFIRMAR_MIGRACIONES y NO contiene «db push», «link», función ni escrituras. Solo informa.
+    derivar_url_sesion
+    command -v psql >/dev/null || { echo "Falta psql: sin él no se puede diagnosticar (de solo lectura). No se hace nada."; exit 2; }
+    SQL_DIAG="$PWD/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql"
+    [ -f "$SQL_DIAG" ] || { echo "Falta $SQL_DIAG. No se hace nada."; exit 2; }
+    python3 tools/verificar-sql-solo-lectura.py "$SQL_DIAG" >/dev/null || { echo "PROHIBIDO: el SQL de diagnóstico contiene algo que no es un SELECT. No se hace nada."; python3 tools/verificar-sql-solo-lectura.py "$SQL_DIAG" | head -5; exit 2; }
+    source tools/sql-solo-lectura.sh
+    CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
+    ENVOLTORIO="$(mktemp)"; trap 'rm -f -- "$ENVOLTORIO"' EXIT
+    envolver_solo_lectura "$SQL_DIAG" > "$ENVOLTORIO"
+    echo "== NEXA FEL · diagnóstico de nexa-demo (SOLO LECTURA: transacción de solo lectura + sesión forzada a solo lectura; sin CLI, sin migraciones)"
+    if ! SALIDA="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -f "$ENVOLTORIO" 2>&1)"; then
+      PRIMERA="$(printf '%s' "$SALIDA" | grep -m1 -E 'ERROR|error|FATAL' || true)"; PRIMERA="${PRIMERA//"$CLAVE_URL"/***}"
+      echo "DIAGNÓSTICO: no se pudo ejecutar: ${PRIMERA:0:240}"; exit 1
+    fi
+    SALIDA="${SALIDA//"$CLAVE_URL"/***}"
+    printf '%s\n' "$SALIDA" | grep -qx '00 sesión | transaction_read_only | on' || { echo "DIAGNÓSTICO: la sesión NO está confirmada como de solo lectura. Se descarta el resultado."; exit 1; }
+    printf '%s\n' "$SALIDA" | grep -E '^[0-9A-Z]{2} [^|]+ \| '
+    echo "DIAGNÓSTICO: OK (solo lectura). Nada se modificó."; exit 0;;
   verificar-inicial)
     # Esta acción NO usa la CLI de Supabase (ni siquiera la invoca), NO lee SUPABASE_ACCESS_TOKEN ni FEL_CONFIRMAR_MIGRACIONES y NO contiene «db push», «link», función ni escrituras: no existe ruta para aplicar migraciones desde aquí.
     derivar_url_sesion
@@ -219,5 +242,5 @@ case "${1:-}" in
     { echo "FEL_DEMO_BD_URL=$FEL_DEMO_BD_URL"; echo "FEL_DEMO_HOSTS=$FEL_DEMO_HOSTS"; echo "FEL_DEMO_MFA_SEMILLAS=$FEL_DEMO_MFA_SEMILLAS"; echo "FEL_PROXY_SECRETO=$FEL_PROXY_SECRETO"; } > "$ENVF"
     supabase secrets set --env-file "$ENVF" --remote="$REF" --yes >/dev/null
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
-  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
+  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
 esac

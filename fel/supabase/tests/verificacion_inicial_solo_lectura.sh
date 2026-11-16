@@ -12,6 +12,9 @@ fallos=0; ok() { echo "OK verificacion-inicial: $1"; }; mal() { echo "FALLO veri
 antes="$(q "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'")"
 out="$(corre "$R/docs/migracion-28/verificacion-inicial-nexa-demo.sql")"; rc=$?
 [ $rc = 0 ] && grep -qx 'sesión de solo lectura | on | on | OK' <<<"$out" && ok "el SQL real corre bien y la propia consulta confirma que la sesión es de solo lectura" || { mal "el SQL real no corrió"; echo "$out" | head -5; }
+out="$(corre "$R/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql")"; rc=$?
+[ $rc = 0 ] && grep -qx '00 sesión | transaction_read_only | on' <<<"$out" && ok "el SQL de diagnóstico corre bien bajo el envoltorio y confirma la sesión de solo lectura" || { mal "el SQL de diagnóstico no corrió (rc=$rc)"; echo "$out" | head -5; }
+! grep -qE "^B2 vault privilegio efectivo \| .* \| (decrypted_secret|secret)" <<<"$out" && ok "el diagnóstico no devuelve contenido de secretos (solo privilegios)" || mal "el diagnóstico devolvió contenido de Vault"
 n=0; intento() { # $1 descripción, $2 SQL malicioso, $3 texto esperado en el error
   n=$((n+1)); printf '%s\n' "$2" > "$W/malo$n.sql"; local o; o="$(corre "$W/malo$n.sql")"; local c=$?
   if [ $c != 0 ] && grep -qiE "$3" <<<"$o"; then ok "se RECHAZA $1"; else mal "NO se rechazó $1 (rc=$c): $(head -c 160 <<<"$o")"; fi; }

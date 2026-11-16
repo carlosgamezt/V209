@@ -86,7 +86,7 @@ if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD)\b', es_sin_mascara): ok(
 else: mal("el reconocimiento del estado imprime la contraseña")
 
 # ---------------------------------------------------------------- flujo «solo migraciones» (por etapas): no puede desplegar nada más
-txt_mg = verificar_flujo(MG, "migraciones-nube", "APLICAR-MIGRACIONES", "inputs.confirmar", push_de_registro=True, pasos_con_secretos=2)
+txt_mg = verificar_flujo(MG, "migraciones-nube", "APLICAR-MIGRACIONES", "inputs.confirmar", push_de_registro=True, pasos_con_secretos=3)
 PERMITIDOS_MG = {"DEMO_SUPABASE_PROYECTO_REF", "DEMO_SUPABASE_ACCESS_TOKEN", "DEMO_SUPABASE_DB_PASSWORD", "DEMO_BD_URL"}
 usados_mg = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", txt_mg))
 if usados_mg and usados_mg <= PERMITIDOS_MG: ok(f"[migraciones-nube] solo recibe {len(usados_mg)} secretos de base de datos; ninguno de la función, Cloudflare, el intermediario ni las claves de la demostración")
@@ -94,7 +94,7 @@ else: mal(f"[migraciones-nube] secretos no permitidos: {sorted(usados_mg - PERMI
 cuerpo_mg = "\n".join(l for l in txt_mg.splitlines() if not l.lstrip().startswith("#"))
 if not re.search(r"wrangler|cloudflare|pages|functions deploy|secrets set|publicar-nube\.sh|setup-deno|setup-node|SERVICE_ROLE", cuerpo_mg, re.I): ok("[migraciones-nube] el flujo no menciona función, Cloudflare/Pages, Wrangler, publicación ni clave service_role")
 else: mal("[migraciones-nube] el flujo menciona algo que despliega o que no necesita")
-if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and 'verificar-inicial' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones|conexion|estado|diagnostico|validar)\b(?![-\w])", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones verificar-inicial, verificar-etapa y migraciones-etapa del script (no «migraciones» completa ni «funcion»)")
+if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and 'verificar-inicial' in cuerpo_mg and 'diagnostico-inicial' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones|conexion|estado|diagnostico|validar)\b(?![-\w])", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones verificar-inicial, diagnostico-inicial, verificar-etapa y migraciones-etapa del script (no «migraciones» completa ni «funcion»)")
 else: mal("[migraciones-nube] invoca acciones del script no permitidas")
 me = sb[sb.index("  migraciones-etapa|verificar-etapa)"):sb.index("  funcion)")]
 me_sin_comentarios = "\n".join(l for l in me.splitlines() if not l.lstrip().startswith("#"))
@@ -118,8 +118,8 @@ else: mal("[verificar-inicial] su paso debe ejecutar solo «verificar-inicial»"
 if len(paso_et) == 1 and "verificar-inicial" not in str(paso_et[0].get("if", "")) and "verificar-etapa" in str(paso_et[0].get("if", "")) and "migraciones-etapa" in str(paso_et[0].get("if", "")) and "verificar-inicial" not in str(paso_et[0]["run"]): ok("[verificar-inicial] el paso de las etapas (que sí puede aplicar migraciones) queda EXCLUIDO cuando la acción es verificar-inicial")
 else: mal("[verificar-inicial] el paso de las etapas no excluye verificar-inicial")
 cli = [p for p in pasos if p.get("uses") == "./.github/actions/supabase-cli"]
-if len(cli) == 1 and str(cli[0].get("if", "")) == "inputs.accion != 'verificar-inicial'": ok("[verificar-inicial] la CLI de Supabase NO se instala en la verificación inicial")
-else: mal("[verificar-inicial] la CLI de Supabase debe omitirse en verificar-inicial")
+if len(cli) == 1 and str(cli[0].get("if", "")) == "inputs.accion != 'verificar-inicial' && inputs.accion != 'diagnostico-inicial'": ok("[verificar-inicial] la CLI de Supabase NO se instala ni en la verificación inicial ni en el diagnóstico")
+else: mal("[verificar-inicial] la CLI de Supabase debe omitirse en verificar-inicial y diagnostico-inicial")
 if disp["accion"].get("default") == "verificar-inicial" and "verificar-inicial" in disp["accion"]["options"]: ok("[verificar-inicial] es la acción por defecto del flujo (la de solo lectura)")
 else: mal("[verificar-inicial] debe ser la acción por defecto")
 vi = sb[sb.index("  verificar-inicial)"):sb.index("  migraciones-etapa|verificar-etapa)")]
@@ -138,4 +138,22 @@ _spec = importlib.util.spec_from_file_location("vsl", "fel/tools/verificar-sql-s
 _err = _vsl.revisar(open("fel/docs/migracion-28/verificacion-inicial-nexa-demo.sql", encoding="utf-8").read())
 if not _err: ok("[verificar-inicial] el SQL de verificación contiene solo SELECT (verificador estático)")
 else: mal(f"[verificar-inicial] el SQL contiene algo que no es SELECT: {_err[:2]}")
+
+# ---------------------------------------------------------------- «diagnostico-inicial»: misma barrera que verificar-inicial (solo lectura, 2 secretos, sin CLI, sin ruta hacia las migraciones)
+paso_di = [p for p in pasos if "run" in p and "diagnostico-inicial" in str(p["run"])]
+if len(paso_di) == 1 and str(paso_di[0].get("if", "")) == "inputs.accion == 'diagnostico-inicial'" and set(paso_di[0].get("env", {})) == {"FEL_DEMO_PROYECTO_REF", "FEL_DEMO_BD_URL"} and re.fullmatch(r"\s*bash fel/tools/supabase-hospedado\.sh diagnostico-inicial\s*", str(paso_di[0]["run"])): ok("[diagnostico-inicial] su paso recibe SOLO 2 secretos, no lleva variables de acción y ejecuta únicamente «diagnostico-inicial»")
+else: mal("[diagnostico-inicial] su paso debe existir una vez, con su condición, solo FEL_DEMO_PROYECTO_REF y FEL_DEMO_BD_URL y ejecutar solo «diagnostico-inicial»")
+if paso_et and "diagnostico-inicial" not in str(paso_et[0].get("if", "")) and "diagnostico-inicial" not in str(paso_et[0]["run"]): ok("[diagnostico-inicial] el paso de las etapas (que sí puede aplicar migraciones) queda EXCLUIDO cuando la acción es diagnostico-inicial")
+else: mal("[diagnostico-inicial] el paso de las etapas no excluye diagnostico-inicial")
+di = sb[sb.index("  diagnostico-inicial)"):sb.index("  verificar-inicial)")]
+di_sc = "\n".join(l for l in di.splitlines() if not l.lstrip().startswith("#"))
+if not re.search(r"\bsupabase\b\s+(link|db|functions|secrets|migration|projects|start|stop)|db push|--yes|--include-all|FEL_CONFIRMAR_MIGRACIONES|SUPABASE_ACCESS_TOKEN|mktemp -d|cp supabase/migrations", di_sc): ok("[diagnostico-inicial] el código de la acción no invoca la CLI de Supabase, ni «db push», ni lee el token ni la confirmación: no hay ruta hacia las migraciones")
+else: mal("[diagnostico-inicial] el código de la acción contiene una ruta hacia migraciones o la CLI")
+if all(x in di for x in ["verificar-sql-solo-lectura.py", "envolver_solo_lectura", "default_transaction_read_only=on", "00 sesión | transaction_read_only | on"]) and all("default_transaction_read_only=on" in l for l in di.splitlines() if 'psql "host=' in l): ok("[diagnostico-inicial] usa las 4 capas: verificador del SQL, transacción de solo lectura, sesión forzada a solo lectura y confirmación en el resultado")
+else: mal("[diagnostico-inicial] faltan capas de solo lectura")
+_err2 = _vsl.revisar(open("fel/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql", encoding="utf-8").read())
+if not _err2: ok("[diagnostico-inicial] el SQL de diagnóstico contiene solo SELECT (verificador estático)")
+else: mal(f"[diagnostico-inicial] el SQL contiene algo que no es SELECT: {_err2[:2]}")
+if not re.search(r"vault\.(decrypted_secrets|secrets)\b[^\n]*\bfrom\b|from\s+vault\.(decrypted_secrets|secrets)\b", open("fel/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql", encoding="utf-8").read().replace("'", "§")): ok("[diagnostico-inicial] el SQL NO lee el contenido de vault.secrets ni de vault.decrypted_secrets (solo privilegios y catálogo)")
+else: mal("[diagnostico-inicial] el SQL lee el contenido de Vault")
 sys.exit(1 if fallos else 0)

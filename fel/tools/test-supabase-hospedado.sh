@@ -194,7 +194,7 @@ TXT
 mkdir -p "$W/solo_psql"; cp "$W/psql" "$W/solo_psql/psql"   # PATH SIN «supabase»: si la acción intentara invocar la CLI, fallaría
 inicial() { # $1 ref; el resto de variables viene del entorno de la llamada
   env -i PATH="$W/solo_psql:/usr/bin:/bin" HOME="$W" REG_PSQL="$REG_PSQL" WRAPPER_LOG="$WRAPPER_LOG" CLAVE_BUENA="$CLAVE_BUENA" FAKE_INICIAL=1 FAKE_INICIAL_SALIDA="$FAKE_INICIAL_SALIDA" ${FAKE_INICIAL_ERR:+FAKE_INICIAL_ERR=1} \
-    FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${EXTRA_SECRETOS:+SUPABASE_ACCESS_TOKEN=token-falso FEL_CONFIRMAR_MIGRACIONES=APLICAR-MIGRACIONES SUPABASE_DB_PASSWORD=$CLAVE} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" verificar-inicial >"$W/salida.txt" 2>&1; }
+    FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${EXTRA_SECRETOS:+SUPABASE_ACCESS_TOKEN=token-falso FEL_CONFIRMAR_MIGRACIONES=APLICAR-MIGRACIONES SUPABASE_DB_PASSWORD=$CLAVE} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" "${ACCION_INI:-verificar-inicial}" >"$W/salida.txt" 2>&1; }
 rm -f "$REG_PSQL" "$WRAPPER_LOG" "$REGISTRO"; inicial "$REF"; r=$?
 [ $r = 0 ] && grep -q "VERIFICACIÓN INICIAL: OK (solo lectura). Nada se modificó." "$W/salida.txt" && ok "verificar-inicial: todo OK → termina bien" || { mal "verificar-inicial OK"; cat "$W/salida.txt"; }
 nollamo && ok "verificar-inicial: NO llama a la CLI de Supabase (y se ejecutó con un PATH sin «supabase»)" || mal "verificar-inicial llamó a la CLI"
@@ -221,4 +221,27 @@ malo "select 1; insert into public.t values (1);"; malo "select 1; update public
 malo "select * into public.copia from public.t;"; malo "select set_config('a', 'b', false);"; malo "select nextval('s');"; malo "select 1; grant all on public.t to anon;"; malo "do \$\$ begin null; end \$\$;"
 malo "select 1; truncate public.t;"; malo "\\copy public.t from 'x'"; malo "select 1; alter role postgres password 'x';"; malo "select pg_terminate_backend(1);"; malo "select 1; commit;"; malo "begin; select 1;"
 printf '%s\n' "select 'CREATE' as x; select has_schema_privilege('postgres', 'public', 'CREATE');" > "$W/bueno.sql"; python3 "$V" "$W/bueno.sql" >/dev/null && ok "el verificador no se confunde con la palabra CREATE dentro de un texto" || mal "falso positivo con texto"
+
+# --- diagnostico-inicial: misma barrera de solo lectura que verificar-inicial (informativo: no falla por hallazgos)
+cat > "$W/diag_ok.txt" <<'TXT'
+00 sesión | transaction_read_only | on
+A1 función | identidad | public.rls_auto_enable()
+A2 uso | disparador de evento que la ejecuta | ensure_rls (ddl_command_end, activo=O)
+B2 vault privilegio efectivo | service_role sobre decrypted_secrets | SELECT=true INSERT=false UPDATE=false DELETE=false
+TXT
+rm -f "$REG_PSQL" "$WRAPPER_LOG" "$REGISTRO"; ACCION_INI=diagnostico-inicial FAKE_INICIAL_SALIDA="$W/diag_ok.txt" inicial "$REF"; r=$?
+[ $r = 0 ] && grep -q "DIAGNÓSTICO: OK (solo lectura). Nada se modificó." "$W/salida.txt" && grep -q "A1 función | identidad | public.rls_auto_enable()" "$W/salida.txt" && ok "diagnostico-inicial: imprime los hallazgos y termina bien" || { mal "diagnostico-inicial OK"; cat "$W/salida.txt"; }
+nollamo && ok "diagnostico-inicial: NO llama a la CLI de Supabase (PATH sin «supabase»)" || mal "diagnostico-inicial llamó a la CLI"
+[ "$(nps)" = 1 ] && grep -q "^\[-c default_transaction_read_only=on\] " "$REG_PSQL" && solo_lectura && ok "diagnostico-inicial: UNA conexión con la sesión forzada a solo lectura" || mal "diagnostico-inicial: conexión"
+[ "$(sed -n '2p' "$WRAPPER_LOG")" = "begin transaction read only;" ] && [ "$(tail -1 "$WRAPPER_LOG")" = "rollback;" ] && sed -n '3p' "$WRAPPER_LOG" | grep -qE '^\\i /.*/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo\.sql$' && ok "diagnostico-inicial: el SQL va DENTRO de «begin transaction read only … rollback»" || { mal "diagnostico: envoltorio"; cat "$WRAPPER_LOG"; }
+! grep -q "$CLAVE" "$W/salida.txt" && ok "diagnostico-inicial: ninguna contraseña en la salida" || mal "diagnostico imprime la contraseña"
+rm -f "$REGISTRO"; ACCION_INI=diagnostico-inicial EXTRA_SECRETOS=1 FAKE_INICIAL_SALIDA="$W/diag_ok.txt" inicial "$REF"; [ $? = 0 ] && nollamo && ok "diagnostico-inicial: aunque el entorno traiga el token y APLICAR-MIGRACIONES, no llama a la CLI ni aplica nada" || mal "diagnostico con token"
+printf '%s\n' "A1 función | identidad | public.x()" > "$W/diag_sin_ro.txt"; ACCION_INI=diagnostico-inicial FAKE_INICIAL_SALIDA="$W/diag_sin_ro.txt" inicial "$REF"; r=$?
+[ $r = 1 ] && grep -q "NO está confirmada como de solo lectura" "$W/salida.txt" && ok "diagnostico-inicial: sin la fila «00 sesión | transaction_read_only | on» el resultado se DESCARTA y falla" || mal "diagnostico acepta sesión sin confirmar"
+printf '%s\n' "00 sesión | transaction_read_only | off" > "$W/diag_off.txt"; ACCION_INI=diagnostico-inicial FAKE_INICIAL_SALIDA="$W/diag_off.txt" inicial "$REF"; [ $? = 1 ] && ok "diagnostico-inicial: una sesión que NO es de solo lectura falla" || mal "diagnostico acepta sesión de escritura"
+ACCION_INI=diagnostico-inicial FAKE_INICIAL_ERR=1 inicial "$REF"; r=$?
+[ $r = 1 ] && grep -q "DIAGNÓSTICO: no se pudo ejecutar: psql:envoltorio:3: ERROR:  cannot execute CREATE TABLE in a read-only transaction" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "diagnostico-inicial: si PostgreSQL rechaza una escritura, FALLA y oculta la contraseña" || { mal "diagnostico error de escritura"; cat "$W/salida.txt"; }
+rm -f "$REG_PSQL"; ACCION_INI=diagnostico-inicial inicial "abcdefghijklmnopqrst"; [ $? = 2 ] && [ ! -e "$REG_PSQL" ] && ok "diagnostico-inicial: con otra referencia de proyecto se rechaza sin conectar" || mal "diagnostico con otra referencia"
+ACCION_INI=diagnostico-inicial ACTIONS=1 FAKE_INICIAL_SALIDA="$W/diag_ok.txt" inicial "$REF"; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "diagnostico-inicial en GitHub Actions: se enmascara la contraseña" || mal "diagnostico sin enmascarar"
+python3 "$V" "$R/docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql" >/dev/null && ok "el SQL de diagnóstico pasa el verificador (solo SELECT)" || mal "el SQL de diagnóstico no pasa el verificador"
 [ "$fallos" = 0 ] && echo "SUPABASE HOSPEDADO (SESSION POOLER IPv4, SINTAXIS v3 Y DESTINO FIJO) OK" || { echo "$fallos fallo(s)"; exit 1; }
