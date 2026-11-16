@@ -4,7 +4,7 @@ import glob, re, sys, yaml
 R = ".github/workflows/publicar-nube.yml"; DF = ".github/workflows/digifact-test.yml"; MG = ".github/workflows/migraciones-nube.yml"; fallos = []
 def mal(m): fallos.append(m); print("FALLO", m)
 def ok(m): print("OK   ", m)
-def verificar_flujo(ruta, etiqueta, palabra, entrada, push_de_registro=False):
+def verificar_flujo(ruta, etiqueta, palabra, entrada, push_de_registro=False, pasos_con_secretos=1):
     """Las MISMAS garantías para todo flujo que recibe secretos DEMO_: solo manual, un trabajo, entorno protegido, rama fija, secretos aislados en un solo paso y confirmación explícita."""
     w = yaml.safe_load(open(ruta, encoding="utf-8").read()); disparo = w.get(True, w.get("on"))   # PyYAML lee «on» como True
     jobs = w["jobs"]
@@ -30,7 +30,7 @@ def verificar_flujo(ruta, etiqueta, palabra, entrada, push_de_registro=False):
     # los secretos solo en el paso final (no en acciones de terceros ni a nivel de trabajo)
     if "secrets." in str(j.get("env", "")): mal(f"[{etiqueta}] hay secretos a nivel de trabajo")
     con_secretos = [s.get("name") or s.get("uses") for s in j["steps"] if "secrets." in str(s.get("env", "")) or "secrets." in str(s.get("with", ""))]
-    if len(con_secretos) == 1 and "uses" not in next(s for s in j["steps"] if (s.get("name") or s.get("uses")) == con_secretos[0]): ok(f"[{etiqueta}] los secretos se inyectan en un solo paso propio (run), no en acciones de terceros")
+    if len(con_secretos) == pasos_con_secretos and all("uses" not in next(s for s in j["steps"] if (s.get("name") or s.get("uses")) == c) for c in con_secretos): ok(f"[{etiqueta}] los secretos se inyectan solo en {pasos_con_secretos} paso(s) propio(s) (run), nunca en acciones de terceros")
     else: mal(f"[{etiqueta}] secretos en pasos no permitidos: {con_secretos}")
     if palabra in texto and entrada in texto: ok(f"[{etiqueta}] la operación crítica exige escribir {palabra}")
     else: mal(f"[{etiqueta}] falta la confirmación explícita")
@@ -86,7 +86,7 @@ if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD)\b', es_sin_mascara): ok(
 else: mal("el reconocimiento del estado imprime la contraseña")
 
 # ---------------------------------------------------------------- flujo «solo migraciones» (por etapas): no puede desplegar nada más
-txt_mg = verificar_flujo(MG, "migraciones-nube", "APLICAR-MIGRACIONES", "inputs.confirmar", push_de_registro=True)
+txt_mg = verificar_flujo(MG, "migraciones-nube", "APLICAR-MIGRACIONES", "inputs.confirmar", push_de_registro=True, pasos_con_secretos=2)
 PERMITIDOS_MG = {"DEMO_SUPABASE_PROYECTO_REF", "DEMO_SUPABASE_ACCESS_TOKEN", "DEMO_SUPABASE_DB_PASSWORD", "DEMO_BD_URL"}
 usados_mg = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", txt_mg))
 if usados_mg and usados_mg <= PERMITIDOS_MG: ok(f"[migraciones-nube] solo recibe {len(usados_mg)} secretos de base de datos; ninguno de la función, Cloudflare, el intermediario ni las claves de la demostración")
@@ -94,7 +94,7 @@ else: mal(f"[migraciones-nube] secretos no permitidos: {sorted(usados_mg - PERMI
 cuerpo_mg = "\n".join(l for l in txt_mg.splitlines() if not l.lstrip().startswith("#"))
 if not re.search(r"wrangler|cloudflare|pages|functions deploy|secrets set|publicar-nube\.sh|setup-deno|setup-node|SERVICE_ROLE", cuerpo_mg, re.I): ok("[migraciones-nube] el flujo no menciona función, Cloudflare/Pages, Wrangler, publicación ni clave service_role")
 else: mal("[migraciones-nube] el flujo menciona algo que despliega o que no necesita")
-if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones)\b(?!-)", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones migraciones-etapa y verificar-etapa del script (no «migraciones» completa ni «funcion»)")
+if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and 'verificar-inicial' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones|conexion|estado|diagnostico|validar)\b(?![-\w])", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones verificar-inicial, verificar-etapa y migraciones-etapa del script (no «migraciones» completa ni «funcion»)")
 else: mal("[migraciones-nube] invoca acciones del script no permitidas")
 me = sb[sb.index("  migraciones-etapa|verificar-etapa)"):sb.index("  funcion)")]
 me_sin_comentarios = "\n".join(l for l in me.splitlines() if not l.lstrip().startswith("#"))
@@ -106,4 +106,36 @@ if me.count("PGOPTIONS=") >= 2 and not re.search(r"psql [^\n]*(?<!read_only=on)\
 else: mal("[etapas] alguna consulta no está forzada a solo lectura")
 if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD|URL_SESION)\b', "\n".join(l for l in me_sin_comentarios.splitlines() if "::add-mask::" not in l)): ok("[etapas] ninguna salida imprime la contraseña ni la URL de conexión")
 else: mal("[etapas] una salida imprime la contraseña o la URL")
+
+# ---------------------------------------------------------------- «verificar-inicial»: solo lectura estricta, mínimo de secretos y ninguna ruta hacia las migraciones
+wmg = yaml.safe_load(open(MG, encoding="utf-8").read()); pasos = wmg["jobs"]["migraciones"]["steps"]; disp = wmg.get(True, wmg.get("on"))["workflow_dispatch"]["inputs"]
+paso_vi = [p for p in pasos if "run" in p and "verificar-inicial" in str(p["run"])]
+paso_et = [p for p in pasos if "run" in p and "ACCION" in str(p.get("env", {}))]
+if len(paso_vi) == 1 and str(paso_vi[0].get("if", "")) == "inputs.accion == 'verificar-inicial'" and set(paso_vi[0].get("env", {})) == {"FEL_DEMO_PROYECTO_REF", "FEL_DEMO_BD_URL"}: ok("[verificar-inicial] su paso recibe SOLO 2 secretos (referencia del proyecto y cadena de conexión): sin token de Supabase, sin contraseña aparte, sin confirmación de migraciones")
+else: mal("[verificar-inicial] su paso debe existir una vez, con su condición y solo FEL_DEMO_PROYECTO_REF y FEL_DEMO_BD_URL")
+if paso_vi and re.fullmatch(r"\s*bash fel/tools/supabase-hospedado\.sh verificar-inicial\s*", str(paso_vi[0]["run"])): ok("[verificar-inicial] su paso ejecuta únicamente «verificar-inicial» (sin variables de acción, sin etapas)")
+else: mal("[verificar-inicial] su paso debe ejecutar solo «verificar-inicial»")
+if len(paso_et) == 1 and "verificar-inicial" not in str(paso_et[0].get("if", "")) and "verificar-etapa" in str(paso_et[0].get("if", "")) and "migraciones-etapa" in str(paso_et[0].get("if", "")) and "verificar-inicial" not in str(paso_et[0]["run"]): ok("[verificar-inicial] el paso de las etapas (que sí puede aplicar migraciones) queda EXCLUIDO cuando la acción es verificar-inicial")
+else: mal("[verificar-inicial] el paso de las etapas no excluye verificar-inicial")
+cli = [p for p in pasos if p.get("uses") == "./.github/actions/supabase-cli"]
+if len(cli) == 1 and str(cli[0].get("if", "")) == "inputs.accion != 'verificar-inicial'": ok("[verificar-inicial] la CLI de Supabase NO se instala en la verificación inicial")
+else: mal("[verificar-inicial] la CLI de Supabase debe omitirse en verificar-inicial")
+if disp["accion"].get("default") == "verificar-inicial" and "verificar-inicial" in disp["accion"]["options"]: ok("[verificar-inicial] es la acción por defecto del flujo (la de solo lectura)")
+else: mal("[verificar-inicial] debe ser la acción por defecto")
+vi = sb[sb.index("  verificar-inicial)"):sb.index("  migraciones-etapa|verificar-etapa)")]
+vi_sc = "\n".join(l for l in vi.splitlines() if not l.lstrip().startswith("#"))
+if not re.search(r"\bsupabase\b\s+(link|db|functions|secrets|migration|projects|start|stop)|db push|--yes|--include-all|FEL_CONFIRMAR_MIGRACIONES|SUPABASE_ACCESS_TOKEN|mktemp -d|cp supabase/migrations", vi_sc): ok("[verificar-inicial] el código de la acción no invoca la CLI de Supabase, ni «db push», ni lee el token ni la confirmación: no hay ruta hacia las migraciones")
+else: mal("[verificar-inicial] el código de la acción contiene una ruta hacia migraciones o la CLI")
+if all(x in vi for x in ["verificar-sql-solo-lectura.py", "envolver_solo_lectura", "default_transaction_read_only=on", "sesión de solo lectura | on | on | OK"]) and vi.count("psql ") >= 1 and all("default_transaction_read_only=on" in l for l in vi.splitlines() if 'psql "host=' in l): ok("[verificar-inicial] usa las 4 capas: verificador del SQL, transacción de solo lectura, sesión forzada a solo lectura y confirmación en el resultado")
+else: mal("[verificar-inicial] faltan capas de solo lectura")
+env_rl = "\n".join(l for l in open("fel/tools/sql-solo-lectura.sh", encoding="utf-8").read().splitlines() if not l.lstrip().startswith("#"))   # solo el código, no los comentarios
+if "'begin transaction read only;'" in env_rl and "'rollback;'" in env_rl and not re.search(r"\b(commit|end)\b", env_rl, re.I) and env_rl.count("begin") == 1: ok("[verificar-inicial] el envoltorio es «begin transaction read only … rollback» y no contiene COMMIT")
+else: mal("[verificar-inicial] el envoltorio no es de solo lectura")
+sys.dont_write_bytecode = True   # no dejar __pycache__ en el repositorio
+sys.path.insert(0, "fel/tools")
+import importlib.util
+_spec = importlib.util.spec_from_file_location("vsl", "fel/tools/verificar-sql-solo-lectura.py"); _vsl = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_vsl)
+_err = _vsl.revisar(open("fel/docs/migracion-28/verificacion-inicial-nexa-demo.sql", encoding="utf-8").read())
+if not _err: ok("[verificar-inicial] el SQL de verificación contiene solo SELECT (verificador estático)")
+else: mal(f"[verificar-inicial] el SQL contiene algo que no es SELECT: {_err[:2]}")
 sys.exit(1 if fallos else 0)

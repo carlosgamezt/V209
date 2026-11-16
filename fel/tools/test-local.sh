@@ -21,4 +21,6 @@ echo "prueba:    concurrencia.sh"
 PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/concurrencia.sh
 echo "prueba:    procedimiento_excepcional_empresas.sh"
 PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/procedimiento_excepcional_empresas.sh
+echo "prueba:    verificacion_inicial_solo_lectura.sh"
+PSQL_CMD="$PGBIN/psql -h $SOCK -p $PORT -U postgres -d postgres" bash supabase/tests/verificacion_inicial_solo_lectura.sh
 echo "TODO OK"

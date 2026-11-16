@@ -18,7 +18,7 @@
 ## 2. Secuencia propuesta, con puntos de aprobación separados
 | Paso | Ejecución | Qué comprueba o hace | Aprobación |
 |---|---|---|---|
-| A | `migraciones-nube` · `verificar-etapa` · etapa 1 (opcional, antes de aplicar) | Solo lectura: lee estado, historial y **informa si Vault está disponible** y quién tiene USAGE en su esquema. | Tu aprobación en `demo-privada` |
+| A | `migraciones-nube` · **`verificar-inicial`** (acción por defecto; antes de aplicar) | **Solo lectura estricta** (transacción de solo lectura + sesión forzada; solo 2 secretos; sin CLI; sin ruta hacia migraciones): base vacía, roles, dependencias de Auth, **Vault** y privilegios. Falla si algo está para REVISAR. | Tu aprobación en `demo-privada` (**todavía no ejecutada**) |
 | **B1** | **`migraciones-etapa` · etapa 1** (`APLICAR-MIGRACIONES`) | Aplica las **27** a una base vacía. | **Aprobación 1** (apply) |
 | V1 | (automática al final de B1) | 27 registradas; 67 tablas **todas con RLS**; `fel_verificar_dependencias_auth()` sin faltantes. **Se detiene.** | Me entregas/leo el resultado; tú decides seguir |
 | **B2** | **`migraciones-etapa` · etapa 2** (`APLICAR-MIGRACIONES`) | Aplica la **28**; solo se ejecuta si están **exactamente** las 27. | **Aprobación 2** (apply) |

@@ -1,10 +1,13 @@
 name: NEXA FEL · solo migraciones (manual, por etapas)
-# SOLO aplica MIGRACIONES de base de datos al proyecto Supabase «nexa-demo», por etapas y con parada entre ellas. NO despliega ninguna función, NO publica el frontend, NO carga secretos de función, NO toca Cloudflare.
-# SOLO se ejecuta cuando TÚ la lanzas a mano; ningún push, pull request ni programación la activa. Aun lanzada, el trabajo queda en espera hasta que TÚ lo apruebes en el entorno protegido «demo-privada».
-#  · acción «verificar-etapa»  : SOLO LECTURA (sesión forzada a solo lectura): comprueba historial, tablas, RLS, dependencias de Auth y, en la etapa 2, el catálogo de la migración 28.
+# Este flujo NO despliega ninguna función, NO publica el frontend, NO carga secretos de función, NO toca Cloudflare. SOLO se ejecuta cuando TÚ lo lanzas a mano; ningún push, pull request ni programación lo activa.
+# Aun lanzado, el trabajo queda en espera hasta que TÚ lo apruebes en el entorno protegido «demo-privada».
+#  · acción «verificar-inicial» (por defecto): SOLO LECTURA ESTRICTA de nexa-demo ANTES de migrar (transacción de solo lectura + sesión forzada a solo lectura). Recibe SOLO 2 secretos, no instala la CLI de
+#      Supabase, no pide confirmación y NO tiene ninguna ruta hacia migraciones: su paso ejecuta únicamente «verificar-inicial» y los pasos que aplican están excluidos por su condición.
+#  · acción «verificar-etapa»  : SOLO LECTURA: comprueba historial, tablas, RLS, dependencias de Auth y, en la etapa 2, el catálogo de la migración 28.
 #  · acción «migraciones-etapa»: aplica la etapa y, al terminar, corre la verificación de esa etapa. Exige escribir APLICAR-MIGRACIONES.
 #      etapa 1 = migraciones 1 a 27 (exige base VACÍA y sin historial)   ·   etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27)
-# Cada etapa es una ejecución distinta con su propia aprobación. Secretos (solo en el paso que los usa): DEMO_SUPABASE_PROYECTO_REF, DEMO_SUPABASE_ACCESS_TOKEN, DEMO_SUPABASE_DB_PASSWORD, DEMO_BD_URL.
+# Cada etapa es una ejecución distinta con su propia aprobación. Secretos (solo en el paso que los usa): verificar-inicial → DEMO_SUPABASE_PROYECTO_REF y DEMO_BD_URL;
+# etapas → además DEMO_SUPABASE_ACCESS_TOKEN y DEMO_SUPABASE_DB_PASSWORD.
 # El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en digifact-test): está limitado a este mismo archivo y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual; ese camino jamás pide aprobación ni recibe secretos.
 on:
   push:
@@ -12,12 +15,12 @@ on:
   workflow_dispatch:
     inputs:
       accion:
-        description: "verificar-etapa (solo lectura) o migraciones-etapa (aplica)"
+        description: "verificar-inicial (solo lectura, antes de migrar) · verificar-etapa (solo lectura) · migraciones-etapa (aplica)"
         type: choice
-        options: [verificar-etapa, migraciones-etapa]
-        default: verificar-etapa
+        options: [verificar-inicial, verificar-etapa, migraciones-etapa]
+        default: verificar-inicial
       etapa:
-        description: "Etapa: 1 = migraciones 1–27 · 2 = migración 28"
+        description: "Etapa (solo para verificar-etapa y migraciones-etapa): 1 = migraciones 1–27 · 2 = migración 28"
         type: choice
         options: ["1", "2"]
         default: "1"
@@ -42,9 +45,19 @@ jobs:
         if: inputs.accion == 'migraciones-etapa' && inputs.confirmar != 'APLICAR-MIGRACIONES'
         run: echo "Para aplicar migraciones hay que escribir APLICAR-MIGRACIONES en «confirmar»."; exit 1
       - uses: actions/checkout@v4
+      # la CLI de Supabase solo se instala si la acción puede usarla: la verificación inicial NO la necesita ni la instala
       - uses: ./.github/actions/supabase-cli
-      # los secretos solo existen en ESTE paso (no en las acciones de arriba)
-      - name: Ejecutar (${{ inputs.accion }} · etapa ${{ inputs.etapa }})
+        if: inputs.accion != 'verificar-inicial'
+      # ---- verificación inicial: SOLO LECTURA, 2 secretos, sin CLI, sin confirmación, sin etapa
+      - name: Verificación inicial de nexa-demo (solo lectura)
+        if: inputs.accion == 'verificar-inicial'
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
+        run: bash fel/tools/supabase-hospedado.sh verificar-inicial
+      # ---- etapas (verificar-etapa / migraciones-etapa): solo se ejecutan si la acción NO es verificar-inicial
+      - name: Etapas (${{ inputs.accion }} · etapa ${{ inputs.etapa }})
+        if: inputs.accion == 'verificar-etapa' || inputs.accion == 'migraciones-etapa'
         env:
           FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.DEMO_SUPABASE_ACCESS_TOKEN }}

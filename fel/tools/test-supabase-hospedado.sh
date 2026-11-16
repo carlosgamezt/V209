@@ -23,6 +23,12 @@ cat > "$W/psql" <<'SH'
 # psql FALSO: «autentica» solo si PGPASSWORD es la contraseña buena; registra los argumentos. Su error INCLUYE la contraseña a propósito (peor caso) para probar que el diagnóstico la oculta.
 echo "[$PGOPTIONS] $*" >> "$REG_PSQL"
 if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then
+  if [ -n "${FAKE_INICIAL:-}" ]; then   # modo verificación inicial: guarda el envoltorio recibido y devuelve la tabla de resultados indicada
+    prev=""; f=""; for a in "$@"; do [ "$prev" = "-f" ] && f="$a"; prev="$a"; done
+    [ -n "$f" ] && cp "$f" "$WRAPPER_LOG" 2>/dev/null
+    [ -n "${FAKE_INICIAL_ERR:-}" ] && { echo "psql:envoltorio:3: ERROR:  cannot execute CREATE TABLE in a read-only transaction ($PGPASSWORD)" >&2; exit 3; }
+    cat "$FAKE_INICIAL_SALIDA"; exit 0
+  fi
   if [ -n "${FAKE_ETAPAS:-}" ]; then   # modo etapas: contesta según la consulta
     vers="${FAKE_VERSIONS:-}"; [ -s "${ESTADO_VERS:-/nonexistent}" ] && vers="$(cat "$ESTADO_VERS")"; tab="${FAKE_TABLAS:-0}"; [ -s "${ESTADO_TAB:-/nonexistent}" ] && tab="$(cat "$ESTADO_TAB")"
     case "$*" in
@@ -176,4 +182,43 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_CATALOGO_RC
 # GitHub Actions: la contraseña y la URL se enmascaran
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; ACTIONS=1 etapa "$REF" migraciones-etapa 1 APLICAR-MIGRACIONES; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "etapas en GitHub Actions: se enmascaran la contraseña y la URL derivada" || mal "etapas sin enmascarar"
 unset FAKE_ETAPAS
+
+# --- verificar-inicial: SOLO LECTURA ESTRICTA; ninguna ruta hacia migraciones, CLI, DDL ni DML
+unset FAKE_ETAPAS; export WRAPPER_LOG="$W/envoltorio.txt" FAKE_INICIAL_SALIDA="$W/inicial_ok.txt"
+cat > "$W/inicial_ok.txt" <<'TXT'
+auth.users.id existe | true | true | OK
+tablas en public | 0 | 0 | OK
+sesión de solo lectura | on | on | OK
+extensión supabase_vault | disponible 0.3.1, instalada no | informativo | INFO
+TXT
+mkdir -p "$W/solo_psql"; cp "$W/psql" "$W/solo_psql/psql"   # PATH SIN «supabase»: si la acción intentara invocar la CLI, fallaría
+inicial() { # $1 ref; el resto de variables viene del entorno de la llamada
+  env -i PATH="$W/solo_psql:/usr/bin:/bin" HOME="$W" REG_PSQL="$REG_PSQL" WRAPPER_LOG="$WRAPPER_LOG" CLAVE_BUENA="$CLAVE_BUENA" FAKE_INICIAL=1 FAKE_INICIAL_SALIDA="$FAKE_INICIAL_SALIDA" ${FAKE_INICIAL_ERR:+FAKE_INICIAL_ERR=1} \
+    FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${EXTRA_SECRETOS:+SUPABASE_ACCESS_TOKEN=token-falso FEL_CONFIRMAR_MIGRACIONES=APLICAR-MIGRACIONES SUPABASE_DB_PASSWORD=$CLAVE} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" verificar-inicial >"$W/salida.txt" 2>&1; }
+rm -f "$REG_PSQL" "$WRAPPER_LOG" "$REGISTRO"; inicial "$REF"; r=$?
+[ $r = 0 ] && grep -q "VERIFICACIÓN INICIAL: OK (solo lectura). Nada se modificó." "$W/salida.txt" && ok "verificar-inicial: todo OK → termina bien" || { mal "verificar-inicial OK"; cat "$W/salida.txt"; }
+nollamo && ok "verificar-inicial: NO llama a la CLI de Supabase (y se ejecutó con un PATH sin «supabase»)" || mal "verificar-inicial llamó a la CLI"
+[ "$(nps)" = 1 ] && grep -q "^\[-c default_transaction_read_only=on\] " "$REG_PSQL" && solo_lectura && ok "verificar-inicial: UNA sola conexión, con la sesión forzada a solo lectura (default_transaction_read_only=on)" || { mal "verificar-inicial: conexión"; cat "$REG_PSQL"; }
+[ "$(sed -n '2p' "$WRAPPER_LOG")" = "begin transaction read only;" ] && [ "$(tail -1 "$WRAPPER_LOG")" = "rollback;" ] && sed -n '3p' "$WRAPPER_LOG" | grep -qE '^\\i /.*/docs/migracion-28/verificacion-inicial-nexa-demo\.sql$' && ok "verificar-inicial: el SQL se ejecuta DENTRO de «begin transaction read only … rollback» (nunca se confirma nada)" || { mal "envoltorio"; cat "$WRAPPER_LOG"; }
+! grep -qiE "commit|insert|update|delete|create|alter|drop|grant|revoke|truncate" "$WRAPPER_LOG" && ok "verificar-inicial: el envoltorio no contiene COMMIT ni sentencias de escritura" || mal "envoltorio con escritura"
+! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-inicial: ninguna contraseña aparece en la salida" || mal "verificar-inicial imprime la contraseña"
+# con token y confirmación presentes en el entorno, sigue sin tener ruta hacia las migraciones
+rm -f "$REG_PSQL" "$REGISTRO"; EXTRA_SECRETOS=1 inicial "$REF"; [ $? = 0 ] && nollamo && ok "verificar-inicial: aunque el entorno traiga el token de Supabase y APLICAR-MIGRACIONES, no llama a la CLI ni aplica nada" || mal "verificar-inicial con token y confirmación"
+# resultados que bloquean
+printf '%s\n' "tablas en public | 5 | 0 | REVISAR" "sesión de solo lectura | on | on | OK" > "$W/inicial_rev.txt"; rm -f "$REG_PSQL"; FAKE_INICIAL_SALIDA="$W/inicial_rev.txt" inicial "$REF"; r=$?
+[ $r = 1 ] && grep -q "1 comprobación(es) para REVISAR" "$W/salida.txt" && ok "verificar-inicial: una fila REVISAR hace FALLAR la acción (no se debe aplicar la etapa 1)" || mal "REVISAR no falla"
+printf '%s\n' "auth.users.id existe | true | true | OK" > "$W/inicial_sin_ro.txt"; FAKE_INICIAL_SALIDA="$W/inicial_sin_ro.txt" inicial "$REF"; r=$?
+[ $r = 1 ] && grep -q "NO está confirmada como de solo lectura" "$W/salida.txt" && ok "verificar-inicial: sin la fila «sesión de solo lectura | on» el resultado se DESCARTA y falla" || mal "acepta una sesión sin confirmar"
+printf '%s\n' "sesión de solo lectura | off | on | REVISAR" > "$W/inicial_off.txt"; FAKE_INICIAL_SALIDA="$W/inicial_off.txt" inicial "$REF"; [ $? = 1 ] && ok "verificar-inicial: una sesión que NO es de solo lectura falla" || mal "acepta sesión de escritura"
+FAKE_INICIAL_ERR=1 inicial "$REF"; r=$?
+[ $r = 1 ] && grep -q "no se pudo ejecutar: psql:envoltorio:3: ERROR:  cannot execute CREATE TABLE in a read-only transaction" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-inicial: si PostgreSQL rechaza una escritura por ser de solo lectura, la acción FALLA y oculta la contraseña (aunque el psql falso la incluya)" || { mal "error de escritura"; cat "$W/salida.txt"; }
+rm -f "$REG_PSQL"; inicial "abcdefghijklmnopqrst"; [ $? = 2 ] && [ ! -e "$REG_PSQL" ] && ok "verificar-inicial: con otra referencia de proyecto se rechaza sin conectar" || mal "verificar-inicial con otra referencia"
+ACTIONS=1 inicial "$REF"; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "verificar-inicial en GitHub Actions: se enmascara la contraseña" || mal "verificar-inicial sin enmascarar"
+# verificador estático del SQL: solo SELECT
+V="$R/tools/verificar-sql-solo-lectura.py"; python3 "$V" "$R/docs/migracion-28/verificacion-inicial-nexa-demo.sql" >/dev/null && ok "el SQL de verificación inicial pasa el verificador (solo SELECT)" || mal "el SQL real no pasa el verificador"
+malo() { printf '%s\n' "$1" > "$W/malo.sql"; python3 "$V" "$W/malo.sql" >/dev/null 2>&1 && mal "el verificador ACEPTÓ: $1" || ok "el verificador rechaza: $1"; }
+malo "select 1; insert into public.t values (1);"; malo "select 1; update public.t set x = 1;"; malo "select 1; delete from public.t;"; malo "create table public.t (id int);"; malo "select 1; drop table public.t;"
+malo "select * into public.copia from public.t;"; malo "select set_config('a', 'b', false);"; malo "select nextval('s');"; malo "select 1; grant all on public.t to anon;"; malo "do \$\$ begin null; end \$\$;"
+malo "select 1; truncate public.t;"; malo "\\copy public.t from 'x'"; malo "select 1; alter role postgres password 'x';"; malo "select pg_terminate_backend(1);"; malo "select 1; commit;"; malo "begin; select 1;"
+printf '%s\n' "select 'CREATE' as x; select has_schema_privilege('postgres', 'public', 'CREATE');" > "$W/bueno.sql"; python3 "$V" "$W/bueno.sql" >/dev/null && ok "el verificador no se confunde con la palabra CREATE dentro de un texto" || mal "falso positivo con texto"
 [ "$fallos" = 0 ] && echo "SUPABASE HOSPEDADO (SESSION POOLER IPv4, SINTAXIS v3 Y DESTINO FIJO) OK" || { echo "$fallos fallo(s)"; exit 1; }
