@@ -58,8 +58,16 @@ export function pantallaClientes(ctx) {
   }
   function formulario(c) {
     const f = { tipo: c?.tipo_identificacion ?? "NIT", numero: c?.numero_identificacion ?? "", nombre: c?.nombre ?? "", direccion: c?.direccion ?? "", email: c?.email ?? "", telefono: c?.telefono ?? "" };
-    const err = h("p", { class: "err", role: "alert" }); let m;
-    const inp = (k, et, extra = {}) => h("input", { value: f[k], "aria-label": et, oninput: (e) => { f[k] = e.target.value; }, ...extra });
+    const err = h("p", { class: "err", role: "alert" }); let m; const refs = {};
+    const inp = (k, et, extra = {}) => (refs[k] = h("input", { value: f[k], "aria-label": et, oninput: (e) => { f[k] = e.target.value; }, ...extra }));
+    // consulta de NIT en Digifact TEST: la hace el SERVIDOR de NEXA (el navegador nunca habla con Digifact); el botón aparece solo si está habilitado
+    const btnNit = boton("Consultar NIT en Digifact TEST", { tipo: "sec", id: "consultar-nit", onclick: async () => {
+      err.textContent = ""; const n = f.numero.trim(); if (!n) { err.textContent = "Escribe el NIT para consultarlo."; return; }
+      btnNit.disabled = true;
+      try { const r = await api.digifactNit(n); if (r.encontrado) { f.nombre = r.nombre; if (refs.nombre) refs.nombre.value = r.nombre; toast("NIT encontrado en Digifact TEST"); } else err.textContent = "Digifact TEST no encontró ese NIT."; }
+      catch (e) { err.textContent = mensajeError(e); } finally { btnNit.disabled = false; }
+    } });
+    btnNit.hidden = true; if (!c) api.digifactEstado().then((x) => { if (x.habilitado && ctx.tiene("clientes.ver")) btnNit.hidden = false; }).catch(() => {});
     const guardar = boton("Guardar", { id: "guardar-cliente", onclick: async () => {
       err.textContent = ""; if (!f.numero.trim() || !f.nombre.trim()) { err.textContent = "La identificación y el nombre son obligatorios."; return; }
       if (!/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) { err.textContent = "La identificación solo admite letras, números y guion."; return; }
@@ -71,6 +79,7 @@ export function pantallaClientes(ctx) {
     m = modal({ titulo: c ? "Editar cliente" : "Nuevo cliente", contenido: h("div", { class: "form" },
       h("div", { class: "grid2" }, campo("Tipo", h("select", { "aria-label": "Tipo de identificación", disabled: !!c, onchange: (e) => { f.tipo = e.target.value; } }, ...[["NIT", "NIT"], ["CUI", "CUI"], ["EXT", "Extranjero / otro"]].map(([v, t]) => h("option", { value: v, selected: f.tipo === v }, t)))),
         campo("Identificación", inp("numero", "Identificación del cliente", { maxlength: 30, disabled: !!c }))),
+      h("div", { class: "acciones-fila" }, btnNit),
       campo("Nombre o razón social", inp("nombre", "Nombre del cliente", { maxlength: 200 })), campo("Dirección", inp("direccion", "Dirección del cliente", { maxlength: 300 })),
       h("div", { class: "grid2" }, campo("Teléfono", inp("telefono", "Teléfono del cliente", { maxlength: 40 })), campo("Correo", inp("email", "Correo del cliente", { maxlength: 200, type: "email" }))), err),
       pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-cliente", onclick: async () => { try { await api.estadoCliente(c.id, !c.activo); await ctx.recargarEstado(); m.cerrar(); toast(c.activo ? "Cliente desactivado" : "Cliente reactivado"); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,

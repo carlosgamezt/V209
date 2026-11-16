@@ -13,6 +13,7 @@ import { LimiteTasa } from "./src/limite.ts";
 import { crearEndurecimiento } from "./src/endurecimiento.ts";
 import { leerConfigPublicada } from "./src/publicado.ts";
 import { crearApi } from "./src/api.ts";
+import { crearDigifactDesdeEntorno } from "./src/digifact_entorno.ts";
 import { montarAgente } from "./src/agente_demo.ts";
 import { intervaloDesdeEntorno } from "../proveedores/src/supervisor_ordenes.ts";
 import { PREFIJO_AGENTE } from "../proveedores/src/plano_control_agente.ts";
@@ -59,7 +60,10 @@ else if (sesiones && (ALEATORIAS || Deno.env.get("FEL_DEMO_MFA") === "1")) {
   console.log("\n  Verificación en dos pasos (aplicación de autenticación) para el administrador de la plataforma:");
   for (const [u, s] of MFA) console.log(`    ${u.padEnd(9)} clave ${s}\n              ${uriOtp(u, s)}`);
 }
-const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA });
+// Digifact TEST (solo servidor, apagado por defecto): consulta de NIT, validación y certificación con confirmación manual. Ver src/digifact_entorno.ts.
+const digifact = await crearDigifactDesdeEntorno((k) => Deno.env.get(k), { auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
+console.log(`  Digifact TEST: ${digifact.motivo}`);
+const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;

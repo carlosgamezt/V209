@@ -7,6 +7,7 @@ import { PREPARACION, FISCAL } from "/app/js/formato.js";
 import { api, llamar, usuarioActual } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { descargarArchivo } from "./descarga.js";
+import { panelDigifact } from "./digifact.js";
 
 let demoAbierto = false;   // los controles de la demostración permanecen abiertos mientras se usan
 const claves = new Map();   // una clave de idempotencia por intención: se conserva si repites el envío por un fallo de red
@@ -188,5 +189,6 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
           h("small", { class: "campo-ayuda" }, "Usa el comportamiento del proveedor elegido arriba. Tras la caída, el sistema NO reenvía: la recuperación prueba qué ocurrió.")) : null));
   })();
 
-  return h("div", { class: "proceso-col" }, estadoCard, envio, conciliacion, ...digifact, ...extra, linea, demo);
+  const digifactReal = practico && ctx.tiene("borradores.ver") ? panelDigifact({ ctx, doc, recargar, mostrarError }) : null;   // Digifact TEST real: solo vía el servidor de NEXA
+  return h("div", { class: "proceso-col" }, estadoCard, envio, conciliacion, digifactReal, ...digifact, ...extra, linea, demo);
 }

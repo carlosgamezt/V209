@@ -14,7 +14,7 @@ export async function llamar(metodo, ruta, cuerpo) {
   } catch { throw new ErrorApi("No hay conexión con el servidor de la demostración.", "red", 0); }
   let datos = null; try { datos = await r.json(); } catch { /* sin cuerpo */ }
   if (r.status === 401 && datos?.codigo === "no_sesion") document.dispatchEvent(new Event("fel-sesion-vencida"));
-  if (!r.ok) throw new ErrorApi(datos?.mensaje || "No se pudo completar la operación.", datos?.codigo || "error", r.status);
+  if (!r.ok) { const err = new ErrorApi(datos?.mensaje || "No se pudo completar la operación.", datos?.codigo || "error", r.status); err.detalle = datos; throw err; }
   return datos;
 }
 export const api = {
@@ -42,6 +42,14 @@ export const api = {
   plan: () => llamar("GET", "/api/plan"),
   cambiarClave: (actual, nueva) => llamar("POST", "/api/cuenta/clave", { actual, nueva }),
   panel: () => llamar("GET", "/api/panel"), usuarios: () => llamar("GET", "/api/usuarios"), crearUsuario: (u) => llamar("POST", "/api/usuarios", u), actualizarUsuario: (id, cambios) => llamar("POST", `/api/usuarios/${id}/actualizar`, cambios),
+  // Digifact TEST: el navegador solo habla con NEXA; el servidor es quien llama a Digifact
+  digifactEstado: () => llamar("GET", "/api/digifact/estado"),
+  digifactNit: (nit) => llamar("POST", "/api/digifact/nit", { nit }),
+  digifactDocumento: (id) => llamar("GET", `/api/documentos/${id}/digifact`),
+  digifactValidar: (id) => llamar("POST", `/api/documentos/${id}/digifact/validar`, {}),
+  digifactPreparar: (id) => llamar("POST", `/api/documentos/${id}/digifact/preparar`, {}),
+  digifactCertificar: (id, c) => llamar("POST", `/api/documentos/${id}/digifact/certificar`, c),
+  digifactConciliar: (id, operacionId) => llamar("POST", `/api/documentos/${id}/digifact/conciliar`, { operacionId }),
   sesion: () => llamar("GET", "/api/sesion"),
   entrar: (usuario, clave, recordar, codigo) => llamar("POST", "/api/sesion/entrar", { usuario, clave, recordar, codigo }),
   salir: () => llamar("POST", "/api/sesion/salir", {}),
