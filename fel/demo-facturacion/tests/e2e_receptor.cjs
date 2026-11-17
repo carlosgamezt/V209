@@ -16,7 +16,7 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
 (async () => {
   const srv = await arrancar(), nav = await motor.launch(), errores = [];
   try {
-    const nuevoCtx = async (w, h) => { const c = await nav.newContext({ viewport: { width: w, height: h }, hasTouch: w < 900, ...(w < 900 && NAV !== "firefox" ? { isMobile: true } : {}), locale: "es-GT" }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" })); const p = await c.newPage(); p.on("pageerror", (e) => errores.push(`${w}: ${e.message}`)); return { c, p }; };
+    const nuevoCtx = async (w, h) => { const c = await nav.newContext({ viewport: { width: w, height: h }, serviceWorkers: "block", hasTouch: w < 900, ...(w < 900 && NAV !== "firefox" ? { isMobile: true } : {}), locale: "es-GT" }); await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" })); const p = await c.newPage(); p.on("pageerror", (e) => errores.push(`${w}: ${e.message}`)); return { c, p }; };
     const entrar = async (p) => { await p.goto(srv.url); await p.waitForSelector("#login-usuario"); await p.selectOption("#login-usuario", "ana"); await p.fill("#login-clave", "demo1234"); await p.click("#login-entrar"); await p.waitForSelector(".cab-demo"); };
     const sinDesborde = async (p, donde) => { const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde}: ${a} > ${v}`); };
     const ID = 'input[aria-label="Identificación del receptor"]', NOM = 'input[aria-label="Nombre del receptor"]', TIPO = 'select[aria-label="Tipo de identificación"]', EST = ".nit-estado";
