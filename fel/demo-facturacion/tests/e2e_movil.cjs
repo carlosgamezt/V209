@@ -60,6 +60,17 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
         await p.evaluate(() => { document.documentElement.style.scrollPaddingBottom = "0px"; document.documentElement.style.scrollPaddingTop = "0px"; window.scrollTo(0, 0); document.querySelector("#agregar-item").scrollIntoView({ block: "end" }); }); pruebas.sinScrollPadding = await medir();
         await p.mouse.wheel(0, 250).catch(() => {}); await p.waitForTimeout(200); pruebas.ruedaDelRaton = await medir();
         pruebas.entorno = await p.evaluate(() => ({ meta: document.querySelector('meta[name="viewport"]')?.content, pantalla: [screen.width, screen.height], dpr: devicePixelRatio, htmlAncho: document.documentElement.getBoundingClientRect().width, bodyAncho: document.body.getBoundingClientRect().width, desbordados: [...document.querySelectorAll("body *")].filter((x) => x.getBoundingClientRect().right > innerWidth + 1).slice(0, 6).map((x) => `${x.tagName.toLowerCase()}${x.id ? "#" + x.id : ""}.${String(x.className).split(" ")[0]} pos=${getComputedStyle(x).position} der=${Math.round(x.getBoundingClientRect().right)}`), nav: ["position", "left", "right", "bottom", "width"].map((k) => getComputedStyle(document.querySelector(".nav-movil"))[k]) }));
+        // La barra inferior fija mide 667 px a 320 px de pantalla: ¿es ella la que ensancha el área de la página? Se prueba cada hipótesis con CSS inyectado y se mide si el botón vuelve a ser alcanzable
+        pruebas.visualViewport = await p.evaluate(() => ({ ancho: visualViewport?.width, alto: visualViewport?.height, escala: visualViewport?.scale, innerAncho: innerWidth, docScrollAncho: document.documentElement.scrollWidth, docClienteAncho: document.documentElement.clientWidth, docScrollAlto: document.documentElement.scrollHeight, hijosNav: [...document.querySelectorAll(".nav-movil > *")].map((x) => `${x.tagName.toLowerCase()}:${Math.round(x.getBoundingClientRect().width)}/${x.scrollWidth}`) }));
+        const candidatos = { sinBarra: ".nav-movil{display:none!important}", barraAnchoPantalla: ".nav-movil{width:100%!important;max-width:100vw!important;box-sizing:border-box!important;overflow:hidden!important}", itemsSinMinimo: ".nav-movil .nv{min-width:0!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important}", htmlSinDesbordeX: "html,body{overflow-x:hidden!important}", vistaEscala1: null };
+        pruebas.hipotesis = {};
+        for (const [nombre, css] of Object.entries(candidatos)) {
+          if (css === null) continue;
+          await p.evaluate((c) => { const e = document.createElement("style"); e.id = "hipotesis"; e.textContent = c; document.head.appendChild(e); window.scrollTo(0, 0); }, css); await p.waitForTimeout(150);
+          await p.evaluate(() => window.scrollTo(0, 300)); pruebas.hipotesis[nombre] = { ...(await medir()), navAncho: await p.evaluate(() => Math.round(document.querySelector(".nav-movil").getBoundingClientRect().width)) };
+          await p.evaluate(() => document.getElementById("hipotesis")?.remove()); await p.waitForTimeout(100);
+        }
+        await p.evaluate(() => { document.querySelector('meta[name="viewport"]').content = "width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover"; window.scrollTo(0, 300); }); await p.waitForTimeout(150); pruebas.hipotesis.metaMinScale1 = await medir();
         console.log(`DIAGNÓSTICO ${NAV} ${w}px (pruebas de desplazamiento): ${JSON.stringify(pruebas, null, 1)}`);
         throw e;
       });
