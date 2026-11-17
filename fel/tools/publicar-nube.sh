@@ -41,10 +41,11 @@ comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar na
   return $mal
 }
 # Digifact TEST (opcional): las variables se APARTAN aquí y solo las recibe el paso de la función; migraciones, aprovisionamiento, construcción y Cloudflare nunca las ven.
-DG_VARS=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA)
+DG_VARS=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA)
 for v in "${DG_VARS[@]}"; do eval "__DG_$v=\"\${$v:-}\""; unset "$v"; done
 DG_ESTADO="apagado"; [ "${__DG_FEL_DIGIFACT_TEST:-}" = "habilitado" ] && DG_ESTADO="HABILITADO (valores no mostrados)"
 DG_NIT_ESTADO="apagada"; [ "${__DG_FEL_DIGIFACT_NIT:-}" = "habilitado" ] && DG_NIT_ESTADO="HABILITADA para una empresa (valores no mostrados; NO habilita la certificación)"
+DG_CUI_ESTADO="apagada"; [ "${__DG_FEL_DIGIFACT_CUI:-}" = "habilitado" ] && DG_CUI_ESTADO="HABILITADA para una empresa (valores no mostrados; NO habilita la certificación ni la consulta de NIT)"
 REF="${FEL_DEMO_PROYECTO_REF:-<ref>}"; PAGES_PROYECTO="${PAGES_PROYECTO:-<nombre>}"; export FEL_DEMO_HOSTS="${FEL_DEMO_HOSTS:-${PAGES_PROYECTO}.pages.dev}"
 paso() { echo; echo "== $1"; }
 if [ "$SIMULAR" = 1 ]; then cat <<PLAN
@@ -54,7 +55,7 @@ PLAN (simulación: no se ejecuta nada)
  3. supabase link --project-ref $REF  ·  supabase db push --remote=<Session Pooler, puerto 5432, IPv4> --yes   (migraciones aditivas al proyecto NUEVO; la URL se deriva de DEMO_BD_URL y se valida: usuario postgres.$REF, host *.pooler.supabase.com)
  4. deno run -A demo-facturacion/nube/aprovisionar.ts      (siembra la base y crea los usuarios con la API de Supabase Auth; guarda solo hashes)
  5. deno run -A demo-facturacion/nube/construir.ts         (dist/nube/pagina con _worker.js + _routes.json, dist/nube/funcion)
- 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt   (Digifact TEST certificación: $DG_ESTADO · consulta de NIT: $DG_NIT_ESTADO; solo llegan a la función. Lo que esté APAGADO se RETIRA de la función con «secrets unset» y se verifica por la lista de nombres; si no se puede asegurar, la función no se publica)
+ 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt   (Digifact TEST certificación: $DG_ESTADO · consulta de NIT: $DG_NIT_ESTADO · consulta de CUI: $DG_CUI_ESTADO; solo llegan a la función. Lo que esté APAGADO se RETIRA de la función con «secrets unset» y se verifica por la lista de nombres; si no se puede asegurar, la función no se publica)
  7. wrangler pages secret put FUNCION_URL / PROXY_SECRETO  ·  wrangler pages deploy dist/nube/pagina
  8. Prueba de humo contra el subdominio real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia)
 PLAN

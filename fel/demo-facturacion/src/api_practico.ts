@@ -4,6 +4,7 @@
 import { registroSimulado } from "../../proveedores/src/registro.ts";
 import type { ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
+import type { ConsultorCui } from "./digifact_cui_entorno.ts";
 import { rutasDigifact } from "./api_digifact.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import type { MockProvider } from "../../proveedores/src/mock.ts";
@@ -20,7 +21,7 @@ const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 const texto = (x: unknown, min: number, max: number, campo: string): string => { if (typeof x !== "string" || x.trim().length < min || x.length > max) throw new ErrorPr(400, `${campo}: texto de ${min} a ${max} caracteres`, "entrada_invalida"); return x.trim(); };
 const monto = (x: unknown, campo: string): string => { if (typeof x !== "string" || !RE_MONTO.test(x)) throw new ErrorPr(400, `${campo}: número con hasta 6 decimales`, "entrada_invalida"); return x; };
 
-interface Deps { mock: MockProvider; emp: () => string; sesiones?: Sesiones; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit }
+interface Deps { mock: MockProvider; emp: () => string; sesiones?: Sesiones; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui }
 interface CtxEmpresa { req: Request; url: URL; a: { clave: string; id: string }; ruta: string; m: string; cuerpo: () => Promise<Obj>; id: (x: string) => string;
   json: (x: unknown, s?: number) => Response; canalDe: (p: string) => Promise<string>; detalle: (id: string) => Promise<unknown>; permisos: () => Promise<string[]> }
 
@@ -112,7 +113,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     // ---------------------------------------------------------------- rutas de una empresa
     async rutasEmpresa(c: CtxEmpresa): Promise<Response | null> {
       const { m, ruta, a } = c; let r: RegExpExecArray | null; const E = d.emp();
-      { const x = await rutasDigifact({ m, ruta, a, empresa: E, cuerpo: c.cuerpo, id: c.id, json: c.json, permisos: c.permisos }, bd, d.digifact, d.digifactNit); if (x) return x; }   // Digifact TEST: solo desde el servidor, con la empresa de la sesión
+      { const x = await rutasDigifact({ m, ruta, a, empresa: E, cuerpo: c.cuerpo, id: c.id, json: c.json, permisos: c.permisos }, bd, d.digifact, d.digifactNit, d.digifactCui); if (x) return x; }   // Digifact TEST: solo desde el servidor, con la empresa de la sesión
       if (m === "POST" && ruta === "/api/cuenta/clave") {   // «Mi cuenta»: cambiar la propia contraseña; cierra todas las sesiones de la persona
         const b = await c.cuerpo(), S = d.sesiones; if (!S) throw new ErrorPr(404, "No disponible en este modo", "no_disponible");
         const nueva = texto(b.nueva, 8, 80, "Contraseña nueva"); if (nueva === String(b.actual)) throw new ErrorPr(400, "La contraseña nueva debe ser distinta de la actual", "entrada_invalida");

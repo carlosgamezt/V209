@@ -5,6 +5,8 @@ import type { BdDemo } from "./bd.ts";
 import { ErrorFelGt, type ContextoFel, type DocumentoFel, type ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import { consultarReceptorNit, crearLimitador, ErrorReceptorNit, TOPE_REAL_GLOBAL, TOPE_REAL_POR_EMPRESA } from "./receptor_nit.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
+import type { ConsultorCui } from "./digifact_cui_entorno.ts";
+import { consultarReceptorCui, TOPE_CUI_GLOBAL, TOPE_CUI_POR_EMPRESA } from "./receptor_cui.ts";
 
 type Obj = Record<string, unknown>;
 export interface CtxDigifact {
@@ -12,6 +14,7 @@ export interface CtxDigifact {
   cuerpo: () => Promise<Obj>; id: (x: string) => string; json: (x: unknown, s?: number) => Response; permisos: () => Promise<string[]>;
 }
 const limitadores = new WeakMap<BdDemo, (empresa: string) => boolean>();   // un tope de consultas de NIT por minuto y por empresa (simulador), por base de datos
+const limitadoresCui = new WeakMap<BdDemo, { sim: (e: string) => boolean; empresa: (e: string) => boolean; global: () => boolean }>();   // consulta de CUI (dato personal): simulador 20/min por empresa; REAL 5/min por empresa + tope global
 const limitesReales = new WeakMap<BdDemo, { empresa: (e: string) => boolean; global: () => boolean }>();   // consulta REAL: 10 por minuto y por empresa + tope global del proceso
 const NO_HABILITADO = { codigo: "digifact_no_habilitado", mensaje: "Digifact TEST no está habilitado en este servidor." };
 
@@ -32,11 +35,11 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
 }
 
 /** Atiende las rutas de Digifact. Devuelve null si la ruta no es de este módulo. */
-export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFelGt | undefined, consultor?: ConsultorNit): Promise<Response | null> {
+export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFelGt | undefined, consultor?: ConsultorNit, consultorCui?: ConsultorCui): Promise<Response | null> {
   const { m, ruta } = c; let r: RegExpExecArray | null;
-  const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado", esReceptor = m === "POST" && ruta === "/api/receptores/nit";
+  const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado", esReceptor = m === "POST" && ruta === "/api/receptores/nit", esReceptorCui = m === "POST" && ruta === "/api/receptores/cui";
   const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf))?$/.exec(ruta));
-  if (!esNit && !esEstado && !esReceptor && !rd) return null;
+  if (!esNit && !esEstado && !esReceptor && !esReceptorCui && !rd) return null;
   if (esReceptor) {   // autollenado del nombre del receptor: CF local, Digifact TEST si está habilitado, o simulador con datos ficticios (siempre desde el servidor, con la empresa y los permisos de la SESIÓN)
     if (!limitadores.has(bd)) limitadores.set(bd, crearLimitador());
     if (!limitesReales.has(bd)) { const e = crearLimitador(TOPE_REAL_POR_EMPRESA), g = crearLimitador(TOPE_REAL_GLOBAL); limitesReales.set(bd, { empresa: e, global: () => g("*") }); }
@@ -46,7 +49,15 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       return c.json(await consultarReceptorNit(ctxR, b.nit, { consultor, limitador: limitadores.get(bd)!, limitadorReal: limitesReales.get(bd)!.empresa, limitadorGlobal: limitesReales.get(bd)!.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
     } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
   }
-  if (esEstado) return c.json({ habilitado: !!svc, certificacion: !!svc, consultaNit: !!consultor && c.empresa.toLowerCase() === consultor.empresaId, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST" });   // «certificacion» y «consultaNit» son interruptores distintos
+  if (esReceptorCui) {   // autollenado del nombre por CUI/DPI: Digifact TEST solo para la empresa autorizada, o simulador rotulado; el CUI nunca se registra ni se devuelve
+    if (!limitadoresCui.has(bd)) { const sim = crearLimitador(), e = crearLimitador(TOPE_CUI_POR_EMPRESA), g = crearLimitador(TOPE_CUI_GLOBAL); limitadoresCui.set(bd, { sim, empresa: e, global: () => g("*") }); }
+    const lc = limitadoresCui.get(bd)!, ctxC: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
+    try {
+      const b = await c.cuerpo();
+      return c.json(await consultarReceptorCui(ctxC, b.cui, { consultor: consultorCui, limitador: lc.sim, limitadorReal: lc.empresa, limitadorGlobal: lc.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
+    } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
+  }
+  if (esEstado) return c.json({ habilitado: !!svc, certificacion: !!svc, consultaNit: !!consultor && c.empresa.toLowerCase() === consultor.empresaId, consultaCui: !!consultorCui && c.empresa.toLowerCase() === consultorCui.empresaId, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST" });   // «certificacion» y «consultaNit» son interruptores distintos
   if (!svc) return c.json(NO_HABILITADO, 503);
   const ctx: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
   try {

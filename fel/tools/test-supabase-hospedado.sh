@@ -108,7 +108,7 @@ dg_limpiar; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-eee
 dg_limpiar; export FEL_DIGIFACT_TEST="si"; dg_rechaza "FEL_DIGIFACT_TEST solo admite «habilitado» o vacío"
 dg_limpiar
 # --- Consulta de NIT por Digifact TEST (INDEPENDIENTE de la certificación): apagada por defecto, todo o nada, una empresa, sin datos de emisor ni de certificación
-nit_limpiar() { dg_limpiar; unset FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA; }
+nit_limpiar() { dg_limpiar; unset FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA; }
 nit_completo() { nit_limpiar; export FEL_DIGIFACT_NIT=habilitado FEL_DIGIFACT_NIT_EMPRESA="$DG_EMP" DIGIFACT_TEST_USERNAME="$DG_USER" DIGIFACT_TEST_PASSWORD="$DG_PASS" DIGIFACT_TEST_NIT=5888492; }
 nit_rechaza() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; [ $r = 2 ] && nollamo && grep -q "no se publica la función" "$W/salida.txt" && ! grep -qF "$DG_PASS" "$W/salida.txt" && ok "$1" || mal "$1 (código $r)"; }
 nit_limpiar; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
@@ -153,6 +153,30 @@ dg_todo_apagado; FAKE_LIST_RC=1 publica; [ $r = 3 ] && ! grep -q "^functions dep
 dg_todo_apagado; FAKE_UNSET_NOOP=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && grep -q "debía estar apagado" "$W/salida.txt" && ok "si «unset» dice haber retirado pero el secreto sigue activo: la verificación por lista lo detecta y NO se publica" || mal "unset ficticio no detectado (código $r)"
 dg_solo_nit; : > "$ESTADO_SECRETOS"; printf 'FEL_PROXY_SECRETO\n' > "$ESTADO_SECRETOS"; publica; [ $r = 0 ] && grep -q "^functions deploy" "$REGISTRO" && ok "tras una reactivación normal la función se publica" || mal "no se publicó tras reactivar"
 for f in "$W/salida.txt"; do ! grep -qF "$DG_PASS" "$f" && ! grep -qF "$DG_USER" "$f" && ! grep -q "0123456789abcdef0123456789abcdef" "$f" && ok "ninguna salida de estas pruebas contiene la contraseña, el usuario ni huellas de secretos" || mal "la salida muestra secretos"; done
+dg_todo_apagado
+# --- Consulta de CUI/DPI por Digifact TEST: TERCER interruptor independiente (certificación y NIT no la habilitan ni la retiran)
+CUIV="FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA"
+cui_completo() { nit_limpiar; export FEL_DIGIFACT_CUI=habilitado FEL_DIGIFACT_CUI_EMPRESA="$DG_EMP" DIGIFACT_TEST_USERNAME="$DG_USER" DIGIFACT_TEST_PASSWORD="$DG_PASS" DIGIFACT_TEST_NIT=5888492; }
+cui_rechaza() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; [ $r = 2 ] && nollamo && grep -q "no se publica la función" "$W/salida.txt" && ! grep -qF "$DG_PASS" "$W/salida.txt" && ok "$1" || mal "$1 (código $r)"; }
+printf 'FEL_PROXY_SECRETO\nFEL_DEMO_BD_URL\n' > "$ESTADO_SECRETOS"
+cui_completo; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?
+[ $r = 0 ] && grep -qx "FEL_DIGIFACT_CUI='habilitado'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_CUI_EMPRESA='$DG_EMP'" "$ENV_COPIA" && ok "consulta de CUI habilitada y completa: la función se publica y viajan el interruptor, la empresa y las credenciales" || mal "consulta de CUI completa (código $r)"
+! grep -q "FEL_DIGIFACT_TEST\b\|FEL_DIGIFACT_TEST_\|FEL_DIGIFACT_AUTORIZA\|FEL_DIGIFACT_NIT" "$ENV_COPIA" && ok "con solo la consulta de CUI NO viaja la certificación, ni el emisor, ni su huella, ni la consulta de NIT" || mal "la consulta de CUI arrastró otros interruptores"
+! grep -qF "$DG_PASS" "$W/salida.txt" && ! grep -qF "$DG_USER" "$W/salida.txt" && grep -q "Consulta de CUI por Digifact TEST: habilitada para una empresa (valores no mostrados" "$W/salida.txt" && ok "la salida de la consulta de CUI no contiene la contraseña ni el usuario" || mal "la salida muestra valores de la consulta de CUI"
+for falta in FEL_DIGIFACT_CUI_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT; do cui_completo; unset "$falta"; cui_rechaza "consulta de CUI habilitada SIN $falta: todo o nada, la función no se publica"; done
+cui_completo; export FEL_DIGIFACT_CUI_EMPRESA="no-es-uuid"; cui_rechaza "empresa de la consulta de CUI que no es UUID: se rechaza"
+cui_completo; export DIGIFACT_TEST_PASSWORD=$'linea1\nlinea2'; cui_rechaza "un valor con salto de línea se rechaza (consulta de CUI)"
+nit_limpiar; export FEL_DIGIFACT_CUI="si"; cui_rechaza "FEL_DIGIFACT_CUI solo admite «habilitado» o vacío"
+nit_limpiar; export FEL_DIGIFACT_CUI_EMPRESA="$DG_EMP"; cui_rechaza "una empresa de la consulta de CUI con la consulta apagada se rechaza"
+cui_completo; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CUIV $CRED)" ] && grep -q "certificación apagada · consulta de NIT apagada · consulta de CUI HABILITADA" "$W/salida.txt" && ok "ACTIVAR solo la consulta de CUI: quedan solo sus secretos y las credenciales" || mal "activar solo CUI: $(nombres_dg)"
+dg_solo_nit; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $NITV $CRED)" ] && ok "pasar de CUI a solo NIT: se retiran los de CUI, se fijan los de NIT (independientes)" || mal "CUI→NIT: $(nombres_dg)"
+nit_completo; export FEL_DIGIFACT_CUI=habilitado FEL_DIGIFACT_CUI_EMPRESA="$DG_EMP"; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $NITV $CUIV $CRED)" ] && ok "NIT y CUI habilitados a la vez: conviven y las credenciales viajan una sola vez" || mal "NIT+CUI: $(nombres_dg)"
+dg_solo_nit; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $NITV $CRED)" ] && ok "APAGAR la consulta de CUI con la de NIT encendida: se retiran solo los de CUI; los de NIT y las credenciales se conservan" || mal "apagar CUI con NIT: $(nombres_dg)"
+cui_completo; publica; dg_todo_apagado; publica; [ $r = 0 ] && [ -z "$(nombres_dg)" ] && grep -q "^secrets unset" "$REGISTRO" && ok "DESACTIVAR la consulta de CUI: se retiran de verdad sus secretos y las credenciales (nadie más las necesita)" || mal "desactivar CUI dejó: $(nombres_dg)"
+cui_completo; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CUIV $CRED)" ] && ok "REACTIVAR la consulta de CUI tras apagarla" || mal "reactivar CUI: $(nombres_dg)"
+cui_completo; publica; dg_solo_cert; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $CRED)" ] && ok "pasar de CUI a solo certificación: se retiran los de CUI" || mal "CUI→cert: $(nombres_dg)"
+dg_todo_apagado; publica; [ -z "$(nombres_dg)" ] && grep -qx "FEL_PROXY_SECRETO" "$ESTADO_SECRETOS" && ok "al apagar todo solo se retiran secretos de Digifact (los demás no se tocan)" || mal "se tocaron otros secretos"
+cui_completo; publica; dg_todo_apagado; FAKE_UNSET_RC=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && ok "si «secrets unset» falla al apagar la consulta de CUI: la función NO se publica (código 3)" || mal "unset fallido de CUI se publicó (código $r)"
 dg_todo_apagado
 # --- secretos-estado (solo lectura) y empresa-demo (solo lectura)
 dg_solo_nit; publica; rm -f "$REGISTRO"; base "$REF" secretos-estado; r=$?

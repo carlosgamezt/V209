@@ -47,6 +47,7 @@ export const api = {
   digifactNit: (nit) => llamar("POST", "/api/digifact/nit", { nit }),
   /** Autollenado del receptor: la consulta la hace el SERVIDOR (CF local, Digifact TEST o simulador con datos ficticios). */
   receptorNit: (nit, opciones) => llamar("POST", "/api/receptores/nit", { nit }, opciones),
+  receptorCui: (cui, opciones) => llamar("POST", "/api/receptores/cui", { cui }, opciones),
   digifactDocumento: (id) => llamar("GET", `/api/documentos/${id}/digifact`),
   digifactValidar: (id) => llamar("POST", `/api/documentos/${id}/digifact/validar`, {}),
   digifactPreparar: (id) => llamar("POST", `/api/documentos/${id}/digifact/preparar`, {}),

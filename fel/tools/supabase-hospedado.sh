@@ -31,11 +31,12 @@ source tools/destinos-demo.sh
 REF="${FEL_DEMO_PROYECTO_REF:-}"
 [[ "$REF" =~ ^[a-z0-9]{20}$ ]] && [ "$REF" = "$REF_ESPERADA" ] || { echo "PROHIBIDO: la referencia no es la del proyecto nexa-demo ($REF_ESPERADA). No se hace nada."; exit 2; }
 
-# Secretos de Digifact que este flujo puede dejar en la FUNCIÓN. Cada interruptor tiene los suyos; las credenciales de TEST las comparten (se retiran solo si AMBOS están apagados).
+# Secretos de Digifact que este flujo puede dejar en la FUNCIÓN. Cada interruptor tiene los suyos; las credenciales de TEST las comparten (se retiran solo si los TRES están apagados).
 SECRETOS_CERT=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA)
 SECRETOS_NIT=(FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA)
+SECRETOS_CUI=(FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA)
 SECRETOS_CRED=(DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT)
-SECRETOS_DIGIFACT=("${SECRETOS_CERT[@]}" "${SECRETOS_NIT[@]}" "${SECRETOS_CRED[@]}")
+SECRETOS_DIGIFACT=("${SECRETOS_CERT[@]}" "${SECRETOS_NIT[@]}" "${SECRETOS_CUI[@]}" "${SECRETOS_CRED[@]}")
 # Lista (solo NOMBRES) de los secretos de la función. La salida de la CLI incluye huellas de los valores: NO se imprime, solo se busca en ella cada nombre conocido.
 LISTA_SECRETOS=""
 leer_lista_secretos() { LISTA_SECRETOS="$(supabase secrets list --remote="$REF" 2>/dev/null)" || { LISTA_SECRETOS=""; return 1; }; [ -n "$LISTA_SECRETOS" ]; }
@@ -156,7 +157,7 @@ case "${1:-}" in
     echo "  UUID de la empresa de «ana» ............. ${EMP:-—}"
     echo "  Empresas en la base ..................... $TOT"
     [[ "$EMP" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "  RESULTADO: «ana» no tiene exactamente UNA empresa: NO se debe habilitar nada hasta aclararlo."; exit 1; }
-    if [ "$EMP" = "$ESPERADA" ]; then echo "  RESULTADO: coincide con el UUID esperado (…0d0): se puede usar en FEL_DIGIFACT_NIT_EMPRESA."; else echo "  RESULTADO: NO coincide con el esperado (…0d0): usa el UUID de arriba en digifact_nit_empresa."; fi;;
+    if [ "$EMP" = "$ESPERADA" ]; then echo "  RESULTADO: coincide con el UUID esperado (…0d0): se puede usar en FEL_DIGIFACT_NIT_EMPRESA / FEL_DIGIFACT_CUI_EMPRESA."; else echo "  RESULTADO: NO coincide con el esperado (…0d0): usa el UUID de arriba en digifact_nit_empresa."; fi;;
   secretos-estado)
     # SOLO LECTURA: qué secretos de Digifact existen en la función (solo nombres). Útil antes de publicar y para comprobar que «apagado» dejó todo retirado.
     if ! leer_lista_secretos; then echo "No se pudo leer la lista de secretos de la función (permiso del token o CLI): NO VERIFICADO. La publicación se niega a continuar sin poder asegurar el apagado."; exit 1; fi
@@ -371,6 +372,20 @@ print(r)')"
         echo "Consulta de NIT por Digifact TEST: habilitada para una empresa (valores no mostrados; no habilita la certificación)";;
       *) echo "FEL_DIGIFACT_NIT solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
     esac
+    # Consulta de CUI/DPI por Digifact TEST (OPCIONAL, apagada por defecto, INDEPENDIENTE de la certificación y de la consulta de NIT): solo con FEL_DIGIFACT_CUI=habilitado, TODO O NADA, una sola empresa.
+    # Solo consulta (SHARED_GETINFOCUI): no lleva datos del emisor ni de certificación. Comparte las credenciales de TEST con los otros interruptores.
+    case "${FEL_DIGIFACT_CUI:-}" in
+      "") [ -z "${FEL_DIGIFACT_CUI_EMPRESA:-}" ] || { echo "FEL_DIGIFACT_CUI_EMPRESA requiere FEL_DIGIFACT_CUI=habilitado: no se publica la función"; exit 2; };;
+      habilitado)
+        for v in FEL_DIGIFACT_CUI_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT; do [ -n "${!v:-}" ] || { echo "Consulta de CUI habilitada, pero falta $v (todo o nada): no se publica la función"; exit 2; }; done
+        printf '%s' "${FEL_DIGIFACT_CUI_EMPRESA}" | grep -Eiq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || { echo "FEL_DIGIFACT_CUI_EMPRESA no es un UUID: no se publica la función"; exit 2; }
+        for v in FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT; do
+          valor="${!v:-}"; case "$valor" in *"'"*|*$'\n'*|*$'\r'*) echo "$v contiene un carácter no admitido (comilla simple o salto de línea): no se publica la función"; exit 2;; esac
+          grep -q "^$v=" "$ENVF" || printf "%s='%s'\n" "$v" "$valor" >> "$ENVF"
+        done
+        echo "Consulta de CUI por Digifact TEST: habilitada para una empresa (valores no mostrados; no habilita la certificación ni la consulta de NIT)";;
+      *) echo "FEL_DIGIFACT_CUI solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
+    esac
     # APAGAR DE VERDAD: «apagado» no es «no enviar»: un secreto publicado antes seguiría activo. Cada interruptor retira SOLO los suyos; las credenciales de TEST se retiran solo si ninguno está encendido.
     # Primero se retira lo que debe estar apagado; si no se puede asegurar, la función NO se publica. Después se fijan los secretos y se VERIFICA por la lista (solo nombres).
     APAGAR=(); DESEADOS=(); for n in "${SECRETOS_DIGIFACT[@]}"; do if grep -q "^$n=" "$ENVF"; then DESEADOS+=("$n"); else APAGAR+=("$n"); fi; done
@@ -384,7 +399,7 @@ print(r)')"
     if ! leer_lista_secretos; then echo "No se pudo comprobar la lista de secretos tras publicarlos: NO VERIFICADO. No se publica la función."; exit 3; fi
     for n in ${APAGAR[@]+"${APAGAR[@]}"}; do if secreto_presente "$n"; then echo "Quedó activo un secreto de Digifact que debía estar apagado: no se publica la función."; exit 3; fi; done
     for n in ${DESEADOS[@]+"${DESEADOS[@]}"}; do if ! secreto_presente "$n"; then echo "Falta un secreto de Digifact que debía quedar activo: no se publica la función."; exit 3; fi; done
-    echo "Digifact en la función: certificación $(if grep -q '^FEL_DIGIFACT_TEST=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) · consulta de NIT $(if grep -q '^FEL_DIGIFACT_NIT=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) (comprobado por la lista de secretos, solo nombres)"
+    echo "Digifact en la función: certificación $(if grep -q '^FEL_DIGIFACT_TEST=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) · consulta de NIT $(if grep -q '^FEL_DIGIFACT_NIT=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) · consulta de CUI $(if grep -q '^FEL_DIGIFACT_CUI=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) (comprobado por la lista de secretos, solo nombres)"
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
   *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|empresa-demo|secretos-estado|migraciones|verificar-api-vault|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
 esac

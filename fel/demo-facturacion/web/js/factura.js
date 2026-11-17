@@ -8,7 +8,7 @@ import { api } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { panelProceso } from "./proceso.js";
 import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
-import { crearAutollenado, textoEstado, ETIQUETAS } from "./receptor_nit.js";
+import { crearAutollenado, textoEstado, ETIQUETAS, RE_CUI, normalizarCui } from "./receptor_nit.js";
 /** Etiqueta del origen del nombre (Digifact TEST / simulado / manual / consumidor final). */
 const pintarEtiqueta = (el, t) => { if (!el) return; el.hidden = !t; el.textContent = t ? ETIQUETAS[t] : ""; el.className = `nit-etiqueta${t ? ` nit-et-${t}` : ""}`; };
 
@@ -46,6 +46,7 @@ export function pantallaFactura(ctx, id) {
       if (f.nuevo && f.tipo !== "CF" && !f.numero.trim()) p.push("Escribe la identificación del receptor.");
       if (f.nuevo && f.tipo !== "CF" && !f.nombre.trim()) p.push("Escribe el nombre del receptor.");
       if (f.nuevo && f.tipo !== "CF" && !/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) p.push("La identificación solo admite letras, números y guion (máximo 30).");
+      if (f.nuevo && f.tipo === "CUI" && f.numero.trim() && !RE_CUI.test(normalizarCui(f.numero))) p.push("El CUI debe tener 13 dígitos (solo números).");
       if (!f.establecimiento_id) p.push("Elige el establecimiento.");
       if (!f.fecha) p.push("Indica la fecha de emisión.");
       if (!f.lineas.length) p.push("Agrega al menos un ítem.");
@@ -82,7 +83,7 @@ export function pantallaFactura(ctx, id) {
       // autollenado del nombre del receptor: CF local, NIT consultado por el SERVIDOR (Digifact TEST o simulador con datos ficticios); nunca se pisa un nombre escrito a mano
       if (f.nuevo && (!ctrl || ctrlModelo !== f)) {
         ctrlModelo = f;
-        ctrl = crearAutollenado({ modelo: f, consultar: (n, o) => api.receptorNit(n, o),
+        ctrl = crearAutollenado({ modelo: f, consultar: (n, o) => (o.tipo === "CUI" ? api.receptorCui(n, o) : api.receptorNit(n, o)),
           refrescar: () => { if (nit.tipo) nit.tipo.value = f.tipo; if (nit.numero) nit.numero.value = f.numero; if (nit.nombre) { nit.nombre.value = f.nombre; nit.nombre.readOnly = f.tipo === "CF"; } sucio = true; pintarBarra(); pintarTotales(); },
           estado: (info) => { nit.info = info; if (nit.estado) nit.estado.textContent = textoEstado(info); },
           etiqueta: (t) => { nit.et = t; pintarEtiqueta(nit.etiqueta, t); } });
@@ -90,8 +91,10 @@ export function pantallaFactura(ctx, id) {
       let nuevo = null;
       if (f.nuevo) {
         const cambio = () => { sucio = true; pintarBarra(); pintarTotales(); };
-        nit.tipo = h("select", { "aria-label": "Tipo de identificación", disabled: !ed, onchange: (e) => { ctrl.alElegirTipo(e.target.value); cambio(); } }, ...["NIT", "CUI", "EXT", "CF"].map((t) => h("option", { value: t, selected: f.tipo === t }, t === "EXT" ? "Extranjero / otro" : t)));
-        nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", maxlength: 30, disabled: !ed, autocomplete: "off", oninput: (e) => { ctrl.alEscribirId(e.target.value); cambio(); }, onblur: () => ctrl.alSalirIdentificacion() });
+        nit.tipo = h("select", { "aria-label": "Tipo de identificación", disabled: !ed, onchange: (e) => { ctrl.alElegirTipo(e.target.value); ajustarTeclado(); cambio(); } }, ...["NIT", "CUI", "EXT", "CF"].map((t) => h("option", { value: t, selected: f.tipo === t }, t === "EXT" ? "Extranjero / otro" : t)));
+        nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", maxlength: 30, disabled: !ed, autocomplete: "off", enterkeyhint: "next", oninput: (e) => { ctrl.alEscribirId(e.target.value); cambio(); }, onblur: () => ctrl.alSalirIdentificacion(),
+          onkeydown: (e) => { if (e.key !== "Enter" || e.isComposing) return; e.preventDefault(); ctrl.alConfirmarIdentificacion(); nit.nombre?.focus(); } });   // Enter / «Siguiente»: confirma el NIT o el CUI (consulta ya) y pasa al nombre
+        const ajustarTeclado = () => { if (nit.numero) nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text"); }; ajustarTeclado();   // CUI: teclado numérico en el teléfono
         nit.nombre = h("input", { value: f.nombre, "aria-label": "Nombre del receptor", maxlength: 200, disabled: !ed, readonly: f.tipo === "CF", oninput: (e) => { ctrl.alEscribirNombre(e.target.value); cambio(); } });
         nit.estado = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }, textoEstado(nit.info));
         nit.etiqueta = h("small", { class: "nit-etiqueta", hidden: true }); pintarEtiqueta(nit.etiqueta, nit.et);

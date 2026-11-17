@@ -1,7 +1,7 @@
 // Autollenado del nombre del receptor: controlador del navegador (lógica pura, reloj y consulta simulados) y su coherencia con el servidor.
 // Uso: deno test -A tests/receptor_nit_test.ts
 import assert from "node:assert/strict";
-import { crearAutollenado, normalizarId, esCF, digitoVerificadorValido, esNitConsultable, textoEstado, NOMBRE_CF, ETIQUETAS } from "../web/js/receptor_nit.js";
+import { crearAutollenado, normalizarId, normalizarCui, RE_CUI, esCF, digitoVerificadorValido, esNitConsultable, textoEstado, NOMBRE_CF, ETIQUETAS } from "../web/js/receptor_nit.js";
 import * as srv from "../src/receptor_nit.ts";
 
 type Info = { fase: string; simulado?: boolean; origen?: string } | null;
@@ -12,8 +12,8 @@ function reloj() {
 }
 /** Consulta falsa: cada llamada queda en espera hasta que la prueba la resuelve (así se prueban respuestas fuera de orden y cancelaciones). */
 function consulta() {
-  const llamadas: { nit: string; signal: AbortSignal; ok: (r: unknown) => void; mal: (e: unknown) => void }[] = [];
-  const fn = (nit: string, { signal }: { signal: AbortSignal }) => new Promise((ok, mal) => { llamadas.push({ nit, signal, ok, mal }); });
+  const llamadas: { nit: string; tipo?: string; signal: AbortSignal; ok: (r: unknown) => void; mal: (e: unknown) => void }[] = [];
+  const fn = (nit: string, { signal, tipo }: { signal: AbortSignal; tipo?: string }) => new Promise((ok, mal) => { llamadas.push({ nit, tipo, signal, ok, mal }); });
   return { fn, llamadas };
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -127,4 +127,54 @@ Deno.test("etiquetas de origen: «Consultado mediante Digifact TEST», «Datos s
   // error y «sin coincidencia» en Digifact TEST: mensajes claros, sin etiqueta de origen y con entrada manual
   const e = montar(); e.c.alEscribirId(A); e.rl.disparar(); e.q.llamadas[0].mal(new Error("x")); await tick(); assert.equal(e.etiquetas.at(-1), null); assert.match(textoEstado(e.estados.at(-1)), /No se pudo consultar.*manualmente/);
   const n = montar(); n.c.alEscribirId(A); n.rl.disparar(); n.q.llamadas[0].ok({ encontrado: false, origen: "digifact_test", simulado: false }); await tick(); assert.match(textoEstado(n.estados.at(-1)), /No se encontró este NIT en Digifact TEST.*manualmente/);
+});
+
+// ======================= CUI/DPI: se consulta SOLO al confirmar (Enter o salir del campo); todos los CUI de estas pruebas son INVENTADOS.
+const C1 = "1000000000101", C2 = "1000000010101";
+Deno.test("CUI: escribir NUNCA consulta (ni con 13 dígitos); Enter o salir del campo consulta una sola vez con tipo CUI", async () => {
+  const t = montar({ tipo: "CUI", numero: "", nombre: "" }); for (const v of ["1", "10", "1000", "100000000", "10000000001", C1]) t.c.alEscribirId(v);
+  assert.equal(t.rl.pendientes, 0, "ninguna espera programada para un CUI"); t.rl.disparar(); assert.equal(t.q.llamadas.length, 0, "no consulta mientras se escribe");
+  t.c.alConfirmarIdentificacion(); assert.equal(t.q.llamadas.length, 1); assert.equal(t.q.llamadas[0].nit, C1); assert.equal(t.q.llamadas[0].tipo, "CUI"); assert.deepEqual(t.estados.at(-1), { fase: "consultando", tipo: "CUI" });
+  t.q.llamadas[0].ok({ encontrado: true, nombre: "PERSONA FICTICIA", origen: "digifact_test", simulado: false }); await tick();
+  assert.equal(t.modelo.nombre, "PERSONA FICTICIA"); assert.deepEqual(t.estados.at(-1), { fase: "ok", origen: "digifact_test", simulado: false, tipo: "CUI" }); assert.equal(t.etiquetas.at(-1), "digifact");
+  t.c.alSalirIdentificacion(); t.c.alConfirmarIdentificacion(); assert.equal(t.q.llamadas.length, 1, "Enter y salir del campo no repiten la consulta del mismo CUI");
+});
+Deno.test("CUI: se normaliza (espacios y guiones) al confirmar y el campo queda sin ellos; el servidor recibe 13 dígitos", () => {
+  assert.equal(normalizarCui("2500 12345-0101"), "2500123450101"); assert.equal(RE_CUI.test("2500123450101"), true); assert.equal(RE_CUI.test("250012345010"), false); assert.equal(RE_CUI.test("250012345010A"), false);
+  const t = montar({ tipo: "CUI", numero: "", nombre: "" }); t.c.alEscribirId("1000 00000-0101"); t.c.alSalirIdentificacion();
+  assert.equal(t.modelo.numero, C1, "el campo queda con 13 dígitos"); assert.equal(t.q.llamadas[0].nit, C1); assert.ok(t.refrescos.some((r) => r.includes(C1)), "se refrescó el campo");
+});
+Deno.test("CUI inválido (menos o más de 13 dígitos, con letras): no se consulta, mensaje claro y se puede escribir el nombre", () => {
+  for (const malo of ["12345", "100000000010", "10000000001011", "100000000010A"]) {
+    const t = montar({ tipo: "CUI", numero: "", nombre: "" }); t.c.alEscribirId(malo); t.c.alConfirmarIdentificacion();
+    assert.equal(t.q.llamadas.length, 0, `«${malo}» no consulta`); assert.equal(t.estados.at(-1)?.fase, "cui_invalido"); assert.match(textoEstado(t.estados.at(-1)), /CUI debe tener 13 dígitos.*nombre manualmente/);
+    t.c.alEscribirNombre("Escrito a mano"); assert.equal(t.modelo.nombre, "Escrito a mano"); assert.equal(t.etiquetas.at(-1), "manual");
+  }
+  const vacio = montar({ tipo: "CUI", numero: "", nombre: "" }); vacio.c.alConfirmarIdentificacion(); assert.equal(vacio.q.llamadas.length, 0); assert.equal(vacio.estados.at(-1) ?? null, null, "campo vacío: ningún mensaje");
+});
+Deno.test("CUI: sin coincidencia y error del proveedor muestran mensajes de CUI y permiten el ingreso manual; el nombre escrito nunca se pisa", async () => {
+  const a = montar({ tipo: "CUI", numero: "", nombre: "" }); a.c.alEscribirId(C1); a.c.alConfirmarIdentificacion(); a.q.llamadas[0].ok({ encontrado: false, origen: "digifact_test", simulado: false }); await tick();
+  assert.match(textoEstado(a.estados.at(-1)), /No se encontró este CUI en Digifact TEST.*manualmente/); assert.equal(a.modelo.nombre, "");
+  const b = montar({ tipo: "CUI", numero: "", nombre: "" }); b.c.alEscribirId(C1); b.c.alConfirmarIdentificacion(); b.q.llamadas[0].mal(new Error("boom con el CUI " + C1)); await tick();
+  assert.match(textoEstado(b.estados.at(-1)), /No se pudo consultar el CUI.*manualmente/); assert.doesNotMatch(textoEstado(b.estados.at(-1)), new RegExp(`boom|${C1}`), "no se muestran detalles internos ni el CUI");
+  const c = montar({ tipo: "CUI", numero: "", nombre: "Cliente de la casa" }); c.c.alEscribirId(C2); c.c.alConfirmarIdentificacion(); c.q.llamadas[0].ok({ encontrado: true, nombre: "OTRA PERSONA", origen: "digifact_test", simulado: false }); await tick();
+  assert.equal(c.modelo.nombre, "Cliente de la casa"); assert.equal(c.estados.at(-1)?.fase, "conservado"); assert.equal(c.etiquetas.at(-1), "manual");
+});
+Deno.test("CUI: cambiar el CUI cancela la consulta anterior y descarta su respuesta tardía; el nombre autollenado se limpia", async () => {
+  const t = montar({ tipo: "CUI", numero: "", nombre: "" }); t.c.alEscribirId(C1); t.c.alConfirmarIdentificacion(); const primera = t.q.llamadas[0];
+  t.c.alEscribirId(C2); assert.equal(primera.signal.aborted, true); t.c.alConfirmarIdentificacion(); const segunda = t.q.llamadas[1]; assert.equal(segunda.nit, C2);
+  segunda.ok({ encontrado: true, nombre: "DOS", origen: "demo", simulado: true }); await tick(); primera.ok({ encontrado: true, nombre: "UNO", origen: "demo", simulado: true }); await tick();
+  assert.equal(t.modelo.nombre, "DOS", "la respuesta vieja no pisa la nueva"); assert.equal(t.etiquetas.at(-1), "simulado");
+  t.c.alEscribirId(C1); assert.equal(t.modelo.nombre, "", "al cambiar el CUI no queda el nombre del anterior");
+});
+Deno.test("NIT intacto: 13 dígitos en tipo NIT sugieren el tipo CUI sin consultar; el NIT sigue con su espera de 600 ms, Enter lo adelanta y el tipo viaja como NIT", async () => {
+  const p = montar(); p.c.alEscribirId(C1); assert.equal(p.estados.at(-1)?.fase, "parece_cui"); assert.match(textoEstado(p.estados.at(-1)), /parece un CUI.*tipo CUI/); p.rl.disparar(); p.c.alConfirmarIdentificacion(); assert.equal(p.q.llamadas.length, 0, "13 dígitos en tipo NIT no se consultan");
+  const t = montar(); t.c.alEscribirId(A); assert.equal(t.rl.pendientes, 1, "el NIT conserva su espera"); t.c.alConfirmarIdentificacion(); assert.equal(t.q.llamadas.length, 1, "Enter adelanta la consulta del NIT"); assert.equal(t.q.llamadas[0].tipo, "NIT"); assert.equal(t.q.llamadas[0].nit, A);
+  t.q.llamadas[0].ok({ encontrado: true, nombre: "UNO", origen: "demo", simulado: true }); await tick(); assert.deepEqual(t.estados.at(-1), { fase: "ok", origen: "demo", simulado: true }, "el estado del NIT no lleva «tipo»");
+  assert.match(textoEstado({ fase: "consultando" }), /Consultando NIT/); assert.match(textoEstado({ fase: "consultando", tipo: "CUI" }), /Consultando CUI/);
+});
+Deno.test("CUI ↔ NIT ↔ CF: cambiar de tipo no arrastra datos del receptor anterior y CF nunca consulta", async () => {
+  const t = montar({ tipo: "CUI", numero: "", nombre: "" }); t.c.alEscribirId(C1); t.c.alConfirmarIdentificacion(); t.q.llamadas[0].ok({ encontrado: true, nombre: "UNO", origen: "demo", simulado: true }); await tick();
+  t.c.alElegirTipo("NIT"); assert.equal(t.modelo.nombre, "", "al cambiar el tipo se limpia el nombre autollenado"); t.c.alElegirTipo("CF"); assert.deepEqual([t.modelo.tipo, t.modelo.numero, t.modelo.nombre], ["CF", "CF", NOMBRE_CF]); t.c.alConfirmarIdentificacion(); assert.equal(t.q.llamadas.length, 1, "CF no consulta");
+  t.c.alElegirTipo("CUI"); assert.deepEqual([t.modelo.tipo, t.modelo.numero, t.modelo.nombre], ["CUI", "", ""], "de CF a CUI: campos vacíos");
 });

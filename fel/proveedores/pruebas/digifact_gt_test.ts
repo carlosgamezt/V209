@@ -352,3 +352,36 @@ Deno.test("Digifact: reporte de acuses — fechas, rango máximo de 2 días y le
   await assert.rejects(() => m.c.reporteAcuses("2026-11-10", { hasta: "2026-11-14" }), ErrorDigifact); await assert.rejects(() => m.c.reporteAcuses("14-11-2026"), ErrorDigifact);
   const vacio = mundo((p) => (esLogin(p) ? loginOk() : ok({ REQUEST_DATA: [{ Respuesta: 0 }], RESPONSE: [] }))); assert.deepEqual(await vacio.c.reporteAcuses("2026-11-14"), []);
 });
+
+// ---- Consulta por CUI (SHARED_GETINFOCUI). Operación confirmada por escrito por Digifact; la forma de la respuesta NO está en la documentación pública, así que se prueba con la forma esperada (igual a la de NIT).
+// Todos los CUI de estas pruebas son INVENTADOS (13 dígitos sin relación con ninguna persona).
+const CUI = "1234567891234", NOMBRE_CUI = "PERSONA INVENTADA DE PRUEBA";
+Deno.test("Digifact: consultarCui envía SHARED_GETINFOCUI con DATA2=CUI|<13 dígitos> como pide Digifact, y devuelve el nombre", async () => {
+  const m = mundo((p) => (esLogin(p) ? loginOk() : ok({ RESPONSE: [{ CUI, NOMBRE: NOMBRE_CUI }] })));
+  const r = await m.c.consultarCui(CUI); assert.deepEqual(r, { encontrado: true, cui: CUI, nombre: NOMBRE_CUI, coincide: true, campos: ["CUI", "NOMBRE"] });
+  const q = new URL("https://x" + m.llamadas[1].ruta); assert.equal(m.llamadas[1].metodo, "GET"); assert.ok(m.llamadas[1].ruta.startsWith("/Shared?"));
+  assert.equal(q.searchParams.get("DATA1"), "SHARED_GETINFOCUI"); assert.equal(q.searchParams.get("DATA2"), `CUI|${CUI}`); assert.equal(q.searchParams.get("COUNTRY"), "GT"); assert.equal(q.searchParams.get("TAXID"), "000005888492"); assert.equal(q.searchParams.get("USERNAME"), "USUARIO_TEST");
+  assert.equal(m.llamadas.length, 2, "una sesión y una consulta");
+});
+Deno.test("Digifact: consultarCui normaliza espacios y guiones y rechaza lo que no sean 13 dígitos SIN tocar la red", async () => {
+  const m = mundo((p) => (esLogin(p) ? loginOk() : ok({ RESPONSE: [{ CUI, NOMBRE: NOMBRE_CUI }] })));
+  assert.equal((await m.c.consultarCui("1234 56789-1234") as { cui: string }).cui, CUI);
+  const n = m.llamadas.length; for (const malo of ["", "123", "12345678912345", "123456789123A", "1234567891 23", "CUI|1234567891234", "1234567891234|NIT|5"]) await assert.rejects(() => m.c.consultarCui(malo), (e: unknown) => e instanceof ErrorDigifact && e.tipo === "solicitud", `«${malo}»`);
+  assert.equal(m.llamadas.length, n, "los CUI inválidos no generan ninguna llamada");
+});
+Deno.test("Digifact: consultarCui sin coincidencia, sin nombre, con nombre alterno único o con un CUI que no corresponde", async () => {
+  const caso = async (fila: unknown) => await mundo((p) => (esLogin(p) ? loginOk() : ok(fila === undefined ? { RESPONSE: [] } : { RESPONSE: [fila] }))).c.consultarCui(CUI);
+  assert.deepEqual(await caso(undefined), { encontrado: false, campos: [] }, "sin filas");
+  assert.equal((await caso({ CUI, NOMBRE: "" })).encontrado, false, "sin nombre");
+  assert.equal((await caso({ CUI, NOMBRE: "   " })).encontrado, false);
+  const alterno = await caso({ CUI, NOMBRE_COMPLETO: NOMBRE_CUI }); assert.equal(alterno.encontrado, true, "un único campo NOMBRE* se reconoce"); assert.deepEqual(alterno.campos, ["CUI", "NOMBRE_COMPLETO"]);
+  assert.equal((await caso({ CUI, NOMBRE_A: "X", NOMBRE_B: "Y" })).encontrado, false, "ambiguo: no se adivina");
+  assert.equal((await caso({ CUI: "9999999999999", NOMBRE: NOMBRE_CUI })).encontrado, false, "una respuesta de OTRO CUI nunca se muestra");
+  const sinCui = await caso({ NOMBRE: NOMBRE_CUI }); assert.equal(sinCui.encontrado, true, "sin campo CUI en la respuesta se acepta el nombre"); assert.equal((sinCui as { coincide: boolean | null }).coincide, null, "y se informa que no hubo campo CUI con el que comparar");
+});
+Deno.test("Digifact: consultarCui traduce los errores (401/403/429/500/ilegible) y no filtra ni el CUI ni el nombre", async () => {
+  for (const [estado, tipo] of [[401, "no_autorizado"], [403, "no_autorizado"], [429, "limite"], [500, "servidor"], [400, "solicitud"]] as const) {
+    const m = mundo((p) => (esLogin(p) ? loginOk() : ok({ mensaje: "x" }, estado))); await assert.rejects(() => m.c.consultarCui(CUI), (e: unknown) => { assert.ok(e instanceof ErrorDigifact && e.tipo === tipo, `${estado}`); const t = `${(e as Error).message} ${(e as ErrorDigifact).detalle ?? ""}`; assert.ok(!t.includes(CUI), "el error no contiene el CUI"); return true; });
+  }
+  await assert.rejects(() => mundo((p) => (esLogin(p) ? loginOk() : ok("<html>no es json</html>"))).c.consultarCui(CUI), (e: unknown) => e instanceof ErrorDigifact && e.tipo === "respuesta_invalida");
+});

@@ -14,6 +14,7 @@ import { leerConfigPublicada } from "../src/publicado.ts";
 import { crearApi } from "../src/api.ts";
 import { crearDigifactParaBd } from "../src/digifact_entorno.ts";
 import { crearConsultorNitDesdeEntorno } from "../src/digifact_nit_entorno.ts";
+import { crearConsultorCuiDesdeEntorno } from "../src/digifact_cui_entorno.ts";
 
 const igualesSeguro = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 const generico = (s: number, m: string) => new Response(JSON.stringify({ codigo: "no_disponible", mensaje: m }), { status: s, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -31,8 +32,10 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     const digifact = await crearDigifactParaBd((k) => env.get(k), bd);   // sin FEL_DIGIFACT_* no existe; sin la tabla de la migración 29 prepara y valida pero NO envía nada real
     console.log(`Digifact TEST: ${digifact.motivo}${digifact.servicio ? (digifact.almacenPersistente ? " · almacén persistente" : " · sin almacén persistente: no envía") : ""}`);   // nunca valores
     const nit = crearConsultorNitDesdeEntorno((k) => env.get(k));   // independiente de la certificación: solo sabe consultar NIT y solo para UNA empresa; sin FEL_DIGIFACT_NIT no existe
+    const cui = crearConsultorCuiDesdeEntorno((k) => env.get(k));   // independiente de NIT y de la certificación; sin FEL_DIGIFACT_CUI no existe
+    console.log(`Consulta de CUI: ${cui.consultor ? "Digifact TEST habilitado para una empresa" : "simulador"}`);   // nunca valores, CUI ni nombres
     console.log(`Consulta de NIT: ${nit.consultor ? "Digifact TEST habilitado para una empresa" : "simulador"}`);   // nunca valores, NIT ni nombres
-    const api = crearApi(bd, mundo, { sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor });
+    const api = crearApi(bd, mundo, { sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor, digifactCui: cui.consultor });
     const endurecer = crearEndurecimiento({ publicado: true, hosts: cfg.hosts, hostDe: (r) => (r.headers.get("x-nexa-host") ?? "").toLowerCase(), ipDe: (r) => r.headers.get("x-nexa-ip") ?? "?",
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo
       limiteApi: new LimiteTasa(Number(env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });

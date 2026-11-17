@@ -1,10 +1,14 @@
 // Autollenado del NOMBRE de un receptor al escribir su identificación (Nueva factura y Clientes). Lógica pura (sin DOM): se prueba en Deno y se usa en el navegador.
 // La consulta la hace el SERVIDOR (POST /api/receptores/nit): el navegador nunca habla con Digifact ni conoce credenciales.
 //  · «CF» (cualquier mayúscula/minúscula, con espacios: «cf», «Cf», «C F») se normaliza a «CF», pone «CONSUMIDOR FINAL» y NUNCA consulta nada.
-//  · Un NIT se consulta solo cuando se terminó de escribir (espera de 600 ms sin teclas, o al salir del campo); se cancela la consulta anterior y se descartan sus respuestas.
+//  · Un NIT se consulta solo cuando se terminó de escribir (espera de 600 ms sin teclas, o al salir del campo / Enter); se cancela la consulta anterior y se descartan sus respuestas.
+//  · Un CUI/DPI (13 dígitos) se consulta SOLO al confirmarlo: Enter o salir del campo (nunca mientras se escribe), igual que el portal de Digifact. Si no son 13 dígitos se avisa y se escribe el nombre a mano.
 //  · Nunca se pisa un nombre escrito por la persona; al cambiar el NIT se limpia un nombre autollenado (no queda el del receptor anterior).
 export const NOMBRE_CF = "CONSUMIDOR FINAL";
 export const RE_NIT = /^\d{1,11}[0-9K]$/;
+export const RE_CUI = /^\d{13}$/;
+/** CUI sin espacios ni guiones («2500 12345 0101» → «2500123450101»). */
+export const normalizarCui = (t) => String(t ?? "").replace(/[\s-]+/g, "");
 
 /** Identificación sin espacios ni guiones y en mayúsculas. */
 export const normalizarId = (t) => String(t ?? "").replace(/[\s-]+/g, "").toUpperCase();
@@ -26,20 +30,23 @@ export const ETIQUETAS = { digifact: "Consultado mediante Digifact TEST", simula
 /** Texto de la línea de estado bajo el campo (una sola línea, discreta). `info` es lo que entrega el controlador. */
 export function textoEstado(info) {
   if (!info) return "";
+  const doc = info.tipo === "CUI" ? "CUI" : "NIT";
   switch (info.fase) {
-    case "consultando": return "Consultando NIT…";
+    case "consultando": return `Consultando ${doc}…`;
     case "ok": return info.simulado ? "Datos simulados de demostración: no provienen de SAT." : "Consulta de prueba en Digifact TEST: no es una certificación fiscal de SAT.";
-    case "no_encontrado": return `No se encontró este NIT${info.simulado ? " (consulta simulada)" : " en Digifact TEST"}. Escribe el nombre manualmente.`;
-    case "error": return "No se pudo consultar el NIT ahora. Puedes escribir el nombre manualmente.";
+    case "no_encontrado": return `No se encontró este ${doc}${info.simulado ? " (consulta simulada)" : " en Digifact TEST"}. Escribe el nombre manualmente.`;
+    case "error": return `No se pudo consultar el ${doc} ahora. Puedes escribir el nombre manualmente.`;
     case "conservado": return "Se conservó el nombre que escribiste.";
     case "cf": return "Consumidor final: sin consulta. Solo para facturas menores a Q 2,500.00.";
+    case "cui_invalido": return "El CUI debe tener 13 dígitos (solo números). Puedes escribir el nombre manualmente.";
+    case "parece_cui": return "Son 13 dígitos: parece un CUI. Elige el tipo CUI para consultarlo.";
     default: return "";
   }
 }
 
 /**
  * @param modelo   objeto con { tipo, numero, nombre } que el formulario ya usa (el controlador lo actualiza)
- * @param consultar (nit, { signal }) => Promise<{ encontrado, nombre, origen, simulado }>   — llama al servidor
+ * @param consultar (id, { signal, tipo }) => Promise<{ encontrado, nombre, origen, simulado }>   — llama al servidor (tipo «NIT» o «CUI»)
  * @param refrescar () => void       — vuelca el modelo en los campos
  * @param estado   (info|null) => void — muestra la línea de estado
  * @param etiqueta (tipo|null) => void — muestra el origen del nombre: «digifact» | «simulado» | «manual» | «cf»
@@ -53,19 +60,25 @@ export function crearAutollenado({ modelo, consultar, refrescar = () => {}, esta
   const limpiarNombre = () => { modelo.nombre = ""; auto = false; manual = false; origenAuto = null; };
   const aplicarCF = () => { cancelar(); modelo.tipo = "CF"; modelo.numero = "CF"; modelo.nombre = NOMBRE_CF; auto = false; manual = false; origenAuto = null; cf = true; refrescar(); estado({ fase: "cf" }); etiquetar(); };
 
-  async function ejecutar(n) {
-    timer = null; const mia = seq; consultadoPara = n; aborto = new AbortController(); estado({ fase: "consultando" });
+  async function ejecutar(n, tipo = "NIT") {
+    timer = null; const mia = seq; consultadoPara = n; aborto = new AbortController(); const t = tipo === "CUI" ? { tipo } : {}; estado({ fase: "consultando", ...t });
     let r;
-    try { r = await consultar(n, { signal: aborto.signal }); }
-    catch (e) { if (e?.name === "AbortError" || mia !== seq) return; estado({ fase: "error" }); return; }
+    try { r = await consultar(n, { signal: aborto.signal, tipo }); }
+    catch (e) { if (e?.name === "AbortError" || mia !== seq) return; estado({ fase: "error", ...t }); return; }
     if (mia !== seq) return;   // respuesta vieja: la persona ya cambió el NIT
     aborto = null;
-    if (!r?.encontrado) { estado({ fase: "no_encontrado", simulado: !!r?.simulado }); etiquetar(); return; }
+    if (!r?.encontrado) { estado({ fase: "no_encontrado", simulado: !!r?.simulado, ...t }); etiquetar(); return; }
     if (modelo.nombre.trim() && !auto) { estado({ fase: "conservado" }); etiquetar(); return; }   // nunca se pisa lo que escribió la persona
     // lo no simulado que el servidor devuelve para un NIT viene de la consulta real (CF nunca llega aquí)
-    modelo.nombre = r.nombre; auto = true; manual = false; origenAuto = r.simulado ? "simulado" : "digifact"; refrescar(); estado({ fase: "ok", origen: r.origen, simulado: origenAuto === "simulado" }); etiquetar();
+    modelo.nombre = r.nombre; auto = true; manual = false; origenAuto = r.simulado ? "simulado" : "digifact"; refrescar(); estado({ fase: "ok", origen: r.origen, simulado: origenAuto === "simulado", ...t }); etiquetar();
   }
   function programar(n, alSalir) {
+    if (modelo.tipo === "CUI") {   // CUI/DPI: solo al confirmar (Enter o salir del campo), nunca mientras se escribe
+      if (!alSalir || !n) return;
+      const cui = normalizarCui(n); if (cui !== modelo.numero) { modelo.numero = cui; refrescar(); }   // se muestra y se guarda sin espacios ni guiones
+      if (!RE_CUI.test(cui)) { estado({ fase: "cui_invalido" }); return; }
+      ejecutar(cui, "CUI"); return;
+    }
     if (modelo.tipo !== "NIT" || !esNitConsultable(n, alSalir)) return;
     if (alSalir) { ejecutar(n); return; }
     timer = temporizador.poner(() => ejecutar(n), esperaMs);
@@ -79,7 +92,9 @@ export function crearAutollenado({ modelo, consultar, refrescar = () => {}, esta
       if (n === "CF") { aplicarCF(); return; }
       if (cf || modelo.tipo === "CF") { cf = false; modelo.tipo = "NIT"; limpiarNombre(); refrescar(); }   // sale de CF: sin datos del receptor anterior
       else if (auto) { limpiarNombre(); refrescar(); }                             // otro NIT: el nombre autollenado ya no corresponde
-      programar(n, false); etiquetar();
+      programar(n, false);
+      if (modelo.tipo === "NIT" && RE_CUI.test(n)) estado({ fase: "parece_cui" });   // 13 dígitos escritos como NIT: se sugiere el tipo CUI (no se consulta nada)
+      etiquetar();
     },
     /** La persona salió del campo «Identificación»: si quedó una consulta en espera, se hace ya. */
     alSalirIdentificacion() {
@@ -87,6 +102,8 @@ export function crearAutollenado({ modelo, consultar, refrescar = () => {}, esta
       if (timer !== null) { temporizador.quitar(timer); timer = null; }
       programar(n, true);
     },
+    /** La persona pulsó Enter / «Siguiente» en «Identificación»: equivale a salir del campo (consulta ya, sin esperar). */
+    alConfirmarIdentificacion() { this.alSalirIdentificacion(); },
     /** La persona eligió otro «Tipo» de identificación. */
     alElegirTipo(tipo) {
       cancelar(); estado(null);

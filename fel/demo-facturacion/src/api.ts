@@ -16,6 +16,8 @@ import type { Persona } from "./almacen.ts";
 import { crearPractico, ErrorPr } from "./api_practico.ts";
 import type { ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
+import type { ConsultorCui } from "./digifact_cui_entorno.ts";
+import { normalizarCui, RE_CUI } from "./receptor_cui.ts";
 import { PersistenciaSimuladores } from "./simuladores.ts";
 import { EMPRESA, type Sembrado } from "./mundo_demo.ts";
 
@@ -42,11 +44,11 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
-  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit }) : null;
+  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui }) : null;
   // estado de los simuladores en la base real (solo modo PostgreSQL con versión práctica): sobrevive a reinicios y es común a todas las instancias
   const simPersist = pr ? new PersistenciaSimuladores(bd, { mock, ...Object.fromEntries(pr.registro.listar().filter((x) => x.persistible).map((x) => [x.id, x.persistible!])) }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
@@ -114,7 +116,8 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     const esReceptorCF = nuevo && !clienteId ? tipoNuevo === "CF" : clienteId && uuidOk(clienteId) ? (await bd.filas<{ t: string }>("select tipo_identificacion as t from public.clientes where id = $1 and empresa_id = $2", [clienteId, emp()]))[0]?.t === "CF" : false;
     if (esReceptorCF && aInterno(c.base_imponible) >= aInterno("2500")) throw new ErrorHttp(422, "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).", "regla");
     if (!clienteId && nuevo) {
-      const tipo = tipoNuevo!, num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
+      const tipo = tipoNuevo!; let num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
+      if (tipo === "CUI") { num = normalizarCui(num); if (!RE_CUI.test(num)) throw new ErrorHttp(400, "El CUI debe tener exactamente 13 dígitos (sin letras).", "entrada_invalida"); }
       const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? NOMBRE_CF : texto(nuevo.nombre, 1, 200, "Nombre del receptor"), p_direccion: null, p_email: null, p_telefono: null, p_version: null }) as Obj;
       clienteId = r.id as string;
     }
@@ -147,7 +150,8 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     }
     if (m === "POST" && ruta === "/api/clientes") {
       const b = await cuerpo(); const tipo = String(b.tipo_identificacion ?? "NIT"); if (!["NIT", "CUI", "EXT", "CF"].includes(tipo)) throw new ErrorHttp(400, "Tipo de identificación no válido", "entrada_invalida");
-      const num = tipo === "CF" ? "CF" : texto(b.numero_identificacion, 1, 30, "Identificación");
+      let num = tipo === "CF" ? "CF" : texto(b.numero_identificacion, 1, 30, "Identificación");
+      if (tipo === "CUI") { num = normalizarCui(num); if (!RE_CUI.test(num)) throw new ErrorHttp(400, "El CUI debe tener exactamente 13 dígitos (sin letras).", "entrada_invalida"); }   // 13 dígitos es lo que exige el documento fiscal (TaxIDType=\"CUI\"); sin algoritmos no confirmados
       const opc = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : null);
       const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: uuidOk(b.id) ? b.id : null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? "Consumidor final" : texto(b.nombre, 1, 200, "Nombre"), p_direccion: opc(b.direccion, 300), p_email: opc(b.email, 200), p_telefono: opc(b.telefono, 40), p_version: b.id ? Number(b.version) : null });
       return json(r);

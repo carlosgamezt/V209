@@ -56,6 +56,9 @@ export type ResultadoCertificacionGt =
   | { tipo: "rechazado_confirmado"; codigo: string; mensaje: string; crudoSaneado: Record<string, unknown> }
   | { tipo: "desconocido"; motivo: MotivoDesconocido };
 export type ResultadoConsultaNit = { encontrado: true; nit: string; nombre: string } | { encontrado: false };
+/** `campos`: SOLO los NOMBRES de las propiedades que trajo la fila de respuesta (nunca valores): sirve para reconocer la forma de la respuesta sin exponer datos personales. */
+export type ResultadoConsultaCui = { encontrado: true; cui: string; nombre: string; coincide: boolean | null; campos: string[] } | { encontrado: false; campos: string[] };
+// coincide: true si la respuesta traía un campo CUI/DPI y es el consultado; null si la respuesta no traía ninguno.
 export type ResultadoConsultaDte = { encontrado: true; tipoDte: string; autorizacion: string; serie: string; numero: string; fechaEmision: string; nitComprador: string; total: string; xmlB64?: string } | { encontrado: false };
 export type ResultadoDescarga = { encontrado: true; artefactos: ArtefactosB64 } | { encontrado: false };
 export type ResultadoAnulacionGt =
@@ -243,6 +246,24 @@ export class DigifactGt {
     const { j } = await this.#shared("SHARED_GETINFONITcom", `NIT|${n}`);
     const f = DigifactGt.#filas(j!)[0];
     return f && num(f.NOMBRE) ? { encontrado: true, nit: num(f.NIT) || n, nombre: this.#limpio(num(f.NOMBRE)) } : { encontrado: false };
+  }
+  /**
+   * SHARED_GETINFOCUI: nombre de una persona a partir de su CUI/DPI. Operación confirmada por escrito por Digifact (correo de su soporte, 17/11/2026):
+   * GET /Shared con DATA1=SHARED_GETINFOCUI y DATA2=CUI|<13 dígitos>, igual que la consulta de NIT. La documentación pública NO describe la forma de la respuesta:
+   * se espera la misma que la de NIT (RESPONSE[0] con NOMBRE); si la fila no trae un nombre reconocible se informa «no encontrado» (el llamador permite escribirlo a mano).
+   * Es una consulta de datos personales: el CUI nunca se registra ni se devuelve en errores.
+   */
+  async consultarCui(cuiConsultado: string): Promise<ResultadoConsultaCui> {
+    const c = String(cuiConsultado).replace(/[\s-]+/g, ""); if (!/^\d{13}$/.test(c)) throw new ErrorDigifact("solicitud", "CUI a consultar no válido (13 dígitos)");
+    const { j } = await this.#shared("SHARED_GETINFOCUI", `CUI|${c}`);
+    const f = DigifactGt.#filas(j!)[0];
+    const campos = f ? Object.keys(f).filter((k) => /^[A-Za-z0-9_]{1,40}$/.test(k)).slice(0, 16) : [];
+    if (!f) return { encontrado: false, campos };
+    const clavesNombre = Object.keys(f).filter((k) => /^NOMBRE/i.test(k) && num(f[k]).trim() !== "");
+    const crudo = num(f.NOMBRE).trim() !== "" ? num(f.NOMBRE) : clavesNombre.length === 1 ? num(f[clavesNombre[0]]) : "";
+    const devuelto = num(f.CUI ?? f.DPI ?? "").replace(/\D/g, "");
+    if (!crudo || (devuelto && devuelto !== c)) return { encontrado: false, campos };   // sin nombre, o una respuesta que no corresponde al CUI consultado: nunca se muestra
+    return { encontrado: true, cui: c, nombre: this.#limpio(crudo), coincide: devuelto ? true : null, campos };
   }
   /** SHARED_GETDTEINFO: datos de un DTE por su número de autorización. */
   async consultarDte(autorizacion: string): Promise<ResultadoConsultaDte> {

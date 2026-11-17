@@ -63,13 +63,37 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
     await p.fill(IDC, "c f"); assert.equal(await p.inputValue(IDC), "CF"); assert.equal(await p.inputValue(NOMC), "CONSUMIDOR FINAL"); assert.equal(await p.locator("#guardar-cliente").isDisabled(), true, "CF no se registra como cliente"); assert.match(await p.locator(".modal .nit-estado").innerText(), /no se registra como cliente/);
     await teclear(p, IDC, B); assert.equal(await p.locator("#guardar-cliente").isDisabled(), false); await esperarValor(p, NOMC, (v) => v === "PERSONA DE PRUEBA TRES"); await p.keyboard.press("Escape");
 
+    // ================= CUI: solo al confirmar (Enter o salir del campo), una consulta, sin cambiar la consulta NIT
+    const C1 = "1000000000101", NOM_C1 = "PERSONA FICTICIA DE PRUEBA CUI UNO", C2 = "1000000010101", NOM_C2 = "PERSONA FICTICIA DE PRUEBA CUI DOS", C_ERR = "9990000000101";
+    await p.goto(srv.url + "/#/nueva"); await p.waitForSelector('select[aria-label="Receptor"]'); await p.check('input[aria-label="Receptor nuevo"]'); await p.selectOption(TIPO, "CUI");
+    const pCui = []; const alPedir = (r) => { if (r.url().includes("/api/receptores/cui")) pCui.push(JSON.parse(r.postData() || "{}").cui); }; p.on("request", alPedir); peticiones.length = 0; demora = 50;
+    assert.equal(await p.locator(ID).getAttribute("inputmode"), "numeric", "CUI: teclado numérico"); assert.equal(await p.locator(ID).getAttribute("enterkeyhint"), "next");
+    await teclear(p, ID, C1); await p.waitForTimeout(1200); assert.equal(pCui.length, 0, "el CUI no se consulta mientras se escribe ni por pausa");
+    await p.locator(ID).press("Enter"); await esperarValor(p, NOM, (v) => v !== ""); assert.equal(await p.inputValue(NOM), NOM_C1); assert.deepEqual(pCui, [C1], "una sola consulta al confirmar");
+    assert.deepEqual(await ETQ(p), ["Datos simulados"]); assert.match(await p.locator(EST).innerText(), /simulados.*no provienen de SAT/i); assert.doesNotMatch(await p.inputValue(NOM), /DEMO|simulad/i); await sinDesborde(p, "CUI consultado");
+    await p.locator(NOM).evaluate((e) => e === document.activeElement || (e.focus(), true)); assert.equal(await p.evaluate((s) => document.activeElement === document.querySelector(s), NOM), true, "Enter deja el foco en el nombre");
+    // salir del campo también confirma; el nombre escrito a mano no se pisa
+    pCui.length = 0; await p.fill(NOM, ""); await teclear(p, ID, C2); await p.locator(NOM).click(); await esperarValor(p, NOM, (v) => v !== ""); assert.equal(await p.inputValue(NOM), NOM_C2); assert.deepEqual(pCui, [C2]);
+    pCui.length = 0; await p.fill(NOM, "Nombre de la casa"); await teclear(p, ID, C1); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("Se conservó el nombre")`); assert.equal(await p.inputValue(NOM), "Nombre de la casa");
+    // CUI inválido: validación local, sin consulta; sin coincidencia y error del proveedor: ingreso manual
+    pCui.length = 0; await p.fill(NOM, ""); await teclear(p, ID, "12345"); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("13 dígitos")`); assert.deepEqual(pCui, [], "un CUI inválido no se consulta");
+    await teclear(p, ID, "9990000010101"); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("No se encontró este CUI")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre");
+    await p.fill(NOM, "Escrito a mano"); assert.deepEqual(await ETQ(p), ["Ingreso manual"]);
+    await teclear(p, ID, C_ERR); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("No se pudo consultar")`); assert.equal(await p.inputValue(NOM), "Escrito a mano", "el error no toca lo escrito"); await sinDesborde(p, "error del CUI");
+    assert.deepEqual(peticiones, [], "ninguna consulta de NIT por usar CUI"); p.off("request", alPedir);
+    // Clientes: CUI al salir del campo, teclado numérico y 13 dígitos al guardar
+    await p.goto(srv.url + "/#/clientes"); await p.waitForSelector("#nuevo-cliente"); await p.click("#nuevo-cliente"); await p.waitForSelector(".modal"); await p.selectOption(`.modal ${TIPO}`, "CUI");
+    assert.equal(await p.locator(`.modal ${IDC}`).getAttribute("inputmode"), "numeric"); await teclear(p, IDC, C2); await p.locator(`.modal ${NOMC}`).click(); await esperarValor(p, NOMC, (v) => v !== ""); assert.equal(await p.inputValue(NOMC), NOM_C2); assert.match(await p.locator(".modal .nit-estado").innerText(), /simulados/i);
+    await p.keyboard.press("Escape");
+
     // ================= sin desbordes ni solapamientos en el bloque del receptor a 320 / 360 / 390 / 430 px
     for (const w of [320, 360, 390, 430]) {
       const { c, p: q } = await nuevoCtx(w, 800); await entrar(q); await q.goto(srv.url + "/#/nueva"); await q.waitForSelector('select[aria-label="Receptor"]'); await q.check('input[aria-label="Receptor nuevo"]'); await q.selectOption(TIPO, "NIT");
       await teclear(q, ID, A); await esperarValor(q, NOM, (v) => v !== ""); await sinDesborde(q, `${w}px con nombre autollenado`);
       const caja = await q.evaluate(([i, n, e]) => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { id: r(i), n: r(n), e: r(e) }; }, [ID, NOM, EST]);
       assert.ok(caja.id.b <= caja.e.t + 1 && caja.e.b <= caja.n.t + 1, `${w}px: identificación, mensaje y nombre en orden y sin solaparse`); assert.ok(caja.n.r <= w + 1 && caja.id.r <= w + 1, `${w}px: los campos caben`);
-      await q.fill(ID, "cf"); await sinDesborde(q, `${w}px con CF`); await c.close();
+      await q.fill(ID, "cf"); await sinDesborde(q, `${w}px con CF`);
+      await q.selectOption(TIPO, "CUI"); await teclear(q, ID, C1); await q.locator(ID).press("Enter"); await esperarValor(q, NOM, (v) => v !== ""); await sinDesborde(q, `${w}px con CUI autollenado`); await c.close();
     }
     assert.deepEqual(errores, [], `errores de página: ${errores.join(" | ")}`);
     console.log(`RECEPTOR E2E OK (${NAV})`);

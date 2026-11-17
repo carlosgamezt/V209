@@ -1,9 +1,10 @@
 // Pruebas REALES contra Digifact TEST (solo TEST; producción está bloqueada en el cliente). Se ejecutan a mano desde el workflow «NEXA FEL · Digifact TEST» o en un servidor con las variables definidas.
 //   deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_REFERENCIA,DIGIFACT_HUELLA_EMISOR --allow-read --allow-write=./salida digifact_prueba.ts <paso>
-// Pasos:  autenticar · credenciales-presentes · consultar-nit-privado · (consultar-nit: retirado) · validar-nuc · datos-emisor · certificar-test · consulta-posterior · descargar
+// Pasos:  autenticar · credenciales-presentes · consultar-nit-privado · consultar-cui-privado · (consultar-nit: retirado) · validar-nuc · datos-emisor · certificar-test · consulta-posterior · descargar
 // NUNCA imprime la contraseña ni el token; solo «sí/no», códigos, UUID, serie, número, fechas y datos fiscales NO sensibles del emisor de prueba.
 import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12, soloUsuario } from "./src/digifact_gt.ts";
 import { consultaNitPrivada, presenciaCredenciales } from "./src/consulta_nit_privada.ts";
+import { consultaCuiPrivada, presenciaCuiPrueba } from "./src/consulta_cui_privada.ts";
 import { construirNuc, NucInvalido, type FacturaGt } from "./src/nuc_gt.ts";
 import { type DatosEmisor, extraerEmisorDeDte, huellaEmisor } from "./src/datos_emisor.ts";
 
@@ -97,11 +98,15 @@ async function main() {
       return;
     }
     case "credenciales-presentes": {   // SOLO presencia (sí/no): sin red, sin valores, sin longitudes
-      const c = presenciaCredenciales((k) => Deno.env.get(k)); out({ prueba: "credenciales-presentes", ambiente: "TEST", credenciales: c, ok: c.usuario && c.clave && c.nit }); if (!(c.usuario && c.clave && c.nit)) Deno.exit(1);
+      const c = presenciaCredenciales((k) => Deno.env.get(k)); out({ prueba: "credenciales-presentes", ambiente: "TEST", credenciales: c, cuiPrueba: presenciaCuiPrueba((k) => Deno.env.get(k)), ok: c.usuario && c.clave && c.nit }); if (!(c.usuario && c.clave && c.nit)) Deno.exit(1);
       return;
     }
     case "consultar-nit-privado": {   // UNA consulta real al ambiente TEST del NIT de la propia cuenta; la salida no lleva ningún dato personal (ver src/consulta_nit_privada.ts)
       const r = await consultaNitPrivada((k) => Deno.env.get(k)); out({ ...r }); if (!r.ok) Deno.exit(1);
+      return;
+    }
+    case "consultar-cui-privado": {   // UNA consulta real al ambiente TEST del CUI guardado en un secreto; salida sin ningún dato personal (ver src/consulta_cui_privada.ts)
+      const r = await consultaCuiPrivada((k) => Deno.env.get(k)); out({ ...r }); if (!r.ok) Deno.exit(1);
       return;
     }
     case "consultar-nit": {   // RETIRADO: imprimía el NIT y el nombre del contribuyente en el registro; se sustituyó por «consultar-nit-privado»
@@ -164,7 +169,7 @@ async function main() {
       catch (e) { out({ prueba: "descargar", ok: false, error: errorLegible(e) }); Deno.exit(1); }
       return;
     }
-    default: salir("Uso: digifact_prueba.ts <autenticar|credenciales-presentes|consultar-nit-privado|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar>", 2);
+    default: salir("Uso: digifact_prueba.ts <autenticar|credenciales-presentes|consultar-nit-privado|consultar-cui-privado|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar>", 2);
   }
 }
 if (import.meta.main) await main();
