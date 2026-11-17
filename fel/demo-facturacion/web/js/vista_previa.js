@@ -11,7 +11,7 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
   let cliente, establecimiento, fecha, lineas, c, observaciones;
   if (f) {
     const cli = est.clientes.find((x) => x.id === f.cliente_id);
-    cliente = f.nuevo ? { nombre: f.tipo === "CF" ? "Consumidor final" : f.nombre || "—", id: f.tipo === "CF" ? "CF" : f.numero || "—", direccion: "" }
+    cliente = f.nuevo ? { nombre: f.tipo === "CF" ? (f.nombre || "CONSUMIDOR FINAL") : f.nombre || "—", id: f.tipo === "CF" ? "CF" : f.numero || "—", direccion: "" }
       : cli ? { nombre: cli.nombre, id: cli.tipo_identificacion === "CF" ? "CF" : cli.numero_identificacion, direccion: cli.direccion ?? "" } : null;
     establecimiento = est.establecimientos.find((x) => x.id === f.establecimiento_id); fecha = f.fecha; lineas = f.lineas; observaciones = f.observaciones;
     c = calc?.ok ? calc.r : null;

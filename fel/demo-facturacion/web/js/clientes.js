@@ -3,6 +3,7 @@
 import { h, boton, insignia, vacio, cabecera, modal, campo, toast, mensajeError, poner } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
+import { crearAutollenado, textoEstado } from "./receptor_nit.js";
 
 const POR_PAGINA = 5;
 const TIPOS = [["todos", "Todos los tipos"], ["empresa", "Empresa (NIT)"], ["persona", "Persona (CUI / otro)"], ["cf", "Consumidor final"]];
@@ -60,14 +61,11 @@ export function pantallaClientes(ctx) {
     const f = { tipo: c?.tipo_identificacion ?? "NIT", numero: c?.numero_identificacion ?? "", nombre: c?.nombre ?? "", direccion: c?.direccion ?? "", email: c?.email ?? "", telefono: c?.telefono ?? "" };
     const err = h("p", { class: "err", role: "alert" }); let m; const refs = {};
     const inp = (k, et, extra = {}) => (refs[k] = h("input", { value: f[k], "aria-label": et, oninput: (e) => { f[k] = e.target.value; }, ...extra }));
-    // consulta de NIT en Digifact TEST: la hace el SERVIDOR de NEXA (el navegador nunca habla con Digifact); el botón aparece solo si está habilitado
-    const btnNit = boton("Consultar NIT en Digifact TEST", { tipo: "sec", id: "consultar-nit", onclick: async () => {
-      err.textContent = ""; const n = f.numero.trim(); if (!n) { err.textContent = "Escribe el NIT para consultarlo."; return; }
-      btnNit.disabled = true;
-      try { const r = await api.digifactNit(n); if (r.encontrado) { f.nombre = r.nombre; if (refs.nombre) refs.nombre.value = r.nombre; toast("NIT encontrado en Digifact TEST"); } else err.textContent = "Digifact TEST no encontró ese NIT."; }
-      catch (e) { err.textContent = mensajeError(e); } finally { btnNit.disabled = false; }
-    } });
-    btnNit.hidden = true; if (!c) api.digifactEstado().then((x) => { if (x.habilitado && ctx.tiene("clientes.ver")) btnNit.hidden = false; }).catch(() => {});
+    // autollenado del nombre al escribir el NIT (solo clientes nuevos): lo consulta el SERVIDOR (Digifact TEST o simulador con datos ficticios); «CF» se resuelve sin consulta; nunca se pisa un nombre escrito a mano
+    const estadoNit = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" });
+    const ctrl = c ? null : crearAutollenado({ modelo: f, consultar: (n, o) => api.receptorNit(n, o),
+      refrescar: () => { if (refs.tipo) refs.tipo.value = f.tipo; if (refs.numero) refs.numero.value = f.numero; if (refs.nombre) { refs.nombre.value = f.nombre; refs.nombre.readOnly = f.tipo === "CF"; } guardar.disabled = f.tipo === "CF"; },
+      estado: (info) => { estadoNit.textContent = info?.fase === "cf" ? "Consumidor final no se registra como cliente: se elige al facturar." : textoEstado(info); } });
     const guardar = boton("Guardar", { id: "guardar-cliente", onclick: async () => {
       err.textContent = ""; if (!f.numero.trim() || !f.nombre.trim()) { err.textContent = "La identificación y el nombre son obligatorios."; return; }
       if (!/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) { err.textContent = "La identificación solo admite letras, números y guion."; return; }
@@ -77,10 +75,9 @@ export function pantallaClientes(ctx) {
       catch (e) { err.textContent = mensajeError(e); guardar.disabled = false; }
     } });
     m = modal({ titulo: c ? "Editar cliente" : "Nuevo cliente", contenido: h("div", { class: "form" },
-      h("div", { class: "grid2" }, campo("Tipo", h("select", { "aria-label": "Tipo de identificación", disabled: !!c, onchange: (e) => { f.tipo = e.target.value; } }, ...[["NIT", "NIT"], ["CUI", "CUI"], ["EXT", "Extranjero / otro"]].map(([v, t]) => h("option", { value: v, selected: f.tipo === v }, t)))),
-        campo("Identificación", inp("numero", "Identificación del cliente", { maxlength: 30, disabled: !!c }))),
-      h("div", { class: "acciones-fila" }, btnNit),
-      campo("Nombre o razón social", inp("nombre", "Nombre del cliente", { maxlength: 200 })), campo("Dirección", inp("direccion", "Dirección del cliente", { maxlength: 300 })),
+      h("div", { class: "grid2" }, campo("Tipo", (refs.tipo = h("select", { "aria-label": "Tipo de identificación", disabled: !!c, onchange: (e) => { if (ctrl) ctrl.alElegirTipo(e.target.value); else f.tipo = e.target.value; } }, ...[["NIT", "NIT"], ["CUI", "CUI"], ["EXT", "Extranjero / otro"], ...(c ? [] : [["CF", "Consumidor final"]])].map(([v, t]) => h("option", { value: v, selected: f.tipo === v }, t))))),
+        h("div", { class: "nit-id" }, campo("Identificación", inp("numero", "Identificación del cliente", { maxlength: 30, disabled: !!c, autocomplete: "off", oninput: (e) => { if (ctrl) ctrl.alEscribirId(e.target.value); else f.numero = e.target.value; }, onblur: () => ctrl?.alSalirIdentificacion() })), estadoNit)),
+      campo("Nombre o razón social", inp("nombre", "Nombre del cliente", { maxlength: 200, oninput: (e) => { if (ctrl) ctrl.alEscribirNombre(e.target.value); else f.nombre = e.target.value; } })), campo("Dirección", inp("direccion", "Dirección del cliente", { maxlength: 300 })),
       h("div", { class: "grid2" }, campo("Teléfono", inp("telefono", "Teléfono del cliente", { maxlength: 40 })), campo("Correo", inp("email", "Correo del cliente", { maxlength: 200, type: "email" }))), err),
       pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-cliente", onclick: async () => { try { await api.estadoCliente(c.id, !c.activo); await ctx.recargarEstado(); m.cerrar(); toast(c.activo ? "Cliente desactivado" : "Cliente reactivado"); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,
         boton("Cancelar", { tipo: "sec", onclick: () => m.cerrar() }), guardar] });

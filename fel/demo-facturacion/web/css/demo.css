@@ -298,3 +298,7 @@ button.it:hover{border-color:var(--pri)}.it-fijo{cursor:default}
 /* lo fijo (encabezado arriba; barra de acciones y navegación abajo) nunca tapa lo que se desplaza a la vista o recibe el foco */
 @media(max-width:900px){html{scroll-padding-top:104px;scroll-padding-bottom:calc(var(--nav-movil-h) + 96px + env(safe-area-inset-bottom))}}
 @media(min-width:901px){.barra-acciones>.btn{flex:0 0 auto;padding:0 22px}.barra-acciones{margin-top:14px}}
+/* autollenado del receptor: la línea de estado es discreta (una línea, texto pequeño) y no empuja el diseño */
+.nit-id{display:flex;flex-direction:column;gap:4px;min-width:0}
+.nit-estado{color:var(--mut);font-size:12px;line-height:1.3;overflow-wrap:anywhere}.nit-estado:empty{display:none}
+input[readonly]{background:var(--soft);color:var(--mut)}

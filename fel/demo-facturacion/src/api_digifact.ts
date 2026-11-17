@@ -3,12 +3,14 @@
 // La empresa, la persona y los permisos salen de la SESIÓN y de la base de datos; nunca de lo que mande el navegador.
 import type { BdDemo } from "./bd.ts";
 import { ErrorFelGt, type ContextoFel, type DocumentoFel, type ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
+import { consultarReceptorNit, crearLimitador, ErrorReceptorNit } from "./receptor_nit.ts";
 
 type Obj = Record<string, unknown>;
 export interface CtxDigifact {
   m: string; ruta: string; a: { clave: string; id: string }; empresa: string;
   cuerpo: () => Promise<Obj>; id: (x: string) => string; json: (x: unknown, s?: number) => Response; permisos: () => Promise<string[]>;
 }
+const limitadores = new WeakMap<BdDemo, (empresa: string) => boolean>();   // un tope de consultas de NIT por minuto y por empresa, por base de datos
 const NO_HABILITADO = { codigo: "digifact_no_habilitado", mensaje: "Digifact TEST no está habilitado en este servidor." };
 
 /** Lee un documento de LA empresa indicada (nunca de otra) en la forma que necesita el servicio. */
@@ -30,9 +32,17 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
 /** Atiende las rutas de Digifact. Devuelve null si la ruta no es de este módulo. */
 export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFelGt | undefined): Promise<Response | null> {
   const { m, ruta } = c; let r: RegExpExecArray | null;
-  const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado";
+  const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado", esReceptor = m === "POST" && ruta === "/api/receptores/nit";
   const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf))?$/.exec(ruta));
-  if (!esNit && !esEstado && !rd) return null;
+  if (!esNit && !esEstado && !esReceptor && !rd) return null;
+  if (esReceptor) {   // autollenado del nombre del receptor: CF local, Digifact TEST si está habilitado, o simulador con datos ficticios (siempre desde el servidor, con la empresa y los permisos de la SESIÓN)
+    if (!limitadores.has(bd)) limitadores.set(bd, crearLimitador());
+    const ctxR: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
+    try {
+      const b = await c.cuerpo();
+      return c.json(await consultarReceptorNit(ctxR, b.nit, { svc, limitador: limitadores.get(bd)!, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
+    } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
+  }
   if (esEstado) return c.json({ habilitado: !!svc, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST" });
   if (!svc) return c.json(NO_HABILITADO, 503);
   const ctx: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };

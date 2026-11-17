@@ -7,11 +7,11 @@ try { const g = localStorage.getItem("fel_demo_usuario"); if (g && ["ana", "luis
 export const usuarioActual = () => usuario;
 export function cambiarUsuario(u) { usuario = u; try { localStorage.setItem("fel_demo_usuario", u); } catch { /* ignorado */ } }
 
-export async function llamar(metodo, ruta, cuerpo) {
+export async function llamar(metodo, ruta, cuerpo, opciones = {}) {
   let r;
   try {
-    r = await fetch(ruta, { method: metodo, headers: { "x-demo": "1", "x-demo-usuario": usuario, "content-type": "application/json" }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
-  } catch { throw new ErrorApi("No hay conexión con el servidor de la demostración.", "red", 0); }
+    r = await fetch(ruta, { method: metodo, headers: { "x-demo": "1", "x-demo-usuario": usuario, "content-type": "application/json" }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo), signal: opciones.signal });
+  } catch (e) { if (e?.name === "AbortError") throw e; throw new ErrorApi("No hay conexión con el servidor de la demostración.", "red", 0); }
   let datos = null; try { datos = await r.json(); } catch { /* sin cuerpo */ }
   if (r.status === 401 && datos?.codigo === "no_sesion") document.dispatchEvent(new Event("fel-sesion-vencida"));
   if (!r.ok) { const err = new ErrorApi(datos?.mensaje || "No se pudo completar la operación.", datos?.codigo || "error", r.status); err.detalle = datos; throw err; }
@@ -45,6 +45,8 @@ export const api = {
   // Digifact TEST: el navegador solo habla con NEXA; el servidor es quien llama a Digifact
   digifactEstado: () => llamar("GET", "/api/digifact/estado"),
   digifactNit: (nit) => llamar("POST", "/api/digifact/nit", { nit }),
+  /** Autollenado del receptor: la consulta la hace el SERVIDOR (CF local, Digifact TEST o simulador con datos ficticios). */
+  receptorNit: (nit, opciones) => llamar("POST", "/api/receptores/nit", { nit }, opciones),
   digifactDocumento: (id) => llamar("GET", `/api/documentos/${id}/digifact`),
   digifactValidar: (id) => llamar("POST", `/api/documentos/${id}/digifact/validar`, {}),
   digifactPreparar: (id) => llamar("POST", `/api/documentos/${id}/digifact/preparar`, {}),

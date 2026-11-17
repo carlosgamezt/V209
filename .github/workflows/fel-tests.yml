@@ -84,6 +84,10 @@ jobs:
         run: node fel/demo-facturacion/tests/e2e_acceso.cjs
       - name: Rediseño móvil de la factura (320/360/390/430 px · una pantalla, captura rápida de ítems, «Más acciones», sin solapamientos ni desplazamiento horizontal, vista previa, impresión y PDF en carta y ticket de 80 mm)
         run: node fel/demo-facturacion/tests/e2e_movil.cjs
+      - name: Autollenado del receptor (NIT ficticio del simulador, «Consultando NIT», cambios rápidos, sin coincidencia, error del proveedor, nombre manual conservado y CONSUMIDOR FINAL con su tope)
+        run: |
+          deno test -A fel/demo-facturacion/tests/receptor_nit_test.ts fel/demo-facturacion/tests/receptor_nit_api_test.ts
+          node fel/demo-facturacion/tests/e2e_receptor.cjs
       - name: Versión práctica · inicio de sesión (unidad), API real (Digifact simulado, plan y saldo, plataforma, aislamiento) y navegador en PC y teléfono (PWA); simulado y local
         run: |
           deno test -A fel/demo-facturacion/tests/sesiones_test.ts fel/demo-facturacion/tests/practico_api_test.ts

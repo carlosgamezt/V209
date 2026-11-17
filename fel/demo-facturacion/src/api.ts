@@ -3,7 +3,8 @@
 import { MockProvider, type Escenario } from "../../proveedores/src/mock.ts";
 import { OrquestadorDb, ProcesoCaido } from "../../proveedores/src/orquestador_db.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
-import { calcular, type LineaEntrada } from "../../supabase/functions/fel-api/lib/calculo.ts";
+import { aInterno, calcular, type LineaEntrada } from "../../supabase/functions/fel-api/lib/calculo.ts";
+import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
 import type { Autorizador } from "../../proveedores/src/autorizacion_humana.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -105,9 +106,15 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     let c; try { c = calcular(lineas); } catch (e) { throw new ErrorHttp(400, (e as Error).message, "entrada_invalida"); }
     let clienteId = b.cliente_id as string | undefined;
     const nuevo = b.cliente_nuevo as Obj | undefined;
+    // «CF» se reconoce con cualquier combinación de mayúsculas y espacios y se guarda siempre como tipo CF, número «CF», nombre «CONSUMIDOR FINAL»
+    const tipoNuevo = nuevo ? (esCF(nuevo.numero_identificacion) || nuevo.tipo_identificacion === "CF" ? "CF" : String(nuevo.tipo_identificacion ?? "NIT")) : null;
+    // SAT: «CF» solo se admite en facturas por montos MENORES a Q2,500.00 (Reglamento de la Ley del IVA, art. 30 núm. 9, reformado por el Acuerdo Gubernativo 12-2023, según las preguntas frecuentes del portal SAT; el texto oficial se contrastará con un contador antes de la emisión real).
+    // Aquí el monto es la base de este documento (los precios incluyen IVA; los impuestos finales siguen pendientes). Es una regla de la DEMO; no habilita la emisión real, que sigue bloqueada.
+    const esReceptorCF = nuevo && !clienteId ? tipoNuevo === "CF" : clienteId && uuidOk(clienteId) ? (await bd.filas<{ t: string }>("select tipo_identificacion as t from public.clientes where id = $1 and empresa_id = $2", [clienteId, emp()]))[0]?.t === "CF" : false;
+    if (esReceptorCF && aInterno(c.base_imponible) >= aInterno("2500")) throw new ErrorHttp(422, "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).", "regla");
     if (!clienteId && nuevo) {
-      const tipo = String(nuevo.tipo_identificacion ?? "NIT"), num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
-      const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? "Consumidor final" : texto(nuevo.nombre, 1, 200, "Nombre del receptor"), p_direccion: null, p_email: null, p_telefono: null, p_version: null }) as Obj;
+      const tipo = tipoNuevo!, num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
+      const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? NOMBRE_CF : texto(nuevo.nombre, 1, 200, "Nombre del receptor"), p_direccion: null, p_email: null, p_telefono: null, p_version: null }) as Obj;
       clienteId = r.id as string;
     }
     if (clienteId && !uuidOk(clienteId)) throw new ErrorHttp(400, "Receptor no válido", "entrada_invalida");
