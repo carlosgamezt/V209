@@ -42,3 +42,13 @@ Control `public`: HTTP 404 `PGRST205` (clave publicable válida). Sonda `vault`:
 - **Se detiene si:** cualquier `REVISAR`, huella de `rls_auto_enable` distinta, o la sesión no queda confirmada como de solo lectura.
 - **Condición previa:** que no haya otra ejecución pendiente en el grupo `publicar-nube` (ya no la hay; #12 terminó).
 - **Después:** B1 etapa 1 (`APLICAR-MIGRACIONES`), con autorización específica.
+
+## 9. A2 CERRADA: ejecución #13 (commit `f39149d`) = 0 REVISAR
+19 comprobaciones OK, 12 informativas (INFO), **0 REVISAR**; sesión confirmada de solo lectura. Base vacía: 0 tablas en `public`, sin historial de migraciones (las 28 aprobadas están pendientes: 27 de la etapa 1 + la 28), 0 funciones propias no reconocidas, `public.rls_auto_enable()` reconocida por huella, PostgreSQL 17.11, dependencias de Auth completas. Informativo conocido: `service_role` tiene USAGE sobre `vault` (ya registrado; Digifact no usa Vault).
+
+## 10. B1 preparada, NO ejecutada (primera operación que MODIFICA nexa-demo)
+- **Cómo:** `migraciones-nube.yml` · `accion=migraciones-etapa` · `etapa=1` · `confirmar=APLICAR-MIGRACIONES` · rama `fel-proveedores-diseno` · aprobación en `demo-privada`.
+- **Secretos:** `DEMO_SUPABASE_PROYECTO_REF`, `DEMO_BD_URL`, `DEMO_SUPABASE_ACCESS_TOKEN`, `DEMO_SUPABASE_DB_PASSWORD` (los dos últimos solo los usa este paso). Confirmar que existen antes: si faltan, el flujo falla sin aplicar nada.
+- **Qué aplica:** migraciones 1–27 (exige base vacía y sin historial, como confirma A2). V1 automática al terminar (solo lectura): 27 registradas, 67 tablas con RLS, dependencias de Auth sin faltantes, 0 filas.
+- **Se detiene si:** V1 da cualquier cifra distinta; entonces NO se lanza la etapa 2 y la recuperación es un proyecto Supabase nuevo (`PROPUESTA-FINAL-APLICACION-SEGURA.md` §1).
+- **Después:** B2 (etapa 2, migración 28) solo con otra autorización, sin cargar datos entre ambas.
