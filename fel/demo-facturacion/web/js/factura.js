@@ -1,14 +1,13 @@
 // Crear, editar, revisar y procesar UNA factura simulada. El cálculo local es solo una vista previa: el servidor recalcula siempre.
-import { h, boton, insignia, campo, toast, cabecera, quetzales, mensajeError, pedirMotivo, poner } from "/app/js/ui.js";
+// UNA sola pantalla: receptor y establecimiento, ítems como filas compactas (se editan en una hoja, ver item_editor.js), resumen y una barra con la acción principal + «Más acciones».
+import { h, boton, insignia, campo, toast, quetzales, mensajeError, pedirMotivo, poner } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { calcular } from "/app/js/calculo.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 import { api } from "./api.js";
-import { vistaPrevia, papel } from "./vista_previa.js";
+import { vistaPrevia } from "./vista_previa.js";
 import { panelProceso } from "./proceso.js";
-
-const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
-const linea = () => ({ descripcion: "", cantidad: "1", precio_unitario: "", descuento_tipo: "ninguno", descuento_valor: "0" });
+import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
 
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
@@ -24,14 +23,14 @@ export function pantallaFactura(ctx, id) {
     const inicial = () => ({
       cliente_id: doc.cliente_id ?? "", nuevo: false, tipo: "NIT", numero: "", nombre: "", establecimiento_id: doc.establecimiento_id ?? "",
       fecha: doc.fecha_emision_prevista ? String(doc.fecha_emision_prevista).slice(0, 10) : new Date().toISOString().slice(0, 10), observaciones: doc.observaciones ?? "",
-      lineas: d?.lineas?.length ? d.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) })) : [linea()],
+      lineas: d?.lineas?.length ? d.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) })) : [],
     });
-    let f = inicial(), sucio = !doc.id, intentoGuardar = false, paso = 1;
+    let f = inicial(), sucio = !doc.id, intentoGuardar = false;
     const editable = () => doc.estado_preparacion === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene(doc.id ? "borradores.editar" : "borradores.crear");
 
-    const pasosEl = h("ol", { class: "stepper", "aria-label": "Pasos de la factura" }), cardDatos = h("div", { class: "card", "data-paso": "1" }), cardItems = h("div", { class: "card", "data-paso": "2" }), cardPrev = h("div", { class: "card", "data-paso": "3" });
-    const cab = h("div", { class: "doc-cab" }), err = h("p", { class: "err", role: "alert" });
-    const cuerpoReceptor = h("div", { class: "form" }), cuerpoLineas = h("div", { class: "lineas-d" }), totales = h("aside", { class: "totales" }), barra = h("div", { class: "barra-acciones" }), proceso = h("div", { class: "proceso" });
+    const cardDatos = h("div", { class: "card card-datos" }), cardItems = h("div", { class: "card card-items" });
+    const cab = h("div", { class: "doc-cab" }), err = h("p", { class: "err area-msg", role: "alert" });
+    const cuerpoReceptor = h("div", { class: "form" }), cuerpoLineas = h("div", { class: "lineas-d" }), totales = h("aside", { class: "totales" }), barra = h("div", { class: "barra-acciones" }), proceso = h("div", { class: "area-proceso" });
 
     // ---------------------------------------------------------------- validación local (vista previa; el servidor y la base vuelven a validar)
     function problemas() {
@@ -42,43 +41,26 @@ export function pantallaFactura(ctx, id) {
       if (f.nuevo && f.tipo !== "CF" && !/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) p.push("La identificación solo admite letras, números y guion (máximo 30).");
       if (!f.establecimiento_id) p.push("Elige el establecimiento.");
       if (!f.fecha) p.push("Indica la fecha de emisión.");
-      f.lineas.forEach((l, i) => {
-        const n = i + 1;
-        if (!l.descripcion.trim()) p.push(`Línea ${n}: falta la descripción.`);
-        if (!RE_MONTO.test(l.cantidad) || Number(l.cantidad) <= 0) p.push(`Línea ${n}: la cantidad debe ser un número mayor que cero (hasta 6 decimales).`);
-        if (!RE_MONTO.test(l.precio_unitario)) p.push(`Línea ${n}: el precio debe ser un número (hasta 6 decimales).`);
-        if (l.descuento_tipo !== "ninguno" && !RE_MONTO.test(l.descuento_valor)) p.push(`Línea ${n}: el descuento no es un número válido.`);
-        if (l.descuento_tipo === "porcentaje" && RE_MONTO.test(l.descuento_valor) && Number(l.descuento_valor) > 100) p.push(`Línea ${n}: el porcentaje no puede superar 100.`);
-      });
+      if (!f.lineas.length) p.push("Agrega al menos un ítem.");
+      f.lineas.forEach((l, i) => { const x = problemaLinea(l, i + 1); if (x) p.push(x.msg); });
       const c = calcularSeguro(); if (!c.ok && c.msg && !p.length) p.push(c.msg);
       return p;
     }
     function calcularSeguro() {
-      for (const l of f.lineas) if (!RE_MONTO.test(l.cantidad) || !RE_MONTO.test(l.precio_unitario) || (l.descuento_tipo !== "ninguno" && !RE_MONTO.test(l.descuento_valor))) return { ok: false };
+      if (!f.lineas.length) return { ok: false, vacio: true, msg: "Agrega al menos un ítem." };
+      for (const l of f.lineas) if (!RE_MONTO.test(l.cantidad) || !RE_MONTO.test(l.precio_unitario) || (l.descuento_tipo !== "ninguno" && !RE_MONTO.test(l.descuento_valor))) return { ok: false, msg: "Las cantidades, precios y descuentos deben ser números (hasta 6 decimales)." };
       try { return { ok: true, r: calcular(f.lineas) }; } catch (e) { return { ok: false, msg: e.message }; }
     }
 
     // ---------------------------------------------------------------- pintado
     function pintarCab() {
       const [pt, ptono] = PREPARACION[doc.estado_preparacion];
-      poner(cab, h("div", {}, h("h1", { class: "mono" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nueva factura"), h("p", { class: "mut" }, "Número interno de borrador · no es un número fiscal")),
+      poner(cab, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nueva factura"),
         h("div", { class: "celda-tags" }, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, insignia("SIMULADO", "ambar")));
-    }
-    const irPaso = (n) => { paso = n; todo(); };
-    function pintarPasos() {
-      const nombres = ["Datos", "Ítems", "Vista previa"];
-      poner(pasosEl, ...(editable() ? nombres.map((t, i) => h("li", { class: `paso${paso === i + 1 ? " on" : ""}${paso > i + 1 ? " hecho" : ""}` }, h("div", { role: "link", tabindex: "0", class: "paso-i", "aria-current": paso === i + 1 ? "step" : null, "data-ir-paso": String(i + 1), onclick: () => irPaso(i + 1), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); irPaso(i + 1); } } }, h("span", { class: "paso-n" }, String(i + 1)), h("span", {}, t)))) : []));
     }
     // Q0.00 se acepta SOLO en la demostración simulada (decisión de DEMO); nunca para certificar de verdad
     const lineasPrecioCero = () => f.lineas.map((l, i) => (RE_MONTO.test(l.precio_unitario) && Number(l.precio_unitario) === 0 ? i + 1 : 0)).filter(Boolean);
     const avisoPrecioCero = () => { const z = lineasPrecioCero(); return z.length ? h("p", { class: "aviso", id: "aviso-precio-cero", role: "status" }, icono("info"), h("span", {}, `Precio Q0.00 en ${z.length === 1 ? "la línea" : "las líneas"} ${z.join(", ")}: se acepta solo en esta DEMO. No es válido para certificar.`)) : null; };
-    function pintarPrevia() {
-      if (!editable() || paso !== 3) return poner(cardPrev);
-      poner(cardPrev, h("h2", { class: "card-t" }, "Vista previa"), h("p", { class: "aviso aviso-azul" }, icono("info"), h("span", {}, "Revisa la información antes de continuar. Es una vista previa NO certificada, sin valor fiscal.")), avisoPrecioCero(), papel({ ctx, doc, f, calc: calcularSeguro(), det: d }));
-    }
-    function mostrar() {
-      const ed = editable(); cardDatos.hidden = ed && paso !== 1; cardItems.hidden = ed && paso !== 2; cardPrev.hidden = !(ed && paso === 3);
-    }
     function pintarReceptor() {
       const ed = editable();
       const selCli = h("select", { "aria-label": "Receptor", disabled: !ed || f.nuevo, onchange: (e) => { f.cliente_id = e.target.value; sucio = true; pintarBarra(); pintarTotales(); } },
@@ -95,57 +77,75 @@ export function pantallaFactura(ctx, id) {
           campo("Nombre", h("input", { value: f.nombre, "aria-label": "Nombre del receptor", maxlength: 200, disabled: !ed, oninput: (e) => { f.nombre = e.target.value; sucio = true; pintarBarra(); pintarTotales(); } }))]) : null;
       poner(cuerpoReceptor,
         h("div", { class: "grid2" }, campo("Receptor", selCli), campo("Establecimiento", selEst)), chkNuevo, nuevo,
-        h("div", { class: "grid2" }, campo("Fecha de emisión", h("input", { type: "date", value: f.fecha, "aria-label": "Fecha de emisión", disabled: !ed, oninput: (e) => { f.fecha = e.target.value; sucio = true; pintarBarra(); } })),
+        h("div", { class: "grid2 fila-fo" }, campo("Fecha de emisión", h("input", { type: "date", value: f.fecha, "aria-label": "Fecha de emisión", disabled: !ed, oninput: (e) => { f.fecha = e.target.value; sucio = true; pintarBarra(); } })),
           campo("Observaciones", h("input", { value: f.observaciones, maxlength: 500, "aria-label": "Observaciones", disabled: !ed, oninput: (e) => { f.observaciones = e.target.value; sucio = true; pintarBarra(); } }))));
+    }
+
+    // ---------------------------------------------------------------- ítems: filas compactas + editor en hoja
+    function abrirEditor(i) {
+      if (!editable()) return;
+      const nuevo = i < 0;
+      editarItem({ item: nuevo ? lineaVacia() : { ...f.lineas[i] }, numero: nuevo ? f.lineas.length + 1 : i + 1, nuevo, conceptos: est.conceptos ?? [],
+        onGuardar: (it) => { if (nuevo) f.lineas.push(it); else f.lineas[i] = it; sucio = true; pintarLineas(); pintarBarra(); },
+        onQuitar: () => { f.lineas.splice(i, 1); sucio = true; pintarLineas(); pintarBarra(); } });
     }
     function pintarLineas() {
       const ed = editable(), calc = calcularSeguro();
       const filas = f.lineas.map((l, i) => {
-        const txt = (k, et, extra = {}) => h("input", { value: l[k], "aria-label": `${et} de la línea ${i + 1}`, disabled: !ed, ...extra, oninput: (e) => { l[k] = e.target.value; sucio = true; refrescar(); } });
-        const dt = h("select", { "aria-label": `Tipo de descuento de la línea ${i + 1}`, disabled: !ed, onchange: (e) => { l.descuento_tipo = e.target.value; if (l.descuento_tipo === "ninguno") l.descuento_valor = "0"; sucio = true; pintarLineas(); pintarBarra(); } },
-          ...[["ninguno", "Sin descuento"], ["monto", "En quetzales"], ["porcentaje", "En porcentaje"]].map(([v, t]) => h("option", { value: v, selected: l.descuento_tipo === v }, t)));
-        return h("div", { class: "ln", "data-linea": String(i + 1) },
-          h("div", { class: "ln-c ln-desc", "data-et": "Descripción" }, txt("descripcion", "Descripción", { maxlength: 300, placeholder: "Escribe una descripción o selecciona un concepto…", list: "conceptos-dl", onchange: (e) => { const c = est.conceptos?.find((x) => x.descripcion === e.target.value); if (c && !l.precio_unitario) { l.precio_unitario = c.precio_unitario; sucio = true; const pr = e.target.closest(".ln")?.querySelector('input[aria-label^="Precio de la línea"]'); if (pr) pr.value = l.precio_unitario; refrescar(); } } })),
-          h("div", { class: "ln-c", "data-et": "Cantidad" }, txt("cantidad", "Cantidad", { inputmode: "decimal" })),
-          h("div", { class: "ln-c", "data-et": "Precio (Q)" }, txt("precio_unitario", "Precio", { inputmode: "decimal", placeholder: "0.00" })),
-          h("div", { class: "ln-c", "data-et": "Descuento" }, dt, l.descuento_tipo !== "ninguno" ? txt("descuento_valor", "Valor del descuento", { inputmode: "decimal" }) : null),
-          h("div", { class: "ln-c ln-neto num", "data-et": "Neto" }, h("span", { class: "neto" }, calc.ok ? quetzales(calc.r.lineas[i]?.neto) : "—"),
-            ed && f.lineas.length > 1 ? h("button", { type: "button", class: "icon-btn", title: "Quitar línea", "aria-label": `Quitar la línea ${i + 1}`, onclick: () => { f.lineas.splice(i, 1); sucio = true; pintarLineas(); pintarBarra(); } }, icono("trash")) : null));
+        const hijos = [h("span", { class: "it-n" }, String(i + 1)), h("span", { class: "it-m" }, h("strong", { class: "it-d" }, l.descripcion || "Sin descripción"), h("small", { class: "it-s" }, resumenLinea(l))),
+          h("span", { class: "it-neto num" }, calc.ok ? quetzales(calc.r.lineas[i]?.neto) : "—")];
+        return ed ? h("button", { type: "button", class: "it", "data-linea": String(i + 1), "aria-label": `Editar el ítem ${i + 1}: ${l.descripcion}`, onclick: () => abrirEditor(i) }, ...hijos)
+          : h("div", { class: "it it-fijo", "data-linea": String(i + 1) }, ...hijos);
       });
-      poner(cuerpoLineas, h("div", { class: "ln ln-cab", "aria-hidden": "true" }, ...["Descripción", "Cantidad", "Precio (Q)", "Descuento", "Neto"].map((t) => h("span", {}, t))), ...filas, h("datalist", { id: "conceptos-dl" }, ...(est.conceptos ?? []).map((c) => h("option", { value: c.descripcion }))),
-        ed ? boton("Agregar ítem", { tipo: "sec", icon: "plus", onclick: () => { f.lineas.push(linea()); sucio = true; pintarLineas(); pintarBarra(); } }) : null);
+      poner(cuerpoLineas, ...(filas.length ? filas : [h("p", { class: "mut it-vacio" }, ed ? "Aún no hay ítems." : "Sin ítems.")]),
+        ed ? boton("Agregar ítem", { tipo: "sec", icon: "plus", id: "agregar-item", onclick: () => abrirEditor(-1) }) : null);
       pintarTotales();
     }
-    function refrescar() { const c = calcularSeguro(); cuerpoLineas.querySelectorAll(".ln:not(.ln-cab) .neto").forEach((el, i) => { el.textContent = c.ok ? quetzales(c.r.lineas[i]?.neto) : "—"; }); pintarTotales(); pintarBarra(); }
+    function cuerpoCatalogo() {
+      if (!editable() || !est.conceptos?.length) return null;
+      return h("select", { "aria-label": "Agregar un concepto del catálogo", class: "sel-concepto", onchange: (e) => {
+        const c = est.conceptos.find((x) => x.id === e.target.value); e.target.value = ""; if (!c) return;
+        f.lineas.push({ ...lineaVacia(), descripcion: c.descripcion, precio_unitario: c.precio_unitario }); sucio = true; pintarLineas(); pintarBarra(); } },
+        h("option", { value: "" }, "Buscar concepto…"), ...est.conceptos.map((c) => h("option", { value: c.id }, `${c.tipo === "bien" ? "Bien" : "Servicio"} · ${c.descripcion}`)));
+    }
+
+    // ---------------------------------------------------------------- resumen compacto
     function pintarTotales() {
       const c = calcularSeguro(), ps = problemas();
       const fila = (et, v, extra) => h("div", { class: `tot${extra ? " " + extra : ""}` }, h("span", {}, et), h("strong", { class: "num" }, v));
-      poner(totales, h("h2", { class: "card-t" }, "Resumen"),
-        h("div", { class: "sello" }, icono("lock"), h("div", {}, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, "Vista previa no certificada: sin serie, número ni autorización oficiales."))),
-        ...(c.ok ? [fila("Subtotal", quetzales(c.r.subtotal)), fila("Descuentos", quetzales(c.r.descuento_total)), fila("Base imponible", quetzales(c.r.base_imponible), "tot-base")] : [h("p", { class: "mut" }, "Completa cantidad y precio de cada línea para ver los importes.")]),
+      poner(totales,
+        ...(c.ok ? [fila("Subtotal", quetzales(c.r.subtotal)), fila("Descuentos", quetzales(c.r.descuento_total)), fila("Total provisional", quetzales(c.r.base_imponible), "tot-base"), h("small", { class: "mut tot-nota" }, "Sin impuestos: pendientes de régimen fiscal verificado. SIMULADO · SIN VALOR FISCAL.")]
+          : [h("p", { class: "mut" }, c.vacio ? "Agrega ítems para ver los importes." : "Completa cantidad y precio de cada ítem para ver los importes."), h("small", { class: "mut tot-nota" }, "SIMULADO · SIN VALOR FISCAL.")]),
         avisoPrecioCero(),
-        h("div", { class: "pend" }, icono("info"), h("div", {}, h("strong", {}, "Impuestos y total: pendientes"), h("small", {}, "Se calcularán cuando exista un régimen fiscal verificado con un contador. Hoy no se aplica ninguna fórmula fiscal."))),
         ps.length && (intentoGuardar || !editable()) ? h("div", { class: "validacion", role: "status" }, h("strong", {}, "Antes de guardar:"), h("ul", {}, ...ps.map((x) => h("li", {}, x)))) : ps.length ? h("p", { class: "mut ayuda-val" }, `${ps.length} dato${ps.length > 1 ? "s" : ""} por completar.`) : h("p", { class: "ok-val" }, icono("circleCheck"), h("span", {}, "Datos completos.")));
     }
+
+    // ---------------------------------------------------------------- barra: una acción principal + «Más acciones»
+    let cerrarMenu = () => {};
     function pintarBarra() {
-      const ed = editable(), prep = doc.estado_preparacion, btns = [];
-      // móvil: «Atrás» y «Vista previa» pasan a solo icono (con nombre accesible) y «Volver» se oculta (la barra inferior ya lleva a Facturas); «Guardar»/«Continuar» ocupan el ancho
-      const solo = (b, nombre) => { b.classList.add("ab-ico"); b.setAttribute("aria-label", nombre); return b; };
-      const corto = (b, c) => { b.querySelector("span").className = "t-largo"; b.append(h("span", { class: "t-corto" }, c)); return b; };
-      { const v = boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") }); v.classList.add("ab-volver"); btns.push(v); }
-      if (ed && paso > 1) btns.push(solo(boton("Atrás", { tipo: "sec", icon: "undo", id: "paso-atras", onclick: () => irPaso(paso - 1) }), "Atrás"));
-      if (!ed) btns.push(boton("Vista previa", { tipo: "sec", icon: "eye", onclick: () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d }) }));
-      else if (paso < 3) btns.push(solo(boton("Vista previa", { tipo: "sec", icon: "eye", id: "ver-previa", onclick: () => irPaso(3) }), "Vista previa"));
-      if (ed) btns.push(corto(boton(doc.id ? "Guardar cambios" : "Guardar borrador", { tipo: "sec", icon: "check", id: "guardar", onclick: guardar }), "Guardar"));
-      if (ed && paso < 3) btns.push(boton("Continuar", { icon: "check", id: "paso-siguiente", onclick: () => irPaso(paso + 1) }));
-      if (doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar")) btns.push(boton("Validar con el proveedor", { tipo: "sec", icon: "shield", disabled: sucio, title: sucio ? "Guarda los cambios antes de validar" : null, onclick: validar }),
-        boton("Marcar como revisado", { tipo: "sec", icon: "circleCheck", disabled: sucio, title: sucio ? "Guarda los cambios antes de revisar" : null, onclick: () => cambiar("revisado") }));
-      if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) btns.push(boton("Volver a borrador", { tipo: "sec", icon: "undo", onclick: () => cambiar("borrador") }));
-      if (doc.id && prep !== "archivado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.archivar")) btns.push(boton("Archivar", { tipo: "peligro", icon: "archive", onclick: archivar }));
-      // botón flotante «Agregar ítem» al alcance del pulgar (solo móvil, solo en el paso de ítems)
-      const fab = ed && paso === 2 ? boton("", { tipo: "pri", icon: "plus", id: "fab-agregar", "aria-label": "Agregar ítem", onclick: () => { f.lineas.push(linea()); sucio = true; pintarLineas(); pintarBarra(); requestAnimationFrame(() => { const u = [...cuerpoLineas.querySelectorAll(".ln:not(.ln-cab)")].pop(); u?.scrollIntoView({ block: "center", behavior: "smooth" }); u?.querySelector("input")?.focus({ preventScroll: true }); }); } }) : null;
-      if (fab) fab.classList.add("ab-fab");
-      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, ...btns, fab);
+      cerrarMenu();
+      const ed = editable(), prep = doc.estado_preparacion;
+      const abrirPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio });
+      const puedeRevisar = doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar");
+      let principal;
+      if (ed && (sucio || !doc.id)) principal = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { icon: "check", id: "guardar", onclick: guardar });
+      else if (puedeRevisar) principal = boton("Marcar como revisado", { icon: "circleCheck", id: "revisar", onclick: () => cambiar("revisado") });
+      else principal = boton("Vista previa e impresión", { icon: "eye", id: "ver-previa", onclick: abrirPrevia });
+      const items = [{ t: "Vista previa e impresión", i: "eye", id: "mi-previa", f: abrirPrevia }];
+      if (puedeRevisar) items.push({ t: "Validar con el proveedor", i: "shield", id: "mi-validar", f: validar, off: sucio, tip: "Guarda los cambios antes de validar" });
+      if (puedeRevisar && principal.id !== "revisar") items.push({ t: "Marcar como revisado", i: "circleCheck", id: "mi-revisar", f: () => cambiar("revisado"), off: sucio, tip: "Guarda los cambios antes de revisar" });
+      if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) items.push({ t: "Volver a borrador", i: "undo", id: "mi-borrador", f: () => cambiar("borrador") });
+      if (doc.id && prep !== "archivado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.archivar")) items.push({ t: "Archivar", i: "archive", id: "mi-archivar", f: archivar, peligro: true });
+      items.push({ t: "Volver a facturas", i: "undo", id: "mi-volver", f: () => ctx.ir("/") });
+      const menu = h("div", { class: "menu-mas", role: "menu", "aria-label": "Más acciones", hidden: true },
+        ...items.map((x) => h("button", { type: "button", role: "menuitem", class: `mi${x.peligro ? " mi-peligro" : ""}`, id: x.id, disabled: !!x.off, title: x.off ? x.tip : null, onclick: () => { cerrar(); x.f(); } }, icono(x.i), h("span", {}, x.t))));
+      const bMas = h("button", { type: "button", class: "btn btn-sec btn-mas", id: "mas-acciones", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "Más acciones", onclick: (e) => { e.stopPropagation(); menu.hidden ? abrir() : cerrar(); } }, h("span", {}, "Más"), h("span", { class: "mas-largo" }, " acciones"), h("span", { "aria-hidden": "true", class: "mas-flecha" }, "▴"));
+      const fuera = (e) => { if (!wrap.contains(e.target)) cerrar(); }, tecla = (e) => { if (e.key === "Escape") { cerrar(); bMas.focus(); } };
+      function abrir() { menu.hidden = false; bMas.setAttribute("aria-expanded", "true"); document.addEventListener("click", fuera); document.addEventListener("keydown", tecla); menu.querySelector("button:not([disabled])")?.focus(); }
+      function cerrar() { menu.hidden = true; bMas.setAttribute("aria-expanded", "false"); document.removeEventListener("click", fuera); document.removeEventListener("keydown", tecla); }
+      cerrarMenu = cerrar;
+      const wrap = h("div", { class: "mas-wrap" }, bMas, menu);
+      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, principal, wrap);
     }
     function pintarProceso() {
       poner(proceso, doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
@@ -180,27 +180,16 @@ export function pantallaFactura(ctx, id) {
     async function archivar() { const m = await pedirMotivo({ titulo: "Archivar factura", texto: "Archivar es una decisión interna: no es una anulación fiscal.", confirmar: "Archivar" }); if (m) cambiar("archivado", m); }
 
     function todo() {
-      pintarCab(); pintarPasos(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
-      poner(cardDatos, h("h2", { class: "card-t" }, "Datos de la factura y del comprador"), cuerpoReceptor);
-      poner(cardItems, h("div", { class: "card-fila" }, h("h2", { class: "card-t" }, "Ítems de la factura"), cuerpoCatalogo()), cuerpoLineas);
-      pintarPrevia(); mostrar();
-    }
-    function cuerpoCatalogo() {
-      if (!editable() || !est.conceptos?.length) return null;
-      const sel = h("select", { "aria-label": "Agregar un concepto del catálogo", class: "sel-concepto", onchange: (e) => {
-        const c = est.conceptos.find((x) => x.id === e.target.value); e.target.value = ""; if (!c) return;
-        const vacia = f.lineas.length === 1 && !f.lineas[0].descripcion.trim() && !f.lineas[0].precio_unitario;
-        const nueva = { ...linea(), descripcion: c.descripcion, precio_unitario: c.precio_unitario }; if (vacia) f.lineas[0] = nueva; else f.lineas.push(nueva);
-        sucio = true; pintarLineas(); pintarBarra(); pintarPrevia(); } },
-        h("option", { value: "" }, "Buscar concepto…"), ...est.conceptos.map((c) => h("option", { value: c.id }, `${c.tipo === "bien" ? "Bien" : "Servicio"} · ${c.descripcion}`)));
-      return sel;
+      pintarCab(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
+      poner(cardDatos, cuerpoReceptor);
+      poner(cardItems, h("div", { class: "card-fila" }, h("h2", { class: "card-t" }, "Ítems"), cuerpoCatalogo()), cuerpoLineas);
     }
     todo();
+    // no perder lo escrito por un cierre o una recarga accidental de la página
+    const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
+    window.addEventListener("beforeunload", avisoSalir);
     return h("div", {}, cab,
       !editable() && doc.id ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, doc.estado_fiscal !== "ninguno" ? "Este documento tiene vida fiscal (simulada) y su contenido ya no se puede editar." : doc.estado_preparacion === "borrador" ? "Tu rol no permite editar este borrador." : "El contenido está congelado porque fue revisado. Vuelve a borrador para editarlo.")) : null,
-      pasosEl,
-      h("div", { class: "doc-grid" },
-        h("div", { class: "doc-main" }, cardDatos, cardItems, cardPrev, err, proceso),
-        totales), barra);
+      h("div", { class: "doc-grid" }, cardDatos, cardItems, totales, err, proceso), barra);
   }
 }

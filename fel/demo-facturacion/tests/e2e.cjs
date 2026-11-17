@@ -31,12 +31,19 @@ function arrancar() {
   const banda = async (pg = p) => assert.equal(await pg.locator(".banda-simulado").innerText().then((t) => t.includes("SIMULADO - SIN VALOR FISCAL")), true, "la banda de simulación debe verse siempre");
   const estadoFiscal = async () => (await p.locator(".doc-cab .tag").allInnerTexts()).join("|");
   const abrir = async (id) => { await p.goto(`${srv.url}/#/f/${id}`); await p.waitForSelector(".doc-cab"); };
+  // captura de un ítem con la hoja de edición (descripción, cantidad, precio y, si se pide, descuento) y vuelta a la lista
+  const agregarItem = async (desc, cant, precio, dsc = null) => {
+    await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await p.fill('.hoja-item [aria-label="Descripción"]', desc); await p.fill('.hoja-item [aria-label="Cantidad"]', cant); await p.fill('.hoja-item [aria-label="Precio unitario (Q)"]', precio);
+    if (dsc) { await p.selectOption('.hoja-item [aria-label="Tipo de descuento"]', dsc[0]); await p.fill('.hoja-item [aria-label="Valor del descuento"]', dsc[1]); }
+    await p.click("#ed-guardar"); await p.waitForSelector(".hoja-item", { state: "detached" });
+  };
+  const menu = async (id) => { await p.click("#mas-acciones"); await p.click(id); };   // acción del menú «Más acciones»
+  const abrirPrevia = async () => { if (await p.locator("#ver-previa").count()) await p.click("#ver-previa"); else await menu("#mi-previa"); await p.waitForSelector('[data-vista="previa"]'); };
   const crear = async (desc = "Servicio de consultoría", cant = "2", precio = "100") => {   // crea un borrador guardado y devuelve su id
     await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
     await p.selectOption('select[aria-label="Receptor"]', { label: /Comercial Los Pinos/ }).catch(async () => { const v = await p.locator('select[aria-label="Receptor"] option', { hasText: "Comercial Los Pinos" }).getAttribute("value"); await p.selectOption('select[aria-label="Receptor"]', v); });
     const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Casa matriz" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
-    await p.click("#paso-siguiente");
-    await p.fill('input[aria-label="Descripción de la línea 1"]', desc); await p.fill('input[aria-label="Cantidad de la línea 1"]', cant); await p.fill('input[aria-label="Precio de la línea 1"]', precio);
+    await agregarItem(desc, cant, precio);
     await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); return p.url().split("/").pop();
   };
   const abrirDemo = async () => { const d = p.locator('details.demo-controles'); await p.waitForLoadState("networkidle");   // tolera un repintado de la acción anterior: reabre hasta que quede abierto de forma estable
@@ -52,17 +59,16 @@ function arrancar() {
   // ============ 2. crear con el emisor: validaciones, agregar y quitar líneas, guardar; el emisor no revisa ni certifica
   await como("marta");
   await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
-  assert.match(await p.locator(".totales").innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.match(await p.locator(".totales").innerText(), /dato.* por completar/);
-  await p.click("#guardar"); await p.waitForSelector(".validacion"); assert.match(await p.locator(".validacion").innerText(), /Elige el receptor/); assert.match(await p.locator(".validacion").innerText(), /falta la descripción/);
-  assert.equal(await p.locator("li.paso").count(), 3, "tres pasos: datos, ítems, vista previa"); await p.click("#paso-siguiente"); await p.waitForSelector('input[aria-label="Descripción de la línea 1"]');
-  await p.click('button:has-text("Agregar ítem")'); assert.equal(await p.locator(".ln:not(.ln-cab)").count(), 2);
-  await p.fill('input[aria-label="Cantidad de la línea 2"]', "abc"); await p.click("#guardar"); assert.match(await p.locator(".validacion").innerText(), /Línea 2: la cantidad/);
-  await p.click('button[aria-label="Quitar la línea 2"]'); assert.equal(await p.locator(".ln:not(.ln-cab)").count(), 1);
-  await p.selectOption('select[aria-label="Tipo de descuento de la línea 1"]', "porcentaje"); await p.fill('input[aria-label="Valor del descuento de la línea 1"]', "150"); await p.click("#guardar"); assert.match(await p.locator(".validacion").innerText(), /no puede superar 100/);
-  await p.fill('input[aria-label="Valor del descuento de la línea 1"]', "10");
-  await p.fill('input[aria-label="Descripción de la línea 1"]', "Servicio de consultoría"); await p.fill('input[aria-label="Cantidad de la línea 1"]', "2"); await p.fill('input[aria-label="Precio de la línea 1"]', "100");
-  assert.match(await p.locator(".totales").innerText(), /Q 180\.00/, "base imponible = 2 × 100 − 10 %");
-  await p.click('[data-ir-paso="1"]'); await p.waitForSelector('select[aria-label="Receptor"]');
+  assert.match(await p.locator(".totales").innerText(), /SIMULADO · SIN VALOR FISCAL/); assert.match(await p.locator(".totales").innerText(), /dato.* por completar/);
+  await p.click("#guardar"); await p.waitForSelector(".validacion"); assert.match(await p.locator(".validacion").innerText(), /Elige el receptor/); assert.match(await p.locator(".validacion").innerText(), /Agrega al menos un ítem/);
+  assert.equal(await p.locator("li.paso").count(), 0, "una sola pantalla: sin pasos"); assert.equal(await p.locator("#fab-agregar").count(), 0, "sin botón flotante «+»"); assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, "una acción principal"); assert.equal(await p.locator("#mas-acciones").count(), 1, "y un menú «Más acciones»");
+  await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await p.fill('.hoja-item [aria-label="Descripción"]', "Línea de prueba"); await p.fill('.hoja-item [aria-label="Cantidad"]', "abc"); await p.click("#ed-guardar"); assert.match(await p.locator(".hoja-item .err").innerText(), /cantidad/); await p.click("#ed-cancelar"); await p.waitForSelector(".hoja-item", { state: "detached" });
+  assert.equal(await p.locator("button.it").count(), 0, "cancelar no agrega nada");
+  await agregarItem("Servicio de consultoría", "2", "100");
+  await p.click('button.it[data-linea="1"]'); await p.waitForSelector(".hoja-item"); await p.selectOption('.hoja-item [aria-label="Tipo de descuento"]', "porcentaje"); await p.fill('.hoja-item [aria-label="Valor del descuento"]', "150"); await p.click("#ed-guardar"); assert.match(await p.locator(".hoja-item .err").innerText(), /no puede superar 100/);
+  await p.fill('.hoja-item [aria-label="Valor del descuento"]', "10"); await p.click("#ed-guardar"); await p.waitForSelector(".hoja-item", { state: "detached" });
+  await agregarItem("Línea que se quita", "1", "5"); assert.equal(await p.locator("button.it").count(), 2); await p.click('button.it[data-linea="2"]'); await p.click("#ed-quitar"); await p.waitForSelector(".hoja-item", { state: "detached" }); assert.equal(await p.locator("button.it").count(), 1);
+  assert.match(await p.locator('button.it[data-linea="1"]').innerText(), /2 × Q 100\.00 · −10%/); assert.match(await p.locator(".totales").innerText(), /Q 180\.00/, "total provisional = 2 × 100 − 10 %");
   await p.check('input[aria-label="Receptor nuevo"]'); await p.selectOption('select[aria-label="Tipo de identificación"]', "NIT");
   await p.fill('input[aria-label="Identificación del receptor"]', "5550001-2"); await p.fill('input[aria-label="Nombre del receptor"]', "Cliente nuevo de prueba (ficticio)");
   const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Sucursal" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
@@ -71,13 +77,13 @@ function arrancar() {
   const idMarta = p.url().split("/").pop(); assert.match(await p.locator(".doc-cab h1").innerText(), /BR-0001/);
   assert.equal(await p.locator('button:has-text("Marcar como revisado")').count(), 0, "el emisor no revisa");
   assert.match(await p.locator("#motivo-sin-envio").innerText(), /revisado/);
-  await p.click('button:has-text("Vista previa")'); await p.waitForSelector('[data-vista="previa"]'); assert.match(await p.locator('[data-vista="previa"]').innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Observaciones/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Correo/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Cliente nuevo de prueba/);
+  await abrirPrevia(); assert.match(await p.locator('[data-vista="previa"]').innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Observaciones/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Correo/); assert.match(await p.locator('[data-vista="previa"]').innerText(), /Cliente nuevo de prueba/);
   await foto("03-vista-previa.png"); await p.keyboard.press("Escape");
 
   // ============ 3. revisar y enviar con la propietaria; el contenido se congela
   await como("ana"); await abrir(idMarta);
-  await p.click('button:has-text("Validar con el proveedor")'); await toast("valida el documento");
-  await revisar(); assert.equal(await p.locator('input[aria-label="Descripción de la línea 1"]').isDisabled(), true, "congelado tras revisar"); assert.equal(await p.locator("#guardar").count(), 0);
+  await menu("#mi-validar"); await toast("valida el documento");
+  await revisar(); assert.equal(await p.locator("button.it").count(), 0, "congelado tras revisar: las filas no se editan"); assert.equal(await p.locator("#agregar-item").count(), 0, "y no se agregan ítems"); assert.equal(await p.locator("#guardar").count(), 0);
   assert.match(await p.locator("#enviar").innerText(), /Enviar a certificación simulada/);
 
   // ============ 4. tiempo agotado (el proveedor SÍ certificó): por_verificar BLOQUEA; consultar al proveedor concilia
@@ -159,8 +165,8 @@ function arrancar() {
   await p.click("#nuevo-cliente"); await p.fill('input[aria-label="Identificación del cliente"]', "9990001-3"); await p.fill('input[aria-label="Nombre del cliente"]', "Repetido"); await p.click("#guardar-cliente"); await p.waitForSelector(".modal .err:has-text('Ya existe')"); await p.keyboard.press("Escape");
   await p.goto(`${srv.url}/#/conceptos`); await p.waitForSelector("[data-concepto]"); assert.ok(await p.locator("[data-concepto]").count() >= 4);
   await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "SERV-900"); await p.fill('input[aria-label="Descripción del concepto"]', "Concepto de prueba"); await p.fill('input[aria-label="Precio sugerido"]', "77.5"); await p.click("#guardar-concepto"); await toast("Concepto creado");
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); await p.click("#paso-siguiente");
-  await p.selectOption('select[aria-label="Agregar un concepto del catálogo"]', await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).getAttribute("value")); assert.equal(await p.inputValue('input[aria-label="Descripción de la línea 1"]'), "Concepto de prueba"); assert.equal(await p.inputValue('input[aria-label="Precio de la línea 1"]'), "77.5");
+  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
+  await p.selectOption('select[aria-label="Agregar un concepto del catálogo"]', await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).getAttribute("value")); assert.match(await p.locator('button.it[data-linea="1"]').innerText(), /Concepto de prueba/); assert.match(await p.locator('button.it[data-linea="1"]').innerText(), /1 × Q 77\.50/);
   await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tabs"); await p.waitForSelector(".tab-cuerpo .datos"); assert.match(await p.locator(".tab-cuerpo").innerText(), /Empresa activa/);
   for (const t of ["establecimientos", "canal", "numeracion", "impuestos", "preferencias"]) { await p.click(`[data-tab="${t}"]`); await p.waitForTimeout(200); }
   await p.click('[data-tab="canal"]'); const canales = await p.locator(".tab-cuerpo").innerText(); assert.match(canales, /Habilitado · simulado/); assert.match(canales, /Bloqueado en esta fase/); assert.equal(await p.locator("input[type=password], input[aria-label*=Contraseña i], button:has-text('Probar conexión')").count(), 0, "sin campos de credenciales de SAT ni «Probar conexión»"); await foto("11-config-canal.png");
@@ -212,7 +218,7 @@ function arrancar() {
   assert.match(await p.locator('[data-concepto="SERV-900"]').innerText(), /Bien/);
   await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "SERV-900"); await p.fill('input[aria-label="Descripción del concepto"]', "Duplicado"); await p.click("#guardar-concepto"); await p.waitForSelector(".modal .err:has-text('Ya existe')"); await p.keyboard.press("Escape");
   await p.click('button[aria-label="Editar Concepto de prueba"]'); await p.click("#estado-concepto"); await toast("Concepto desactivado"); await p.waitForTimeout(200); assert.equal(await p.locator('[data-concepto="SERV-900"]').count(), 0);
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); await p.click("#paso-siguiente"); assert.equal(await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).count(), 0, "un concepto inactivo no se ofrece al facturar");
+  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); assert.equal(await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).count(), 0, "un concepto inactivo no se ofrece al facturar");
   await p.goto(`${srv.url}/#/conceptos`); await p.check('input[aria-label="Incluir inactivos"]'); await p.click('button[aria-label="Editar Concepto de prueba"]'); await p.click("#estado-concepto"); await toast("Concepto reactivado");
   // empresa: edición con permiso, validación, solo lectura sin permiso, vista previa con los datos nuevos; datos fiscales intactos
   await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tab-cuerpo .datos"); assert.equal(await p.locator(".tab-cuerpo .aviso-azul").count(), 0, "sin avisos azules redundantes en Empresa"); assert.match(await p.locator(".tab-cuerpo").innerText(), /datos fiscales críticos/); assert.match(await p.locator(".tab-cuerpo .aviso-ambar").innerText(), /sin verificar/i); assert.equal(await p.locator(".tab-cuerpo .card").count(), 2);
@@ -220,7 +226,7 @@ function arrancar() {
   await p.fill('input[aria-label="Correo de facturación"]', "nuevo@empresa-demo.example"); await p.fill('input[aria-label="Nombre comercial"]', "Empresa Demo Editada"); await p.click("#guardar-empresa"); await toast("Datos de la empresa guardados");
   const emp = await api("GET", "/api/configuracion"); assert.equal(emp.empresa.telefono, "2200-9999"); assert.equal(emp.empresa.nit, "7770001-0", "el NIT no cambia"); assert.match(emp.empresa.razon_social, /FICTICIA/, "la razón social no cambia");
   assert.match((await api("POST", "/api/empresa", { nombre_comercial: "Intento", telefono: "1" }, "marta")).mensaje, /permiso/i, "el emisor no edita la empresa");
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); await p.click("#ver-previa"); await p.waitForSelector('[data-vista="previa"]'); assert.match(await p.locator('[data-vista="previa"]').innerText(), /2200-9999/, "la vista previa usa los datos guardados");
+  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); await abrirPrevia(); assert.match(await p.locator('[data-vista="previa"]').innerText(), /2200-9999/, "la vista previa usa los datos guardados"); await p.keyboard.press("Escape");
   await como("marta"); await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tab-cuerpo .datos"); assert.equal(await p.locator('input[aria-label="Teléfono de la empresa"]').isDisabled(), true); assert.equal(await p.locator("#guardar-empresa").count(), 0);
   // canales: Playwright principal previsto, Digifact secundario, agente sin conexión simulada, activación real bloqueada
   await como("ana"); await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tabs"); await p.click('[data-tab="canal"]'); await p.waitForSelector('[data-canal="portal_playwright"]');

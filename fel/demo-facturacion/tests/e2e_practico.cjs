@@ -44,10 +44,9 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
     await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
     const cli = await p.locator('select[aria-label="Receptor"] option', { hasText: "Comercial Los Pinos" }).getAttribute("value"); await p.selectOption('select[aria-label="Receptor"]', cli);
     const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Casa matriz" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
-    await p.click("#paso-siguiente");
-    for (let i = 0; i < lineas.length; i++) {
-      if (i > 0) await p.click("text=Agregar ítem");
-      const [d, c, pr] = lineas[i]; await p.fill(`input[aria-label="Descripción de la línea ${i + 1}"]`, d); await p.fill(`input[aria-label="Cantidad de la línea ${i + 1}"]`, c); await p.fill(`input[aria-label="Precio de la línea ${i + 1}"]`, pr);
+    for (const [d, c, pr] of lineas) {   // un ítem por vez en la hoja de edición
+      await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await p.fill('.hoja-item [aria-label="Descripción"]', d); await p.fill('.hoja-item [aria-label="Cantidad"]', c); await p.fill('.hoja-item [aria-label="Precio unitario (Q)"]', pr);
+      await p.click("#ed-guardar"); await p.waitForSelector(".hoja-item", { state: "detached" });
     }
   };
 

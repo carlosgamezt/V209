@@ -42,15 +42,13 @@ function arrancar() {
     // ---- precio Q0.00 con aviso; negativo rechazado
     await pc.goto(srv.url + "/#/nueva"); await pc.waitForSelector('select[aria-label="Receptor"]');
     await pc.selectOption('select[aria-label="Receptor"]', { index: 1 }); await pc.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
-    await pc.getByRole("button", { name: "Continuar" }).click(); await pc.waitForSelector('input[aria-label="Precio de la línea 1"]');
-    await pc.fill('input[aria-label="Descripción de la línea 1"]', "Cortesía de prueba");
+    const editar = async (pg, fila, precio) => { await pg.click(fila === null ? "#agregar-item" : `button.it[data-linea="${fila}"]`); await pg.waitForSelector(".hoja-item"); if (fila === null) await pg.fill('.hoja-item [aria-label="Descripción"]', "Cortesía de prueba"); await pg.fill('.hoja-item [aria-label="Precio unitario (Q)"]', precio); await pg.click("#ed-guardar"); };
     assert.equal(await pc.locator("#aviso-precio-cero").count(), 0, "sin aviso mientras el precio no es cero");
-    await pc.fill('input[aria-label="Precio de la línea 1"]', "0.00"); await pc.waitForSelector("#aviso-precio-cero");
+    await editar(pc, null, "0.00"); await pc.waitForSelector(".hoja-item", { state: "detached" }); await pc.waitForSelector("#aviso-precio-cero");
     assert.match(await pc.locator("#aviso-precio-cero").innerText(), /Q0\.00.*línea 1.*solo en esta DEMO.*No es válido para certificar/s);
-    await pc.fill('input[aria-label="Precio de la línea 1"]', "25.50"); await pc.waitForSelector("#aviso-precio-cero", { state: "detached" });
-    await pc.fill('input[aria-label="Precio de la línea 1"]', "-5"); await pc.getByRole("button", { name: /Guardar borrador/ }).click();
-    await pc.waitForSelector("text=el precio debe ser un número"); assert.equal(await pc.locator("#aviso-precio-cero").count(), 0, "el negativo no recibe el aviso de DEMO: se rechaza");
-    await pc.fill('input[aria-label="Precio de la línea 1"]', "0"); await pc.waitForSelector("#aviso-precio-cero");
+    await editar(pc, 1, "25.50"); await pc.waitForSelector("#aviso-precio-cero", { state: "detached" });
+    await editar(pc, 1, "-5"); await pc.waitForSelector(".hoja-item .err:has-text('el precio debe ser un número')"); await pc.click("#ed-cancelar"); await pc.waitForSelector(".hoja-item", { state: "detached" }); assert.equal(await pc.locator("#aviso-precio-cero").count(), 0, "el negativo no recibe el aviso de DEMO: se rechaza");
+    await editar(pc, 1, "0"); await pc.waitForSelector(".hoja-item", { state: "detached" }); await pc.waitForSelector("#aviso-precio-cero");
     await pc.getByRole("button", { name: /Guardar borrador/ }).click(); await pc.waitForSelector("#toasts >> text=/guardad/i");   // en DEMO se puede guardar con Q0.00
     // ---- responsive en 3 tamaños (móvil pequeño, móvil grande, escritorio): sin desborde, objetivos táctiles, barra de acciones sin texto cortado, botón flotante «Agregar ítem», teclado virtual
     for (const [nom, vp] of [["móvil pequeño 360", { width: 360, height: 640 }], ["móvil grande 412", { width: 412, height: 915 }], ["escritorio 1280", { width: 1280, height: 800 }]]) {
@@ -63,19 +61,26 @@ function arrancar() {
           return { desborde: document.documentElement.scrollWidth > innerWidth + 1, chicos: innerWidth < 900 ? els.filter((e) => e.getBoundingClientRect().height < 40).map((e) => (e.getAttribute("aria-label") || e.textContent).trim().slice(0, 30)) : [], fuente: innerWidth < 900 ? els.filter((e) => /INPUT|SELECT|TEXTAREA/.test(e.tagName) && parseFloat(getComputedStyle(e).fontSize) < 16).length : 0 }; });
         assert.equal(g.desborde, false, `${nom} ${ruta}: desborde horizontal`); assert.deepEqual(g.chicos, [], `${nom} ${ruta}: objetivos táctiles menores de 40 px: ${g.chicos.join(" | ")}`); assert.equal(g.fuente, 0, `${nom} ${ruta}: campos con fuente menor de 16 px (el navegador haría zoom)`);
       }
-      await q.goto(srv.url + "/#/nueva"); await q.waitForSelector('select[aria-label="Receptor"]'); await q.selectOption('select[aria-label="Receptor"]', { index: 1 }); await q.selectOption('select[aria-label="Establecimiento"]', { index: 1 }); await q.getByRole("button", { name: "Continuar" }).click(); await q.waitForSelector('input[aria-label="Precio de la línea 1"]');
-      assert.deepEqual(await q.locator('input[aria-label^="Cantidad"],input[aria-label^="Precio"]').evaluateAll((l) => l.map((e) => e.getAttribute("inputmode"))), ["decimal", "decimal"], `${nom}: teclado numérico en cantidad y precio`);
-      const trunc = await q.evaluate(() => [...document.querySelectorAll(".barra-acciones .btn")].filter((b) => b.getBoundingClientRect().width > 0 && b.scrollWidth > b.clientWidth + 1).map((b) => (b.getAttribute("aria-label") || b.textContent).trim()));
-      assert.deepEqual(trunc, [], `${nom}: texto cortado en la barra de acciones`);
+      await q.goto(srv.url + "/#/nueva"); await q.waitForSelector('select[aria-label="Receptor"]'); await q.selectOption('select[aria-label="Receptor"]', { index: 1 }); await q.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
+      assert.equal(await q.locator("#fab-agregar").count(), 0, `${nom}: ya no hay botón flotante «+»`);
+      await q.click("#agregar-item"); await q.waitForSelector(".hoja-item");
+      assert.deepEqual(await q.locator('.hoja-item input[aria-label^="Cantidad"],.hoja-item input[aria-label^="Precio"]').evaluateAll((l) => l.map((e) => e.getAttribute("inputmode"))), ["decimal", "decimal"], `${nom}: teclado numérico en cantidad y precio`);
+      const hoja = await q.locator(".hoja-item").boundingBox(); assert.ok(hoja.x >= 0 && hoja.x + hoja.width <= vp.width + 1 && hoja.y >= 0 && hoja.y + hoja.height <= vp.height + 1, `${nom}: la hoja de edición cabe en la pantalla`);
+      // captura rápida: 5 ítems seguidos con «Agregar y otro» y Intro
+      for (let i = 1; i <= 4; i++) { await q.fill('.hoja-item [aria-label="Descripción"]', `Ítem ${i}`); await q.keyboard.press("Enter"); await q.keyboard.press("Enter"); await q.keyboard.type("10"); await q.keyboard.press("Enter"); }
+      await q.fill('.hoja-item [aria-label="Descripción"]', "Ítem 5"); await q.fill('.hoja-item [aria-label="Precio unitario (Q)"]', "10"); await q.click("#ed-guardar"); await q.waitForSelector(".hoja-item", { state: "detached" });
+      assert.equal(await q.locator("button.it").count(), 5, `${nom}: cinco ítems capturados seguidos`);
       if (movil) {
-        assert.equal(await q.locator("#fab-agregar").isVisible(), true, `${nom}: botón flotante «Agregar ítem» visible`); const cajaF = await q.locator("#fab-agregar").boundingBox(); assert.ok(cajaF.height >= 44 && cajaF.x + cajaF.width <= vp.width, `${nom}: botón flotante táctil y dentro de la pantalla`);
-        for (let i = 0; i < 4; i++) await q.click("#fab-agregar"); assert.equal(await q.locator('input[aria-label^="Descripción de la línea"]').count(), 5, `${nom}: el botón flotante agrega líneas`);
-        await q.waitForTimeout(900);   // el desplazamiento hacia la línea nueva es animado
-        const enFoco = await q.evaluate(() => { const a = document.activeElement; if (!a || a.tagName !== "INPUT") return null; const b = a.getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; }); assert.equal(enFoco, true, `${nom}: la línea nueva queda enfocada y visible`);
         await q.setViewportSize({ width: vp.width, height: 330 });   // teclado virtual abierto (≈ mitad de la pantalla)
-        await q.locator('input[aria-label="Precio de la línea 5"]').scrollIntoViewIfNeeded(); await q.locator('input[aria-label="Precio de la línea 5"]').click(); await q.waitForTimeout(300);
-        const visible = await q.evaluate(() => { const b = document.activeElement.getBoundingClientRect(), barra = document.querySelector(".barra-acciones").getBoundingClientRect(), nv = document.querySelector(".nav-movil").getBoundingClientRect(); return b.top >= 0 && b.bottom <= Math.min(innerHeight, barra.top > 0 ? barra.top + 1 : innerHeight, nv.top + 1) + 80; }); assert.equal(visible, true, `${nom}: con teclado virtual el campo activo sigue accesible`);
-      } else assert.equal(await q.locator("#fab-agregar").isHidden(), true, "sin botón flotante en escritorio");
+        await q.click("#agregar-item"); await q.waitForSelector(".hoja-item"); await q.locator('.hoja-item [aria-label="Precio unitario (Q)"]').click(); await q.waitForTimeout(300);
+        const visible = await q.evaluate(() => { const b = document.activeElement.getBoundingClientRect(), pie = document.querySelector(".hoja-item .modal-pie").getBoundingClientRect(); return b.top >= 0 && b.bottom <= pie.top + 1; }); assert.equal(visible, true, `${nom}: con teclado virtual el campo activo no queda tapado por los botones de la hoja`);
+        await q.click("#ed-cancelar"); await q.setViewportSize(vp);
+        // la barra de acciones no se superpone con la navegación inferior ni consigo misma; el menú «Más acciones» cabe en la pantalla
+        await q.evaluate(() => window.scrollTo(0, 0)); await q.waitForTimeout(150);
+        const caj = await q.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r("#mas-acciones") }; });
+        assert.ok(caj.barra.b <= caj.nav.t + 1, `${nom}: la barra de acciones queda sobre la navegación inferior (${caj.barra.b} ≤ ${caj.nav.t})`); assert.ok(caj.prim.r <= caj.mas.l + 1 || caj.mas.r <= caj.prim.l + 1, `${nom}: la acción principal y «Más acciones» no se superponen`);
+        await q.click("#mas-acciones"); const mn = await q.locator(".menu-mas").boundingBox(); assert.ok(mn.x >= 0 && mn.x + mn.width <= vp.width + 1 && mn.y >= 0, `${nom}: el menú «Más acciones» cabe en la pantalla`); await q.keyboard.press("Escape");
+      }
       await r.close();
     }
     assert.deepEqual(errores, [], `errores de página: ${errores.join(" | ")}`);

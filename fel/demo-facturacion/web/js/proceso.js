@@ -3,7 +3,7 @@
 import { h, boton, insignia, campo, mensajeError, poner, pedirMotivo } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { quetzales } from "./dinero.js";
-import { PREPARACION, FISCAL } from "/app/js/formato.js";
+import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 import { api, llamar, usuarioActual } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { descargarArchivo } from "./descarga.js";
@@ -160,9 +160,11 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
     h("p", { class: "mut" }, "No hubo respuesta utilizable. Consulta al proveedor: solo se cierra si él lo garantiza."),
     boton(`Consultar a ${corto} (anulación)`, { tipo: "sec", icon: "search", id: "conciliar-anulacion", disabled: !ctx.tiene("fiscal.conciliar"), onclick: accion(() => api.conciliarAnulacion(anulAbierta.id), () => avisar("Consulta hecha")) })));
 
-  if (practico && ctx.tiene("borradores.ver")) digifact.push(h("div", { class: "card", "data-panel": "pdf-demo" }, h("h2", { class: "card-t" }, "PDF de demostración"),
-    h("p", { class: "mut" }, "Genera un PDF de este documento marcado en grande como «DOCUMENTO NO FISCAL · DEMOSTRACIÓN». No es una factura ni un DTE."),
-    boton("Descargar PDF de demostración", { tipo: "sec", icon: "file", id: "pdf-demo", onclick: async () => { try { await descargarArchivo(`/api/documentos/${doc.id}/pdf-demo`, `NO-FISCAL-DEMO-${doc.numero_borrador}.pdf`); } catch (e) { mostrarError(e); } } })));
+  if (practico && ctx.tiene("borradores.ver")) digifact.push(h("div", { class: "card", "data-panel": "pdf-demo" }, h("h2", { class: "card-t" }, "PDF e impresión"),
+    h("p", { class: "mut" }, "Marcado en grande como «DOCUMENTO NO FISCAL · DEMOSTRACIÓN». No es una factura ni un DTE."),
+    h("div", { class: "acciones-fila" },
+      boton("PDF carta", { tipo: "sec", icon: "file", id: "pdf-demo", onclick: async () => { try { await descargarArchivo(`/api/documentos/${doc.id}/pdf-demo?formato=carta`, `NO-FISCAL-DEMO-CARTA-${codigoBorrador(doc.numero_borrador)}.pdf`); } catch (e) { mostrarError(e); } } }),
+      boton("PDF ticket 80 mm", { tipo: "sec", icon: "file", id: "pdf-ticket", onclick: async () => { try { await descargarArchivo(`/api/documentos/${doc.id}/pdf-demo?formato=ticket`, `NO-FISCAL-DEMO-TICKET-${codigoBorrador(doc.numero_borrador)}.pdf`); } catch (e) { mostrarError(e); } } }))));
 
   // ------------------------------------------------------------ línea de tiempo
   const linea = (() => {

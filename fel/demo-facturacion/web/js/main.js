@@ -61,6 +61,7 @@ async function iniciar(estadoInicial) {
     toast((await copiar(texto)) ? "Datos del problema copiados. Pégalos en el chat con tu descripción." : "No pude copiar automáticamente; indica pantalla, rol y qué pasó.", "ok");
   };
   const cab = h("header", { class: "cab-demo" }), nav = h("nav", { class: "nav", "aria-label": "Secciones" }), usuarioCard = h("div", { class: "usuario" }), movil = h("nav", { class: "nav-movil", "aria-label": "Secciones" });
+  try { new ResizeObserver(() => document.documentElement.style.setProperty("--nav-movil-h", `${movil.offsetHeight}px`)).observe(movil); } catch { /* sin ResizeObserver: queda el valor por defecto */ }   // la barra de acciones se apoya justo encima de la navegación inferior, sea cual sea su altura
   const lateral = h("aside", { class: "lateral" }, h("a", { class: "marca", href: "#/", "aria-label": "Inicio" }, h("span", { class: "marca-logo" }, "N"), h("strong", {}, "Nexa")), h("p", { class: "lat-seccion" }, "FEL"), nav, usuarioCard);
   const ctx = {
     get estado() { return estado; },
