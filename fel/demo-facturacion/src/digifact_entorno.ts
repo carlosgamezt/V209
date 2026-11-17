@@ -10,6 +10,8 @@ import { crearDigifactGt } from "../../proveedores/src/digifact_gt.ts";
 import { huellaEmisor, type DatosEmisor } from "../../proveedores/src/datos_emisor.ts";
 import type { EmisorGt } from "../../proveedores/src/nuc_gt.ts";
 import { AlmacenGtMemoria, ServicioFelGt, type AlmacenGt, type ContextoFel } from "../../proveedores/src/felgt_servicio.ts";
+import { AlmacenGtPg } from "../../proveedores/src/almacen_gt_pg.ts";
+import type { BdDemo } from "./bd.ts";
 
 export type Entorno = (k: string) => string | undefined;
 export interface ResultadoEntorno { servicio?: ServicioFelGt; motivo: string }
@@ -36,4 +38,13 @@ export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: Alm
     autorizaPrueba: () => { const a = env("FEL_DIGIFACT_AUTORIZA_REFERENCIA") ?? ""; return UUID.test(a) ? a.toLowerCase() : null; }, auditar: o.auditar,
   });
   return { servicio, motivo: "Digifact TEST habilitado" };
+}
+
+/** Digifact TEST para un servidor con base de datos (el local y la función de la nube lo usan igual): el almacén es PERSISTENTE solo si la base es PostgreSQL real y ya tiene la tabla de la migración 29;
+ *  si no, el servicio prepara y valida pero se niega a enviar nada real. La auditoría va a la base, sin valores sensibles. Sin las variables FEL_DIGIFACT_*, el servicio no existe. */
+export async function crearDigifactParaBd(env: Entorno, bd: BdDemo, fetchImpl?: typeof fetch): Promise<ResultadoEntorno & { almacenPersistente: boolean }> {
+  const persistente = bd.tipo === "pg" && (await bd.filas<{ ok: boolean }>("select to_regclass('public.digifact_operaciones') is not null as ok"))[0]?.ok === true;
+  const r = await crearDigifactDesdeEntorno(env, { almacen: persistente ? new AlmacenGtPg(bd.filas) : undefined, fetchImpl,
+    auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
+  return { ...r, almacenPersistente: persistente };
 }

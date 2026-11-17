@@ -185,4 +185,28 @@ if len(curls) == 1 and "-K -" in curls[0] and 'https://${REF}.supabase.co/rest/v
 else: mal("[verificar-api-vault] la orden curl no es un GET a la raíz de la API del proyecto fijado")
 if "sb_secret_*" in av and 'p.get("role") == "anon"' in av and 'p.get("ref") == os.environ["R"]' in av: ok("[verificar-api-vault] solo admite la clave publicable o el JWT anon de este proyecto y rechaza las claves secretas antes de enviar nada")
 else: mal("[verificar-api-vault] no valida que la clave sea pública y de este proyecto")
+# ---- Digifact TEST hacia la función: opcional, apagado por defecto, todo o nada, solo a los secretos de la función y sin imprimir valores
+import yaml as _yaml
+_pn = _yaml.safe_load(open(R, encoding="utf-8")); _txt_pn = open(R, encoding="utf-8").read()
+_ent = _pn[True]["workflow_dispatch"]["inputs"].get("digifact", {})
+if _ent.get("default") == "apagado" and _ent.get("options") == ["apagado", "habilitado"]: ok("[publicar-nube] Digifact TEST llega a la función solo si eliges «habilitado» en la ejecución (por defecto: apagado)")
+else: mal("[publicar-nube] el interruptor «digifact» debe ser apagado/habilitado con valor por defecto apagado")
+_dg = [l for l in _txt_pn.splitlines() if re.search(r"secrets\.DEMO_DIGIFACT", l)]
+if _dg and all("inputs.digifact == 'habilitado'" in l for l in _dg): ok(f"[publicar-nube] los {len(_dg)} secretos de Digifact solo se cargan con digifact=habilitado")
+else: mal("[publicar-nube] hay un secreto de Digifact que se carga sin el interruptor")
+if len({x for x in re.findall(r"secrets\.(DEMO_DIGIFACT_\w+)", _txt_pn)}) == 6 and "DEMO_DIGIFACT_TEST_PASSWORD" in _txt_pn: ok("[publicar-nube] los secretos de Digifact son DEMO_* y están en el mismo único paso que los demás")
+else: mal("[publicar-nube] conjunto inesperado de secretos de Digifact")
+_pub = open("fel/tools/publicar-nube.sh", encoding="utf-8").read(); _pub_sc = "\n".join(l for l in _pub.splitlines() if not l.lstrip().startswith("#"))
+_lineas_dg = [l for l in _pub_sc.splitlines() if re.search(r"DIGIFACT|__DG_|DG_VARS", l)]
+if all(not re.search(r"wrangler|npx|pages|aprovisionar|construir|migraciones|curl|\becho\b[^\n]*\$\{?(__DG_|DIGIFACT|FEL_DIGIFACT)", l) or "DG_ESTADO" in l for l in _lineas_dg): ok("[publicar-nube.sh] las variables de Digifact se apartan y nunca van en la misma orden que Cloudflare, las migraciones o la construcción, ni se imprimen")
+else: mal("[publicar-nube.sh] una orden mezcla variables de Digifact con otro paso o las imprime")
+_ult = [l for l in _pub_sc.splitlines() if "supabase-hospedado.sh funcion" in l]
+if len(_ult) == 1 and "( for v in" in _ult[0] and "export" in _ult[0]: ok("[publicar-nube.sh] solo el paso de la función (en un subshell) recibe las variables de Digifact")
+else: mal("[publicar-nube.sh] el paso de la función no aísla las variables de Digifact")
+_fun = sb[sb.index("  funcion)"):]; _fun_sc = "\n".join(l for l in _fun.splitlines() if not l.lstrip().startswith("#"))
+if all(x in _fun_sc for x in ["todo o nada", "no se publica la función", '*"\'"*', "FEL_DIGIFACT_TEST_HUELLA no es una huella", "solo admite «habilitado»"]) and not re.search(r"echo[^\n]*\$\{?(valor|DIGIFACT_TEST_PASSWORD|DIGIFACT_TEST_USERNAME|FEL_DIGIFACT_TEST_EMISOR)", _fun_sc): ok("[funcion] Digifact: todo o nada, valida el formato, rechaza comillas y saltos de línea y no imprime ningún valor")
+else: mal("[funcion] la transmisión de Digifact no es todo-o-nada validada o imprime valores")
+_wk = open("fel/demo-facturacion/nube/pages/worker.ts", encoding="utf-8").read()
+if not re.search(r"DIGIFACT|digifact", _wk): ok("[cloudflare] el intermediario de Cloudflare no conoce nada de Digifact: ningún secreto fiscal llega ni al navegador ni a Cloudflare")
+else: mal("[cloudflare] el worker menciona Digifact")
 sys.exit(1 if fallos else 0)

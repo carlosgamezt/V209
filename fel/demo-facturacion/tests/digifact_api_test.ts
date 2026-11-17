@@ -19,6 +19,7 @@ const CLAVE = "CLAVE-INVENTADA-PARA-PRUEBAS-9", AUT = "BDE0DEC2-5ABE-468E-A6F1-0
 const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 const TOKEN = `${b64({ alg: "HS256" })}.${b64({ sub: "x", exp: Math.floor(Date.now() / 1000) + 3600 })}.firma-secreta-del-token-xxxx`;
 const ok = (o: unknown, estado = 200): RespuestaHttp => ({ estado, cuerpo: JSON.stringify(o) });
+const XML_REAL = `<?xml version="1.0" encoding="UTF-8"?><dte:GTDocumento><dte:NumeroAutorizacion Numero="5" Serie="A001">${AUT}</dte:NumeroAutorizacion></dte:GTDocumento>`, PDF_REAL = "%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n";
 type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 
 Deno.test({ name: "Digifact TEST por la API: permisos, aislamiento entre empresas, un solo envío y nada de secretos", sanitizeOps: false, sanitizeResources: false, fn: async () => {
@@ -30,7 +31,7 @@ Deno.test({ name: "Digifact TEST por la API: permisos, aislamiento entre empresa
   const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
     llamadas.push(p);
     if (p.ruta === "/login/get_token") return ok({ token: TOKEN });
-    if (p.ruta.startsWith("/v2/transform/nuc_json")) return ok({ code: "1", message: "Procesado Correctamente", authNumber: AUT, batch: "A001", serial: "5", enrolledTimeStamp: "2026-11-16T10:00:05", responseData1: "PD94bWw=", responseData3: "JVBERi0x" });
+    if (p.ruta.startsWith("/v2/transform/nuc_json")) return ok({ code: "1", message: "Procesado Correctamente", authNumber: AUT, batch: "A001", serial: "5", enrolledTimeStamp: "2026-11-16T10:00:05", responseData1: btoa(XML_REAL), responseData3: btoa(PDF_REAL) });
     if (p.ruta.startsWith("/Shared")) return ok({ RESPONSE: [{ NIT: "44653948", NOMBRE: "EMPRESA DE PRUEBA, S.A." }] });
     return ok({}, 404);
   };
@@ -106,11 +107,20 @@ Deno.test({ name: "Digifact TEST por la API: permisos, aislamiento entre empresa
   assert.equal(llamadas.filter((l) => l.ruta.startsWith("/v2/transform/nuc_json")).length, 1);
   assert.deepEqual((await sofia.llamar("GET", R(docId, ""))).json.operaciones, [], "la 2 sigue sin ver nada");
 
+  // ---- 6b. el documento queda certificado con los datos del certificador y sus archivos REALES se descargan con sesión, permiso y empresa
+  const bajar = async (u: Cli, tipo: string) => { const r = await api(new Request(`http://127.0.0.1${R(docId, "/" + tipo)}`, { headers: { "x-demo": "1", ...(u.cookie ? { cookie: u.cookie } : {}) } })); return { r, bytes: new Uint8Array(await r.arrayBuffer()) }; };
+  const x = await bajar(ana, "xml"); assert.equal(x.r.status, 200); assert.equal(x.r.headers.get("content-type"), "application/xml"); assert.equal(x.r.headers.get("content-disposition"), 'attachment; filename="DTE-A001-5.xml"');
+  assert.equal(x.r.headers.get("x-content-type-options"), "nosniff"); assert.equal(x.r.headers.get("cache-control"), "no-store"); assert.match(x.r.headers.get("content-security-policy") ?? "", /sandbox/); assert.equal(new TextDecoder().decode(x.bytes), XML_REAL);
+  const f = await bajar(ana, "pdf"); assert.equal(f.r.status, 200); assert.equal(f.r.headers.get("content-type"), "application/pdf"); assert.equal(new TextDecoder().decode(f.bytes), PDF_REAL);
+  assert.equal((await bajar(anon, "xml")).r.status, 401, "sin sesión no se descarga"); assert.equal((await bajar(sofia, "xml")).r.status, 404, "otra empresa no descarga el archivo de la 1");
+  assert.equal((await bajar(ana, "html")).r.status, 404, "solo xml y pdf");
+  assert.equal(llamadas.filter((l) => l.ruta.startsWith("/GetDocument")).length, 0, "los archivos salieron de NUESTRO almacén, no se volvieron a pedir a Digifact");
+
   // ---- 7. auditoría en la base (sin secretos) y nada sensible en NINGUNA respuesta
   const aud = await bd.filas<J>("select accion, datos::text as datos from public.auditoria where accion like 'digifact_test.%' order by id");
   for (const x of ["digifact_test.nit_consultado", "digifact_test.preparada", "digifact_test.envio_iniciado", "digifact_test.certificada"]) assert.ok(aud.some((a) => a.accion === x), `auditoría: ${x}`);
   const todo = JSON.stringify(aud) + salidaCruda.join("\n");
-  for (const secreto of [CLAVE, "firma-secreta", "JVBERi0x", "PD94bWw="]) assert.ok(!todo.includes(secreto), `ni respuestas ni auditoría contienen «${secreto.slice(0, 8)}…»`);
+  for (const secreto of [CLAVE, "firma-secreta", btoa(PDF_REAL), btoa(XML_REAL)]) assert.ok(!todo.includes(secreto), `ni respuestas ni auditoría contienen «${secreto.slice(0, 8)}…»`);
   void EMPRESA2;
 } });
 

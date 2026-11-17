@@ -74,6 +74,30 @@ grep -q "^secrets set --env-file .* --remote=$REF --yes" "$REGISTRO" && ok "secr
 grep -qx "functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt --workdir dist/nube/funcion" "$REGISTRO" && ok "functions deploy con --remote=<ref>, --yes y --no-verify-jwt" || mal "functions deploy"
 ! grep -E "^(secrets set|functions deploy|db push)" "$REGISTRO" | grep -q -- "--project-ref" && ok "ninguna orden que modifica usa el --project-ref obsoleto" || mal "--project-ref obsoleto en una orden hospedada"
 grep -q "^FEL_PROXY_SECRETO=SECRETO-FALSO-DE-PRUEBA" "$ENV_COPIA" && grep -q "^FEL_DEMO_HOSTS=nexa-fel-demo.pages.dev" "$ENV_COPIA" && grep -q "^FEL_DEMO_BD_URL=$URL_TX" "$ENV_COPIA" && ok "el archivo de secretos de la función lleva los 4 valores (la cadena de transacción original)" || mal "contenido del archivo de secretos"
+# --- Digifact TEST hacia la función (opcional, apagado por defecto, todo o nada, sin imprimir valores)
+DG_PASS="PASS-FALSA-DIGIFACT-#9 con espacio"; DG_USER="USUARIO-FALSO-DG"; DG_EMP="10000000-0000-4000-8000-0000000000a1"; DG_HUELLA="0123456789abcdef"; DG_EMISOR='{"nit":"5888492","nombre":"EMISOR DE PRUEBA","direccion":{"direccion":"3a Calle #5 zona 1"}}'
+dg_rechaza() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; [ $r = 2 ] && nollamo && grep -q "no se publica la función" "$W/salida.txt" && ! grep -qF "$DG_PASS" "$W/salida.txt" && ok "$1" || mal "$1 (código $r)"; }
+dg_limpiar() { unset FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA; }
+dg_completo() { export FEL_DIGIFACT_TEST=habilitado FEL_DIGIFACT_TEST_EMPRESA="$DG_EMP" DIGIFACT_TEST_USERNAME="$DG_USER" DIGIFACT_TEST_PASSWORD="$DG_PASS" DIGIFACT_TEST_NIT=5888492 FEL_DIGIFACT_TEST_EMISOR="$DG_EMISOR" FEL_DIGIFACT_TEST_HUELLA="$DG_HUELLA"; }
+dg_limpiar; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
+! grep -qi "digifact" "$ENV_COPIA" && ok "Digifact apagado (por defecto): ningún valor de Digifact llega a los secretos de la función" || mal "Digifact apagado pero llegó a la función"
+dg_completo; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?
+[ $r = 0 ] && grep -q "^secrets set --env-file" "$REGISTRO" && ok "Digifact habilitado y completo: la función se publica" || mal "Digifact completo no se publicó"
+grep -qF "DIGIFACT_TEST_PASSWORD='$DG_PASS'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_TEST_EMISOR='$DG_EMISOR'" "$ENV_COPIA" && grep -qx "FEL_DIGIFACT_TEST='habilitado'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_TEST_EMPRESA='$DG_EMP'" "$ENV_COPIA" && ok "los valores viajan con comillas simples (la contraseña con espacio y # y el JSON del emisor con # quedan íntegros)" || mal "los valores de Digifact no llegaron íntegros"
+! grep -qF "$DG_PASS" "$W/salida.txt" && ! grep -qF "$DG_USER" "$W/salida.txt" && ! grep -qF "$DG_EMISOR" "$W/salida.txt" && grep -q "Digifact TEST: habilitado para la función (valores no mostrados)" "$W/salida.txt" && ok "la salida no contiene la contraseña, el usuario ni el emisor (solo «valores no mostrados»)" || mal "la salida de la función muestra valores de Digifact"
+[ "$(stat -c %a "$(grep -o '\-\-env-file [^ ]*' "$REGISTRO" | cut -d' ' -f2)" 2>/dev/null || echo gone)" = gone ] && ok "el archivo temporal con los secretos se borra al terminar" || mal "el archivo temporal de secretos sigue existiendo"
+for falta in FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA; do
+  dg_completo; unset "$falta"; dg_rechaza "Digifact habilitado SIN $falta: todo o nada, la función no se publica"
+done
+dg_completo; export FEL_DIGIFACT_TEST_EMISOR="{\"nombre\":\"O'REILLY\"}"; dg_rechaza "un valor con comilla simple se rechaza (no se publica)"
+dg_completo; export DIGIFACT_TEST_PASSWORD=$'linea1\nlinea2'; dg_rechaza "un valor con salto de línea se rechaza (no se publica)"
+dg_completo; export FEL_DIGIFACT_TEST_HUELLA="xyz"; dg_rechaza "huella que no es de 16 hexadecimales: se rechaza"
+dg_completo; export FEL_DIGIFACT_TEST_EMPRESA="no-es-uuid"; dg_rechaza "empresa que no es UUID: se rechaza"
+dg_completo; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="no-es-guid"; dg_rechaza "referencia autorizada que no es GUID: se rechaza"
+dg_completo; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; grep -q "^FEL_DIGIFACT_AUTORIZA_REFERENCIA='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'" "$ENV_COPIA" && ok "la referencia de LA prueba autorizada llega a la función solo con Digifact habilitado" || mal "la referencia autorizada no llegó"
+dg_limpiar; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"; dg_rechaza "una referencia autorizada con Digifact apagado se rechaza"
+dg_limpiar; export FEL_DIGIFACT_TEST="si"; dg_rechaza "FEL_DIGIFACT_TEST solo admite «habilitado» o vacío"
+dg_limpiar
 # --- ocultación en el registro de GitHub Actions
 rm -f "$REGISTRO"; ACTIONS=1 base "$REF" migraciones
 sin_mascara="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"

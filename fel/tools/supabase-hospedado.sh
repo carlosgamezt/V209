@@ -283,6 +283,23 @@ x=re.search(r"must be one of the following:\s*(.*)$", m); print(x.group(1).strip
     for v in FEL_DEMO_BD_URL FEL_DEMO_HOSTS FEL_DEMO_MFA_SEMILLAS FEL_PROXY_SECRETO; do [ -n "${!v:-}" ] || { echo "Falta $v"; exit 2; }; done
     ENVF="$(mktemp)"; chmod 600 "$ENVF"; trap 'rm -f "$ENVF"' EXIT
     { echo "FEL_DEMO_BD_URL=$FEL_DEMO_BD_URL"; echo "FEL_DEMO_HOSTS=$FEL_DEMO_HOSTS"; echo "FEL_DEMO_MFA_SEMILLAS=$FEL_DEMO_MFA_SEMILLAS"; echo "FEL_PROXY_SECRETO=$FEL_PROXY_SECRETO"; } > "$ENVF"
+    # Digifact TEST (OPCIONAL, apagado por defecto): solo con FEL_DIGIFACT_TEST=habilitado, TODO O NADA, y solo hacia los secretos de la FUNCIÓN (nunca a Cloudflare ni al navegador). Los valores jamás se imprimen:
+    # se escriben con comillas simples en el archivo temporal (600) que se borra al terminar; por eso no se admiten comillas simples ni saltos de línea.
+    case "${FEL_DIGIFACT_TEST:-}" in
+      "") for v in FEL_DIGIFACT_AUTORIZA_REFERENCIA; do [ -z "${!v:-}" ] || { echo "$v requiere FEL_DIGIFACT_TEST=habilitado: no se publica la función"; exit 2; }; done;;
+      habilitado)
+        for v in FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA; do [ -n "${!v:-}" ] || { echo "Digifact TEST habilitado, pero falta $v (todo o nada): no se publica la función"; exit 2; }; done
+        printf '%s' "${FEL_DIGIFACT_TEST_EMPRESA}" | grep -Eiq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || { echo "FEL_DIGIFACT_TEST_EMPRESA no es un UUID: no se publica la función"; exit 2; }
+        printf '%s' "${FEL_DIGIFACT_TEST_HUELLA}" | grep -Eq '^[0-9a-f]{16}$' || { echo "FEL_DIGIFACT_TEST_HUELLA no es una huella de 16 caracteres hexadecimales: no se publica la función"; exit 2; }
+        [ -z "${FEL_DIGIFACT_AUTORIZA_REFERENCIA:-}" ] || printf '%s' "${FEL_DIGIFACT_AUTORIZA_REFERENCIA}" | grep -Eiq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || { echo "FEL_DIGIFACT_AUTORIZA_REFERENCIA no es un UUID: no se publica la función"; exit 2; }
+        for v in FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA; do
+          valor="${!v:-}"; [ -n "$valor" ] || continue
+          case "$valor" in *"'"*|*$'\n'*|*$'\r'*) echo "$v contiene un carácter no admitido (comilla simple o salto de línea): no se publica la función"; exit 2;; esac
+          printf "%s='%s'\n" "$v" "$valor" >> "$ENVF"
+        done
+        echo "Digifact TEST: habilitado para la función (valores no mostrados)";;
+      *) echo "FEL_DIGIFACT_TEST solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
+    esac
     supabase secrets set --env-file "$ENVF" --remote="$REF" --yes >/dev/null
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
   *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|verificar-api-vault|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;

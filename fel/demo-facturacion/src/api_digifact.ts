@@ -31,7 +31,7 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
 export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFelGt | undefined): Promise<Response | null> {
   const { m, ruta } = c; let r: RegExpExecArray | null;
   const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado";
-  const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar))?$/.exec(ruta));
+  const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf))?$/.exec(ruta));
   if (!esNit && !esEstado && !rd) return null;
   if (esEstado) return c.json({ habilitado: !!svc, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST" });
   if (!svc) return c.json(NO_HABILITADO, 503);
@@ -39,7 +39,14 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
   try {
     if (esNit) { const b = await c.cuerpo(); return c.json(await svc.consultarNit(ctx, b.nit)); }
     const [, docRaw, accion] = r!; const docId = c.id(docRaw);
-    if (m === "GET") { if (accion) return null; return c.json({ operaciones: await svc.estadoDocumento(ctx, docId) }); }
+    if (m === "GET") {
+      if (accion === "xml" || accion === "pdf") {   // archivo REAL certificado: solo con sesión y permiso, solo de la empresa de la sesión; se descarga, nunca se interpreta en el navegador
+        const a = await svc.descargar(ctx, docId, accion);
+        return new Response(a.contenido as unknown as BodyInit, { status: 200, headers: { "content-type": a.mime, "content-disposition": `attachment; filename="${a.nombre}"`, "content-length": String(a.contenido.length),
+          "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "x-nexa-sha256": a.sha256 } });
+      }
+      if (accion) return null; return c.json({ operaciones: await svc.estadoDocumento(ctx, docId) });
+    }
     const b = await c.cuerpo();
     const doc = async () => { const x = await leerDocumentoFel(bd, c.empresa, docId); if (!x) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado"); return x; };
     if (accion === "validar") return c.json(await svc.validar(ctx, await doc()));

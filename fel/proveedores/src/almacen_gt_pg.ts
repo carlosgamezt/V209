@@ -1,6 +1,6 @@
 // Almacén PERSISTENTE (PostgreSQL) de las operaciones de Digifact: implementa AlmacenGt sobre la tabla propuesta public.digifact_operaciones (docs/migracion-29).
 // Atomicidad y exclusión mutua las garantizan los índices únicos y el disparador de la base, no la memoria del proceso: dos procesos no pueden enviar el mismo documento.
-import type { AlmacenGt, EstadoOpGt, OperacionGt } from "./felgt_servicio.ts";
+import type { AlmacenGt, ArtefactoGt, EstadoOpGt, OperacionGt } from "./felgt_servicio.ts";
 
 export type Filas = <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
 const COLS = "id, empresa_id, documento_id, referencia, hash, huella_emisor, fecha_emision, establecimiento, total, estado, creada_ms, actualizada_ms, actor_id, intento_del_documento, intentos_conciliacion, resultado";
@@ -24,6 +24,26 @@ export class AlmacenGtPg implements AlmacenGt {
       // el conflicto vino de otra restricción o hubo una carrera: se reintenta
     }
     throw new Error("No se pudo crear la operación de Digifact (conflicto no resuelto)");
+  }
+  /** Función de la base (migración 29): estado fiscal, serie, número y autorización del documento, atómico e idempotente; falla si hay otros datos fiscales o la autorización es de otro documento. */
+  async aplicarCertificacion(empresaId: string, operacionId: string) {
+    const r = await this.filas<{ r: string }>("select public.fel_sys_digifact_aplicar($1::uuid, $2::uuid) as r", [empresaId, operacionId]);
+    return (r[0]?.r === "ya_aplicada" ? "ya_aplicada" : "aplicada") as "aplicada" | "ya_aplicada";
+  }
+  /** Solo inserción: repetir el mismo tipo de la misma operación no cambia nada (la base lo impide con una restricción única). */
+  async guardarArtefactos(empresaId: string, op: OperacionGt, artefactos: ArtefactoGt[]) {
+    for (const a of artefactos) {
+      await this.filas(`insert into public.digifact_artefactos (empresa_id, documento_id, operacion_id, tipo, nombre, mime, sha256, tamano, contenido)
+        values ($1::uuid, $2::uuid, $3::uuid, $4::text, $5::text, $6::text, $7::text, $8::integer, $9::bytea) on conflict (operacion_id, tipo) do nothing`,
+        [empresaId, op.documentoId, op.id, a.tipo, a.nombre, a.mime, a.sha256, a.contenido.length, a.contenido]);
+    }
+  }
+  async artefacto(empresaId: string, documentoId: string, tipo: "xml" | "pdf") {
+    const r = await this.filas<{ operacion_id: string; tipo: "xml" | "pdf"; nombre: string; mime: "application/xml" | "application/pdf"; sha256: string; contenido: Uint8Array }>(
+      `select a.operacion_id, a.tipo, a.nombre, a.mime, a.sha256, a.contenido from public.digifact_artefactos a
+         join public.digifact_operaciones o on o.id = a.operacion_id and o.empresa_id = a.empresa_id
+        where a.empresa_id = $1::uuid and a.documento_id = $2::uuid and a.tipo = $3::text and o.estado = 'certificada' order by a.creado_en limit 1`, [empresaId, documentoId, tipo]);
+    const f = r[0]; return f ? { operacionId: f.operacion_id, tipo: f.tipo, nombre: f.nombre, mime: f.mime, sha256: f.sha256, contenido: new Uint8Array(f.contenido) } : null;
   }
   async obtener(empresaId: string, id: string) { const r = await this.filas(`select ${COLS} from public.digifact_operaciones where empresa_id = $1 and id = $2`, [empresaId, id]); return r[0] ? aOp(r[0]) : null; }
   async deDocumento(empresaId: string, documentoId: string) { return (await this.filas(`select ${COLS} from public.digifact_operaciones where empresa_id = $1 and documento_id = $2 order by creada_ms, id`, [empresaId, documentoId])).map(aOp); }

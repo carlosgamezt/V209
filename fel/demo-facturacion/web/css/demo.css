@@ -254,3 +254,5 @@ body{min-height:100vh}
   .estrella,.btn-estrella,[aria-label^="Quitar de frecuentes"],[aria-label^="Marcar como frecuente"],[aria-label^="Ver el correo completo"]{min-width:44px;min-height:44px}
 }
 @media(max-width:900px){.acciones-fac .btn-mini,.acciones-fac .icon-btn{min-height:44px;height:44px}.acciones-fac .icon-btn{width:44px}.acciones-fac{gap:8px}}
+
+.tag-test{background:#e8f0ff;color:#1d3fbf;border:1px solid #1d3fbf}

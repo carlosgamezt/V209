@@ -7,14 +7,17 @@ import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 
 const FILTROS = [["todas", "Todas"], ["borrador", "Borradores"], ["revisado", "Revisadas"], ["certificado", "Certificadas (simuladas)"], ["por_verificar", "Por verificar"], ["rechazado", "Rechazadas"], ["anulado", "Anuladas"]];
 const coincide = (d, f) => f === "todas" || d.estado_preparacion === f || d.estado_fiscal === f;
-export const esSimulado = (d) => (d.canal_ambiente ?? "simulado") === "simulado";
+// Un documento certificado con una autorización que NO empieza por «SIM-» salió del certificador de PRUEBAS (Digifact TEST): se rotula TEST, nunca como simulado ni como real.
+export const esTest = (d) => d.estado_fiscal !== "ninguno" && !!d.autorizacion_sat && !String(d.autorizacion_sat).toUpperCase().startsWith("SIM-");
+export const esSimulado = (d) => !esTest(d) && (d.canal_ambiente ?? "simulado") === "simulado";
 
 /** Etiquetas de estado: la preparación interna y, si existe, el estado fiscal (marcado como SIMULADO o real). */
 export function etiquetasEstado(d) {
   const [pt, ptono] = PREPARACION[d.estado_preparacion], tags = d.estado_fiscal === "ninguno" ? [insignia(pt, ptono)] : [];   // con vida fiscal, el estado fiscal manda y la etiqueta interna sobra
   if (d.estado_fiscal !== "ninguno") {
     const [ft, ftono] = FISCAL[d.estado_fiscal];
-    tags.push(esSimulado(d) ? h("span", { class: "tag tag-sim", title: "Estado simulado: sin valor fiscal", "data-simulado": "1" }, `SIM · ${ft}`) : insignia(ft, ftono));
+    tags.push(esTest(d) ? h("span", { class: "tag tag-test", title: "Certificado en el ambiente de PRUEBAS de Digifact: sin valor fiscal", "data-test": "1" }, `TEST · ${ft}`)
+      : esSimulado(d) ? h("span", { class: "tag tag-sim", title: "Estado simulado: sin valor fiscal", "data-simulado": "1" }, `SIM · ${ft}`) : insignia(ft, ftono));
   }
   if (d.alertas > 0) tags.push(insignia("Alerta abierta", "rojo"));
   return tags;

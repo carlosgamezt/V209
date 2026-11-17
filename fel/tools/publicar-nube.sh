@@ -39,6 +39,10 @@ comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar na
   supabase --help 2>&1 | grep -q -- "--workdir" && echo "  OK  --workdir (global)" || { supabase db push --help 2>&1 | grep -q -- "--workdir" && echo "  OK  --workdir" || { echo "  FALLO falta --workdir"; mal=1; }; }
   return $mal
 }
+# Digifact TEST (opcional): las variables se APARTAN aquí y solo las recibe el paso de la función; migraciones, aprovisionamiento, construcción y Cloudflare nunca las ven.
+DG_VARS=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA)
+for v in "${DG_VARS[@]}"; do eval "__DG_$v=\"\${$v:-}\""; unset "$v"; done
+DG_ESTADO="apagado"; [ "${__DG_FEL_DIGIFACT_TEST:-}" = "habilitado" ] && DG_ESTADO="HABILITADO (valores no mostrados)"
 REF="${FEL_DEMO_PROYECTO_REF:-<ref>}"; PAGES_PROYECTO="${PAGES_PROYECTO:-<nombre>}"; export FEL_DEMO_HOSTS="${FEL_DEMO_HOSTS:-${PAGES_PROYECTO}.pages.dev}"
 paso() { echo; echo "== $1"; }
 if [ "$SIMULAR" = 1 ]; then cat <<PLAN
@@ -48,7 +52,7 @@ PLAN (simulación: no se ejecuta nada)
  3. supabase link --project-ref $REF  ·  supabase db push --remote=<Session Pooler, puerto 5432, IPv4> --yes   (migraciones aditivas al proyecto NUEVO; la URL se deriva de DEMO_BD_URL y se valida: usuario postgres.$REF, host *.pooler.supabase.com)
  4. deno run -A demo-facturacion/nube/aprovisionar.ts      (siembra la base y crea los usuarios con la API de Supabase Auth; guarda solo hashes)
  5. deno run -A demo-facturacion/nube/construir.ts         (dist/nube/pagina con _worker.js + _routes.json, dist/nube/funcion)
- 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt
+ 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt   (Digifact TEST: $DG_ESTADO; solo llega a la función)
  7. wrangler pages secret put FUNCION_URL / PROXY_SECRETO  ·  wrangler pages deploy dist/nube/pagina
  8. Prueba de humo contra el subdominio real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia)
 PLAN
@@ -78,7 +82,7 @@ paso "4/8 · aprovisionar base y usuarios"
 paso "5/8 · construir"
 ( cd demo-facturacion && deno run -A nube/construir.ts )
 paso "6/8 · función de Supabase"
-bash tools/supabase-hospedado.sh funcion
+( for v in "${DG_VARS[@]}"; do eval "x=\"\${__DG_$v:-}\""; [ -z "$x" ] || export "$v=$x"; done; bash tools/supabase-hospedado.sh funcion )   # subshell: las variables de Digifact existen solo aquí
 paso "7/8 · Cloudflare Pages: secretos y página (Wrangler)"
 WR=(npx --yes wrangler@4)
 printf '%s' "https://$REF.supabase.co/functions/v1/nexa-demo" | "${WR[@]}" pages secret put FUNCION_URL --project-name "$PAGES_PROYECTO" >/dev/null

@@ -16,6 +16,15 @@ on:
         description: "Para «publicar», escribe PUBLICAR"
         type: string
         default: ""
+      digifact:
+        description: "Digifact TEST en la función: apagado (por defecto) o habilitado (solo si TÚ lo eliges en esta ejecución; los secretos de Digifact no se cargan si está apagado)"
+        type: choice
+        options: [apagado, habilitado]
+        default: apagado
+      digifact_referencia:
+        description: "Solo con digifact=habilitado: referencia (GUID) de LA ÚNICA prueba autorizada (déjalo vacío para no autorizar ninguna)"
+        type: string
+        default: ""
 permissions:
   contents: read
 concurrency:
@@ -55,6 +64,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.DEMO_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.DEMO_CLOUDFLARE_ACCOUNT_ID }}
           PAGES_PROYECTO: ${{ secrets.DEMO_PAGES_PROYECTO }}
+          # Digifact TEST: SOLO con digifact=habilitado se cargan estos secretos; el script los aparta y únicamente los recibe el paso de la función (nunca Cloudflare ni el navegador).
+          FEL_DIGIFACT_TEST: ${{ inputs.digifact == 'habilitado' && 'habilitado' || '' }}
+          DIGIFACT_TEST_USERNAME: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_USERNAME || '' }}
+          DIGIFACT_TEST_PASSWORD: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_PASSWORD || '' }}
+          DIGIFACT_TEST_NIT: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_NIT || '' }}
+          FEL_DIGIFACT_TEST_EMPRESA: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_EMPRESA || '' }}
+          FEL_DIGIFACT_TEST_EMISOR: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_EMISOR || '' }}
+          FEL_DIGIFACT_TEST_HUELLA: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_HUELLA || '' }}
+          FEL_DIGIFACT_AUTORIZA_REFERENCIA: ${{ inputs.digifact == 'habilitado' && inputs.digifact_referencia || '' }}
           MODO: ${{ inputs.modo }}
         run: |
           if [ "$MODO" = publicar ]; then bash fel/tools/publicar-nube.sh; else bash fel/tools/publicar-nube.sh --simular; fi

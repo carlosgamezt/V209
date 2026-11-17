@@ -9,12 +9,13 @@
 //  · Autorización por prueba: aunque todo lo anterior esté en regla, solo se envía la referencia que la persona responsable autorizó expresamente para esa prueba (autorizaPrueba). Sin ella, no sale nada.
 //  · Sin almacén persistente no hay envío real (si el proceso se reiniciara, no habría memoria de lo enviado): falla cerrado.
 //  · Producción bloqueada, anulación y nota de crédito cerradas (las impone el cliente DigifactGt; aquí ni siquiera se exponen).
+//  · Una certificación válida se APLICA al documento (estado fiscal, serie, número y autorización del certificador; nunca inventados) de forma atómica e idempotente, y los XML/PDF REALES se guardan y se sirven solo a su empresa.
 //  · Nada de credenciales, tokens ni cuerpos crudos en los resultados ni en la auditoría.
-import { ErrorDigifact, type DigifactGt } from "./digifact_gt.ts";
+import { ErrorDigifact, type ArtefactosB64, type DigifactGt } from "./digifact_gt.ts";
 import { construirNuc, aMicro, deMicro, validarFactura, totalFactura, type EmisorGt, type FacturaGt, type ItemGt, type ReceptorGt } from "./nuc_gt.ts";
 
-export type CodigoFelGt = "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA";
-const STATUS: Record<CodigoFelGt, number> = { NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400 };
+export type CodigoFelGt = "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO";
+const STATUS: Record<CodigoFelGt, number> = { NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502 };
 export class ErrorFelGt extends Error {
   constructor(public codigo: CodigoFelGt, mensaje: string, public errores?: { campo: string; mensaje: string }[]) { super(mensaje); this.name = "ErrorFelGt"; }
   get status(): number { return STATUS[this.codigo]; }
@@ -45,7 +46,15 @@ export interface AlmacenGt {
   deDocumento(empresaId: string, documentoId: string): Promise<OperacionGt[]>;
   /** Compare-and-set: aplica los cambios solo si el estado actual está en «desde». Devuelve la operación nueva o null si otro proceso ya la cambió. */
   transicion(empresaId: string, id: string, desde: EstadoOpGt[], cambios: Partial<OperacionGt>): Promise<OperacionGt | null>;
+  /** Aplica al DOCUMENTO una operación «certificada» (estado fiscal, serie, número y autorización). Atómico e idempotente; falla si el documento ya tiene otros datos fiscales. */
+  aplicarCertificacion?(empresaId: string, operacionId: string): Promise<"aplicada" | "ya_aplicada">;
+  /** Guarda los XML/PDF REALES de una operación certificada. Solo inserción; repetir el mismo tipo no cambia nada. */
+  guardarArtefactos?(empresaId: string, op: OperacionGt, artefactos: ArtefactoGt[]): Promise<void>;
+  /** Lee un artefacto del documento (solo de esa empresa). */
+  artefacto?(empresaId: string, documentoId: string, tipo: "xml" | "pdf"): Promise<(ArtefactoGt & { operacionId: string }) | null>;
 }
+export interface ArtefactoGt { tipo: "xml" | "pdf"; nombre: string; mime: "application/xml" | "application/pdf"; sha256: string; contenido: Uint8Array }
+export const MAX_ARTEFACTO = 5 * 1024 * 1024;
 const BLOQUEAN: EstadoOpGt[] = ["enviando", "certificada", "desconocida"];
 
 /** Almacén en memoria: SOLO para pruebas y demostración sin base. No es persistente: el servicio no enviará nada real con él. */
@@ -64,12 +73,26 @@ export class AlmacenGtMemoria implements AlmacenGt {
     const o = this.#ops.get(id); if (!o || o.empresaId !== empresaId || !desde.includes(o.estado)) return null;
     const n = { ...o, ...cambios, id: o.id, empresaId: o.empresaId, documentoId: o.documentoId }; this.#ops.set(id, n); return { ...n };
   }
+  /** Solo para pruebas: registro de lo aplicado y de los artefactos (en la base real lo hacen la función y la tabla de la migración 29). */
+  aplicadas = new Set<string>(); #arts = new Map<string, ArtefactoGt & { operacionId: string; documentoId: string; empresaId: string }>();
+  async aplicarCertificacion(empresaId: string, operacionId: string) {
+    const o = this.#ops.get(operacionId); if (!o || o.empresaId !== empresaId || o.estado !== "certificada") throw new Error("FEL_REGLA: la operación no está certificada");
+    if (this.aplicadas.has(operacionId)) return "ya_aplicada" as const; this.aplicadas.add(operacionId); return "aplicada" as const;
+  }
+  async guardarArtefactos(empresaId: string, op: OperacionGt, artefactos: ArtefactoGt[]) {
+    const o = this.#ops.get(op.id); if (!o || o.empresaId !== empresaId || o.estado !== "certificada") throw new Error("FEL_DIGIFACT: solo una operación certificada tiene artefactos");
+    for (const a of artefactos) { const k = `${op.id}|${a.tipo}`; if (!this.#arts.has(k)) this.#arts.set(k, { ...a, contenido: a.contenido.slice(), operacionId: op.id, documentoId: op.documentoId, empresaId }); }
+  }
+  async artefacto(empresaId: string, documentoId: string, tipo: "xml" | "pdf") {
+    const a = [...this.#arts.values()].find((x) => x.empresaId === empresaId && x.documentoId === documentoId && x.tipo === tipo);
+    return a ? { tipo: a.tipo, nombre: a.nombre, mime: a.mime, sha256: a.sha256, contenido: a.contenido.slice(), operacionId: a.operacionId } : null;
+  }
   /** Solo para pruebas: un almacén «persistente» simulado (lo que será el de la base de datos). */
   static persistenteSimulado(): AlmacenGtMemoria { const a = new AlmacenGtMemoria(); (a as { persistente: boolean }).persistente = true; return a; }
 }
 
 /** Lo único que el servicio necesita del cliente de Digifact (así las pruebas usan el cliente REAL con un transporte falso). */
-export type ClienteGt = Pick<DigifactGt, "consultarNit" | "certificar" | "conciliarPorReferencia">;
+export type ClienteGt = Pick<DigifactGt, "consultarNit" | "certificar" | "conciliarPorReferencia" | "obtenerDocumento">;
 
 export interface DatosEmisorEmpresa { emisor: EmisorGt; huella: string }
 export interface DepsFelGt {
@@ -117,6 +140,28 @@ export interface ResumenPreparacion {
   fechaEmision: string; huellaEmisor: string; establecimiento: number; caducaEnMs: number; reutilizada: boolean;
   aviso: string;
 }
+
+const aBytes = (t: string): Uint8Array | null => { try { const bin = atob(t.replace(/\s+/g, "")); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; } catch { return null; } };
+const limpioNombre = (t: string) => t.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 60);
+/** Valida un artefacto REAL recibido del certificador contra la operación certificada. Nunca se acepta ni se sirve algo que no corresponda a la autorización. */
+export async function artefactoValido(tipo: "xml" | "pdf", b64: string, op: OperacionGt): Promise<ArtefactoGt> {
+  const mal = (m: string) => new ErrorFelGt("ARTEFACTO_INVALIDO", `El ${tipo.toUpperCase()} recibido no es válido: ${m}`);
+  const bytes = aBytes(b64); if (!bytes || bytes.length === 0) throw mal("vacío o ilegible");
+  if (bytes.length > MAX_ARTEFACTO) throw mal("supera el tamaño máximo");
+  const r = op.resultado; if (op.estado !== "certificada" || !r?.autorizacion || !r.serie || !r.numero) throw mal("la operación no está certificada");
+  if (tipo === "xml") {
+    let t: string; try { t = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { throw mal("no es UTF-8"); }
+    t = t.replace(/^\uFEFF/, "");
+    if (!/^\s*<[?!A-Za-z]/.test(t)) throw mal("no parece XML");
+    if (/<!DOCTYPE|<!ENTITY/i.test(t)) throw mal("contiene una declaración de tipo de documento");
+    if (!t.toUpperCase().includes(r.autorizacion.toUpperCase())) throw mal("no contiene la autorización certificada");
+  } else {
+    const cab = new TextDecoder("latin1").decode(bytes.slice(0, 8)), cola = new TextDecoder("latin1").decode(bytes.slice(-1024));
+    if (!cab.startsWith("%PDF-") || !cola.includes("%%EOF")) throw mal("no es un PDF completo");
+  }
+  return { tipo, nombre: `DTE-${limpioNombre(r.serie)}-${limpioNombre(r.numero)}.${tipo}`, mime: tipo === "xml" ? "application/xml" : "application/pdf", sha256: hex(await sha256Bytes(bytes)), contenido: bytes };
+}
+async function sha256Bytes(b: Uint8Array): Promise<Uint8Array> { return new Uint8Array(await crypto.subtle.digest("SHA-256", b as unknown as BufferSource)); }
 
 export class ServicioFelGt {
   #nit = new Map<string, number[]>();
@@ -195,7 +240,10 @@ export class ServicioFelGt {
     if (typeof c.operacionId !== "string") throw new ErrorFelGt("ENTRADA", "Falta la operación preparada");
     const op0 = await this.d.almacen.obtener(ctx.empresaId, c.operacionId); if (!op0 || op0.documentoId !== doc.id) throw new ErrorFelGt("NO_ENCONTRADO", "Operación no encontrada");
     // reutilización: lo que ya se envió NO se vuelve a enviar nunca
-    if (BLOQUEAN.includes(op0.estado)) { await this.#aud("digifact_test.reutilizada", ctx, { operacion: op0.id, estado: op0.estado }); return { reutilizada: true as const, operacion: this.#publica(op0) }; }
+    if (BLOQUEAN.includes(op0.estado)) {
+      await this.#aud("digifact_test.reutilizada", ctx, { operacion: op0.id, estado: op0.estado });
+      return { reutilizada: true as const, operacion: this.#publica(op0), ...(op0.estado === "certificada" ? await this.#sellar(ctx, op0) : {}) };   // una certificación ya hecha se repara (idempotente), nunca se reenvía
+    }
     if (op0.estado !== "preparada") throw new ErrorFelGt("ESTADO", `La operación está «${op0.estado}»: prepara el documento de nuevo`);
     if (this.#ahora().getTime() - op0.creada > (this.d.preparadaCaducaMs ?? 30 * 60_000)) throw new ErrorFelGt("ESTADO", "La preparación caducó: vuelve a prepararla");
     const { cliente, emisor } = this.#canal(ctx);
@@ -231,12 +279,18 @@ export class ServicioFelGt {
     }
     const ahora = this.#ahora().getTime();
     let n: OperacionGt | null;
-    if (res.tipo === "certificado") n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "certificada", actualizada: ahora, resultado: { autorizacion: res.autorizacion, serie: res.serie, numero: res.numero, fechaCertificacion: res.fechaCertificacion } });
+    if (res.tipo === "certificado") {
+      try { n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "certificada", actualizada: ahora, resultado: { autorizacion: res.autorizacion, serie: res.serie, numero: res.numero, fechaCertificacion: res.fechaCertificacion } }); }
+      catch {   // p. ej. la autorización ya existe en la empresa: el documento SÍ salió, pero el resultado no se puede registrar como certificado ⇒ queda «desconocida» (bloquea otro envío) y lo resuelve una persona
+        n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", actualizada: ahora, resultado: { motivoDesconocido: "resultado_no_registrable" } });
+        await this.#aud("digifact_test.resultado_no_registrable", ctx, { operacion: op0.id, referencia: op0.referencia });
+      }
+    }
     else if (res.tipo === "rechazado_confirmado") n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "rechazada", actualizada: ahora, resultado: { codigo: res.codigo, mensaje: res.mensaje } });
     else n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", actualizada: ahora, resultado: { motivoDesconocido: res.motivo } });
     await this.#aud(`digifact_test.${res.tipo === "certificado" ? "certificada" : res.tipo === "rechazado_confirmado" ? "rechazada" : "desconocida"}`, ctx, { operacion: op0.id, referencia: op0.referencia });
-    // los artefactos (XML/PDF) NO se guardan aquí: el almacenamiento privado es la siguiente fase y requiere autorización; solo se conservan los datos fiscales
-    return { reutilizada: false as const, operacion: this.#publica(n ?? op0) };
+    const sello = res.tipo === "certificado" && n && n.estado === "certificada" ? await this.#sellar(ctx, n, res.artefactos) : {};   // datos fiscales al documento y XML/PDF reales al almacén
+    return { reutilizada: false as const, operacion: this.#publica(n ?? op0), ...sello };
   }
 
   /* ---------------------------------------------------------------- 5. conciliación (solo lectura hacia Digifact) */
@@ -248,14 +302,16 @@ export class ServicioFelGt {
     if (op.estado === "enviando" && ahora - op.actualizada > (this.d.enviandoCaducaMs ?? 2 * 60_000)) {   // el proceso cayó a mitad de un envío: no sabemos qué pasó
       op = (await this.d.almacen.transicion(ctx.empresaId, op.id, ["enviando"], { estado: "desconocida", resultado: { motivoDesconocido: "proceso_interrumpido" }, actualizada: ahora })) ?? op;
     }
-    if (op.estado !== "desconocida") return { resultado: "sin_cambios" as const, operacion: this.#publica(op) };
+    if (op.estado !== "desconocida") return { resultado: "sin_cambios" as const, operacion: this.#publica(op), ...(op.estado === "certificada" ? await this.#sellar(ctx, op) : {}) };
     const { cliente } = this.#canal(ctx);
     let r; try { r = await cliente.conciliarPorReferencia(op.fechaEmision.slice(0, 10), op.referencia, op.establecimiento); } catch (e) { throw this.#traducir(e); }
     if (r.tipo === "encontrado") {
       if (r.documento.referenciaInterna.toUpperCase() !== op.referencia.toUpperCase()) throw new ErrorFelGt("ESTADO", "El reporte devolvió otra referencia: no se concilia");
-      const n = await this.d.almacen.transicion(ctx.empresaId, op.id, ["desconocida"], { estado: "certificada", actualizada: ahora, resultado: { autorizacion: r.documento.autorizacion, serie: r.documento.serie, numero: r.documento.numero, fechaCertificacion: r.documento.fechaCertificacion } });
+      let n: OperacionGt | null;
+      try { n = await this.d.almacen.transicion(ctx.empresaId, op.id, ["desconocida"], { estado: "certificada", actualizada: ahora, resultado: { autorizacion: r.documento.autorizacion, serie: r.documento.serie, numero: r.documento.numero, fechaCertificacion: r.documento.fechaCertificacion } }); }
+      catch { await this.#aud("digifact_test.resultado_no_registrable", ctx, { operacion: op.id, referencia: op.referencia }); throw new ErrorFelGt("ESTADO", "Digifact devolvió una autorización que ya pertenece a otro documento: requiere revisión manual; no se modificó nada"); }
       await this.#aud("digifact_test.conciliada", ctx, { operacion: op.id, resultado: "encontrado" });
-      return { resultado: "certificada" as const, operacion: this.#publica(n ?? op) };
+      return { resultado: "certificada" as const, operacion: this.#publica(n ?? op), ...(n ? await this.#sellar(ctx, n) : {}) };
     }
     const n = await this.d.almacen.transicion(ctx.empresaId, op.id, ["desconocida"], { intentosConciliacion: op.intentosConciliacion + 1, actualizada: ahora });
     await this.#aud("digifact_test.conciliacion_sin_resultado", ctx, { operacion: op.id, resultado: r.tipo });
@@ -267,6 +323,49 @@ export class ServicioFelGt {
   async estadoDocumento(ctx: ContextoFel, documentoId: string) {
     this.#exigir(ctx, "fiscal.ver");
     return (await this.d.almacen.deDocumento(ctx.empresaId, documentoId)).sort((a, b) => a.creada - b.creada).map((o) => this.#publica(o));
+  }
+
+  /** Tras una certificación válida: la aplica al documento y guarda los XML/PDF reales. Nunca revierte lo fiscal: si algo falla queda «pendiente» y se repara (idempotente) en la siguiente consulta, conciliación o descarga. */
+  async #sellar(ctx: ContextoFel, op: OperacionGt, arts?: ArtefactosB64): Promise<{ aplicacion: "aplicada" | "ya_aplicada" | "pendiente" | "no_disponible"; artefactos: "guardados" | "pendientes" | "invalidos" | "no_disponible" }> {
+    let aplicacion: "aplicada" | "ya_aplicada" | "pendiente" | "no_disponible" = "no_disponible";
+    if (this.d.almacen.aplicarCertificacion) {
+      try { aplicacion = await this.d.almacen.aplicarCertificacion(ctx.empresaId, op.id); if (aplicacion === "aplicada") await this.#aud("digifact_test.aplicada_al_documento", ctx, { operacion: op.id, documento: op.documentoId }); }
+      catch (e) { aplicacion = "pendiente"; await this.#aud("digifact_test.aplicacion_pendiente", ctx, { operacion: op.id, motivo: String((e as Error)?.message ?? e).slice(0, 80).replace(/[^\w :.-]/g, "") }); }
+    }
+    let artefactos: "guardados" | "pendientes" | "invalidos" | "no_disponible" = "no_disponible";
+    if (this.d.almacen.guardarArtefactos) {
+      const lista: ArtefactoGt[] = []; artefactos = "pendientes";
+      for (const tipo of ["xml", "pdf"] as const) {
+        const b = arts?.[tipo]; if (!b) continue;
+        try { lista.push(await artefactoValido(tipo, b, op)); } catch (e) { artefactos = "invalidos"; await this.#aud("digifact_test.artefacto_invalido", ctx, { operacion: op.id, tipo, motivo: (e as Error).message.slice(0, 120) }); }
+      }
+      if (lista.length) {
+        try { await this.d.almacen.guardarArtefactos(ctx.empresaId, op, lista); if (artefactos !== "invalidos" && lista.length === 2) artefactos = "guardados"; await this.#aud("digifact_test.artefactos_guardados", ctx, { operacion: op.id, tipos: lista.map((x) => x.tipo).join(",") }); }
+        catch { artefactos = "pendientes"; await this.#aud("digifact_test.artefactos_pendientes", ctx, { operacion: op.id }); }
+      }
+    }
+    return { aplicacion, artefactos };
+  }
+
+  /* ---------------------------------------------------------------- 6. descarga del XML o PDF REAL certificado */
+  async descargar(ctx: ContextoFel, documentoId: unknown, tipo: unknown): Promise<ArtefactoGt> {
+    this.#exigir(ctx, "fiscal.ver");
+    if (typeof documentoId !== "string" || !documentoId) throw new ErrorFelGt("ENTRADA", "Falta el documento");
+    if (tipo !== "xml" && tipo !== "pdf") throw new ErrorFelGt("ENTRADA", "El tipo debe ser xml o pdf");
+    if (!this.d.almacen.persistente || !this.d.almacen.artefacto || !this.d.almacen.guardarArtefactos) throw new ErrorFelGt("ALMACEN_NO_PERSISTENTE", "No hay almacén persistente de artefactos");
+    const op = (await this.d.almacen.deDocumento(ctx.empresaId, documentoId)).find((o) => o.estado === "certificada");
+    if (!op) throw new ErrorFelGt("NO_ENCONTRADO", "Este documento no tiene una certificación de Digifact");
+    let a = await this.d.almacen.artefacto(ctx.empresaId, documentoId, tipo);
+    if (!a) {   // no quedó guardado al certificar: se pide a Digifact (solo lectura), se valida y se guarda una vez
+      const { cliente } = this.#canal(ctx);
+      let r; try { r = await cliente.obtenerDocumento(op.resultado!.autorizacion!, [tipo === "xml" ? "XML" : "PDF"]); } catch (e) { throw this.#traducir(e); }
+      const b64 = r.encontrado ? r.artefactos[tipo] : undefined; if (!b64) throw new ErrorFelGt("NO_ENCONTRADO", "Digifact aún no entrega este archivo: intenta de nuevo más tarde");
+      const nuevo = await artefactoValido(tipo, b64, op); await this.d.almacen.guardarArtefactos(ctx.empresaId, op, [nuevo]);
+      a = (await this.d.almacen.artefacto(ctx.empresaId, documentoId, tipo)) ?? { ...nuevo, operacionId: op.id };
+    }
+    if (hex(await sha256Bytes(a.contenido)) !== a.sha256) throw new ErrorFelGt("ARTEFACTO_INVALIDO", "El archivo guardado no coincide con su huella: no se entrega");
+    await this.#aud("digifact_test.artefacto_descargado", ctx, { operacion: op.id, tipo });
+    return a;
   }
 
   /* ---------------------------------------------------------------- internos */

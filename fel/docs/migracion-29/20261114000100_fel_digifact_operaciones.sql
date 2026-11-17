@@ -18,7 +18,7 @@ create table public.digifact_operaciones (
   creada_ms             bigint not null check (creada_ms > 0),
   actualizada_ms        bigint not null check (actualizada_ms >= creada_ms),
   actor_id              uuid not null,
-  intento_del_documento integer not null check (intento_del_documento >= 1),
+  intento_del_documento integer not null check (intento_del_documento >= 0),
   intentos_conciliacion integer not null default 0 check (intentos_conciliacion >= 0),
   resultado             jsonb check (resultado is null or jsonb_typeof(resultado) = 'object'),
   foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id)     -- una operación jamás apunta al documento de otra empresa
@@ -55,3 +55,67 @@ revoke all on function public.fel_digifact_op_guarda() from public, anon, authen
 
 alter table public.digifact_operaciones enable row level security;
 revoke all on public.digifact_operaciones from public, anon, authenticated, service_role;
+
+-- ============================================================ artefactos REALES (XML/PDF) del certificador y aplicación de la certificación al documento
+-- Tabla aparte de public.artefactos_documento a propósito: aquella solo admite «db_simulado»; los de Digifact son reales de PRUEBAS y no se mezclan con los simulados.
+-- Solo inserción (ni UPDATE ni DELETE), sin privilegios para nadie salvo el rol propietario: la descarga pasa siempre por el servidor, que comprueba sesión, permiso y empresa.
+create table public.digifact_artefactos (
+  id           uuid primary key default gen_random_uuid(),
+  empresa_id   uuid not null,
+  documento_id uuid not null,
+  operacion_id uuid not null,
+  tipo         text not null check (tipo in ('xml','pdf')),
+  nombre       text not null check (length(nombre) between 1 and 120),
+  mime         text not null check (mime in ('application/xml','application/pdf')),
+  sha256       text not null check (sha256 ~ '^[0-9a-f]{64}$'),
+  tamano       integer not null check (tamano between 1 and 5242880),
+  contenido    bytea not null,
+  origen       text not null default 'digifact_test' check (origen = 'digifact_test'),
+  creado_en    timestamptz not null default now(),
+  foreign key (operacion_id) references public.digifact_operaciones (id),
+  foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id),
+  unique (operacion_id, tipo),
+  check (sha256 = encode(sha256(contenido), 'hex') and tamano = octet_length(contenido)),
+  check ((tipo = 'xml' and mime = 'application/xml') or (tipo = 'pdf' and mime = 'application/pdf'))
+);
+create function public.fel_digifact_art_guarda() returns trigger language plpgsql set search_path = pg_catalog, public as $$
+declare o public.digifact_operaciones;
+begin
+  if tg_op <> 'INSERT' then raise exception 'FEL_APPEND_ONLY: los artefactos de Digifact son de solo inserción' using errcode = 'P0001'; end if;
+  select * into o from public.digifact_operaciones where id = new.operacion_id;
+  if not found or o.empresa_id <> new.empresa_id or o.documento_id <> new.documento_id then raise exception 'FEL_DIGIFACT: el artefacto no corresponde a la operación' using errcode = 'P0001'; end if;
+  if o.estado <> 'certificada' then raise exception 'FEL_DIGIFACT: solo una operación certificada tiene artefactos' using errcode = 'P0001'; end if;
+  return new;
+end $$;
+create trigger digifact_art_guarda before insert or update or delete on public.digifact_artefactos for each row execute function public.fel_digifact_art_guarda();
+revoke all on function public.fel_digifact_art_guarda() from public, anon, authenticated, service_role;
+alter table public.digifact_artefactos enable row level security;
+revoke all on public.digifact_artefactos from public, anon, authenticated, service_role;
+
+-- Aplica la certificación REAL de PRUEBAS al documento, de forma atómica e idempotente: estado fiscal «certificado» con serie, número y autorización tomados del resultado válido del certificador.
+-- Nunca inventa datos: sin una operación «certificada» con los tres datos no hace nada. Misma ruta de estados que las demás certificaciones (fel__fiscal_cambiar): sin atajos.
+create function public.fel_sys_digifact_aplicar(p_empresa uuid, p_op uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare o public.digifact_operaciones; d public.documentos; v_aut text; v_serie text; v_num text;
+begin
+  select * into o from public.digifact_operaciones where id = p_op and empresa_id = p_empresa for update;
+  if not found then raise exception 'FEL_NO_ENCONTRADO: operación no encontrada'; end if;
+  if o.estado <> 'certificada' then raise exception 'FEL_REGLA: la operación no está certificada'; end if;
+  v_aut := btrim(coalesce(o.resultado ->> 'autorizacion', '')); v_serie := btrim(coalesce(o.resultado ->> 'serie', '')); v_num := btrim(coalesce(o.resultado ->> 'numero', ''));
+  if v_aut = '' or v_serie = '' or v_num = '' then raise exception 'FEL_REGLA: el resultado del certificador no trae serie, número y autorización'; end if;
+  if upper(v_aut) like 'SIM-%' then raise exception 'FEL_REGLA: una autorización simulada no puede aplicarse como certificación real'; end if;
+  select * into d from public.documentos where id = o.documento_id and empresa_id = p_empresa for update;
+  if not found then raise exception 'FEL_NO_ENCONTRADO: documento no encontrado'; end if;
+  if d.estado_fiscal = 'certificado' then
+    if d.autorizacion_sat = v_aut and d.serie = v_serie and d.numero_fiscal = v_num then return 'ya_aplicada'; end if;
+    raise exception 'FEL_CONFLICTO: el documento ya está certificado con otros datos fiscales';
+  end if;
+  if d.estado_preparacion <> 'revisado' or d.estado_fiscal not in ('ninguno','rechazado','por_verificar','pendiente_certificacion') then raise exception 'FEL_REGLA: el documento no está en un estado que admita la certificación (%/%)', d.estado_preparacion, d.estado_fiscal; end if;
+  if exists (select 1 from public.documentos x where x.empresa_id = p_empresa and x.autorizacion_sat = v_aut and x.id <> d.id) then raise exception 'FEL_CONFLICTO: la autorización ya pertenece a otro documento'; end if;
+  if d.estado_fiscal in ('ninguno','rechazado') then perform public.fel__fiscal_cambiar(d.id, p_empresa, 'pendiente_certificacion', o.actor_id, null, 'digifact_test'); end if;
+  perform public.fel__fiscal_cambiar(d.id, p_empresa, 'certificado', o.actor_id, null, 'digifact_test', v_serie, v_num, v_aut);
+  perform public.fel_auditar(p_empresa, o.actor_id, 'digifact_test.aplicada_al_documento', 'documento', d.id::text, jsonb_build_object('operacion', o.id, 'referencia', o.referencia));
+  return 'aplicada';
+end $$;
+revoke all on function public.fel_sys_digifact_aplicar(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.fel_sys_digifact_aplicar(uuid, uuid) to service_role;

@@ -1,7 +1,9 @@
 // Panel «Digifact TEST» de una factura. El navegador SOLO habla con la API de NEXA (misma sesión); jamás con Digifact, y nunca recibe credenciales ni tokens.
 // Certificar exige tres pasos manuales: Validar → Preparar (muestra referencia y huella) → escribir la confirmación y repetir referencia y huella.
 import { h, boton, insignia, campo, mensajeError, poner } from "/app/js/ui.js";
+import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
+import { descargarArchivo } from "./descarga.js";
 
 const TONO = { preparada: "azul", enviando: "ambar", certificada: "verde", rechazada: "rojo", desconocida: "ambar", no_enviada: "gris" };
 const NOMBRE = { preparada: "Preparada (nada enviado)", enviando: "Enviando", certificada: "Certificada en TEST", rechazada: "Rechazada (confirmado)", desconocida: "Por verificar", no_enviada: "No enviada" };
@@ -37,6 +39,11 @@ export function panelDigifact({ ctx, doc, recargar, mostrarError }) {
       partes.push(h("div", { class: "bloqueo bloqueo-azul", "data-digifact-op": o.estado },
         h("div", {}, h("div", { class: "celda-tags" }, insignia(NOMBRE[o.estado] ?? o.estado, TONO[o.estado] ?? "gris")), h("small", { class: "mono" }, `Referencia ${o.referencia}`),
           o.resultado?.autorizacion ? h("dl", { class: "datos-sim" }, h("dt", {}, "Serie"), h("dd", { class: "mono" }, o.resultado.serie ?? ""), h("dt", {}, "Número"), h("dd", { class: "mono" }, o.resultado.numero ?? ""), h("dt", {}, "Autorización"), h("dd", { class: "mono" }, o.resultado.autorizacion)) : null,
+          o.estado === "certificada" ? h("p", { class: "aviso aviso-azul", id: "digifact-certificada" }, icono("info"), h("span", {}, "Certificada en el ambiente de PRUEBAS de Digifact (TEST): los datos de arriba los entregó el certificador. No tiene valor fiscal.")) : null,
+          o.estado === "certificada" && puedeVer ? h("div", { class: "acciones-fila" },
+            boton("Descargar XML", { tipo: "sec", icon: "file", id: "digifact-xml", disabled: ocupado, onclick: correr(async () => { await descargarArchivo(`/api/documentos/${doc.id}/digifact/xml`, `DTE-${o.resultado.serie}-${o.resultado.numero}.xml`); }) }),
+            boton("Descargar PDF", { tipo: "sec", icon: "file", id: "digifact-pdf", disabled: ocupado, onclick: correr(async () => { await descargarArchivo(`/api/documentos/${doc.id}/digifact/pdf`, `DTE-${o.resultado.serie}-${o.resultado.numero}.pdf`); }) })) : null,
+          o.estado === "desconocida" && o.resultado?.motivoDesconocido === "resultado_no_registrable" ? h("small", { class: "err" }, "Digifact respondió, pero el resultado no se pudo registrar (autorización repetida). No se modificó el documento: requiere revisión manual.") : null,
           o.estado === "rechazada" ? h("small", {}, `Digifact rechazó el documento: ${o.resultado?.mensaje ?? ""}`) : null,
           o.estado === "desconocida" ? h("small", {}, "No se sabe si Digifact lo certificó. NO se reenvía: consulta por la referencia.") : null),
         o.estado === "desconocida" || o.estado === "enviando" ? boton("Consultar a Digifact", { tipo: "sec", id: "digifact-conciliar", disabled: ocupado || !puedeVer, onclick: correr(async () => { const r = await api.digifactConciliar(doc.id, o.id); aviso = r.aviso ?? ""; }) }) : null));

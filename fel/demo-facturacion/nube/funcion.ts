@@ -12,6 +12,7 @@ import { LimiteTasaPg } from "../src/limite_pg.ts";
 import { crearEndurecimiento } from "../src/endurecimiento.ts";
 import { leerConfigPublicada } from "../src/publicado.ts";
 import { crearApi } from "../src/api.ts";
+import { crearDigifactParaBd } from "../src/digifact_entorno.ts";
 
 const igualesSeguro = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 const generico = (s: number, m: string) => new Response(JSON.stringify({ codigo: "no_disponible", mensaje: m }), { status: s, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -26,7 +27,9 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     const mundo = await prepararBase(bd, { sembrar: false });
     const sesiones = new Sesiones(undefined, new AlmacenPg(bd)); sesiones.claveDemoPublica = null; sesiones.forzarSeguro = true;
     sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch { /* la auditoría no debe tumbar la petición */ } };
-    const api = crearApi(bd, mundo, { sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)) });
+    const digifact = await crearDigifactParaBd((k) => env.get(k), bd);   // sin FEL_DIGIFACT_* no existe; sin la tabla de la migración 29 prepara y valida pero NO envía nada real
+    console.log(`Digifact TEST: ${digifact.motivo}${digifact.servicio ? (digifact.almacenPersistente ? " · almacén persistente" : " · sin almacén persistente: no envía") : ""}`);   // nunca valores
+    const api = crearApi(bd, mundo, { sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio });
     const endurecer = crearEndurecimiento({ publicado: true, hosts: cfg.hosts, hostDe: (r) => (r.headers.get("x-nexa-host") ?? "").toLowerCase(), ipDe: (r) => r.headers.get("x-nexa-ip") ?? "?",
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo
       limiteApi: new LimiteTasa(Number(env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });

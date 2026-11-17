@@ -23,12 +23,13 @@ const doc = (empresaId = EMPRESA_A, id = "d1", extra: Partial<DocumentoFel> = {}
 const referenciaEnviada = (p: PeticionHttp) => { const n = JSON.parse(p.cuerpo!); return n.AdditionalDocumentInfo.AdditionalInfo[0].Code as string; };
 
 type Manejador = (p: PeticionHttp, envios: number) => RespuestaHttp | Promise<RespuestaHttp>;
-function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null) => RespuestaHttp; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date } = {}) {
+function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null) => RespuestaHttp; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
   const llamadas: PeticionHttp[] = []; let envios = 0; let ultimaReferencia: string | null = null;
   const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
     llamadas.push(p);
     if (p.ruta === "/login/get_token") return ok({ token: TOKEN });
     if (p.ruta.startsWith("/v2/transform/nuc_json")) { envios++; ultimaReferencia = referenciaEnviada(p); return await (opc.certificar ?? (() => ok(CERT)))(p, envios); }
+    if (p.ruta.startsWith("/GetDocument")) return (opc.documento ?? (() => ok({ RESPONSE: [] })))(p);
     if (p.ruta.startsWith("/Shared")) {
       const q = new URL("https://x" + p.ruta).searchParams;
       if (q.get("DATA1") === "SHARED_GETINFONITcom") return ok({ RESPONSE: [{ NIT: "44653948", NOMBRE: "EMPRESA DE PRUEBA, S.A." }] });
@@ -37,7 +38,7 @@ function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null) => 
     return ok({}, 404);
   };
   const cliente = new DigifactGt({ nit: "5888492", usuario: "USUARIO_TEST", obtenerClave: () => CLAVE, transporte });
-  const almacen = opc.persistente === false ? new AlmacenGtMemoria() : AlmacenGtMemoria.persistenteSimulado();
+  const almacen = opc.almacen ?? (opc.persistente === false ? new AlmacenGtMemoria() : AlmacenGtMemoria.persistenteSimulado());
   let autorizada: string | null = null; const aud: { evento: string; detalle: Record<string, unknown> }[] = [];
   const emisor = { emisor: facturaPrueba().emisor, huella: HUELLA };
   const s = new ServicioFelGt({
@@ -214,4 +215,60 @@ Deno.test("aislamiento multiempresa: una empresa nunca ve, concilia ni toca oper
 Deno.test("anulación y nota de crédito siguen cerradas: el servicio ni las expone y el cliente las rechaza", async () => {
   const m = mundo(); assert.equal((m.s as unknown as Record<string, unknown>).anular, undefined); assert.equal((m.s as unknown as Record<string, unknown>).notaCredito, undefined);
   await assert.rejects(() => m.cliente.constructor.prototype.anular.call(m.cliente, { autorizacion: AUT, nitReceptor: "CF", fechaEmision: "2026-11-16T10:00:00", motivo: "prueba", confirmacion: "ANULAR" }), /no está habilitada/);
+});
+
+// ---------------------------------------------------------------- certificación REAL: aplicación al documento y artefactos (XML/PDF) reales
+const XML_REAL = `<?xml version="1.0" encoding="UTF-8"?><dte:GTDocumento><dte:NumeroAutorizacion Numero="5" Serie="A001">${AUT}</dte:NumeroAutorizacion></dte:GTDocumento>`;
+const PDF_REAL = "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n";
+const XML64 = btoa(XML_REAL), PDF64 = btoa(PDF_REAL);
+const CERT_CON_ARCHIVOS = { ...CERT, responseData1: XML64, responseData3: PDF64 };
+const texto = (u: Uint8Array) => new TextDecoder().decode(u);
+
+Deno.test("certificación REAL: se aplica al documento y los XML/PDF reales se guardan y se descargan solo con permiso y solo de su empresa", async () => {
+  const m = mundo({ certificar: () => ok(CERT_CON_ARCHIVOS) });
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia);
+  const r = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(r.operacion.estado, "certificada"); assert.deepEqual([r.operacion.resultado?.serie, r.operacion.resultado?.numero, r.operacion.resultado?.autorizacion], ["A001", "5", AUT], "los datos fiscales son los del certificador");
+  assert.equal((r as { aplicacion?: string }).aplicacion, "aplicada"); assert.equal((r as { artefactos?: string }).artefactos, "guardados"); assert.ok(m.almacen.aplicadas.has(p.operacionId));
+  const x = await m.s.descargar(ctx(), "d1", "xml"), f = await m.s.descargar(ctx(), "d1", "pdf");
+  assert.equal(texto(x.contenido), XML_REAL); assert.equal(texto(f.contenido), PDF_REAL); assert.equal(x.nombre, "DTE-A001-5.xml"); assert.equal(f.mime, "application/pdf"); assert.match(x.sha256, /^[0-9a-f]{64}$/);
+  await rechaza(m.s.descargar(ctx(EMPRESA_A, ["borradores.ver"]), "d1", "xml"), "NO_AUTORIZADO");          // sin permiso fiscal.ver
+  await rechaza(m.s.descargar(ctx(EMPRESA_B), "d1", "xml"), "NO_ENCONTRADO");                                 // otra empresa no ve ni descarga lo de la A
+  await rechaza(m.s.descargar(ctx(), "d1", "html"), "ENTRADA"); await rechaza(m.s.descargar(ctx(), "otro-doc", "xml"), "NO_ENCONTRADO");
+  const otra = await m.s.certificar(ctx(), doc(), confirmar(p)); assert.equal(otra.reutilizada, true); assert.equal(m.envios(), 1, "repetir no reenvía"); assert.equal((otra as { aplicacion?: string }).aplicacion, "ya_aplicada");
+});
+
+Deno.test("artefactos inválidos NO se guardan ni se sirven (la certificación fiscal se conserva); una descarga posterior los pide a Digifact, los valida y los guarda una sola vez", async () => {
+  let pedidos = 0;
+  const m = mundo({ certificar: () => ok({ ...CERT, responseData1: btoa("<?xml version='1.0'?><otro/>"), responseData3: btoa("%PDF-1.4 truncado") }),
+    documento: () => { pedidos++; return ok({ RESPONSE: [{ ResponseData1: XML64, ResponseData3: PDF64 }] }); } });
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); const r = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal((r as { artefactos?: string }).artefactos, "invalidos"); assert.equal((r as { aplicacion?: string }).aplicacion, "aplicada", "lo fiscal no depende de los archivos"); assert.equal(r.operacion.estado, "certificada");
+  assert.ok(m.aud.some((a) => a.evento === "digifact_test.artefacto_invalido"));
+  assert.equal(texto((await m.s.descargar(ctx(), "d1", "xml")).contenido), XML_REAL); assert.equal(pedidos, 1);
+  await m.s.descargar(ctx(), "d1", "xml"); assert.equal(pedidos, 1, "ya guardado: no se vuelve a pedir");
+  const malo = mundo({ certificar: () => ok({ ...CERT, responseData1: undefined, responseData3: undefined }), documento: () => ok({ RESPONSE: [{ ResponseData1: btoa("<x>no es el documento</x>"), ResponseData3: "JVBERi0x" }] }) });
+  const q = await malo.s.preparar(ctx(), doc()); malo.autorizar(q.referencia); await malo.s.certificar(ctx(), doc(), confirmar(q));
+  await rechaza(malo.s.descargar(ctx(), "d1", "xml"), "ARTEFACTO_INVALIDO"); await rechaza(malo.s.descargar(ctx(), "d1", "pdf"), "ARTEFACTO_INVALIDO");
+  const sin = mundo({ certificar: () => ok({ ...CERT, responseData1: undefined, responseData3: undefined }) }); const s1 = await sin.s.preparar(ctx(), doc()); sin.autorizar(s1.referencia); await sin.s.certificar(ctx(), doc(), confirmar(s1));
+  await rechaza(sin.s.descargar(ctx(), "d1", "xml"), "NO_ENCONTRADO");   // Digifact no lo entrega todavía
+});
+
+Deno.test("si aplicar la certificación al documento falla, la operación sigue «certificada», queda «pendiente» y se repara sin reenviar nada", async () => {
+  const almacen = AlmacenGtMemoria.persistenteSimulado(); let falla = true; const orig = almacen.aplicarCertificacion.bind(almacen);
+  almacen.aplicarCertificacion = async (e, o) => { if (falla) throw new Error("FEL_REGLA: caída transitoria de la base"); return await orig(e, o); };
+  const m = mundo({ certificar: () => ok(CERT_CON_ARCHIVOS), almacen });
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); const r = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(r.operacion.estado, "certificada"); assert.equal((r as { aplicacion?: string }).aplicacion, "pendiente"); assert.ok(m.aud.some((a) => a.evento === "digifact_test.aplicacion_pendiente"));
+  falla = false; const rep = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(rep.reutilizada, true); assert.equal((rep as { aplicacion?: string }).aplicacion, "aplicada"); assert.equal(m.envios(), 1, "la reparación jamás reenvía");
+});
+
+Deno.test("timeout y conciliación: el documento solo se certifica cuando Digifact lo confirma, con SUS datos, y sin segundo envío", async () => {
+  const fila = (ref: string) => ({ GUID: AUT, SERIE: "A001", NUMERO: "5", TIPO_DTE: "FACT", FECHA_DE_CERTIFICACION: "2026-11-16T10:00:05", REFERENCIA_INTERNA: ref, ESTADO_ACUSE: "ACEPTADO_SAT", ANULADO: "0", TOTAL: "100.00", NE: "2", NOMBRE: "X" });
+  const m = mundo({ certificar: () => { throw new Error("corte"); }, reporte: (ref) => ok({ REQUEST_DATA: [{ Respuesta: "1" }], RESPONSE: [fila(ref!)] }) });
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); const r = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(r.operacion.estado, "desconocida"); assert.equal(m.almacen.aplicadas.size, 0, "un resultado incierto NO toca el documento");
+  const c = await m.s.conciliar(ctx(), p.operacionId); assert.equal(c.resultado, "certificada"); assert.equal((c as { aplicacion?: string }).aplicacion, "aplicada"); assert.ok(m.almacen.aplicadas.has(p.operacionId)); assert.equal(m.envios(), 1);
+  await rechaza(m.s.preparar(ctx(), doc()), "ESTADO");   // ya certificado: no se prepara otro envío
 });
