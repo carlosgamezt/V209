@@ -34,6 +34,11 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
         const mal = await p.evaluate(() => [...document.querySelectorAll(".barra-acciones .btn, .menu-mas .mi, .hoja-item .btn")].filter((e) => e.getBoundingClientRect().width > 0 && e.scrollWidth > e.clientWidth + 1).map((e) => (e.getAttribute("aria-label") || e.textContent).trim().slice(0, 30)));
         assert.deepEqual(mal, [], `texto cortado en ${donde(x)}: ${mal.join(" | ")}`); };
 
+      // posición, visibilidad, desplazamiento y qué elemento recibiría el toque (para diagnosticar diferencias entre navegadores)
+      const diagnostico = (sel) => p.evaluate((s) => { const e = document.querySelector(s), r = (x) => { if (!x) return null; const b = x.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }, vv = window.visualViewport, q = (x) => (x ? `${x.tagName.toLowerCase()}${x.id ? "#" + x.id : ""}${x.className && typeof x.className === "string" ? "." + x.className.split(" ").join(".") : ""}` : null);
+        const b = e?.getBoundingClientRect(), cx = b ? Math.min(Math.max(b.left + b.width / 2, 0), innerWidth - 1) : 0, cy = b ? Math.min(Math.max(b.top + b.height / 2, 0), innerHeight - 1) : 0, el = (n) => getComputedStyle(document.querySelector(n) ?? document.body);
+        return { ventana: [innerWidth, innerHeight], visual: vv ? [Math.round(vv.width), Math.round(vv.height), vv.scale, Math.round(vv.offsetLeft), Math.round(vv.offsetTop)] : null, documento: [document.documentElement.scrollWidth, document.documentElement.scrollHeight, Math.round(scrollY)], elemento: r(e), barra: r(document.querySelector(".barra-acciones")), nav: r(document.querySelector(".nav-movil")), cab: r(document.querySelector(".cab-demo")), navAlto: getComputedStyle(document.documentElement).getPropertyValue("--nav-movil-h"),
+          enElPunto: q(document.elementFromPoint(cx, cy)), posicionBarra: el(".barra-acciones").position, bottomBarra: el(".barra-acciones").bottom, scrollPadding: [getComputedStyle(document.documentElement).scrollPaddingTop, getComputedStyle(document.documentElement).scrollPaddingBottom], overflowHtmlBody: [getComputedStyle(document.documentElement).overflow, getComputedStyle(document.body).overflow], visible: e ? !!(e.offsetWidth || e.offsetHeight) : false }; }, sel);
       await p.goto(srv.url); await p.waitForSelector("#login-usuario"); await p.selectOption("#login-usuario", "ana"); await p.fill("#login-clave", "demo1234"); await p.click("#login-entrar"); await p.waitForSelector(".cab-demo");
 
       // ---- una sola pantalla: receptor + ítems + resumen, una acción principal y «Más acciones», sin botón flotante «+»
@@ -45,7 +50,8 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       await p.selectOption('select[aria-label="Receptor"]', { index: 1 }); await p.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
 
       // ---- captura rápida: descripción ⏎ cantidad ⏎ precio ⏎ guarda y deja la hoja lista para el siguiente ítem
-      await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await sinDesborde("hoja de edición"); await foto("02-editor"); await textoVisible("hoja de edición");
+      await p.click("#agregar-item", { timeout: 8000 }).catch(async (e) => { console.log(`DIAGNÓSTICO ${NAV} ${w}px: «Agregar ítem» no se pudo pulsar:\n${JSON.stringify(await diagnostico("#agregar-item"), null, 1)}`); throw e; });
+      await p.waitForSelector(".hoja-item"); await sinDesborde("hoja de edición"); await foto("02-editor"); await textoVisible("hoja de edición");
       const hoja = await p.locator(".hoja-item").boundingBox(); assert.ok(hoja.x >= 0 && hoja.x + hoja.width <= w + 1 && hoja.y >= 0 && hoja.y + hoja.height <= alto + 1, donde("la hoja cabe en la pantalla"));
       await p.fill('.hoja-item [aria-label="Descripción"]', "Servicio de consultoría"); await p.keyboard.press("Enter"); await p.keyboard.type("2"); await p.keyboard.press("Enter"); await p.keyboard.type("150.50");
       await p.selectOption('.hoja-item [aria-label="Tipo de descuento"]', "porcentaje"); await p.fill('.hoja-item [aria-label="Valor del descuento"]', "10"); await foto("03-editor-descuento");
@@ -62,6 +68,7 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       // ---- «Más acciones»: el menú cabe en pantalla; la barra no pisa la navegación inferior ni a sí misma
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(120);
       const c = await p.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r("#mas-acciones") }; });
+      if (!(c.prim.r <= c.mas.l + 1)) console.log(`DIAGNÓSTICO ${NAV} ${w}px: barra de acciones ${JSON.stringify({ barra: c.barra, prim: c.prim, mas: c.mas })}`);
       assert.ok(c.barra.b <= c.nav.t + 1, donde(`la barra queda sobre la navegación inferior (${c.barra.b} ≤ ${c.nav.t})`)); assert.ok(c.prim.r <= c.mas.l + 1, donde("acción principal y «Más acciones» en una fila sin superponerse"));
       await p.click("#mas-acciones"); const mn = await p.locator(".menu-mas").boundingBox(); assert.ok(mn.x >= 0 && mn.x + mn.width <= w + 1 && mn.y >= 0, donde("el menú cabe en la pantalla")); await sinDesborde("menú Más acciones"); await foto("05-mas-acciones"); await textoVisible("menú"); await p.keyboard.press("Escape");
 
