@@ -27,7 +27,7 @@ const ana = new Cli(); const ent = await ana.ll("POST", "/api/sesion/entrar", { 
 const sc = ent.r.headers.get("set-cookie") ?? ""; ok(/HttpOnly/i.test(sc) && /SameSite=Strict/i.test(sc) && (/Secure/i.test(sc) || url.startsWith("http://")), "cookie HttpOnly + SameSite=Strict + Secure");
 const est = (await ana.ll("GET", "/api/estado")).json; ok(!!est.clientes?.length && !!est.establecimientos?.length, "datos de la empresa visibles");
 const d = await ana.ll("POST", "/api/documentos", { cliente_id: est.clientes[0].id, establecimiento_id: est.establecimientos[0].id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Prueba de humo A", cantidad: "2", precio_unitario: "100.00" }, { descripcion: "Prueba de humo B", cantidad: "1", precio_unitario: "50.00" }] });
-ok(d.status === 200, "factura con varios ítems creada"); const id = d.json.documento?.id;
+ok(d.status === 200, "factura con varios ítems creada"); if (d.status !== 200) console.log(`      (diagnóstico: HTTP ${d.status}, código ${String(d.json.codigo ?? "?").slice(0, 40)}, detalle ${String(d.json.detalle ?? "-").slice(0, 40)})`); const id = d.json.documento?.id;
 if (id) {
   await ana.ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version });
   const cert = await ana.ll("POST", `/api/documentos/${id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: `humo-${crypto.randomUUID().slice(0, 18)}` }); ok(cert.json.documento?.estado_fiscal === "certificado", "certificación SIMULADA");

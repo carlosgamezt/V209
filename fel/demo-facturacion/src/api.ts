@@ -298,7 +298,9 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
         if (e.codigo === "SQL_23514" || e.codigo === "SQL_23505") return new Response(JSON.stringify({ codigo: "regla", mensaje: e.codigo === "SQL_23505" ? "Ya existe un registro con esos datos" : "Los datos no cumplen una regla de la base de datos" }), { status: 422, headers: cab });
       }
       console.error("error interno:", e);
-      return new Response(JSON.stringify({ codigo: "interno", mensaje: "Error interno de la demostración" }), { status: 500, headers: cab });
+      // «detalle»: solo el CÓDIGO de la causa (p. ej. SQL_42501 o el nombre de la clase de error), nunca el mensaje, la consulta ni datos: permite diagnosticar un 500 sin abrir los registros de la función
+      const detalle = e instanceof ErrorBd ? e.codigo : (e instanceof Error && /^[A-Za-z0-9_]{1,40}$/.test(e.name) ? e.name : "desconocido");
+      return new Response(JSON.stringify({ codigo: "interno", mensaje: "Error interno de la demostración", detalle }), { status: 500, headers: cab });
     }
   };
 }
