@@ -247,10 +247,10 @@ button.it:hover{border-color:var(--pri)}.it-fijo{cursor:default}
 /* editor de ítem: hoja inferior en móvil, diálogo en escritorio */
 .modal-fondo.hoja{padding:12px}
 @media(max-width:700px){.modal-fondo.hoja{padding:0;place-items:end center}.hoja .hoja-item{max-width:none;border-radius:20px 20px 0 0;max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px);padding-bottom:env(safe-area-inset-bottom)}.hoja .modal-pie{border-radius:0;flex-wrap:wrap;gap:8px}.hoja .modal-pie .btn{flex:1 1 30%;min-height:46px;justify-content:center}}
-.ed-form{display:flex;flex-direction:column;gap:10px}.ed-fila{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ed-form{display:flex;flex-direction:column;gap:10px}.ed-fila{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.ed-fila>*,.ed-form>*{min-width:0}
 .ed-neto{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:12px;background:var(--soft);color:var(--pri)}
 .ed-ok{color:var(--ok);font-weight:700;font-size:13px;margin:0}.ed-ok:empty{display:none}
-.hoja input,.hoja select{min-height:46px;font-size:16px}
+.hoja input,.hoja select{min-height:46px;font-size:16px;min-width:0;max-width:100%;width:100%;box-sizing:border-box}
 /* vista previa e impresión */
 .previa-modal{max-width:780px}.previa-nota{margin:0;font-size:13px}.previa-nota:empty{display:none}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;align-self:flex-start}
