@@ -36,8 +36,18 @@ jobs:
       - name: Proveedores de emisión (interfaz + mock + orquestador de referencia, solo simulación)
         working-directory: fel/proveedores
         run: |
-          deno check src/mod.ts src/repo_pg.ts pruebas/*.ts pruebas_db/*.ts
+          deno check src/mod.ts src/repo_pg.ts pruebas/*.ts pruebas_cli/*.ts pruebas_db/*.ts
           deno test --allow-net=127.0.0.1 pruebas/
+      - name: Consulta privada de NIT por línea de órdenes (subproceso real; único paso con --allow-run, solo al binario de deno; debe EJECUTARSE y pasar, no omitirse)
+        working-directory: fel/proveedores
+        env:
+          NO_COLOR: "1"
+        run: |
+          DENO_BIN="$(deno eval 'console.log(Deno.execPath())')"
+          deno test --allow-run="$DENO_BIN" --allow-read pruebas_cli/ > salida_cli.txt 2>&1 || { cat salida_cli.txt; exit 1; }
+          cat salida_cli.txt
+          grep -q "ok | 1 passed | 0 failed" salida_cli.txt || { echo "La prueba de la línea de órdenes debe ejecutarse y pasar (1 passed, 0 failed)"; exit 1; }
+          ! grep -qi "ignored" salida_cli.txt || { echo "La prueba de la línea de órdenes no puede quedar omitida"; exit 1; }
       - name: Demostración de facturación simulada (tipos)
         working-directory: fel/demo-facturacion
         run: deno check servidor.ts src/*.ts tests/*.ts nube/proxy.ts nube/funcion.ts nube/funcion_entrada.ts nube/aprovisionar.ts nube/construir.ts nube/pages/worker.ts nube/local.ts nube/prueba_humo.ts nube/bd_entorno.ts
