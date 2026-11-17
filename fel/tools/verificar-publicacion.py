@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Garantías estáticas de la publicación privada (se ejecutan en el CI): ninguna ejecución automática puede publicar y los secretos de la demostración no se filtran a otros trabajos."""
-import glob, re, sys, yaml
+import glob, os, re, sys, yaml
 R = ".github/workflows/publicar-nube.yml"; DF = ".github/workflows/digifact-test.yml"; MG = ".github/workflows/migraciones-nube.yml"; fallos = []
 def mal(m): fallos.append(m); print("FALLO", m)
 def ok(m): print("OK   ", m)
@@ -209,4 +209,12 @@ else: mal("[funcion] la transmisión de Digifact no es todo-o-nada validada o im
 _wk = open("fel/demo-facturacion/nube/pages/worker.ts", encoding="utf-8").read()
 if not re.search(r"DIGIFACT|digifact", _wk): ok("[cloudflare] el intermediario de Cloudflare no conoce nada de Digifact: ningún secreto fiscal llega ni al navegador ni a Cloudflare")
 else: mal("[cloudflare] el worker menciona Digifact")
+# ---- la migración 29 es solo una PROPUESTA: el conjunto ejecutable sigue siendo exactamente el aprobado (28) hasta que se autorice su aplicación
+_mig = sorted(os.path.basename(f) for f in glob.glob("fel/supabase/migrations/*.sql"))
+if len(_mig) == 28 and _mig[-1].startswith("20261113000100_") and not any("digifact_operaciones" in m or m.startswith("2026111400") for m in _mig): ok("[migración 29] fuera de supabase/migrations: el conjunto ejecutable son exactamente las 28 aprobadas (la última, 20261113000100)")
+else: mal(f"[migración 29] el conjunto de migraciones ejecutables cambió ({len(_mig)} archivos, última {_mig[-1] if _mig else '—'}): una migración nueva exige autorización expresa")
+if os.path.exists("fel/docs/migracion-29/20261114000100_fel_digifact_operaciones.sql"): ok("[migración 29] la propuesta sigue en docs/migracion-29")
+else: mal("[migración 29] falta la propuesta en docs/migracion-29")
+if "20261114" not in sb and "ESPERADAS=29" not in sb: ok("[migración 29] las etapas de supabase-hospedado.sh solo conocen hasta la migración 28 (no hay etapa 3 todavía)")
+else: mal("[migración 29] supabase-hospedado.sh ya menciona la 29")
 sys.exit(1 if fallos else 0)
