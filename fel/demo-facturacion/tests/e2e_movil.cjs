@@ -50,7 +50,19 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       await p.selectOption('select[aria-label="Receptor"]', { index: 1 }); await p.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
 
       // ---- captura rápida: descripción ⏎ cantidad ⏎ precio ⏎ guarda y deja la hoja lista para el siguiente ítem
-      await p.click("#agregar-item", { timeout: 8000 }).catch(async (e) => { console.log(`DIAGNÓSTICO ${NAV} ${w}px: «Agregar ítem» no se pudo pulsar:\n${JSON.stringify(await diagnostico("#agregar-item"), null, 1)}`); throw e; });
+      await p.click("#agregar-item", { timeout: 8000 }).catch(async (e) => {
+        console.log(`DIAGNÓSTICO ${NAV} ${w}px: «Agregar ítem» no se pudo pulsar:\n${JSON.stringify(await diagnostico("#agregar-item"), null, 1)}`);
+        // ¿se debe al viewport, a la emulación móvil o al CSS? Se prueba, una por una, cada forma de llegar al botón y se mide qué cambia
+        const medir = () => p.evaluate(() => { const b = document.querySelector("#agregar-item").getBoundingClientRect(); return { scrollY: Math.round(scrollY), botonY: Math.round(b.top), alto: innerHeight, nav: Math.round(document.querySelector(".nav-movil").getBoundingClientRect().top) }; });
+        const pruebas = {};
+        await p.evaluate(() => window.scrollTo(0, 300)); pruebas.scrollTo300 = await medir();
+        await p.evaluate(() => document.querySelector("#agregar-item").scrollIntoView({ block: "center" })); pruebas.scrollIntoViewCentro = await medir();
+        await p.evaluate(() => { document.documentElement.style.scrollPaddingBottom = "0px"; document.documentElement.style.scrollPaddingTop = "0px"; window.scrollTo(0, 0); document.querySelector("#agregar-item").scrollIntoView({ block: "end" }); }); pruebas.sinScrollPadding = await medir();
+        await p.mouse.wheel(0, 250).catch(() => {}); await p.waitForTimeout(200); pruebas.ruedaDelRaton = await medir();
+        pruebas.entorno = await p.evaluate(() => ({ meta: document.querySelector('meta[name="viewport"]')?.content, pantalla: [screen.width, screen.height], dpr: devicePixelRatio, htmlAncho: document.documentElement.getBoundingClientRect().width, bodyAncho: document.body.getBoundingClientRect().width, desbordados: [...document.querySelectorAll("body *")].filter((x) => x.getBoundingClientRect().right > innerWidth + 1).slice(0, 6).map((x) => `${x.tagName.toLowerCase()}${x.id ? "#" + x.id : ""}.${String(x.className).split(" ")[0]} pos=${getComputedStyle(x).position} der=${Math.round(x.getBoundingClientRect().right)}`), nav: ["position", "left", "right", "bottom", "width"].map((k) => getComputedStyle(document.querySelector(".nav-movil"))[k]) }));
+        console.log(`DIAGNÓSTICO ${NAV} ${w}px (pruebas de desplazamiento): ${JSON.stringify(pruebas, null, 1)}`);
+        throw e;
+      });
       await p.waitForSelector(".hoja-item"); await sinDesborde("hoja de edición"); await foto("02-editor"); await textoVisible("hoja de edición");
       const hoja = await p.locator(".hoja-item").boundingBox(); assert.ok(hoja.x >= 0 && hoja.x + hoja.width <= w + 1 && hoja.y >= 0 && hoja.y + hoja.height <= alto + 1, donde("la hoja cabe en la pantalla"));
       await p.fill('.hoja-item [aria-label="Descripción"]', "Servicio de consultoría"); await p.keyboard.press("Enter"); await p.keyboard.type("2"); await p.keyboard.press("Enter"); await p.keyboard.type("150.50");
