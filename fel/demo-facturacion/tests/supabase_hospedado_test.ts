@@ -25,6 +25,10 @@ Deno.test("Auth admin: alta confirmada y sin contraseña, mismo id, idempotente;
   modo = "otro_id"; await assert.rejects(() => c.crear(ID, "ana@demo.example"), /otro identificador/);
   modo = "existe"; await c.crear(ID, "ana@demo.example"); await assert.rejects(() => c.crear(ID, "otra@demo.example"), /otros datos/);
   modo = "falla"; await assert.rejects(() => c.crear(ID, "ana@demo.example"), (e: Error) => !e.message.includes(CLAVE_SERVICIO) && /estado 500/.test(e.message));
+  // un 400 de Auth con su código de error (p. ej. dominio de correo no admitido) se informa SOLO por el código, sin cuerpo ni claves
+  { const f400: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error_code: "email_address_invalid", msg: "x " + CLAVE_SERVICIO }), { status: 400 }));
+    const c400 = creadorAdminApi({ url: "https://abcdefghijklmnopqrst.supabase.co", claveServicio: CLAVE_SERVICIO, fetchImpl: f400 });
+    await assert.rejects(() => c400.crear(ID, "ana@demo.example"), (e: Error) => !e.message.includes(CLAVE_SERVICIO) && /estado 400, código email_address_invalid/.test(e.message)); }
   assert.throws(() => creadorAdminApi({ url: "http://abc.supabase.co", claveServicio: CLAVE_SERVICIO }), /HTTPS/);
 });
 

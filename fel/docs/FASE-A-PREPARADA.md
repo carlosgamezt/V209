@@ -89,3 +89,8 @@ Las 12 variables llegaron con valor (todas enmascaradas; el script no reportó f
 - **Garantías:** todo `simulado`; `emision_real_disponible=false`; sin credenciales fiscales; Cloudflare y el navegador nunca ven secretos de Supabase ni de Digifact.
 - **Si la prueba de humo falla:** NO se entrega la URL; se diagnostica y se corrige antes de repetir. El aprovisionamiento es idempotente (no resiembra si la base ya tiene la demo).
 - **Después (C3):** te entrego la URL solo tras la prueba de humo en verde; pruebas en PC y Android con `GUIA-PRIMERA-SESION.md`; las contraseñas son las de tu `DEMO_CLAVES` (nunca en el chat).
+
+## 19. C2 intento #14 (commit `6812a8b`): FALLÓ en el paso 4/8 (aprovisionar), antes de sembrar y de desplegar
+Pasos 1–3 OK (destino fijo, Pages `nexa-fel-demo` ya existía y se reutilizó, `db push`: «Remote database is up to date»). Paso 4: **Supabase Auth rechazó el alta de un usuario (HTTP 400)**. Estado resultante: **no se sembró nada en las tablas de NEXA** (los usuarios de Auth se crean primero y son idempotentes), **no se desplegó la función ni la página**, no hay URL. Pudo quedar creado algún usuario de Auth (confirmado, sin contraseña); repetir es seguro.
+**Causa probable (NO verificada):** el correo sintético `<nombre>@demo.example` usa un dominio reservado que el validador de correo de Supabase Auth puede rechazar (`email_address_invalid`). El registro solo mostraba el estado 400 (por diseño no se vuelca el cuerpo).
+**Cambio local (commit pendiente de subir):** el error ahora incluye únicamente el `error_code` de Auth (`estado 400, código <código>`), nunca el cuerpo ni claves (prueba añadida). Así el siguiente intento da la causa exacta.

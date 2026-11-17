@@ -21,14 +21,15 @@ export function creadorAdminApi(o: { url: string; claveServicio: string; fetchIm
     async crear(id, email) {
       // errores sin cuerpo ni cabeceras: nunca arrastran la clave ni datos de personas
       const r = await f(`${raiz}/auth/v1/admin/users`, { method: "POST", headers: cab, body: JSON.stringify({ id, email, email_confirm: true }), redirect: "manual" });
-      const t = await r.text(); let j: { id?: string; email?: string } = {}; try { j = JSON.parse(t); } catch { /* sin JSON */ }
+      const t = await r.text(); let j: { id?: string; email?: string; error_code?: string } = {}; try { j = JSON.parse(t); } catch { /* sin JSON */ }
       if (r.status === 200 || r.status === 201) { if (j.id !== id) throw new Error("Supabase Auth creó el usuario con otro identificador: esta versión necesita que respete el id indicado"); return; }
       if (r.status === 422 || r.status === 409) {   // ya existe (aprovisionamiento repetido): válido solo si es el MISMO usuario
         const g = await f(`${raiz}/auth/v1/admin/users/${encodeURIComponent(id)}`, { headers: cab, redirect: "manual" });
         if (g.status === 200) { const u = await g.json().catch(() => ({})); if (u.id === id && String(u.email).toLowerCase() === email.toLowerCase()) return; }
         throw new Error("El usuario ya existe en Supabase Auth con otros datos");
       }
-      throw new Error(`Supabase Auth rechazó el alta de un usuario (estado ${r.status})`);
+      const cod = typeof j.error_code === "string" && /^[a-z0-9_]{1,60}$/.test(j.error_code) ? `, código ${j.error_code}` : "";   // solo el código de error de Auth (p. ej. email_address_invalid): nunca el cuerpo
+      throw new Error(`Supabase Auth rechazó el alta de un usuario (estado ${r.status}${cod})`);
     },
   };
 }
