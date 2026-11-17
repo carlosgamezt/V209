@@ -1,5 +1,6 @@
 // Datos de la versión PRÁCTICA de la demostración: administrador de la plataforma, segunda empresa ficticia, canal Digifact SIMULADO, bolsón simulado, planes y saldos.
 // Todo es ficticio y simulado: ningún pago es real, ningún documento se certifica ante SAT.
+import { correoDemo } from "./usuarios_auth.ts";
 import type { BdDemo } from "./bd.ts";
 import { EMPRESA, USUARIOS } from "./mundo_demo.ts";
 
@@ -22,7 +23,7 @@ export interface MundoPractico { cuentaBolson: string; planes: { prepago: string
 export async function sembrarPractico(bd: BdDemo): Promise<MundoPractico> {
   const M = EXTRA.maestro.id, S = EXTRA.sofia.id;
   for (const u of Object.values(EXTRA)) {
-    await bd.crearUsuario(u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`);
+    await bd.crearUsuario(u.id, correoDemo(u.nombre));
     await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
   }
   await bd.ejecutar("insert into public.plataforma_admins (user_id) values ($1), ($2)", [M, EXTRA.maestro2.id]);

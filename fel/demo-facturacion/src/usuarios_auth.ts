@@ -3,6 +3,13 @@
 //  · creadorSql: local, pruebas y CI (PostgreSQL / PGlite con el esquema «auth» simulado) — inserta en auth.users.
 //  · creadorAdminApi: proyecto hospedado — POST /auth/v1/admin/users con la clave de servicio, que SOLO existe en el servidor (la función de Supabase la recibe como secreto propio de la plataforma;
 //    el aprovisionamiento la lee de una variable de entorno de tu equipo). El usuario se crea CONFIRMADO y SIN contraseña de Supabase (la demostración tiene su propio inicio de sesión).
+// Correo sintético de una persona de la demostración: SOLO ASCII (sin tildes ni símbolos). GoTrue (Supabase Auth hospedado) rechaza con HTTP 400 «validation_failed» una parte local con caracteres
+// no ASCII (p. ej. «sofía@…»); el dominio se conserva. El correo no se usa para iniciar sesión (la demostración tiene su propio acceso): solo identifica al usuario en Auth.
+export function correoDemo(nombre: string): string {
+  const base = nombre.trim().split(/\s+/)[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!base) throw new Error("nombre sin caracteres válidos para el correo de la demostración");
+  return `${base}@demo.example`;
+}
 export interface CreadorUsuarios { crear(id: string, email: string): Promise<void> }
 type Ejecutar = (sql: string, params?: unknown[]) => Promise<void>;
 

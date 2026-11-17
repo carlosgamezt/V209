@@ -1,5 +1,6 @@
 // Datos de ejemplo de la demostración: una empresa FICTICIA con cuatro personas ficticias, dos establecimientos, un canal SIMULADO y algunos clientes.
 // Ningún dato es real. Los parámetros de espera se acortan a 0 para poder recorrer la conciliación manual y las respuestas tardías en una sola sesión.
+import { correoDemo } from "./usuarios_auth.ts";
 import type { BdDemo } from "./bd.ts";
 
 export const EMPRESA = "10000000-0000-0000-0000-0000000000d0";
@@ -16,7 +17,7 @@ export interface Sembrado { empresa: string; canal: string; establecimientos: { 
 export async function sembrar(bd: BdDemo): Promise<Sembrado> {
   
   for (const u of Object.values(USUARIOS)) {
-    await bd.crearUsuario(u.id, `${u.nombre.split(" ")[0].toLowerCase()}@demo.example`);
+    await bd.crearUsuario(u.id, correoDemo(u.nombre));
     await bd.ejecutar("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [u.id]);
   }
   await bd.ejecutar("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) select $1, 'Empresa Demo', 'Empresa Demo, S.A. (FICTICIA)', '7770001-0', id, 'habilitada' from public.regimenes_fiscales where codigo = 'general'", [EMPRESA]);

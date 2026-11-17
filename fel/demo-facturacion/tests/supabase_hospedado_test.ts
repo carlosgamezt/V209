@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import postgres from "npm:postgres@3.4.5";
 import { baseDePrueba } from "./bd_prueba.ts";
-import { creadorAdminApi } from "../src/usuarios_auth.ts";
+import { creadorAdminApi, correoDemo } from "../src/usuarios_auth.ts";
 import { verificarProyecto } from "../nube/bd_entorno.ts";
 import { reenviar } from "../nube/proxy.ts";
 import { crearManejador } from "../nube/funcion.ts";
@@ -24,6 +24,8 @@ Deno.test("Auth admin: alta confirmada y sin contraseña, mismo id, idempotente;
   assert.deepEqual(l.cuerpo, { id: ID, email: "ana@demo.example", email_confirm: true }, "confirmado y sin contraseña de Supabase");
   modo = "otro_id"; await assert.rejects(() => c.crear(ID, "ana@demo.example"), /otro identificador/);
   modo = "existe"; await c.crear(ID, "ana@demo.example"); await assert.rejects(() => c.crear(ID, "otra@demo.example"), /otros datos/);
+  // correos de la demostración: solo ASCII (GoTrue rechaza «sofía@…» con 400 validation_failed)
+  assert.equal(correoDemo("Sofía Aguilar"), "sofia@demo.example"); assert.equal(correoDemo("Mario Maestro"), "mario@demo.example"); assert.equal(correoDemo("Ñandú Pérez"), "nandu@demo.example"); assert.throws(() => correoDemo("¿¡"), /sin caracteres/);
   modo = "falla"; await assert.rejects(() => c.crear(ID, "ana@demo.example"), (e: Error) => !e.message.includes(CLAVE_SERVICIO) && /estado 500/.test(e.message));
   // un 400 de Auth con su código de error (p. ej. dominio de correo no admitido) se informa SOLO por el código, sin cuerpo ni claves
   { const f400: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error_code: "email_address_invalid", msg: "x " + CLAVE_SERVICIO }), { status: 400 }));
