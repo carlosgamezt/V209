@@ -79,3 +79,13 @@ Migración 28 aplicada en `nexa-demo` (1 sola, precondición «exactamente las 2
 - **Destinos fijos:** el script solo puede tocar `nexa-demo` y la página `nexa-fel-demo`; cualquier otra referencia → PROHIBIDO.
 - **Si faltan secretos:** C1 los lista por nombre y se detiene (sin valores). Los creas tú en GitHub (*Settings → Environments → demo-privada*), nunca en el chat. `DEMO_CLAVES` y `DEMO_MFA_SEMILLAS` salen de `deno run src/generar_secretos.ts` (guárdalas tú; son las contraseñas de la demostración).
 - **Después:** C2 `publicar` con `digifact=apagado` y `confirmar=PUBLICAR` (la migración ya aplicada hace que `db push` no tenga nada pendiente), y C3 la URL tras la prueba de humo.
+
+## 17. C1 EJECUTADA: `publicar-nube` #13 (commit `188ff4e`, `modo=verificar`, `digifact=apagado`) = OK
+Las 12 variables llegaron con valor (todas enmascaradas; el script no reportó faltantes), la referencia y el proyecto de Pages coinciden con los fijados (`nexa-demo`, `nexa-fel-demo`), `DEMO_BD_URL` corresponde al pooler de `nexa-demo`, CLI de Supabase 3.2.0 con todas las opciones requeridas, y `db push --dry-run`: **«Remote database is up to date», 0 pendientes** (28 de 28). Digifact: todas sus variables vacías (apagado). Nada se modificó ni se imprimió ninguna credencial.
+
+## 18. C2 preparada, NO ejecutada (primera operación que PUBLICA y escribe datos en `nexa-demo`)
+- **Cómo:** `publicar-nube.yml` · `modo=publicar` · `confirmar=PUBLICAR` · `digifact=apagado` · rama `fel-proveedores-diseno` · aprobación en `demo-privada`.
+- **Qué hace, en orden (`publicar-nube.sh`):** (1) protecciones de destino; (2) Cloudflare Pages: crea `nexa-fel-demo` con Wrangler si no existe; (3) `db push`: sin pendientes (no-op); (4) **aprovisionar**: siembra el mundo simulado SOLO si la base está vacía (se niega ante empresas ajenas) y registra las contraseñas de `DEMO_CLAVES` como hash PBKDF2 — **es la primera escritura de datos en `nexa-demo`**; (5) construye página y función; (6) secretos y despliegue de la función `nexa-demo` (sin JWT, con `FEL_PROXY_SECRETO`; sin Digifact); (7) secretos y despliegue de Pages; (8) **prueba de humo** contra la URL real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia).
+- **Garantías:** todo `simulado`; `emision_real_disponible=false`; sin credenciales fiscales; Cloudflare y el navegador nunca ven secretos de Supabase ni de Digifact.
+- **Si la prueba de humo falla:** NO se entrega la URL; se diagnostica y se corrige antes de repetir. El aprovisionamiento es idempotente (no resiembra si la base ya tiene la demo).
+- **Después (C3):** te entrego la URL solo tras la prueba de humo en verde; pruebas en PC y Android con `GUIA-PRIMERA-SESION.md`; las contraseñas son las de tu `DEMO_CLAVES` (nunca en el chat).
