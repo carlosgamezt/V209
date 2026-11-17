@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v511</title>
+</script><title>Nexa v512</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -983,13 +983,97 @@ body::after{content:'';position:fixed;left:0;right:0;bottom:0;height:env(safe-ar
 /* v421 · inicio de sesión: la tarjeta blanca ocupa toda la pantalla (antes solo su alto y dejaba ver el fondo lavanda debajo) */
 main:has(.lgc){min-height:100vh;min-height:100dvh;box-sizing:border-box}
 body{min-height:100vh;min-height:100dvh}
+/* ===== v512 · Dashboard PRESENTACIÓN (reporte de evidencias, antes y después) ===== */
+.pbar{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-end;padding:14px 18px}
+.pbar .dgf{min-width:170px;flex:0 1 210px}
+.pbar .pchk{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--nexa-text);height:40px;cursor:pointer}
+.pbar .pchk input{width:18px;height:18px;accent-color:var(--nexa-primary)}
+.pbar .pr{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pbar .pr button{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px}
+.pbar svg,.pres svg,.ppg svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.pres{padding:18px 22px 14px;background:linear-gradient(180deg,#fff,#FAFAFE)}
+.pres:fullscreen,.pres.fs{margin:0;position:fixed;inset:0;z-index:60;border-radius:0;padding:20px 40px 12px;display:flex;flex-direction:column;background:#fff;overflow:hidden;width:auto;max-width:none;box-sizing:border-box}
+.pres:fullscreen .pgrid,.pres.fs .pgrid{flex:1;min-height:0;grid-template-rows:repeat(3,minmax(0,1fr));gap:10px}
+.pres:fullscreen .prow,.pres.fs .prow{min-height:0}.pres:fullscreen .pt,.pres.fs .pt{display:flex;flex-direction:column;min-height:0}
+.pres:fullscreen .pt img,.pres:fullscreen .pt .nof,.pres.fs .pt img,.pres.fs .pt .nof{flex:1 1 0;min-height:0;width:100%;height:0;aspect-ratio:auto}
+.pres:fullscreen .pnav,.pres.fs .pnav{margin-top:8px;padding-top:8px}.pres:fullscreen .pmeta,.pres.fs .pmeta{margin-bottom:10px}
+.pres:focus{outline:none}
+.phd{display:flex;align-items:center;gap:18px;padding-bottom:12px}
+.phd .lg{width:44px;height:44px;border-radius:13px;background:var(--nexa-logo-background);overflow:hidden;flex:none}.phd .lg img{width:100%;height:100%;display:block}
+.phd .bn{font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--nexa-text);line-height:1}
+.phd .sep{width:1px;align-self:stretch;background:#E4E5F1;margin:2px 0}
+.phd h2{margin:0;font-size:26px;font-weight:800;letter-spacing:-.5px;color:var(--nexa-text);line-height:1.1}
+.phd p{margin:3px 0 0;font-size:14.5px;color:var(--nexa-text-secondary);font-weight:600}.phd p b{color:var(--nexa-text);font-weight:800}
+.pmeta{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid #E7E8F3;border-bottom:1px solid #E7E8F3;padding:10px 0;margin-bottom:14px;row-gap:10px}
+.pmi{display:flex;align-items:center;gap:10px;padding:0 16px;border-left:1px solid #E7E8F3;min-width:0}.pmi:first-child{border-left:0;padding-left:2px}
+.pmi>svg{color:var(--nexa-primary);width:22px;height:22px}
+.pmi small{display:block;font-size:11.5px;color:var(--nexa-text-secondary);font-weight:600;line-height:1.2}
+.pmi b{display:block;font-size:14px;font-weight:800;color:var(--nexa-text);line-height:1.25;overflow:hidden;text-overflow:ellipsis}
+.pmi.act{flex:1 1 150px}.pmi.act b{font-weight:600;font-size:13.5px}
+.pchip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 12px;font-size:13px;font-weight:800;white-space:nowrap}
+.pchip svg{width:16px;height:16px}
+.pchip.ok{background:#DDF8E4;color:#15803D}.pchip.wa{background:#FFF3D6;color:#9A6200}.pchip.wa2{background:#FFE6D2;color:#B4500B}.pchip.bad{background:#FFE1E4;color:#C0273A}.pchip.n{background:#EDEEF9;color:var(--nexa-text-secondary)}.pchip.in{background:#E8EAFF;color:var(--nexa-primary)}
+.pmf{display:contents}.pmi.end{margin-left:auto;gap:10px;padding-right:0}
+.pgrid{display:grid;gap:12px}
+.prow{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pt{margin:0;background:#fff;border-radius:18px;box-shadow:0 1px 2px rgba(25,25,29,.04),0 6px 18px rgba(25,25,29,.05);padding:8px 8px 10px;min-width:0}
+.pt img{display:block;width:100%;aspect-ratio:16/5;object-fit:cover;border-radius:12px;cursor:zoom-in;background:#EDEEF9}
+.pt .nof{display:grid;place-items:center;width:100%;aspect-ratio:16/5;border-radius:12px;border:1.5px dashed #D0D2DC;color:var(--nexa-text-secondary);font-size:13px;font-weight:600;background:#F7F7FC}
+.pt figcaption{display:flex;align-items:center;gap:12px;margin-top:8px;padding:0 4px;font-size:13px;color:var(--nexa-text-secondary);min-width:0}
+.pt figcaption span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.pt figcaption span+span{padding-left:12px;border-left:1px solid #E4E5F1}
+.pt figcaption b{color:var(--nexa-text);font-weight:700}
+.pt .lb{font-style:normal}.pc{font-style:normal;font-weight:800;font-size:13px;border-radius:999px;padding:4px 14px;white-space:nowrap}
+.pc.a{background:#E8EAFF;color:var(--nexa-primary)}.pc.d{background:#DDF8E4;color:#15803D}
+.pnav{display:flex;align-items:center;justify-content:center;gap:34px;margin-top:14px;padding-top:12px;border-top:1px solid #E7E8F3}
+.pnav .pn{width:44px;height:44px;border-radius:50%;padding:0;display:grid;place-items:center;background:#fff;color:var(--nexa-text);border:1px solid #E4E5F1;box-shadow:0 2px 8px rgba(25,25,29,.06)}
+.pnav .pn:hover:not(:disabled){border-color:var(--nexa-primary);color:var(--nexa-primary)}.pnav .pn:disabled{opacity:.35;cursor:default}
+.pnav .pn:active:not(:disabled){transform:scale(.97)}.pnav .pn svg{width:20px;height:20px}
+.pmid{text-align:center}.pmid b{display:block;font-size:15px;font-weight:800;color:var(--nexa-text)}
+.pdots{display:flex;gap:9px;justify-content:center;margin-top:7px}.pdots i{width:9px;height:9px;border-radius:50%;background:#D8DAF0;cursor:pointer}.pdots i.on{background:var(--nexa-primary);transform:scale(1.15)}
+.pempty{padding:46px 10px;text-align:center;color:var(--nexa-text-secondary);font-weight:600}
+@media(max-width:900px){
+ .pres{padding:14px 12px 12px}
+ .pres .phd{gap:12px}.pres .phd .bn,.pres .phd .sep{display:none}.pres .phd h2{font-size:21px}.pres .phd p{font-size:13px}
+ .pres .pmeta{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 0}
+ .pres .pmi{border-left:0;padding:0;gap:8px}.pres .pmi>svg{display:none}.pres .pmi small{font-size:11px}.pres .pmi b{font-size:13.5px}
+ .pres .pmi.act{grid-column:1/-1;flex:none;order:5}.pres .pmf{display:flex;grid-column:1/-1;order:6;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}.pres .pmi.end{margin-left:0;gap:8px}
+ .pres .pmi.ef{flex-direction:column;align-items:flex-start;gap:2px}.pres .pmi.ef small{margin-bottom:0}
+ .pres .prow{gap:8px}.pres .pt{padding:5px 5px 8px;border-radius:14px}.pres .pt img,.pres .pt .nof{aspect-ratio:4/3;border-radius:10px}
+ .pres .pt figcaption{gap:8px;font-size:11.5px;align-items:center}.pres .pt figcaption span:nth-of-type(1){display:none}.pres .pt .lb{display:none}.pres .pt figcaption span+span{flex:1 1 0;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;border:0;padding:0;line-height:1.25}
+ .pres .pc{padding:3px 10px;font-size:12px}
+ .pbar{padding:12px;gap:10px}.pbar .dgf{flex:1 1 calc(50% - 8px);min-width:0}.pbar .pchk{flex:1;font-size:12.5px;height:44px}.pbar .pr{margin-left:0}.pbar .pr button{width:44px;padding:0;justify-content:center;height:44px}.pbar .pr button span{display:none}
+ .pres .pnav{gap:22px}
+}
+@media print{.pgrid.sl{animation:none!important}}
+@media(prefers-reduced-motion:no-preference){.pt,.pdots i{transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s}.pgrid.sl{animation:psl .22s cubic-bezier(.2,.8,.2,1)}@keyframes psl{from{opacity:.4;transform:translateX(10px)}to{opacity:1;transform:none}}}
+
+.dtabs{display:flex;gap:8px;flex-wrap:wrap}
+@media(max-width:900px){.dtabs{flex-wrap:nowrap;overflow-x:auto;width:100%;scrollbar-width:none;padding-bottom:2px}.dtabs::-webkit-scrollbar{display:none}.dtabs button{flex:none}}
+
+@media(max-width:900px){.ph div.row{flex-wrap:wrap}.dtabs{order:2}}
+
+.pt figcaption .pc{flex:none}
+
+.pexit{display:none;margin-left:auto;width:40px;height:40px;padding:0;place-items:center;border-radius:50%}
+.pres:fullscreen .pexit,.pres.fs .pexit{display:grid}
+@media(prefers-color-scheme:dark){
+ .pres{background:#1C1D25}
+ .pres .phd h2,.pres .phd .bn,.pres .pmi b,.pres .pt figcaption b,.pres .pmid b{color:#F1F2F8}
+ .pres .pt{background:#23242E;box-shadow:none}.pres .pt .nof{background:#1C1D25;border-color:#3A3C4A}.pres .pt img{background:#23242E}
+ .pres .pmeta,.pres .pnav,.pres .pmi,.pres .pt figcaption span+span{border-color:#2C2E3A}
+ .pres .pc.a,.pres .pchip.in{background:#262A4A;color:#9AA3FF}
+ .pres .pc.d,.pres .pchip.ok{background:#173A26;color:#7EE79A}
+ .pres .pchip.wa{background:#3D2F0F;color:#F5C451}.pres .pchip.wa2{background:#40240F;color:#F5A25D}.pres .pchip.bad{background:#40181E;color:#FF8A96}.pres .pchip.n{background:#262836;color:#9A9CAE}
+ .pres .pnav .pn{background:#23242E;color:#F1F2F8;border-color:#2C2E3A}.pres .pdots i{background:#3A3C4A}.pres .pdots i.on{background:var(--nexa-primary)}
+ .pbar .pchk{color:#F1F2F8}
+}
 </style></head><body><script>/* Fechas visibles siempre como dd/mm/aaaa */
 (function(){const re=/\b(\d{4})-(\d{2})-(\d{2})\b/g,fix=n=>{if(n.nodeType===3){const v=n.nodeValue;re.lastIndex=0;if(re.test(v)){re.lastIndex=0;n.nodeValue=v.replace(re,'$3/$2/$1')}re.lastIndex=0;return}if(n.nodeType!==1)return;const t=n.tagName;if(t==='SCRIPT'||t==='STYLE'||t==='TEXTAREA'||t==='INPUT')return;n.childNodes.forEach(fix)};
 new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='characterData')fix(m.target)})}).observe(document.documentElement,{childList:true,subtree:true,characterData:true});fix(document.body)})();</script>
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v511';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v512';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -1497,7 +1581,7 @@ const avgs=ps=>{const ap=[],cu=[],rv=[],co=[];ps.forEach(p=>{const c=p.created;i
 const dGroups=ps=>{const byReg=wideScope()&&!DS.r&&!DS.s&&!DS.b;if(byReg){const rs=[...new Set(allSucs().map(u=>u.region))].sort((x,y)=>x-y);return{kind:'Región',list:rs.map(r=>({k:r,label:'Región '+r,short:'R'+r,ps:ps.filter(p=>p.region===r)}))}}
  return{kind:'Sucursal',list:sucGroups(ps)}};
 const sucGroups=ps=>scopeSucs().sort((x,y)=>x.branch.localeCompare(y.branch,'es')).map(u=>({k:u.id,label:u.branch,short:u.branch,reg:u.region,ps:ps.filter(p=>p.region===u.region&&p.branch===u.branch)}));
-function dset(k,v){DS[k]=v;if(k==='r'){DS.s='';DS.b=''}if(k==='s'){DS.r='';DS.b=''}if(k==='pt')DS.pm=defPm(v);render()}
+function dset(k,v){DS[k]=v;if(typeof PR!=='undefined')PR.i=0;if(k==='r'){DS.s='';DS.b=''}if(k==='s'){DS.r='';DS.b=''}if(k==='pt')DS.pm=defPm(v);render()}
 const TCOL={Operaciones:['#E9ECFF','#4654D9'],Inventarios:['#E1F3EE','#167D72'],Externos:['#FDF0E1','#A66328'],Otro:['#FBE8EE','#B64F69']},typeTag=t=>{const c=TCOL[t]||TCOL.Otro;return `<span class="tag" style="--tc:${c[1]};background:${c[0]};color:${c[1]};box-shadow:inset 0 0 0 1px ${c[1]}33">${esc(t)}</span>`}; const chartHtml=g=>{const L=g.list.map(x=>({...x,S:stat(x.ps)}));return`<div class="chart">${L.map(x=>`<div class="cb"><div class="pv">${x.S.cum==null?'—':x.S.cum+'%'}</div><div class="bar" style="height:${x.S.cum==null?3:Math.max(3,Math.round(x.S.cum*1.5))}px"></div></div>`).join('')}</div><div class="cl">${L.map(x=>`<span title="${esc(x.label)}">${esc(x.short)}</span>`).join('')}</div>`};
 function dAnalysis(ps,S,G){const out=[],L=G.list.map(x=>({x,S:stat(x.ps)})).filter(y=>y.S.n>=1);
  if(L.length>=2&&S.cum!=null){const lo=L.filter(y=>y.S.cum!=null).sort((u,v)=>u.S.cum-v.S.cum)[0],hi=L.filter(y=>y.S.cum!=null).sort((u,v)=>v.S.cum-u.S.cum)[0];
@@ -1555,6 +1639,53 @@ function dashVis(ps){
   body=`<div class="dgf" style="max-width:340px"><label>Sucursal</label><select onchange="DV.b=this.value;DV.n=12;render()">${sucs.map(b=>`<option ${b===DV.b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>`+q.slice().sort(planDesc).map(p=>vSec(esc(p.id),esc(p.type)+' · visita '+esc(p.visit),vPh([p]))).join('')||''}
  return`<div class="card vbar"><div class="vb3">${mb('all','Todas')}${mb('reg','Por región')}${mb('suc','Por sucursal')}</div><div class="vb2"><button class="${DV.f==='a'?'':'sec'}" onclick="DV.f=DV.f==='a'?'':'a';DV.n=12;render()">Fotos de antes</button><button class="${DV.f==='d'?'':'sec'}" onclick="DV.f=DV.f==='d'?'':'d';DV.n=12;render()">Fotos de después</button></div></div>`+(body||'<div class="card"><p class="vempty">No hay planes en el período seleccionado.</p></div>')}
 const noEmo=h=>String(h).replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF\u23F0-\u23FF\uFE0F]/gu,'');
+/* ===== v512 · DASHBOARD PRESENTACIÓN: una diapositiva por plan con sus pares de fotos antes/después (hasta 3 por diapositiva) ===== */
+var PR={i:0,st:'',ef:'',par:1};
+const PRP=3,PR_MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const PIC={pin:'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',layers:'<path d="m12 2 10 5-10 5L2 7l10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',clip:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',cal:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',user:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',bars:'<path d="M5 21V11M12 21V4M19 21v-7"/>',prev:'<path d="m15 18-6-6 6-6"/>',next:'<path d="m9 18 6-6-6-6"/>',ok:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',full:'<path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>',x:'<path d="M18 6 6 18M6 6l12 12"/>'};
+const pIc=n=>`<svg viewBox="0 0 24 24" aria-hidden="true">${PIC[n]}</svg>`;
+const prFecha=v=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v||'');return m?(+m[3])+' '+PR_MES[+m[2]-1]+' '+m[1]:'—'};
+const prStG=s=>s==='Aprobada'?'ok':s==='Enviada'?'rev':'pen';
+const prEfLbl=p=>p==null?'':p>=90?'Eficiente':p>=60?'Regular':p>=40?'Deficiente':'Malo';
+const prEfCls={Eficiente:'ok',Regular:'wa',Deficiente:'wa2',Malo:'bad'};
+function prPeriodo(){const s=DS,y=s.y,M=MESES,pm=+s.pm;return s.pt==='Todo'?'Todo el tiempo':s.pt==='Anual'?'Año '+y:s.pt==='Mensual'?M[pm-1]+' '+y:s.pt==='Bimestral'?`Bimestre ${pm} (${M[pm*2-2]} – ${M[pm*2-1]} ${y})`:s.pt==='Trimestral'?`Trimestre ${pm} (${M[pm*3-3]} – ${M[pm*3-1]} ${y})`:`Semestre ${pm} (${M[pm*6-6]} – ${M[pm*6-1]} ${y})`}
+function prAlcance(){return DS.b?'Sucursal '+DS.b:DS.s?'Región '+supRegion():DS.r?'Región '+DS.r:'Todas las regiones'}
+function prSlides(ps){const out=[];ps.slice().sort(planDesc).forEach(p=>{
+  const it=p.acts.map((a,i)=>({p,a,n:i+1})).filter(x=>(x.a.ref||x.a.ev)&&(!PR.par||(x.a.ref&&x.a.ev))&&(!PR.st||prStG(x.a.st)===PR.st)&&(!PR.ef||x.a.eff===PR.ef));
+  for(let k=0;k<it.length;k+=PRP)out.push({p,items:it.slice(k,k+PRP),idx:k/PRP+1,of:Math.ceil(it.length/PRP)})});return out}
+const prTile=(h,lado,suc,txt,n,pid)=>{const cls=lado==='Antes'?'a':'d',cap=`<figcaption><i class="pc ${cls}">${lado}</i><span><em class="lb">Sucursal: </em><b>${esc(suc)}</b></span><span title="${esc(txt)}"><em class="lb">Actividad: </em><b>${esc(txt)}</b></span></figcaption>`;
+ return h?`<figure class="pt"><img loading="lazy" src="${h.t}" alt="${lado} · ${esc(txt)}" data-cap="${esc(JSON.stringify({l:lado,t:txt||'',n,p:pid}))}" onclick="zoom('${h.k}',this.src,this.dataset.cap)">${cap}</figure>`:`<figure class="pt"><div class="nof">Sin foto de ${lado==='Antes'?'antes':'después'}</div>${cap}</figure>`};
+function prSlideHtml(s,N,i){const p=s.p,as=s.items.map(x=>x.a),ef=prEfLbl(effPct(as)),done=p.status==='Completado',enc=(as.find(a=>a.enc)||{}).enc||'Encargado de sucursal',
+  actTxt=as.length===1?as[0].text:as.length+' actividades'+(s.of>1?' · parte '+s.idx+' de '+s.of:'');
+ const meta=`<div class="pmeta"><div class="pmi">${pIc('pin')}<div><small>Sucursal</small><b>${esc(p.branch)}</b></div></div><div class="pmi">${pIc('layers')}<div><small>Plan</small><b>${esc(p.type)}</b></div></div><div class="pmi act">${pIc('clip')}<div><small>Actividad</small><b title="${esc(as.map(a=>a.text).join(' · '))}">${esc(actTxt)}</b></div></div><div class="pmi">${pIc('cal')}<div><small>Fecha</small><b>${prFecha(p.visit)}</b></div></div><div class="pmi">${pIc('user')}<div><small>Responsable</small><b>${esc(enc)}</b></div></div><div class="pmf"><div class="pmi ef">${pIc('bars')}<div><small>Eficacia</small>${ef?`<span class="pchip ${prEfCls[ef]}">${ef}</span>`:'<span class="pchip n">Sin calificar</span>'}</div></div><div class="pmi end"><span class="pchip ${done?'ok':'in'}">${done?pIc('ok')+'Completada':'En proceso'}</span><span class="pchip n">${i+1} de ${N}</span></div></div></div>`;
+ const rows=s.items.map(x=>`<div class="prow">${prTile(x.a.ref,'Antes',p.branch,x.a.text,x.n,p.id)}${prTile(x.a.ev,'Después',p.branch,x.a.text,x.n,p.id)}</div>`).join('');
+ return meta+`<div class="pgrid sl">${rows}</div>`}
+const prHead=()=>`<div class="phd"><span class="lg"><img src="${LOGO_X}" alt=""></span><span class="bn">Nexa</span><span class="sep"></span><div><h2>Reporte de evidencias</h2><p><b>${esc(prAlcance())}</b> · ${esc(prPeriodo())}</p></div><button class="sec pexit" onclick="prFull()" aria-label="Salir de pantalla completa">${pIc('x')}</button></div>`;
+function prDots(N){const W=6,a=Math.max(0,Math.min(PR.i-2,N-W)),b=Math.min(N,a+W);let h='';for(let i=a;i<b;i++)h+=`<i class="${i===PR.i?'on':''}" onclick="prGo(${i})" title="${i+1} de ${N}"></i>`;return h}
+function prInner(L){const N=L.length,s=L[PR.i];return prHead()+prSlideHtml(s,N,PR.i)+`<div class="pnav"><button class="pn" onclick="prMove(-1)" ${PR.i?'':'disabled'} aria-label="Anterior">${pIc('prev')}</button><div class="pmid"><b>${PR.i+1} de ${N}</b><div class="pdots">${prDots(N)}</div></div><button class="pn" onclick="prMove(1)" ${PR.i<N-1?'':'disabled'} aria-label="Siguiente">${pIc('next')}</button></div>`}
+/* cambiar de diapositiva NO usa render(): así no se pierde la pantalla completa */
+function prDraw(){const e=document.getElementById('pres'),L=window.__PRL;if(e&&L&&L.length)e.innerHTML=prInner(L)}
+function prGo(i){PR.i=i;prDraw()}
+function prMove(d){const N=(window.__PRL||[]).length;PR.i=Math.max(0,Math.min(N-1,PR.i+d));prDraw()}
+function prFull(){const e=document.getElementById('pres');if(!e)return;if(document.fullscreenElement){document.exitFullscreen();return}if(e.classList.contains('fs')){e.classList.remove('fs');return}
+ if(e.requestFullscreen){e.requestFullscreen().catch(()=>e.classList.add('fs'))}else e.classList.add('fs')}
+function dashPres(ps){const L=prSlides(ps),N=L.length;window.__PRL=L;if(PR.i>=N)PR.i=Math.max(0,N-1);
+ const opt=(arr,v)=>arr.map(([k,l])=>`<option value="${k}" ${String(v)===String(k)?'selected':''}>${l}</option>`).join('');
+ const bar=`<div class="card vbar pbar"><div class="dgf"><label>Estado de la actividad</label><select onchange="PR.st=this.value;PR.i=0;render()">${opt([['','Todas'],['ok','Aprobadas'],['rev','En revisión'],['pen','Pendientes o rechazadas']],PR.st)}</select></div><div class="dgf"><label>Eficacia</label><select onchange="PR.ef=this.value;PR.i=0;render()">${opt([['','Toda la eficacia'],['Eficiente','Eficiente'],['Regular','Regular'],['Deficiente','Deficiente'],['Malo','Malo']],PR.ef)}</select></div><label class="pchk"><input type="checkbox" ${PR.par?'checked':''} onchange="PR.par=this.checked?1:0;PR.i=0;render()">Solo con foto de antes y después</label><div class="pr"><button class="sec" onclick="prFull()" aria-label="Pantalla completa" title="Pantalla completa">${pIc('full')}<span>Pantalla completa</span></button></div></div>`;
+ if(!N)return bar+`<div class="card pres"><div class="pempty">No hay evidencias con esos filtros. Cambia el período, la región, la sucursal o el estado.</div></div>`;
+ return bar+`<section class="card pres" id="pres" tabindex="0" aria-label="Presentación de evidencias">${prInner(L)}</section>`}
+/* PDF: una diapositiva por página (horizontal), con todas las diapositivas que dejan los filtros */
+function presPdf(){const L=prSlides(dBase().filter(inPeriod)),N=L.length;if(!N){toast('No hay evidencias con esos filtros');return}
+ if(N>60&&!confirm('Son '+N+' diapositivas: el PDF puede tardar y pesar bastante. ¿Continuar?'))return;
+ const o=document.createElement('div');o.className='ov';
+ o.innerHTML=`<style>@page{size:landscape;margin:8mm}.ppg{background:#fff;break-after:page;page-break-after:always;padding:6px 4px}.ppg:last-of-type{break-after:auto;page-break-after:auto}.ppg .pexit{display:none}.ppg .pgrid{gap:8px}.ppg .prow{gap:12px}.ppg .pt{box-shadow:none;border:1px solid #E4E5F1;padding:5px 5px 6px}.ppg .pt img{aspect-ratio:16/3.7}.ppg .pt figcaption{margin-top:5px;font-size:12px}.ppg .pt,.ppg .pmeta{break-inside:avoid}.ppg .phd{padding-bottom:6px;gap:12px}.ppg .phd h2{font-size:21px}.ppg .phd .lg{width:36px;height:36px}.ppg .pmeta{padding:6px 0;margin-bottom:8px;row-gap:6px}.ppg .pmi b{font-size:12.5px}.ppg .pgrid{gap:6px}@media screen{.ppg{background:#fff;border-radius:18px;margin:14px auto;max-width:1100px;padding:16px 20px}}@media print{.pnoprint{display:none!important}html,body{background:#fff!important}}</style>
+ <div class="row pnoprint" style="margin:14px auto;max-width:1100px"><button onclick="prPrint()">Imprimir / Guardar como PDF</button><button class="sec" onclick="this.closest('.ov').remove()">Cerrar</button><small style="color:#fff;align-self:center">${N} diapositiva${N===1?'':'s'}</small></div>`+L.map((s,i)=>`<section class="ppg">${prHead()}${prSlideHtml(s,N,i)}</section>`).join('');
+ document.body.appendChild(o)}
+function prPrint(){const t=document.title;document.title='Presentación · '+prAlcance()+' · '+prPeriodo();addEventListener('afterprint',()=>{document.title=t},{once:true});window.print()}
+document.addEventListener('keydown',e=>{if(DS.pres&&view==='dash'&&!/INPUT|SELECT|TEXTAREA/.test((e.target||{}).tagName||'')){if(e.key==='ArrowRight'){prMove(1);e.preventDefault()}else if(e.key==='ArrowLeft'){prMove(-1);e.preventDefault()}}});
+(()=>{let x0=null,y0=0;document.addEventListener('touchstart',e=>{const g=e.target.closest&&e.target.closest('#pres .pgrid');if(!g||e.touches.length!==1){x0=null;return}x0=e.touches[0].clientX;y0=e.touches[0].clientY},{passive:true});
+ document.addEventListener('touchend',e=>{if(x0==null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.6)prMove(dx<0?1:-1)},{passive:true})})();
+const dtabFix=()=>{const a=document.querySelector('.dtabs button:not(.sec)');if(a){const w=a.parentNode;w.scrollLeft=a.offsetLeft-(w.clientWidth-a.clientWidth)/2}};
 function dashNew(){window.__DBASE=dBase();const P=PERMS[me.role],wide=wideScope(),base=dBase(),ps=base.filter(inPeriod),S=stat(ps),av=avgs(ps),t=today(),G=dGroups(ps),pl=v=>P.views.includes(v);
  const opts=(arr,val)=>arr.map(([v,l])=>`<option value="${esc(v)}" ${String(val)===String(v)?'selected':''}>${esc(l)}</option>`).join(''),
   sel=(lab,k,arr,val)=>`<div class="dgf"><label>${lab}</label><select onchange="dset('${k}',this.value)">${opts(arr,val)}</select></div>`;
@@ -1572,10 +1703,11 @@ function dashNew(){window.__DBASE=dBase();const P=PERMS[me.role],wide=wideScope(
  const recientes=ps.slice().sort(planDesc).slice(0,5),anyAv=Object.values(av.n).some(Boolean);
 const last=invLike(me.role)?base.slice().sort(planDesc)[0]:null,lp=last?prog(last):null,
   invCard=invLike(me.role)?`<div class="card"><b>Último plan de Inventarios</b>${last?`<div class="row" style="margin-top:8px"><div style="flex:1;min-width:230px"><b>${esc(last.id)}</b> · ${esc(last.branch)} (Región ${esc(last.region)})<br><small>Visita ${esc(last.visit)} · ${esc(stl(last))} · ${lp.n}/${lp.t} actividades</small></div><button onclick="downloadPlan('${last.id}')">⬇ Descargar plan</button><button class="sec" onclick="verPlan('${last.id}')">Ver</button></div>`:'<p>Aún no hay planes de Inventarios en tus sucursales.</p>'}</div>`:'';
- const head=hd('dash',DS.vis?'Dashboard visual':DS.cmp?'Dashboard comparativo':'Dashboard general',DS.vis?'Evidencias fotográficas por sucursal y región':DS.cmp?'Comparación entre períodos, regiones y sucursales':'Resumen ejecutivo de planes de acción',`<div class="row" style="margin:0"><button class="sec" onclick="exportDash()">⬇ Excel</button><button class="sec" onclick="dashPdf()">⬇ PDF</button><button class="${DS.cmp||DS.vis?'sec':''}" onclick="DS.cmp=false;DS.vis=false;render()">GENERAL</button><button class="${DS.cmp&&!DS.vis?'':'sec'}" onclick="DS.cmp=true;DS.vis=false;render()">COMPARATIVO</button><button class="${DS.vis?'':'sec'}" onclick="DS.vis=true;DS.cmp=false;render()">VISUAL</button></div>`);
+ const head=hd('dash',DS.pres?'Dashboard presentación':DS.vis?'Dashboard visual':DS.cmp?'Dashboard comparativo':'Dashboard general',DS.pres?'Reporte de evidencias antes y después':DS.vis?'Evidencias fotográficas por sucursal y región':DS.cmp?'Comparación entre períodos, regiones y sucursales':'Resumen ejecutivo de planes de acción',`<div class="row" style="margin:0"><button class="sec" onclick="exportDash()">⬇ Excel</button><button class="sec" onclick="${DS.pres?'presPdf()':'dashPdf()'}">⬇ PDF</button><div class="dtabs"><button class="${DS.cmp||DS.vis||DS.pres?'sec':''}" onclick="DS.cmp=false;DS.vis=false;DS.pres=false;render()">GENERAL</button><button class="${DS.cmp&&!DS.vis&&!DS.pres?'':'sec'}" onclick="DS.cmp=true;DS.vis=false;DS.pres=false;render()">COMPARATIVO</button><button class="${DS.vis&&!DS.pres?'':'sec'}" onclick="DS.vis=true;DS.cmp=false;DS.pres=false;render()">VISUAL</button><button class="${DS.pres?'':'sec'}" onclick="DS.pres=true;DS.vis=false;DS.cmp=false;PR.i=0;render()">PRESENTACIÓN</button></div></div>`);
  const filtros=`<div class="card fcard ${FOPEN?'open':''}"><button class="ftog sec" onclick="FOPEN=!FOPEN;render()">⚙ Filtros${DS.cmp?'':' · '+periodLabel()} <span>${FOPEN?'▴':'▾'}</span></button><div class="dgfr">${P.scope==='all'||regsOk.length>1?sel('Región / Supervisor','r',[['','Todas las regiones'],...regsOk.map(r=>[r,'Región '+r+' · '+regSup(r)+(xRegs().includes(r)?' (apoyo)':'')])],DS.r):''}${P.scope==='all'||(wide&&regsOk.length>1)?sel('Supervisor','s',[['','Todos los supervisores'],...db.users.filter(u=>u.role==='supervisor'&&regsOk.includes(u.region)).map(u=>[u.id,u.name])],DS.s):''}${sel('Sucursal','b',[['','Todas las sucursales'],...scopeSucs(false).map(u=>u.branch).filter((b,i,x)=>x.indexOf(b)===i).sort((x,y)=>x.localeCompare(y,'es')).map(b=>[b,b])],DS.b)}${invLike(me.role)?'':sel('Tipo','t',[['','Todos'],['Operaciones','Operaciones'],['Inventarios','Inventarios'],['Externos','Externos'],['Otro','Otro']],DS.t)}${DS.cmp?'':sel('Año','y',years.map(y=>[y,y]),DS.y)}${DS.cmp?'':sel('Tipo de período','pt',[['Mensual','Mensual'],['Bimestral','Bimestral'],['Trimestral','Trimestral'],['Semestral','Semestral'],['Anual','Anual'],['Todo','Todo el tiempo']],DS.pt)}${!DS.cmp&&pmOpts.length?sel(DS.pt==='Mensual'?'Mes':DS.pt==='Bimestral'?'Bimestre':DS.pt==='Trimestral'?'Trimestre':'Semestre','pm',pmOpts,DS.pm):''}</div><p style="margin:10px 0 2px;font-size:12px;color:var(--mut)">Mostrando el resumen ${scTxt}.${fTxt?' Filtro: '+esc(fTxt)+'.':''}</p>${DS.cmp?'<p style="margin:0;font-size:12px;color:var(--mut)">Los períodos se eligen abajo (Período A y Período B). Estos filtros aplican a ambos.</p>':`<p style="margin:0;font-size:12px;font-weight:700;color:var(--pri)">Período del informe: ${periodLabel()}</p>`}</div>`;
  const kpis=`<div class="dgrid dg4">${kc('Planes',S.p,'plans')}${kc('Actividades',S.n,'ok')}${kc('Cumplimiento',S.cum==null?'—':S.cum+'%','dash')}${kc('Eficacia',S.ef==null?'—':S.ef+'%','review')}</div>`;
  const prom=`<div class="card"><b>Promedios de respuesta</b><span class="d" style="display:block;color:var(--mut);font-size:12px;margin:2px 0 10px">Tiempo promedio de cada etapa del proceso</span><div class="dgrid dg4" style="margin:0">${ac('Apertura del plan','ap','Desde que se crea el plan hasta que la sucursal lo abre')}${ac('Cumplimiento','cu','Desde que se crea el plan hasta que la sucursal sube su primera evidencia')}${ac('Revisión','rv','Desde que la sucursal envía la evidencia hasta que el supervisor la revisa')}${ac('Respuesta a correcciones','co','Desde que se pide una corrección hasta que la sucursal reenvía la evidencia')}</div>${anyAv?'':'<p style="margin:10px 0 0;font-size:12px;color:var(--mut)">Estos tiempos se empiezan a medir con los planes creados desde esta versión; los planes anteriores no tienen fechas guardadas.</p>'}</div>`;
+ if(DS.pres)return head+filtros+dashPres(ps);
  if(DS.vis)return head+filtros+dashVis(ps);
  if(DS.cmp)return head+invCard+filtros+vsHtml()+`<div class="dcx"><details class="dd" style="display:none"><summary>Detalle</summary>${kpis+prom+cmpHtml(ps,G)}</details></div>`;
  const rows=recientes.map(p=>{const pr=prog(p);return`<tr><td><b>${esc(p.branch)}</b></td><td>${typeTag(p.type)}</td><td>${pr.n}/${pr.t} · ${pr.pct}%</td><td><button class="sec" style="padding:6px 14px" onclick="verPlan('${p.id}')">Ver</button></td></tr>`}).join('')||'<tr><td colspan="4" style="text-align:center">No hay planes en el período.</td></tr>';
@@ -1939,7 +2071,7 @@ function render(){if(me&&me.role==='admin'&&!window.__TP){window.__TP=1;if(Supa.
  const RKEY=[me.id,me.role,me.name,Supa.on,VW.join(),Push.on,!!window.__pwaEv].join('|'),mm=document.querySelector('#app > .app main');
  if(mm&&window.__RK===RKEY){mm.innerHTML=V[view]();document.querySelectorAll('#app aside .nv').forEach(b=>b.classList.toggle('act',b.getAttribute('onclick')==="navTo('"+view+"')"));const cn=document.getElementById('cnt');if(cn)cn.textContent=unread().length||'';const tt=document.querySelector('.top .tt');if(tt){const vt=tt.querySelector('.vt');if(vt)vt.textContent=VIEWS[view]}const op=document.getElementById('pn');if(op)op.remove();if(pnOpen)document.getElementById('app').insertAdjacentHTML('beforeend',panel())}
  else{$('#app').innerHTML=`<div class="app"><aside><div class="logo"><span class="lg"><img src="${LOGO_X}" alt=""></span><b>Nexa</b></div>${(()=>{const pri=['dash','plans','nuevo','review'].filter(v=>VW.includes(v));VW.forEach(v=>{if(pri.length<4&&!pri.includes(v)&&v!=='suc')pri.push(v)});if(pri.length<4&&VW.includes('suc'))pri.push('suc');window.__MV=pri;return ''})()}${VW.map((v,i)=>`<button class="nv ${v===view?'act':''} ${VW.length>5&&!__MV.includes(v)?'mo':''}" onclick="navTo('${v}')">${ic(v)}<span class="lb" data-s="${SHORT[v]||VIEWS[v]}">${VIEWS[v]}</span></button>`).join('')}${VW.length>5?`<button class="nv more" onclick="this.parentNode.classList.toggle('open');window.__mv=view;event.stopPropagation();window.__navSync&&__navSync()"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="1" /> <circle cx="19" cy="12" r="1" /> <circle cx="5" cy="12" r="1" /></svg><span class="lb" data-s="Más">Más</span></button>`:''}<div class="who">${esc(me.name)}<small>${ROLES[me.role]}</small><small onclick="nxCheckUpdate(true)" title="Buscar actualización" style="display:block;opacity:.55;margin-top:3px;cursor:pointer">${VER_LBL(APP_VER)}</small></div></aside><div><header class="top"><b class="tt" style="flex:1"><span class="vt">${VIEWS[view]}</span> <small class="vv" onclick="nxCheckUpdate(true)" title="Tocar para buscar actualización" style="cursor:pointer">${VER_LBL(APP_VER)}</small></b>${me.role!=='admin'?`<span class="hwho" title="${esc(me.role==='sucursal'?me.branch:me.name)}">${esc(me.role==='sucursal'?me.branch:me.name)}</span>`:''}<button class="sec pwaHd hb" style="display:none" onclick="pwaInstall()" title="Instalar app"><img class="hi" src="icon-192.png?v=473" alt="">Instalar</button>${me.role==='admin'?`<select id="fcs" title="Región que veo" onchange="setFocus(this.value)" style="width:auto;max-width:46vw;margin-right:6px"><option value="" ${focusR()===''?'selected':''}>Todas las regiones</option>${regIds().map(r=>`<option value="${r}" ${String(focusR())===String(r)?'selected':''}>${esc(regLbl(r))}</option>`).join('')}</select>`:''}${Supa.on?'':`<select onchange="swap(this.value)" title="Probar como">${db.users.map(u=>`<option value="${u.id}" ${u.id===me.id?'selected':''}>Probar como: ${esc(u.name)} (${ROLES[u.role]})</option>`).join('')}</select>`}<button class="sec" onclick="pnOpen=!pnOpen;render()">🔔<span id="cnt">${unread().length||''}</span></button>${(Push.on===undefined&&(Push.on=false,Push.check()),'')}${true?`<button class="sec hb ${Push.on?'hon':'hoff'}" onclick="${Push.on?"Push.disableSafe()":'Push.enable()'}">${Push.on?'<svg class="hs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/><path d="M9.5 11.5l2 2 3.5-4" stroke-width="2"/></svg>Avisos':'<svg class="hs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/><path d="M4 4l16 16" stroke-width="2.4"/></svg>Avisos'}</button>`:''}<button class="sec hb hout" onclick="logout()" title="Salir"><svg class="hs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>Salir</button></header><main>${V[view]()}</main></div></div>${pnOpen?panel():''}`;window.__RK=RKEY}
- if(view==='data'&&document.getElementById('bdr'))bulkFill();if(view==='nuevo'){fillBr();addAct();tipoColor();Draft.restore()}else Draft.flush();loadPhotos();if(Draft.has!==undefined)Draft.mark(Draft.has);else Draft.check()}
+ if(view==='data'&&document.getElementById('bdr'))bulkFill();if(view==='nuevo'){fillBr();addAct();tipoColor();Draft.restore()}else Draft.flush();loadPhotos();if(Draft.has!==undefined)Draft.mark(Draft.has);else Draft.check();if(view==='dash')requestAnimationFrame(dtabFix)}
 function loginView(){if(Supa.on)return secLoginView();$('#app').innerHTML=`<main style="margin:auto"><div class="card lgc" style="max-width:421px;margin:70px auto">${logoHtml}<label>Usuario (modo de pruebas)</label><select id="lu">${roleKeys().map(r=>`<optgroup label="${ROLES[r]}">${db.users.filter(u=>u.role===r).map(u=>`<option value="${u.id}">${esc(u.name)}${u.region?' · R'+u.region:''}</option>`).join('')}</optgroup>`).join('')}</select><label>Contraseña</label><input id="lp" type="password" value="1234"><p id="le" style="color:var(--bad)"></p><button onclick="login()">ENTRAR</button><p><small>Contraseña de pruebas: 1234</small></p></div></main>`}
 
 /* ACCIONES */
