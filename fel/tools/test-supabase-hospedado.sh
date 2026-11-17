@@ -281,11 +281,16 @@ resp() { printf '%s' "$2" > "$salida"; printf '%s' "$1"; }
 case "${FAKE_API:-ok}" in
   red) exit 28;;
   sin_clave) resp 401 '{"message":"Invalid API key"}';;
-  *) if [ "$perfil" = public ]; then resp 200 '{"swagger":"2.0"}'
+  denegado) resp 403 '{"message":"forbidden"}';;
+  control_200) resp 200 '{"swagger":"2.0"}';;
+  *) if [ "$perfil" = public ]; then resp 404 '{"code":"PGRST205","details":null,"hint":null,"message":"Could not find the table '"'"'public.fel_sonda_inexistente'"'"' in the schema cache"}'
      else case "${FAKE_API}" in
        ok) resp 406 '{"code":"PGRST106","details":null,"hint":null,"message":"The schema must be one of the following: public, graphql_public"}';;
        lista_con_vault) resp 406 '{"code":"PGRST106","details":null,"hint":null,"message":"The schema must be one of the following: public, vault"}';;
-       expuesto) resp 200 '{"swagger":"2.0","info":{"title":"vault"}}';;
+       expuesto) resp 404 '{"code":"PGRST205","message":"Could not find the table '"'"'vault.fel_sonda_inexistente'"'"' in the schema cache"}';;
+       expuesto_200) resp 200 '[]';;
+       vault_401) resp 401 '{"code":"42501","message":"permission denied"}';;
+       vault_403) resp 403 '{"message":"forbidden"}';;
        raro) resp 500 '{"message":"boom"}';;
        sin_lista) resp 406 '{"code":"PGRST106","message":"otra cosa"}';;
      esac; fi;;
@@ -302,16 +307,26 @@ api() { # $1 ref, $2 clave; FAKE_API y ACTIONS vienen del entorno de la llamada
 limpia_api() { rm -f "$CURL_ARGS" "$CURL_STDIN"; }
 limpia_api; api "$REF" "$JWT_ANON"; r=$?
 [ $r = 0 ] && grep -q "API de datos: OK (solo lectura). Nada se modificó." "$W/salida.txt" && grep -q "Esquemas expuestos por la API: public, graphql_public" "$W/salida.txt" && ok "verificar-api-vault: vault NO expuesto (406 PGRST106) → OK y muestra los esquemas expuestos" || { mal "api-vault OK"; cat "$W/salida.txt"; }
-[ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 2 ] && ! grep -qE -- "-X|--request|-d |--data|-T |--upload|-F |PUT|POST|DELETE|PATCH" "$CURL_ARGS" && grep -c "https://$REF.supabase.co/rest/v1/\$" "$CURL_ARGS" | grep -qx 2 && ok "verificar-api-vault: DOS peticiones GET, ambas a la RAÍZ «/rest/v1/» del proyecto fijado (ninguna a una tabla, ninguna con método de escritura)" || { mal "api-vault: peticiones"; cat "$CURL_ARGS"; }
+[ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 2 ] && ! grep -qE -- "-X|--request|-d |--data|-T |--upload|-F |PUT|POST|DELETE|PATCH" "$CURL_ARGS" && grep -c "https://$REF.supabase.co/rest/v1/fel_sonda_inexistente?limit=0\$" "$CURL_ARGS" | grep -qx 2 && ok "verificar-api-vault: DOS peticiones GET, ambas a una tabla INEXISTENTE del proyecto fijado (no se lee ningún dato; ninguna con método de escritura; ya no se pide la raíz OpenAPI)" || { mal "api-vault: peticiones"; cat "$CURL_ARGS"; }
 ! grep -q "firma-publica" "$CURL_ARGS" && grep -q "apikey: $JWT_ANON" "$CURL_STDIN" && ok "verificar-api-vault: la clave va por la entrada estándar, NUNCA en los argumentos del proceso" || mal "la clave aparece en los argumentos"
 grep -q "Authorization: Bearer" "$CURL_STDIN" && grep -q "Accept-Profile: vault" "$CURL_STDIN" && grep -q "Accept-Profile: public" "$CURL_STDIN" && ok "verificar-api-vault: sonda de control (public) y sonda de vault, con la clave JWT anon" || mal "perfiles de la sonda"
 ! grep -q "firma-publica" "$W/salida.txt" && ok "verificar-api-vault: la clave no aparece en la salida" || mal "api-vault imprime la clave"
 limpia_api; FAKE_API=expuesto api "$REF" "$JWT_ANON"; r=$?
-[ $r = 1 ] && grep -q "REVISAR el esquema vault ESTÁ EXPUESTO" "$W/salida.txt" && ok "verificar-api-vault: vault responde 200 → REVISAR (expuesto) y falla" || mal "no detecta vault expuesto"
+[ $r = 1 ] && grep -q "REVISAR el esquema vault ESTÁ EXPUESTO" "$W/salida.txt" && ok "verificar-api-vault: el esquema vault se resuelve (404 PGRST205) → REVISAR (expuesto) y falla" || mal "no detecta vault expuesto"
+limpia_api; FAKE_API=expuesto_200 api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "REVISAR el esquema vault ESTÁ EXPUESTO" "$W/salida.txt" && ok "verificar-api-vault: vault responde 200 → REVISAR (expuesto) y falla" || mal "no detecta vault 200"
+limpia_api; FAKE_API=vault_401 api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "NO VERIFICADO (respuesta inesperada HTTP 401" "$W/salida.txt" && ! grep -q "API de datos: OK" "$W/salida.txt" && ok "verificar-api-vault: 401 en la sonda de vault (con control válido) → NO VERIFICADO, nunca OK" || mal "vault 401 no es NO VERIFICADO"
+limpia_api; FAKE_API=vault_403 api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "NO VERIFICADO (respuesta inesperada HTTP 403" "$W/salida.txt" && ! grep -q "API de datos: OK" "$W/salida.txt" && ok "verificar-api-vault: 403 en la sonda de vault → NO VERIFICADO, nunca OK" || mal "vault 403 no es NO VERIFICADO"
+limpia_api; FAKE_API=control_200 api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "NO VERIFICADO (respuesta inesperada de la sonda de control (HTTP 200)" "$W/salida.txt" && [ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 1 ] && ok "verificar-api-vault: un 200 en el control (no es «tabla inexistente») → NO VERIFICADO, sin probar vault" || mal "control 200 no es NO VERIFICADO"
+limpia_api; FAKE_API=denegado api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "NO VERIFICADO (la API denegó el acceso (HTTP 403)" "$W/salida.txt" && [ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 1 ] && ok "verificar-api-vault: 403 en el control → NO VERIFICADO, sin probar vault" || mal "control 403 no es NO VERIFICADO"
 limpia_api; FAKE_API=lista_con_vault api "$REF" "$JWT_ANON"; r=$?
 [ $r = 1 ] && grep -q "REVISAR la lista de esquemas expuestos incluye vault" "$W/salida.txt" && ok "verificar-api-vault: si la lista de esquemas expuestos incluye vault → REVISAR" || mal "no detecta vault en la lista"
 limpia_api; FAKE_API=sin_clave api "$REF" "$JWT_ANON"; r=$?
-[ $r = 1 ] && grep -q "NO VERIFICADO (la sonda de control" "$W/salida.txt" && [ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 1 ] && ok "verificar-api-vault: clave rechazada por la API (401) → NO VERIFICADO, sin probar vault" || mal "401 no es NO VERIFICADO"
+[ $r = 1 ] && grep -q "NO VERIFICADO (la API rechazó la autenticación (HTTP 401)" "$W/salida.txt" && [ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 1 ] && ok "verificar-api-vault: clave rechazada por la API (401) → NO VERIFICADO, sin probar vault" || mal "401 no es NO VERIFICADO"
 limpia_api; FAKE_API=red api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO" "$W/salida.txt" && ok "verificar-api-vault: sin red → NO VERIFICADO (nunca OK)" || mal "sin red no es NO VERIFICADO"
 limpia_api; FAKE_API=raro api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (respuesta inesperada HTTP 500)" "$W/salida.txt" && ok "verificar-api-vault: respuesta inesperada → NO VERIFICADO" || mal "respuesta rara no es NO VERIFICADO"
 limpia_api; FAKE_API=sin_lista api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista" "$W/salida.txt" && ok "verificar-api-vault: 406 sin lista de esquemas → NO VERIFICADO" || mal "406 sin lista no es NO VERIFICADO"

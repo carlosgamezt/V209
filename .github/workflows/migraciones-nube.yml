@@ -4,7 +4,7 @@ name: NEXA FEL · solo migraciones (manual, por etapas)
 #  · acción «verificar-inicial» (por defecto): SOLO LECTURA ESTRICTA de nexa-demo ANTES de migrar (transacción de solo lectura + sesión forzada a solo lectura). Recibe SOLO 2 secretos, no instala la CLI de
 #      Supabase, no pide confirmación y NO tiene ninguna ruta hacia migraciones: su paso ejecuta únicamente «verificar-inicial» y los pasos que aplican están excluidos por su condición.
 #  · acción «diagnostico-inicial»: SOLO LECTURA ESTRICTA con las mismas 4 capas y los mismos 2 secretos: función propia en public, disparadores de evento y privilegios efectivos sobre Vault (informativo).
-#  · acción «verificar-api-vault»: SOLO LECTURA: ¿expone la API de Supabase el esquema vault? Un GET a la raíz de la API con la clave «anon» PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY, que debes crear; no es una clave de servicio).
+#  · acción «verificar-api-vault»: SOLO LECTURA: ¿expone la API de Supabase el esquema vault? GET de una tabla inexistente de la API (el listado OpenAPI de la raíz ya no se sirve a claves públicas) con la clave «anon» PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY, que debes crear; no es una clave de servicio).
 #  · acción «verificar-etapa»  : SOLO LECTURA: comprueba historial, tablas, RLS, dependencias de Auth y, en la etapa 2, el catálogo de la migración 28.
 #  · acción «migraciones-etapa»: aplica la etapa y, al terminar, corre la verificación de esa etapa. Exige escribir APLICAR-MIGRACIONES.
 #      etapa 1 = migraciones 1 a 27 (exige base VACÍA y sin historial)   ·   etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27)
@@ -64,7 +64,7 @@ jobs:
           FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
           FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
         run: bash fel/tools/supabase-hospedado.sh diagnostico-inicial
-      # ---- ¿expone la API de datos el esquema vault? SOLO LECTURA: GET a la raíz de la API con la clave anon PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY); sin base de datos, sin CLI, sin clave de servicio
+      # ---- ¿expone la API de datos el esquema vault? SOLO LECTURA: GET de una tabla inexistente de la API con la clave anon PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY); sin base de datos, sin CLI, sin clave de servicio
       - name: API de datos y esquema vault (solo lectura)
         if: inputs.accion == 'verificar-api-vault'
         env:

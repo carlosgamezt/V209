@@ -170,7 +170,7 @@ _tl = open("fel/tools/test-local.sh", encoding="utf-8").read(); _ci = open(".git
 if "test-plataforma-ensure-rls.sh" in _tl and "test-plataforma-ensure-rls.sh" in _ci and "image: postgres:16" in _ci: ok("[huella] la prueba con la función real corre en test-local.sh y en el CI (con un PostgreSQL de superusuario)")
 else: mal("[huella] la prueba con la función real no está en test-local.sh o en el CI")
 
-# ---------------------------------------------------------------- «verificar-api-vault»: solo lectura (GET a la raíz de la API), clave anon pública, sin base de datos, sin CLI, sin claves de servicio
+# ---------------------------------------------------------------- «verificar-api-vault»: solo lectura (GET a una tabla inexistente de la API), clave anon pública, sin base de datos, sin CLI, sin claves de servicio
 paso_av = [p for p in pasos if "run" in p and "verificar-api-vault" in str(p["run"])]
 if len(paso_av) == 1 and str(paso_av[0].get("if", "")) == "inputs.accion == 'verificar-api-vault'" and set(paso_av[0].get("env", {})) == {"FEL_DEMO_PROYECTO_REF", "FEL_DEMO_ANON_KEY"} and "secrets.DEMO_SUPABASE_ANON_KEY" in str(paso_av[0]["env"]["FEL_DEMO_ANON_KEY"]) and re.fullmatch(r"\s*bash fel/tools/supabase-hospedado\.sh verificar-api-vault\s*", str(paso_av[0]["run"])): ok("[verificar-api-vault] su paso recibe SOLO la referencia del proyecto y la clave anon pública (sin cadena de conexión, sin token, sin claves de servicio) y ejecuta únicamente esa acción")
 else: mal("[verificar-api-vault] su paso debe existir una vez, con su condición, solo FEL_DEMO_PROYECTO_REF y FEL_DEMO_ANON_KEY (DEMO_SUPABASE_ANON_KEY) y ejecutar solo esa acción")
@@ -181,8 +181,8 @@ av_sc = "\n".join(l for l in av.splitlines() if not l.lstrip().startswith("#"))
 if not re.search(r"\bpsql\b|\bsupabase\b\s+(link|db|functions|secrets|migration|projects)|db push|FEL_DEMO_BD_URL|SERVICE_ROLE|SUPABASE_ACCESS_TOKEN|FEL_CONFIRMAR_MIGRACIONES|--yes", av_sc): ok("[verificar-api-vault] el código de la acción no usa psql, ni la CLI, ni la cadena de conexión, ni claves de servicio, ni el token: no hay ruta hacia la base ni las migraciones")
 else: mal("[verificar-api-vault] el código de la acción usa algo que no debe")
 curls = re.findall(r"\bcurl\b[^\n]*", av_sc)
-if len(curls) == 1 and "-K -" in curls[0] and 'https://${REF}.supabase.co/rest/v1/"' in curls[0] and not re.search(r"\s-X\b|--request|\s-d\b|--data|\s-T\b|--upload|\s-F\b|--form|--json|--post|--put|--delete", curls[0]): ok("[verificar-api-vault] una sola orden curl: GET a la raíz «/rest/v1/» del proyecto fijado, con la clave por la entrada estándar y sin ningún método ni cuerpo de escritura")
-else: mal("[verificar-api-vault] la orden curl no es un GET a la raíz de la API del proyecto fijado")
+if len(curls) == 1 and "-K -" in curls[0] and 'https://${REF}.supabase.co/rest/v1/${SONDA_RUTA}?limit=0"' in curls[0] and 'SONDA_RUTA="fel_sonda_inexistente"' in av_sc and not re.search(r"\s-X\b|--request|\s-d\b|--data|\s-T\b|--upload|\s-F\b|--form|--json|--post|--put|--delete", curls[0]): ok("[verificar-api-vault] una sola orden curl: GET a «/rest/v1/fel_sonda_inexistente» (tabla inexistente: no se lee ningún dato) del proyecto fijado, con la clave por la entrada estándar y sin ningún método ni cuerpo de escritura")
+else: mal("[verificar-api-vault] la orden curl no es un GET a la tabla inexistente de la sonda del proyecto fijado")
 if "sb_secret_*" in av and 'p.get("role") == "anon"' in av and 'p.get("ref") == os.environ["R"]' in av: ok("[verificar-api-vault] solo admite la clave publicable o el JWT anon de este proyecto y rechaza las claves secretas antes de enviar nada")
 else: mal("[verificar-api-vault] no valida que la clave sea pública y de este proyecto")
 # ---- Digifact TEST hacia la función: opcional, apagado por defecto, todo o nada, solo a los secretos de la función y sin imprimir valores

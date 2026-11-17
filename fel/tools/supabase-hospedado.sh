@@ -134,7 +134,7 @@ case "${1:-}" in
     supabase link --project-ref "$REF" --workdir . >/dev/null
     supabase db push --remote="$URL_SESION" --yes --workdir .;;
   verificar-api-vault)
-    # SOLO LECTURA. No usa psql, ni la CLI de Supabase, ni claves de servicio. Solo peticiones GET a la raíz «/rest/v1/» del proyecto fijado.
+    # SOLO LECTURA. No usa psql, ni la CLI de Supabase, ni claves de servicio. Solo peticiones GET a «/rest/v1/<tabla inexistente>» del proyecto fijado (el listado OpenAPI de la raíz ya no se sirve a claves públicas: 401).
     ANON="${FEL_DEMO_ANON_KEY:-}"
     [ -n "$ANON" ] || { echo "Falta FEL_DEMO_ANON_KEY (la clave «anon» pública del proyecto). No se hace nada."; exit 2; }
     if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$ANON"; fi
@@ -153,27 +153,42 @@ PY
     then TIPO_CLAVE="jwt"
     else echo "PROHIBIDO: FEL_DEMO_ANON_KEY no es la clave pública (publicable o JWT del rol «anon») de nexa-demo. No se hace nada (nunca se envía otra clave)."; exit 2; fi
     CUERPO="$(mktemp)"; trap 'rm -f -- "$CUERPO"' EXIT
-    sonda() {   # $1 = perfil de esquema; imprime el código HTTP y deja la respuesta en $CUERPO. Solo GET a la raíz; la clave va por la entrada estándar (no en los argumentos)
-      local cod; cod="$({ printf 'header = "apikey: %s"\n' "$ANON"; [ "$TIPO_CLAVE" = jwt ] && printf 'header = "Authorization: Bearer %s"\n' "$ANON"; printf 'header = "Accept-Profile: %s"\n' "$1"; } | curl -sS -K - -m 25 -o "$CUERPO" -w '%{http_code}' "https://${REF}.supabase.co/rest/v1/" 2>/dev/null || true)"
-      printf '%s' "${cod: -3}"
+    SONDA_RUTA="fel_sonda_inexistente"   # tabla que NO existe en ningún esquema: nunca se lee un dato; solo se observa cómo responde la API (clave, esquema)
+    sonda() {   # $1 = perfil de esquema; imprime el código HTTP y deja la respuesta en $CUERPO. Solo GET; la clave va por la entrada estándar (no en los argumentos)
+      local cod; cod="$({ printf 'header = "apikey: %s"\n' "$ANON"; [ "$TIPO_CLAVE" = jwt ] && printf 'header = "Authorization: Bearer %s"\n' "$ANON"; printf 'header = "Accept-Profile: %s"\n' "$1"; } | curl -sS -K - -m 25 -o "$CUERPO" -w '%{http_code}' "https://${REF}.supabase.co/rest/v1/${SONDA_RUTA}?limit=0" 2>/dev/null || true)"
+      cod="${cod: -3}"; [ -n "$cod" ] || cod=000
+      printf '%s' "$cod"
     }
-    echo "== NEXA FEL · ¿expone la API de nexa-demo el esquema vault? (SOLO LECTURA: GET a la raíz de la API con la clave anon pública)"
-    BASE_COD="$(sonda public)"
-    [ "$BASE_COD" = "200" ] || { echo "API de datos: NO VERIFICADO (la sonda de control con el esquema public respondió HTTP $BASE_COD; no se puede interpretar la de vault)."; exit 1; }
-    echo "  OK    sonda de control: el esquema public responde (HTTP 200) con la clave anon"
-    VAULT_COD="$(sonda vault)"; RESP="$(head -c 2000 "$CUERPO" | tr -d '\r')"
-    if [ "$VAULT_COD" = "200" ]; then echo "  REVISAR el esquema vault ESTÁ EXPUESTO por la API de datos (HTTP 200 con Accept-Profile: vault)."; echo "API de datos: REVISAR. No se debe guardar nada en Vault ni aplicar migraciones hasta cerrarlo."; exit 1; fi
-    if [ "$VAULT_COD" = "406" ] && printf '%s' "$RESP" | grep -q "PGRST106"; then
-      LISTA="$(printf '%s' "$RESP" | python3 -c 'import json,sys,re
-try: m=json.load(sys.stdin).get("message","")
-except Exception: m=""
+    campo() { python3 -c 'import json,sys
+try: d=json.load(sys.stdin)
+except Exception: d={}
+v=d.get(sys.argv[1],"") if isinstance(d,dict) else ""
+print(v if isinstance(v,str) else "",end="")' "$1"; }
+    echo "== NEXA FEL · ¿expone la API de nexa-demo el esquema vault? (SOLO LECTURA: GET de una tabla inexistente con la clave pública; no se lee ningún dato)"
+    BASE_COD="$(sonda public)"; RESP="$(head -c 2000 "$CUERPO" | tr -d '\r')"; BASE_CODE="$(printf '%s' "$RESP" | campo code)"
+    # control: con una clave VÁLIDA y el esquema public expuesto, PostgREST contesta 404 («tabla inexistente», PGRST205 o 42P01). Cualquier otra cosa NO permite interpretar la sonda de vault.
+    if [ "$BASE_COD" != "404" ] || { [ "$BASE_CODE" != "PGRST205" ] && [ "$BASE_CODE" != "42P01" ]; }; then
+      MSG="$(printf '%s' "$RESP" | campo message)"; MSG="${MSG//"$ANON"/***}"
+      case "$BASE_COD" in
+        401) CAUSA="la API rechazó la autenticación (HTTP 401): clave inválida, revocada, de otro proyecto o no admitida";;
+        403) CAUSA="la API denegó el acceso (HTTP 403)";;
+        *) CAUSA="respuesta inesperada de la sonda de control (HTTP $BASE_COD)";;
+      esac
+      echo "API de datos: NO VERIFICADO ($CAUSA; no se puede interpretar la sonda de vault). Respuesta: ${MSG:0:160}"; exit 1
+    fi
+    echo "  OK    sonda de control: la clave es válida y el esquema public responde (HTTP 404 $BASE_CODE: tabla inexistente)"
+    VAULT_COD="$(sonda vault)"; RESP="$(head -c 2000 "$CUERPO" | tr -d '\r')"; VAULT_CODE="$(printf '%s' "$RESP" | campo code)"
+    if [ "$VAULT_COD" = "200" ] || { [ "$VAULT_COD" = "404" ] && { [ "$VAULT_CODE" = "PGRST205" ] || [ "$VAULT_CODE" = "42P01" ]; }; }; then echo "  REVISAR el esquema vault ESTÁ EXPUESTO por la API de datos (HTTP $VAULT_COD con Accept-Profile: vault: el esquema se resuelve)."; echo "API de datos: REVISAR. No se debe guardar nada en Vault ni aplicar migraciones hasta cerrarlo."; exit 1; fi
+    if [ "$VAULT_COD" = "406" ] && [ "$VAULT_CODE" = "PGRST106" ]; then
+      LISTA="$(printf '%s' "$RESP" | campo message | python3 -c 'import sys,re
+m=sys.stdin.read()
 x=re.search(r"must be one of the following:\s*(.*)$", m); print(x.group(1).strip() if x else "")')"
       if [ -z "$LISTA" ]; then echo "API de datos: NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista de esquemas expuestos)."; exit 1; fi
       if printf '%s' "$LISTA" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -qx "vault"; then echo "  REVISAR la lista de esquemas expuestos incluye vault: $LISTA"; exit 1; fi
       echo "  OK    el esquema vault NO está expuesto (HTTP 406, PGRST106). Esquemas expuestos por la API: $LISTA"
       echo "API de datos: OK (solo lectura). Nada se modificó."; exit 0
     fi
-    echo "API de datos: NO VERIFICADO (respuesta inesperada HTTP $VAULT_COD)."; exit 1;;
+    echo "API de datos: NO VERIFICADO (respuesta inesperada HTTP $VAULT_COD${VAULT_CODE:+, código $VAULT_CODE}). Un 401/403 aquí NO se toma por prueba de seguridad."; exit 1;;
   diagnostico-inicial)
     # Igual que verificar-inicial: NO usa la CLI de Supabase, NO lee SUPABASE_ACCESS_TOKEN ni FEL_CONFIRMAR_MIGRACIONES y NO contiene «db push», «link», función ni escrituras. Solo informa.
     derivar_url_sesion
