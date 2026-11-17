@@ -196,6 +196,19 @@ if _dg and all("inputs.digifact == 'habilitado'" in l for l in _dg): ok(f"[publi
 else: mal("[publicar-nube] hay un secreto de Digifact que se carga sin el interruptor")
 if len({x for x in re.findall(r"secrets\.(DEMO_DIGIFACT_\w+)", _txt_pn)}) == 6 and "DEMO_DIGIFACT_TEST_PASSWORD" in _txt_pn: ok("[publicar-nube] los secretos de Digifact son DEMO_* y están en el mismo único paso que los demás")
 else: mal("[publicar-nube] conjunto inesperado de secretos de Digifact")
+# ---- consulta de NIT por Digifact TEST: INDEPENDIENTE de la certificación (otro interruptor, solo las credenciales de consulta, nunca el emisor ni la huella ni la autorización de una prueba)
+_en = _pn[True]["workflow_dispatch"]["inputs"].get("digifact_nit", {})
+if _en.get("default") == "apagado" and _en.get("options") == ["apagado", "habilitado"]: ok("[publicar-nube] la consulta de NIT por Digifact TEST es otro interruptor («digifact_nit»), apagado por defecto")
+else: mal("[publicar-nube] falta el interruptor «digifact_nit» (apagado/habilitado, por defecto apagado)")
+_solo_cert = [l for l in _dg if re.search(r"DEMO_DIGIFACT_TEST_(EMPRESA|EMISOR|HUELLA)", l)]
+if len(_solo_cert) == 3 and all("digifact_nit" not in l for l in _solo_cert): ok("[publicar-nube] el emisor, su huella y la empresa de certificación NUNCA se cargan por el interruptor de la consulta de NIT")
+else: mal("[publicar-nube] la consulta de NIT carga datos de certificación")
+_cred = [l for l in _dg if re.search(r"DEMO_DIGIFACT_TEST_(USERNAME|PASSWORD|NIT)\b", l)]
+if len(_cred) == 3 and all("inputs.digifact_nit == 'habilitado'" in l and "inputs.digifact == 'habilitado'" in l for l in _cred): ok("[publicar-nube] las credenciales de TEST se cargan solo con digifact=habilitado o digifact_nit=habilitado")
+else: mal("[publicar-nube] las credenciales de TEST deben depender solo de los dos interruptores")
+_lin_nit = [l for l in _txt_pn.splitlines() if re.search(r"^\s*FEL_DIGIFACT_NIT(_EMPRESA)?:", l)]
+if len(_lin_nit) == 2 and all("inputs.digifact_nit == 'habilitado'" in l and "inputs.digifact ==" not in l for l in _lin_nit): ok("[publicar-nube] FEL_DIGIFACT_NIT y su empresa dependen solo de digifact_nit (no de la certificación)")
+else: mal("[publicar-nube] FEL_DIGIFACT_NIT debe depender solo del interruptor digifact_nit")
 _pub = open("fel/tools/publicar-nube.sh", encoding="utf-8").read(); _pub_sc = "\n".join(l for l in _pub.splitlines() if not l.lstrip().startswith("#"))
 _lineas_dg = [l for l in _pub_sc.splitlines() if re.search(r"DIGIFACT|__DG_|DG_VARS", l)]
 if all(not re.search(r"wrangler|npx|pages|aprovisionar|construir|migraciones|curl|\becho\b[^\n]*\$\{?(__DG_|DIGIFACT|FEL_DIGIFACT)", l) or "DG_ESTADO" in l for l in _lineas_dg): ok("[publicar-nube.sh] las variables de Digifact se apartan y nunca van en la misma orden que Cloudflare, las migraciones o la construcción, ni se imprimen")

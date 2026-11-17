@@ -98,6 +98,26 @@ dg_completo; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-ee
 dg_limpiar; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"; dg_rechaza "una referencia autorizada con Digifact apagado se rechaza"
 dg_limpiar; export FEL_DIGIFACT_TEST="si"; dg_rechaza "FEL_DIGIFACT_TEST solo admite «habilitado» o vacío"
 dg_limpiar
+# --- Consulta de NIT por Digifact TEST (INDEPENDIENTE de la certificación): apagada por defecto, todo o nada, una empresa, sin datos de emisor ni de certificación
+nit_limpiar() { dg_limpiar; unset FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA; }
+nit_completo() { nit_limpiar; export FEL_DIGIFACT_NIT=habilitado FEL_DIGIFACT_NIT_EMPRESA="$DG_EMP" DIGIFACT_TEST_USERNAME="$DG_USER" DIGIFACT_TEST_PASSWORD="$DG_PASS" DIGIFACT_TEST_NIT=5888492; }
+nit_rechaza() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; [ $r = 2 ] && nollamo && grep -q "no se publica la función" "$W/salida.txt" && ! grep -qF "$DG_PASS" "$W/salida.txt" && ok "$1" || mal "$1 (código $r)"; }
+nit_limpiar; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
+! grep -qi "FEL_DIGIFACT_NIT\|DIGIFACT_TEST" "$ENV_COPIA" && ok "consulta de NIT apagada (por defecto): ningún valor llega a los secretos de la función" || mal "consulta de NIT apagada pero llegó a la función"
+nit_completo; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?
+[ $r = 0 ] && grep -q "^secrets set --env-file" "$REGISTRO" && ok "consulta de NIT habilitada y completa: la función se publica" || mal "consulta de NIT completa no se publicó"
+grep -qx "FEL_DIGIFACT_NIT='habilitado'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_NIT_EMPRESA='$DG_EMP'" "$ENV_COPIA" && grep -qF "DIGIFACT_TEST_PASSWORD='$DG_PASS'" "$ENV_COPIA" && ok "viajan el interruptor, la empresa y las credenciales de TEST (la contraseña con espacio y # íntegra)" || mal "los valores de la consulta de NIT no llegaron"
+! grep -q "FEL_DIGIFACT_TEST\b\|FEL_DIGIFACT_TEST_\|FEL_DIGIFACT_AUTORIZA" "$ENV_COPIA" && ok "con solo la consulta de NIT NO viaja el interruptor de certificación, ni el emisor, ni su huella, ni autorización de pruebas" || mal "la consulta de NIT arrastró datos de certificación"
+! grep -qF "$DG_PASS" "$W/salida.txt" && ! grep -qF "$DG_USER" "$W/salida.txt" && grep -q "Consulta de NIT por Digifact TEST: habilitada para una empresa (valores no mostrados" "$W/salida.txt" && ok "la salida no contiene la contraseña ni el usuario" || mal "la salida muestra valores de la consulta de NIT"
+for falta in FEL_DIGIFACT_NIT_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT; do nit_completo; unset "$falta"; nit_rechaza "consulta de NIT habilitada SIN $falta: todo o nada, la función no se publica"; done
+nit_completo; export FEL_DIGIFACT_NIT_EMPRESA="no-es-uuid"; nit_rechaza "empresa de la consulta de NIT que no es UUID: se rechaza"
+nit_completo; export DIGIFACT_TEST_PASSWORD=$'linea1\nlinea2'; nit_rechaza "un valor con salto de línea se rechaza (consulta de NIT)"
+nit_limpiar; export FEL_DIGIFACT_NIT="si"; nit_rechaza "FEL_DIGIFACT_NIT solo admite «habilitado» o vacío"
+nit_limpiar; export FEL_DIGIFACT_NIT_EMPRESA="$DG_EMP"; nit_rechaza "una empresa de la consulta de NIT con la consulta apagada se rechaza"
+# las dos juntas son independientes: no se duplican las credenciales en el archivo
+nit_completo; export FEL_DIGIFACT_TEST=habilitado FEL_DIGIFACT_TEST_EMPRESA="$DG_EMP" FEL_DIGIFACT_TEST_EMISOR="$DG_EMISOR" FEL_DIGIFACT_TEST_HUELLA="$DG_HUELLA"; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
+[ "$(grep -c "^DIGIFACT_TEST_PASSWORD=" "$ENV_COPIA")" = 1 ] && grep -q "^FEL_DIGIFACT_NIT=" "$ENV_COPIA" && grep -q "^FEL_DIGIFACT_TEST=" "$ENV_COPIA" && ok "certificación y consulta de NIT habilitadas por separado: cada interruptor viaja, las credenciales una sola vez" || mal "interruptores combinados"
+nit_limpiar
 # --- ocultación en el registro de GitHub Actions
 rm -f "$REGISTRO"; ACTIONS=1 base "$REF" migraciones
 sin_mascara="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"

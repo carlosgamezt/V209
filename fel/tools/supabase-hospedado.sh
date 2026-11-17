@@ -324,6 +324,20 @@ print(r)')"
         echo "Digifact TEST: habilitado para la función (valores no mostrados)";;
       *) echo "FEL_DIGIFACT_TEST solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
     esac
+    # Consulta de NIT por Digifact TEST (OPCIONAL, apagada por defecto, INDEPENDIENTE de la certificación): solo con FEL_DIGIFACT_NIT=habilitado, TODO O NADA, una sola empresa y solo hacia los secretos de la FUNCIÓN.
+    # No lleva datos del emisor ni de certificación: el servidor no puede certificar con esto. Si la certificación también está habilitada, las credenciales ya viajaron y no se repiten.
+    case "${FEL_DIGIFACT_NIT:-}" in
+      "") [ -z "${FEL_DIGIFACT_NIT_EMPRESA:-}" ] || { echo "FEL_DIGIFACT_NIT_EMPRESA requiere FEL_DIGIFACT_NIT=habilitado: no se publica la función"; exit 2; };;
+      habilitado)
+        for v in FEL_DIGIFACT_NIT_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT; do [ -n "${!v:-}" ] || { echo "Consulta de NIT habilitada, pero falta $v (todo o nada): no se publica la función"; exit 2; }; done
+        printf '%s' "${FEL_DIGIFACT_NIT_EMPRESA}" | grep -Eiq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || { echo "FEL_DIGIFACT_NIT_EMPRESA no es un UUID: no se publica la función"; exit 2; }
+        for v in FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT; do
+          valor="${!v:-}"; case "$valor" in *"'"*|*$'\n'*|*$'\r'*) echo "$v contiene un carácter no admitido (comilla simple o salto de línea): no se publica la función"; exit 2;; esac
+          grep -q "^$v=" "$ENVF" || printf "%s='%s'\n" "$v" "$valor" >> "$ENVF"
+        done
+        echo "Consulta de NIT por Digifact TEST: habilitada para una empresa (valores no mostrados; no habilita la certificación)";;
+      *) echo "FEL_DIGIFACT_NIT solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
+    esac
     supabase secrets set --env-file "$ENVF" --remote="$REF" --yes >/dev/null
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
   *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|verificar-api-vault|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;

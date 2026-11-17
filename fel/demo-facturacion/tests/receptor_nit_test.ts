@@ -1,7 +1,7 @@
 // Autollenado del nombre del receptor: controlador del navegador (lógica pura, reloj y consulta simulados) y su coherencia con el servidor.
 // Uso: deno test -A tests/receptor_nit_test.ts
 import assert from "node:assert/strict";
-import { crearAutollenado, normalizarId, esCF, digitoVerificadorValido, esNitConsultable, textoEstado, NOMBRE_CF } from "../web/js/receptor_nit.js";
+import { crearAutollenado, normalizarId, esCF, digitoVerificadorValido, esNitConsultable, textoEstado, NOMBRE_CF, ETIQUETAS } from "../web/js/receptor_nit.js";
 import * as srv from "../src/receptor_nit.ts";
 
 type Info = { fase: string; simulado?: boolean; origen?: string } | null;
@@ -18,9 +18,9 @@ function consulta() {
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 function montar(modelo = { tipo: "NIT", numero: "", nombre: "" }) {
-  const rl = reloj(), q = consulta(), estados: Info[] = [], refrescos: string[] = [];
-  const c = crearAutollenado({ modelo, consultar: q.fn as never, refrescar: () => refrescos.push(`${modelo.tipo}|${modelo.numero}|${modelo.nombre}`), estado: (i: Info) => estados.push(i), temporizador: rl as never });
-  return { c, modelo, rl, q, estados, refrescos, fases: () => estados.map((e) => e?.fase ?? null) };
+  const rl = reloj(), q = consulta(), estados: Info[] = [], refrescos: string[] = [], etiquetas: (string | null)[] = [];
+  const c = crearAutollenado({ modelo, consultar: q.fn as never, refrescar: () => refrescos.push(`${modelo.tipo}|${modelo.numero}|${modelo.nombre}`), estado: (i: Info) => estados.push(i), etiqueta: (t: string | null) => etiquetas.push(t), temporizador: rl as never });
+  return { c, modelo, rl, q, estados, refrescos, etiquetas, fases: () => estados.map((e) => e?.fase ?? null) };
 }
 const A = "10000011", B = "10000038";   // NIT ficticios con dígito verificador válido
 
@@ -30,7 +30,7 @@ Deno.test("NIT válido: consulta una sola vez tras 600 ms sin teclas, muestra «
   t.rl.disparar(); assert.equal(t.q.llamadas.length, 1); assert.equal(t.q.llamadas[0].nit, A); assert.equal(t.fases().at(-1), "consultando");
   t.q.llamadas[0].ok({ encontrado: true, nombre: "CONTRIBUYENTE DE PRUEBA UNO, S.A.", origen: "demo", simulado: true }); await tick();
   assert.equal(t.modelo.nombre, "CONTRIBUYENTE DE PRUEBA UNO, S.A."); assert.deepEqual(t.estados.at(-1), { fase: "ok", origen: "demo", simulado: true });
-  assert.match(textoEstado(t.estados.at(-1)), /simulado.*no proviene de SAT/i, "la advertencia va aparte, no dentro del nombre"); assert.doesNotMatch(t.modelo.nombre, /DEMO|simulad/i);
+  assert.match(textoEstado(t.estados.at(-1)), /simulados.*no provienen de SAT/i, "la advertencia va aparte, no dentro del nombre"); assert.doesNotMatch(t.modelo.nombre, /DEMO|simulad/i);
 });
 
 Deno.test("sin una tecla por consulta: escribir dígito a dígito reinicia la espera y solo se consulta el NIT final", () => {
@@ -106,4 +106,25 @@ Deno.test("con el temporizador real (el que usa el navegador) también se espera
   const c = crearAutollenado({ modelo, esperaMs: 15, consultar: async () => { n++; return { encontrado: true, nombre: "UNO", origen: "demo", simulado: true }; } });
   c.alEscribirId("1000001"); c.alEscribirId(A); assert.equal(n, 0, "aún en espera"); await new Promise((r) => setTimeout(r, 80));
   assert.equal(n, 1); assert.equal(modelo.nombre, "UNO");
+});
+
+Deno.test("etiquetas de origen: «Consultado mediante Digifact TEST», «Datos simulados», «Ingreso manual» y «Consumidor final»; una consulta TEST no se presenta como certificación de SAT", async () => {
+  assert.deepEqual(ETIQUETAS, { digifact: "Consultado mediante Digifact TEST", simulado: "Datos simulados", manual: "Ingreso manual", cf: "Consumidor final" });
+  // nombre real de Digifact TEST
+  const d = montar(); d.c.alEscribirId(A); d.rl.disparar(); d.q.llamadas[0].ok({ encontrado: true, nombre: "RAZON SOCIAL DE PRUEBA", origen: "digifact_test", simulado: false }); await tick();
+  assert.equal(d.etiquetas.at(-1), "digifact"); assert.deepEqual(d.estados.at(-1), { fase: "ok", origen: "digifact_test", simulado: false });
+  assert.match(textoEstado(d.estados.at(-1)), /Digifact TEST.*no es una certificación fiscal de SAT/); assert.doesNotMatch(textoEstado(d.estados.at(-1)), /simulad/i);
+  // al cambiar el NIT el nombre autollenado se limpia y la etiqueta desaparece
+  d.c.alEscribirId(B); assert.equal(d.etiquetas.at(-1), null);
+  // datos simulados
+  const s = montar(); s.c.alEscribirId(A); s.rl.disparar(); s.q.llamadas[0].ok({ encontrado: true, nombre: "UNO", origen: "demo", simulado: true }); await tick(); assert.equal(s.etiquetas.at(-1), "simulado");
+  // ingreso manual: escribir el nombre; y se conserva aunque llegue un nombre de la consulta
+  const m = montar(); m.c.alEscribirNombre("Cliente de la casa"); assert.equal(m.etiquetas.at(-1), "manual"); m.c.alEscribirId(A); m.rl.disparar();
+  m.q.llamadas[0].ok({ encontrado: true, nombre: "OTRO", origen: "digifact_test", simulado: false }); await tick(); assert.equal(m.modelo.nombre, "Cliente de la casa"); assert.equal(m.etiquetas.at(-1), "manual", "no se rotula como Digifact un nombre escrito a mano");
+  m.c.alEscribirNombre(""); assert.equal(m.etiquetas.at(-1), null);
+  // consumidor final, y al salir de CF la etiqueta se retira
+  const c = montar(); c.c.alEscribirId("cf"); assert.equal(c.etiquetas.at(-1), "cf"); c.c.alEscribirId(A); assert.equal(c.etiquetas.at(-1), null);
+  // error y «sin coincidencia» en Digifact TEST: mensajes claros, sin etiqueta de origen y con entrada manual
+  const e = montar(); e.c.alEscribirId(A); e.rl.disparar(); e.q.llamadas[0].mal(new Error("x")); await tick(); assert.equal(e.etiquetas.at(-1), null); assert.match(textoEstado(e.estados.at(-1)), /No se pudo consultar.*manualmente/);
+  const n = montar(); n.c.alEscribirId(A); n.rl.disparar(); n.q.llamadas[0].ok({ encontrado: false, origen: "digifact_test", simulado: false }); await tick(); assert.match(textoEstado(n.estados.at(-1)), /No se encontró este NIT en Digifact TEST.*manualmente/);
 });

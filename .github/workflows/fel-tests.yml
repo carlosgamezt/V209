@@ -86,7 +86,7 @@ jobs:
         run: node fel/demo-facturacion/tests/e2e_movil.cjs
       - name: Autollenado del receptor (NIT ficticio del simulador, «Consultando NIT», cambios rápidos, sin coincidencia, error del proveedor, nombre manual conservado y CONSUMIDOR FINAL con su tope)
         run: |
-          deno test -A fel/demo-facturacion/tests/receptor_nit_test.ts fel/demo-facturacion/tests/receptor_nit_api_test.ts
+          deno test -A fel/demo-facturacion/tests/receptor_nit_test.ts fel/demo-facturacion/tests/receptor_nit_api_test.ts fel/demo-facturacion/tests/digifact_nit_separacion_test.ts
           node fel/demo-facturacion/tests/e2e_receptor.cjs
       - name: Versión práctica · inicio de sesión (unidad), API real (Digifact simulado, plan y saldo, plataforma, aislamiento) y navegador en PC y teléfono (PWA); simulado y local
         run: |

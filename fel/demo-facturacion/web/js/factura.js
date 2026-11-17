@@ -8,7 +8,9 @@ import { api } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { panelProceso } from "./proceso.js";
 import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
-import { crearAutollenado, textoEstado } from "./receptor_nit.js";
+import { crearAutollenado, textoEstado, ETIQUETAS } from "./receptor_nit.js";
+/** Etiqueta del origen del nombre (Digifact TEST / simulado / manual / consumidor final). */
+const pintarEtiqueta = (el, t) => { if (!el) return; el.hidden = !t; el.textContent = t ? ETIQUETAS[t] : ""; el.className = `nit-etiqueta${t ? ` nit-et-${t}` : ""}`; };
 
 const TOPE_CF = "2500";   // SAT: «Consumidor final» solo en facturas por montos MENORES a Q2,500.00 (Reglamento de la Ley del IVA, art. 30 núm. 9, reformado por el Acuerdo Gubernativo 12-2023; preguntas frecuentes del portal SAT)
 const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).";
@@ -82,7 +84,8 @@ export function pantallaFactura(ctx, id) {
         ctrlModelo = f;
         ctrl = crearAutollenado({ modelo: f, consultar: (n, o) => api.receptorNit(n, o),
           refrescar: () => { if (nit.tipo) nit.tipo.value = f.tipo; if (nit.numero) nit.numero.value = f.numero; if (nit.nombre) { nit.nombre.value = f.nombre; nit.nombre.readOnly = f.tipo === "CF"; } sucio = true; pintarBarra(); pintarTotales(); },
-          estado: (info) => { nit.info = info; if (nit.estado) nit.estado.textContent = textoEstado(info); } });
+          estado: (info) => { nit.info = info; if (nit.estado) nit.estado.textContent = textoEstado(info); },
+          etiqueta: (t) => { nit.et = t; pintarEtiqueta(nit.etiqueta, t); } });
       }
       let nuevo = null;
       if (f.nuevo) {
@@ -91,7 +94,8 @@ export function pantallaFactura(ctx, id) {
         nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", maxlength: 30, disabled: !ed, autocomplete: "off", oninput: (e) => { ctrl.alEscribirId(e.target.value); cambio(); }, onblur: () => ctrl.alSalirIdentificacion() });
         nit.nombre = h("input", { value: f.nombre, "aria-label": "Nombre del receptor", maxlength: 200, disabled: !ed, readonly: f.tipo === "CF", oninput: (e) => { ctrl.alEscribirNombre(e.target.value); cambio(); } });
         nit.estado = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }, textoEstado(nit.info));
-        nuevo = h("div", { class: "grid3" }, campo("Tipo", nit.tipo), h("div", { class: "nit-id" }, campo("Identificación", nit.numero), nit.estado), campo("Nombre", nit.nombre));
+        nit.etiqueta = h("small", { class: "nit-etiqueta", hidden: true }); pintarEtiqueta(nit.etiqueta, nit.et);
+        nuevo = h("div", { class: "grid3" }, campo("Tipo", nit.tipo), h("div", { class: "nit-id" }, campo("Identificación", nit.numero), nit.estado, nit.etiqueta), campo("Nombre", nit.nombre));
       }
       poner(cuerpoReceptor,
         h("div", { class: "grid2" }, campo("Receptor", selCli), campo("Establecimiento", selEst)), chkNuevo, nuevo,

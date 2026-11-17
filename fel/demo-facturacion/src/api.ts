@@ -15,6 +15,7 @@ import { PERSONAS, esMaestro } from "./mundo_practico.ts";
 import type { Persona } from "./almacen.ts";
 import { crearPractico, ErrorPr } from "./api_practico.ts";
 import type { ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
+import type { ConsultorNit } from "./digifact_nit_entorno.ts";
 import { PersistenciaSimuladores } from "./simuladores.ts";
 import { EMPRESA, type Sembrado } from "./mundo_demo.ts";
 
@@ -41,11 +42,11 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
-  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact }) : null;
+  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit }) : null;
   // estado de los simuladores en la base real (solo modo PostgreSQL con versión práctica): sobrevive a reinicios y es común a todas las instancias
   const simPersist = pr ? new PersistenciaSimuladores(bd, { mock, ...Object.fromEntries(pr.registro.listar().filter((x) => x.persistible).map((x) => [x.id, x.persistible!])) }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado

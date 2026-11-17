@@ -20,14 +20,16 @@ export function digitoVerificadorValido(nit) {
 /** ¿Se puede consultar? Automático (al dejar de escribir): formato y dígito verificador válidos. Al salir del campo: basta el formato. */
 export const esNitConsultable = (n, alSalir = false) => RE_NIT.test(n) && n.length >= 5 && (alSalir || digitoVerificadorValido(n));
 
+/** Etiqueta de ORIGEN del nombre que se muestra junto al campo. Una consulta de Digifact TEST NO es una certificación fiscal de SAT. */
+export const ETIQUETAS = { digifact: "Consultado mediante Digifact TEST", simulado: "Datos simulados", manual: "Ingreso manual", cf: "Consumidor final" };
+
 /** Texto de la línea de estado bajo el campo (una sola línea, discreta). `info` es lo que entrega el controlador. */
 export function textoEstado(info) {
   if (!info) return "";
-  const simulada = info.simulado ? " (consulta simulada)" : "";
   switch (info.fase) {
     case "consultando": return "Consultando NIT…";
-    case "ok": return info.simulado ? "Dato simulado de demostración: no proviene de SAT." : "Dato obtenido por Digifact TEST.";
-    case "no_encontrado": return `No se encontró este NIT${simulada}. Escribe el nombre manualmente.`;
+    case "ok": return info.simulado ? "Datos simulados de demostración: no provienen de SAT." : "Consulta de prueba en Digifact TEST: no es una certificación fiscal de SAT.";
+    case "no_encontrado": return `No se encontró este NIT${info.simulado ? " (consulta simulada)" : " en Digifact TEST"}. Escribe el nombre manualmente.`;
     case "error": return "No se pudo consultar el NIT ahora. Puedes escribir el nombre manualmente.";
     case "conservado": return "Se conservó el nombre que escribiste.";
     case "cf": return "Consumidor final: sin consulta. Solo para facturas menores a Q 2,500.00.";
@@ -40,14 +42,16 @@ export function textoEstado(info) {
  * @param consultar (nit, { signal }) => Promise<{ encontrado, nombre, origen, simulado }>   — llama al servidor
  * @param refrescar () => void       — vuelca el modelo en los campos
  * @param estado   (info|null) => void — muestra la línea de estado
- * @param {{ modelo: { tipo: string, numero: string, nombre: string }, consultar: Function, refrescar?: () => void, estado?: (info: any) => void, esperaMs?: number, temporizador?: any }} _o
+ * @param etiqueta (tipo|null) => void — muestra el origen del nombre: «digifact» | «simulado» | «manual» | «cf»
+ * @param {{ modelo: { tipo: string, numero: string, nombre: string }, consultar: Function, refrescar?: () => void, estado?: (info: any) => void, etiqueta?: (tipo: string | null) => void, esperaMs?: number, temporizador?: any }} _o
  */
-export function crearAutollenado({ modelo, consultar, refrescar = () => {}, estado = (_info) => {}, esperaMs = 600, temporizador = { poner: (f, ms) => setTimeout(f, ms), quitar: (i) => clearTimeout(i) } }) {
-  let auto = false, manual = false, cf = false, seq = 0, timer = null, aborto = null, consultadoPara = null;   // consultadoPara: el NIT (normalizado) ya consultado o en consulta
+export function crearAutollenado({ modelo, consultar, refrescar = () => {}, estado = (_info) => {}, etiqueta = (_tipo) => {}, esperaMs = 600, temporizador = { poner: (f, ms) => setTimeout(f, ms), quitar: (i) => clearTimeout(i) } }) {
+  let auto = false, origenAuto = null, manual = false, cf = false, seq = 0, timer = null, aborto = null, consultadoPara = null;   // consultadoPara: el NIT (normalizado) ya consultado o en consulta
 
   const cancelar = () => { consultadoPara = null; if (timer !== null) { temporizador.quitar(timer); timer = null; } if (aborto) { try { aborto.abort(); } catch { /* ya terminó */ } aborto = null; } seq++; };
-  const limpiarNombre = () => { modelo.nombre = ""; auto = false; manual = false; };
-  const aplicarCF = () => { cancelar(); modelo.tipo = "CF"; modelo.numero = "CF"; modelo.nombre = NOMBRE_CF; auto = false; manual = false; cf = true; refrescar(); estado({ fase: "cf" }); };
+  const etiquetar = () => etiqueta(cf || modelo.tipo === "CF" ? "cf" : auto ? origenAuto : modelo.nombre.trim() ? "manual" : null);
+  const limpiarNombre = () => { modelo.nombre = ""; auto = false; manual = false; origenAuto = null; };
+  const aplicarCF = () => { cancelar(); modelo.tipo = "CF"; modelo.numero = "CF"; modelo.nombre = NOMBRE_CF; auto = false; manual = false; origenAuto = null; cf = true; refrescar(); estado({ fase: "cf" }); etiquetar(); };
 
   async function ejecutar(n) {
     timer = null; const mia = seq; consultadoPara = n; aborto = new AbortController(); estado({ fase: "consultando" });
@@ -56,9 +60,10 @@ export function crearAutollenado({ modelo, consultar, refrescar = () => {}, esta
     catch (e) { if (e?.name === "AbortError" || mia !== seq) return; estado({ fase: "error" }); return; }
     if (mia !== seq) return;   // respuesta vieja: la persona ya cambió el NIT
     aborto = null;
-    if (!r?.encontrado) { estado({ fase: "no_encontrado", simulado: !!r?.simulado }); return; }
-    if (modelo.nombre.trim() && !auto) { estado({ fase: "conservado" }); return; }   // nunca se pisa lo que escribió la persona
-    modelo.nombre = r.nombre; auto = true; manual = false; refrescar(); estado({ fase: "ok", origen: r.origen, simulado: !!r.simulado });
+    if (!r?.encontrado) { estado({ fase: "no_encontrado", simulado: !!r?.simulado }); etiquetar(); return; }
+    if (modelo.nombre.trim() && !auto) { estado({ fase: "conservado" }); etiquetar(); return; }   // nunca se pisa lo que escribió la persona
+    // lo no simulado que el servidor devuelve para un NIT viene de la consulta real (CF nunca llega aquí)
+    modelo.nombre = r.nombre; auto = true; manual = false; origenAuto = r.simulado ? "simulado" : "digifact"; refrescar(); estado({ fase: "ok", origen: r.origen, simulado: origenAuto === "simulado" }); etiquetar();
   }
   function programar(n, alSalir) {
     if (modelo.tipo !== "NIT" || !esNitConsultable(n, alSalir)) return;
@@ -74,7 +79,7 @@ export function crearAutollenado({ modelo, consultar, refrescar = () => {}, esta
       if (n === "CF") { aplicarCF(); return; }
       if (cf || modelo.tipo === "CF") { cf = false; modelo.tipo = "NIT"; limpiarNombre(); refrescar(); }   // sale de CF: sin datos del receptor anterior
       else if (auto) { limpiarNombre(); refrescar(); }                             // otro NIT: el nombre autollenado ya no corresponde
-      programar(n, false);
+      programar(n, false); etiquetar();
     },
     /** La persona salió del campo «Identificación»: si quedó una consulta en espera, se hace ya. */
     alSalirIdentificacion() {
@@ -87,14 +92,14 @@ export function crearAutollenado({ modelo, consultar, refrescar = () => {}, esta
       cancelar(); estado(null);
       if (tipo === "CF") { aplicarCF(); return; }
       const veniaCF = cf || modelo.tipo === "CF"; modelo.tipo = tipo;
-      if (veniaCF) { cf = false; modelo.numero = ""; limpiarNombre(); refrescar(); return; }   // de CF a otro tipo: campos vacíos
+      if (veniaCF) { cf = false; modelo.numero = ""; limpiarNombre(); refrescar(); etiquetar(); return; }   // de CF a otro tipo: campos vacíos
       if (auto) { limpiarNombre(); refrescar(); }
-      programar(normalizarId(modelo.numero), false);
+      programar(normalizarId(modelo.numero), false); etiquetar();
     },
     /** La persona escribió en «Nombre». */
-    alEscribirNombre(valor) { modelo.nombre = valor; manual = valor.trim() !== ""; auto = false; },
+    alEscribirNombre(valor) { modelo.nombre = valor; manual = valor.trim() !== ""; auto = false; origenAuto = null; etiquetar(); },
     /** Estado interno (para pruebas). */
     get interno() { return { auto, manual, cf, pendiente: timer !== null }; },
-    cancelar() { cancelar(); estado(null); },
+    cancelar() { cancelar(); estado(null); etiquetar(); },
   };
 }

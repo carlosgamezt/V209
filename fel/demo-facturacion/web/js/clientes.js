@@ -3,7 +3,7 @@
 import { h, boton, insignia, vacio, cabecera, modal, campo, toast, mensajeError, poner } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
-import { crearAutollenado, textoEstado } from "./receptor_nit.js";
+import { crearAutollenado, textoEstado, ETIQUETAS } from "./receptor_nit.js";
 
 const POR_PAGINA = 5;
 const TIPOS = [["todos", "Todos los tipos"], ["empresa", "Empresa (NIT)"], ["persona", "Persona (CUI / otro)"], ["cf", "Consumidor final"]];
@@ -62,10 +62,11 @@ export function pantallaClientes(ctx) {
     const err = h("p", { class: "err", role: "alert" }); let m; const refs = {};
     const inp = (k, et, extra = {}) => (refs[k] = h("input", { value: f[k], "aria-label": et, oninput: (e) => { f[k] = e.target.value; }, ...extra }));
     // autollenado del nombre al escribir el NIT (solo clientes nuevos): lo consulta el SERVIDOR (Digifact TEST o simulador con datos ficticios); «CF» se resuelve sin consulta; nunca se pisa un nombre escrito a mano
-    const estadoNit = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" });
+    const estadoNit = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }), etiquetaNit = h("small", { class: "nit-etiqueta", hidden: true });
     const ctrl = c ? null : crearAutollenado({ modelo: f, consultar: (n, o) => api.receptorNit(n, o),
       refrescar: () => { if (refs.tipo) refs.tipo.value = f.tipo; if (refs.numero) refs.numero.value = f.numero; if (refs.nombre) { refs.nombre.value = f.nombre; refs.nombre.readOnly = f.tipo === "CF"; } guardar.disabled = f.tipo === "CF"; },
-      estado: (info) => { estadoNit.textContent = info?.fase === "cf" ? "Consumidor final no se registra como cliente: se elige al facturar." : textoEstado(info); } });
+      estado: (info) => { estadoNit.textContent = info?.fase === "cf" ? "Consumidor final no se registra como cliente: se elige al facturar." : textoEstado(info); },
+      etiqueta: (t) => { etiquetaNit.hidden = !t; etiquetaNit.textContent = t ? ETIQUETAS[t] : ""; etiquetaNit.className = `nit-etiqueta${t ? ` nit-et-${t}` : ""}`; } });
     const guardar = boton("Guardar", { id: "guardar-cliente", onclick: async () => {
       err.textContent = ""; if (!f.numero.trim() || !f.nombre.trim()) { err.textContent = "La identificación y el nombre son obligatorios."; return; }
       if (!/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) { err.textContent = "La identificación solo admite letras, números y guion."; return; }
@@ -76,7 +77,7 @@ export function pantallaClientes(ctx) {
     } });
     m = modal({ titulo: c ? "Editar cliente" : "Nuevo cliente", contenido: h("div", { class: "form" },
       h("div", { class: "grid2" }, campo("Tipo", (refs.tipo = h("select", { "aria-label": "Tipo de identificación", disabled: !!c, onchange: (e) => { if (ctrl) ctrl.alElegirTipo(e.target.value); else f.tipo = e.target.value; } }, ...[["NIT", "NIT"], ["CUI", "CUI"], ["EXT", "Extranjero / otro"], ...(c ? [] : [["CF", "Consumidor final"]])].map(([v, t]) => h("option", { value: v, selected: f.tipo === v }, t))))),
-        h("div", { class: "nit-id" }, campo("Identificación", inp("numero", "Identificación del cliente", { maxlength: 30, disabled: !!c, autocomplete: "off", oninput: (e) => { if (ctrl) ctrl.alEscribirId(e.target.value); else f.numero = e.target.value; }, onblur: () => ctrl?.alSalirIdentificacion() })), estadoNit)),
+        h("div", { class: "nit-id" }, campo("Identificación", inp("numero", "Identificación del cliente", { maxlength: 30, disabled: !!c, autocomplete: "off", oninput: (e) => { if (ctrl) ctrl.alEscribirId(e.target.value); else f.numero = e.target.value; }, onblur: () => ctrl?.alSalirIdentificacion() })), estadoNit, etiquetaNit)),
       campo("Nombre o razón social", inp("nombre", "Nombre del cliente", { maxlength: 200, oninput: (e) => { if (ctrl) ctrl.alEscribirNombre(e.target.value); else f.nombre = e.target.value; } })), campo("Dirección", inp("direccion", "Dirección del cliente", { maxlength: 300 })),
       h("div", { class: "grid2" }, campo("Teléfono", inp("telefono", "Teléfono del cliente", { maxlength: 40 })), campo("Correo", inp("email", "Correo del cliente", { maxlength: 200, type: "email" }))), err),
       pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-cliente", onclick: async () => { try { await api.estadoCliente(c.id, !c.activo); await ctx.recargarEstado(); m.cerrar(); toast(c.activo ? "Cliente desactivado" : "Cliente reactivado"); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,

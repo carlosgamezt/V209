@@ -21,7 +21,7 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
     const sinDesborde = async (p, donde) => { const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde}: ${a} > ${v}`); };
     const ID = 'input[aria-label="Identificación del receptor"]', NOM = 'input[aria-label="Nombre del receptor"]', TIPO = 'select[aria-label="Tipo de identificación"]', EST = ".nit-estado";
     const esperarValor = async (p, sel, ok, ms = 15000) => { const t0 = Date.now(); for (;;) { const v = await p.inputValue(sel); if (ok(v)) return v; if (Date.now() - t0 > ms) throw new Error(`valor de ${sel} no llegó: «${v}»`); await p.waitForTimeout(100); } };   // sin waitForFunction: la CSP de la página (script-src 'self') prohíbe eval
-    const teclear = async (p, sel, texto) => { await p.fill(sel, ""); await p.locator(sel).pressSequentially(texto, { delay: 40 }); };
+    const ETQ = async (p) => (await p.locator(".nit-etiqueta:not([hidden])").allInnerTexts()).map((t) => t.trim()); const teclear = async (p, sel, texto) => { await p.fill(sel, ""); await p.locator(sel).pressSequentially(texto, { delay: 40 }); };
 
     // ================= Nueva factura (390 px)
     const { p } = await nuevoCtx(390, 844); await entrar(p);
@@ -31,18 +31,18 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
     // NIT válido: sin consulta por tecla, «Consultando NIT…» y nombre completado; la advertencia va aparte, no dentro del nombre
     await teclear(p, ID, A); assert.equal(peticiones.length, 0, "no consulta mientras se escribe"); await p.waitForSelector(`${EST}:has-text("Consultando NIT")`, { timeout: 8000 }).catch(async (e) => { console.log("DIAGNÓSTICO autollenado:", JSON.stringify({ navegador: NAV, id: await p.inputValue(ID), tipo: await p.inputValue(TIPO), estado: await p.locator(EST).allInnerTexts(), peticiones, errores })); throw e; });
     await esperarValor(p, NOM, (v) => v !== ""); assert.equal(await p.inputValue(NOM), NOM_A); assert.deepEqual(peticiones, [A], "una sola consulta (sin una por tecla)");
-    assert.match(await p.locator(EST).innerText(), /simulado.*no proviene de SAT/i); assert.doesNotMatch(await p.inputValue(NOM), /DEMO|simulad/i);
+    assert.match(await p.locator(EST).innerText(), /simulados.*no provienen de SAT/i); assert.deepEqual(await ETQ(p), ["Datos simulados"], "etiqueta de origen: datos simulados"); assert.doesNotMatch(await p.inputValue(NOM), /DEMO|simulad/i);
     await sinDesborde(p, "NIT consultado");
     // cambios rápidos: la respuesta de la primera consulta no pisa la del NIT final
     demora = 900; peticiones.length = 0; await teclear(p, ID, B); await p.waitForTimeout(700); await teclear(p, ID, A); await p.waitForTimeout(700); await teclear(p, ID, B);
     await esperarValor(p, NOM, (v) => v === NOM_B); await p.waitForTimeout(1500); assert.equal(await p.inputValue(NOM), NOM_B, "gana el último NIT escrito");
     // sin coincidencia y error del proveedor: mensaje claro y entrada manual
-    demora = 50; await teclear(p, ID, "99900025"); await p.waitForSelector(`${EST}:has-text("No se encontró este NIT")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre"); await p.fill(NOM, "Escrito a mano"); assert.equal(await p.inputValue(NOM), "Escrito a mano");
+    demora = 50; await teclear(p, ID, "99900025"); await p.waitForSelector(`${EST}:has-text("No se encontró este NIT")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre"); await p.fill(NOM, "Escrito a mano"); assert.equal(await p.inputValue(NOM), "Escrito a mano"); assert.deepEqual(await ETQ(p), ["Ingreso manual"], "etiqueta de origen: ingreso manual");
     await teclear(p, ID, "99900017"); await p.waitForSelector(`${EST}:has-text("No se pudo consultar")`); assert.equal(await p.inputValue(NOM), "Escrito a mano", "el error no toca lo escrito"); await sinDesborde(p, "error del proveedor");
     // nombre escrito a mano: nunca se sobrescribe
     await p.fill(ID, ""); await p.fill(NOM, "Nombre de la casa"); await teclear(p, ID, A); await p.waitForSelector(`${EST}:has-text("Se conservó el nombre")`); assert.equal(await p.inputValue(NOM), "Nombre de la casa");
     // CF: «c f», «Cf», «CF»: se normaliza, CONSUMIDOR FINAL, sin consulta
-    peticiones.length = 0; for (const v of ["c f", "Cf", " cf ", "CF"]) { await p.fill(ID, v); await p.waitForTimeout(150); assert.equal(await p.inputValue(ID), "CF", `«${v}» se normaliza`); assert.equal(await p.inputValue(NOM), "CONSUMIDOR FINAL"); assert.equal(await p.inputValue(TIPO), "CF"); }
+    peticiones.length = 0; for (const v of ["c f", "Cf", " cf ", "CF"]) { await p.fill(ID, v); await p.waitForTimeout(150); assert.equal(await p.inputValue(ID), "CF", `«${v}» se normaliza`); assert.equal(await p.inputValue(NOM), "CONSUMIDOR FINAL"); assert.deepEqual(await ETQ(p), ["Consumidor final"], "etiqueta de origen: consumidor final"); assert.equal(await p.inputValue(TIPO), "CF"); }
     assert.equal(await p.locator(NOM).evaluate((e) => e.readOnly), true, "el nombre de CF no se edita"); await p.waitForTimeout(900); assert.deepEqual(peticiones, [], "CF no consulta nada"); assert.match(await p.locator(EST).innerText(), /Consumidor final.*Q 2,500\.00/); await sinDesborde(p, "CF");
     // CF → NIT: sin datos del receptor anterior; y de vuelta a CF se restaura el nombre
     await teclear(p, ID, A); assert.equal(await p.inputValue(TIPO), "NIT"); await esperarValor(p, NOM, (v) => v.startsWith("CONTRIBUYENTE")); assert.equal(await p.inputValue(NOM), NOM_A);
@@ -59,7 +59,7 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
     await p.goto(srv.url + "/#/clientes"); await p.waitForSelector("#nuevo-cliente"); await p.click("#nuevo-cliente"); await p.waitForSelector(".modal");
     assert.equal(await p.locator("#consultar-nit").count(), 0, "el botón manual de consulta ya no existe");
     const IDC = 'input[aria-label="Identificación del cliente"]', NOMC = 'input[aria-label="Nombre del cliente"]';
-    await teclear(p, IDC, A); await esperarValor(p, NOMC, (v) => v !== ""); assert.equal(await p.inputValue(NOMC), NOM_A); assert.match(await p.locator(".modal .nit-estado").innerText(), /simulado/i);
+    await teclear(p, IDC, A); await esperarValor(p, NOMC, (v) => v !== ""); assert.equal(await p.inputValue(NOMC), NOM_A); assert.match(await p.locator(".modal .nit-estado").innerText(), /simulados/i);
     await p.fill(IDC, "c f"); assert.equal(await p.inputValue(IDC), "CF"); assert.equal(await p.inputValue(NOMC), "CONSUMIDOR FINAL"); assert.equal(await p.locator("#guardar-cliente").isDisabled(), true, "CF no se registra como cliente"); assert.match(await p.locator(".modal .nit-estado").innerText(), /no se registra como cliente/);
     await teclear(p, IDC, B); assert.equal(await p.locator("#guardar-cliente").isDisabled(), false); await esperarValor(p, NOMC, (v) => v === "PERSONA DE PRUEBA TRES"); await p.keyboard.press("Escape");
 
