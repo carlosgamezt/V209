@@ -19,7 +19,7 @@ export function decidirDesdeLibro(sesion, libro, sesionId) {
   return null;
 }
 
-/** Sesión y libro se leen con dos peticiones distintas: si la persona confirma justo entre ambas, una lectura puede ver el libro con la emisión y la sesión aún sin confirmar (o al revés).
+/** Sesión y libro se leen con dos peticiones distintas: si la decisión de la persona llega justo entre ambas, una lectura puede ver el libro con la emisión y la sesión todavía sin marcar como confirmada (o al revés).
  *  Esa discrepancia de UNA sola lectura es transitoria; solo se da por incierta si persiste en lecturas consecutivas. Los duplicados en el libro NUNCA se consideran transitorios. */
 export const LECTURAS_INCOHERENTES_PARA_INCIERTA = 2;
 export const esDiscrepanciaTransitoria = (d) => !!d && d.tipo === "incierta" && (d.motivo === "emision_sin_sesion_confirmada" || d.motivo === "libro_no_coincide");
