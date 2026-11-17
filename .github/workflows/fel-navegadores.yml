@@ -31,3 +31,7 @@ jobs:
         env:
           FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
         run: node fel/demo-facturacion/tests/e2e_practico.cjs
+      - name: Rediseño móvil de la factura (320/360/390/430 px) en ${{ matrix.navegador }}
+        env:
+          FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
+        run: node fel/demo-facturacion/tests/e2e_movil.cjs

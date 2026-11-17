@@ -2,6 +2,8 @@
 // sin desplazamiento horizontal ni elementos fijos que tapen acciones, guardado y recuperación del borrador, vista previa limpia, impresión y PDF en HOJA CARTA y TICKET 80 MM.
 // Uso: node e2e_movil.cjs [carpeta-de-capturas]   (servidor real en modo con inicio de sesión; sin red externa, sin SAT)
 const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), assert = require("assert/strict"), pw = require("playwright");
+// Navegador a probar: chromium (por defecto), firefox o webkit (FEL_E2E_NAVEGADOR). Firefox no admite «isMobile»: el teléfono se emula con la pantalla y el tacto. El PDF de la impresión del navegador solo existe en Chromium.
+const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV];
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null; if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
 function arrancar() {
@@ -16,14 +18,14 @@ function arrancar() {
 const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(pdf); return m ? { w: Number(m[1]), h: Number(m[2]) } : null; };
 
 (async () => {
-  const srv = await arrancar(), nav = await pw.chromium.launch(), errores = [];
+  const srv = await arrancar(), nav = await motor.launch(), errores = [];
   try {
     for (const w of [320, 360, 390, 430]) {
       const alto = w <= 360 ? 640 : 844, donde = (x) => `${w}px · ${x}`;
-      const ctx = await nav.newContext({ viewport: { width: w, height: alto }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, acceptDownloads: true, locale: "es-GT" });
+      const ctx = await nav.newContext({ viewport: { width: w, height: alto }, deviceScaleFactor: 2, hasTouch: true, ...(NAV === "firefox" ? {} : { isMobile: true }), acceptDownloads: true, locale: "es-GT" });
       await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" }));
       const p = await ctx.newPage(); p.on("pageerror", (e) => errores.push(`${w}: ${e.message}`)); p.on("console", (m) => { if (m.type() === "error" && !/fonts\.|Failed to load resource/.test(m.text())) errores.push(`${w}: ${m.text()}`); });
-      const foto = async (n) => { if (capturas && (w === 390 || w === 320)) await p.screenshot({ path: path.join(capturas, `${n}-${w}.png`) }); };
+      const foto = async (n) => { if (capturas && (w === 390 || w === 320)) await p.screenshot({ path: path.join(capturas, `${n}-${w}${NAV === "chromium" ? "" : "-" + NAV}.png`) }); };
       const sinDesborde = async (x) => { const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde(x)}: ${a} > ${v}`); };
       // un elemento «libre» no está tapado por nada fijo (encabezado, barra de acciones, navegación) una vez desplazado a la vista
       const libre = async (sel, x) => { await p.locator(sel).first().scrollIntoViewIfNeeded(); await p.waitForTimeout(120);
@@ -81,7 +83,7 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       }
       assert.equal(await p.locator("#previa-compartir").isDisabled(), false, donde("compartir disponible con el documento guardado"));
       // impresión del navegador: el tamaño de página sale del formato elegido (@page con nombre) y solo se imprime el documento
-      if (w === 390) {
+      if (w === 390 && NAV === "chromium") {   // page.pdf() solo existe en Chromium
         for (const [fmt, esperado] of [["ticket", (b) => b.w > 220 && b.w < 235 && b.h > 150 && b.h < 780], ["carta", (b) => b.w > 605 && b.w < 620 && b.h > 785 && b.h < 800]]) {
           await p.check(`input[name="formato-impresion"][value="${fmt}"]`); await p.waitForSelector(`.papel[data-formato="${fmt}"]`); await p.evaluate(() => window.dispatchEvent(new Event("beforeprint"))); await p.emulateMedia({ media: "print" });
           assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector("#app")).display), "none", "al imprimir se oculta la aplicación"); assert.equal(await p.locator(`.papel[data-formato="${fmt}"]`).isVisible(), true);
@@ -91,6 +93,6 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       await p.keyboard.press("Escape"); await ctx.close();
     }
     assert.deepEqual(errores, [], `errores de página: ${errores.join(" | ")}`);
-    console.log("MÓVIL E2E OK");
+    console.log(`MÓVIL E2E OK (${NAV})`);
   } finally { await nav.close(); srv.parar(); }
 })().catch((e) => { console.error(e); process.exit(1); });
