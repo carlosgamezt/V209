@@ -171,6 +171,10 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" ve
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_RLS=60; etapa "$REF" verificar-etapa 1; r=$?
 [ $r = 1 ] && grep -q "FALLO RLS: 60 de 67 tablas" "$W/salida.txt" && ok "verificar-etapa 1: RLS incompleto → FALLA (exit 1)" || mal "verificar-etapa no detecta RLS incompleto"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_DEP=2; etapa "$REF" verificar-etapa 1; [ $? = 1 ] && grep -q "FALLO dependencias de Auth: 2" "$W/salida.txt" && ok "verificar-etapa 1: faltan dependencias de Auth → FALLA" || mal "verificar-etapa no detecta dependencias de Auth"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" verificar-etapa 1; r=$?
+[ $r = 0 ] && grep -q "OK    V1 reforzada (etapa 1) (verificacion-posterior-27.sql, solo lectura)" "$W/salida.txt" && grep -q -- "-f docs/migracion-28/verificacion-posterior-27.sql" "$REG_PSQL" && ! grep -q -- "verificacion-posterior-28.sql" "$REG_PSQL" && solo_lectura && ok "verificar-etapa 1: corre la V1 reforzada (67 tablas, políticas, funciones, privilegios, 0 filas) en solo lectura" || { mal "verificar-etapa 1 sin V1 reforzada"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_CATALOGO_RC=3; etapa "$REF" verificar-etapa 1; r=$?
+[ $r = 1 ] && grep -q "FALLO V1 reforzada (etapa 1)" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-etapa 1: si la V1 reforzada falla → FALLA y no imprime la contraseña" || mal "V1 reforzada fallida no falla"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67; etapa "$REF" verificar-etapa 2; r=$?
 [ $r = 0 ] && grep -q "catálogo de la migración 28" "$W/salida.txt" && grep -q -- "-f docs/migracion-28/verificacion-posterior-28.sql" "$REG_PSQL" && solo_lectura && ok "verificar-etapa 2: corre el catálogo de la migración 28 (solo lectura)" || { mal "verificar-etapa 2"; cat "$W/salida.txt"; }
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67 FAKE_CATALOGO_RC=3; etapa "$REF" verificar-etapa 2; r=$?

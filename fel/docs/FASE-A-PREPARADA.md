@@ -52,3 +52,17 @@ Control `public`: HTTP 404 `PGRST205` (clave publicable válida). Sonda `vault`:
 - **Qué aplica:** migraciones 1–27 (exige base vacía y sin historial, como confirma A2). V1 automática al terminar (solo lectura): 27 registradas, 67 tablas con RLS, dependencias de Auth sin faltantes, 0 filas.
 - **Se detiene si:** V1 da cualquier cifra distinta; entonces NO se lanza la etapa 2 y la recuperación es un proyecto Supabase nuevo (`PROPUESTA-FINAL-APLICACION-SEGURA.md` §1).
 - **Después:** B2 (etapa 2, migración 28) solo con otra autorización, sin cargar datos entre ambas.
+
+## 11. B1 EJECUTADA: ejecución #14 (commit `c8bd7d6`) = OK
+Etapa 1 aplicada en `nexa-demo`: las 27 migraciones, una por una, sin errores. V1 de la propia ejecución: 27 registradas, RLS activo en las **67** tablas, dependencias de Auth sin faltantes; `service_role` con USAGE sobre `vault` (conocido), `anon`/`authenticated` sin él. La etapa 2 NO se ha aplicado.
+**Limitación detectada:** V1 (código de la ejecución #14) NO comprobaba políticas, privilegios efectivos ni filas, aunque los documentos lo decían. Se refuerza (ver §12).
+
+## 12. V1 reforzada (local, probada en PostgreSQL con las 27 migraciones; pendiente de subir)
+`docs/migracion-28/verificacion-posterior-27.sql` (solo lectura, mismo mecanismo que el de la 28) comprueba tras la etapa 1: RLS en toda tabla; `anon` sin ningún privilegio y `authenticated` solo SELECT; políticas solo de lectura y con condición de empresa; sin vistas; SECURITY DEFINER con `search_path` y sin acceso de `anon`; CASCADE solo en la lista conocida; **67 tablas, 49 políticas, 182 funciones, 57 disparadores**; `anon` sin funciones ejecutables y `authenticated` solo `fel_es_admin_plataforma`, `fel_es_miembro`, `fel_tiene_permiso`; `anon`/`authenticated` sin USAGE en `vault`; **0 filas de negocio** (solo las 9 tablas de semillas con su número exacto, `empresas`=0); semillas «falla cerrado» (`emision_real_disponible=false`, proveedores solo `simulado`, regímenes `sin_verificar`). `supabase-hospedado.sh verificar-etapa 1` y `migraciones-etapa 1` lo ejecutan. Probado: pasa sobre las 27 migraciones y detecta 5 alteraciones provocadas (GRANT a `anon`, escritura a `authenticated`, ejecución de función por `anon`, fila ajena a las semillas…).
+**Para ejecutarla en la nube:** autorizar el push de este commit y lanzar `verificar-etapa` · `etapa=1` (solo lectura; aprobación en `demo-privada`).
+
+## 13. B2 preparada, NO ejecutada
+- **Antes:** `verificar-etapa 1` con la V1 reforzada en verde (§12).
+- **Cómo:** `migraciones-nube` · `migraciones-etapa` · `etapa=2` · `confirmar=APLICAR-MIGRACIONES`. Exige EXACTAMENTE las 27 registradas; sin cargar datos entre etapas.
+- **Qué aplica:** migración 28 (empresas no se borran ni se vacían, `service_role` pierde DELETE/TRUNCATE, disparadores sin EXECUTE, FK compuesta en `ordenes_confirmaciones`). V2 automática: 28 registradas y `verificacion-posterior-28.sql` (catálogo completo).
+- **Después (sin atajos):** C1 `publicar-nube` modo `verificar` (comprueba los 12 secretos `DEMO_*` y la conectividad sin tocar nada) → C2 `publicar` con `digifact=apagado` y `PUBLICAR` → C3 URL entregada solo tras la prueba de humo; luego recorrido en Android y PC con `GUIA-PRIMERA-SESION.md`.

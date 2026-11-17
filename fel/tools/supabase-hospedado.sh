@@ -12,7 +12,7 @@
 #   bash tools/supabase-hospedado.sh estado         → SOLO LECTURA de METADATOS (sesión forzada a solo lectura): tablas existentes, RLS, historial de migraciones y cuáles faltan; no lee datos de negocio
 #   bash tools/supabase-hospedado.sh migraciones    → enlaza y aplica las migraciones pendientes
 #   bash tools/supabase-hospedado.sh funcion        → carga los secretos de la función y la despliega
-#   bash tools/supabase-hospedado.sh verificar-api-vault   → SOLO LECTURA: ¿expone la API de Supabase el esquema «vault»? Un GET a la RAÍZ de la API REST (nunca a una tabla) con «Accept-Profile: vault» y la clave «anon» PÚBLICA
+#   bash tools/supabase-hospedado.sh verificar-api-vault   → SOLO LECTURA: ¿expone la API de Supabase el esquema «vault»? Un GET de una tabla INEXISTENTE de la API REST (nunca se lee un dato) con «Accept-Profile: vault» y la clave «anon» PÚBLICA
 #                                                          (FEL_DEMO_ANON_KEY; se comprueba que sea de rol anon y de este proyecto: jamás se envía una clave de servicio). Sin base de datos, sin CLI, sin escrituras.
 #   bash tools/supabase-hospedado.sh diagnostico-inicial   → SOLO LECTURA ESTRICTA (mismas 4 capas y mismos 2 secretos que verificar-inicial): ejecuta docs/migracion-28/diagnostico-funcion-y-vault-nexa-demo.sql (solo SELECT sobre el catálogo):
 #                                                          función propia en public, disparadores de evento y privilegios sobre Vault. Informativo: no falla por hallazgos. NO llama a la CLI, NO tiene ruta hacia migraciones ni escrituras.
@@ -278,8 +278,10 @@ print(r)')"
       # INFORMATIVO (nunca hace fallar la etapa): ¿está disponible Vault en este proyecto y quién puede usar su esquema? Sirve para cerrar la verificación de Vault sin modificar nada.
       echo "  INFO  extensiones de cifrado: $(qro "select coalesce(string_agg(name || ' (disponible ' || coalesce(default_version, '-') || ', instalada ' || coalesce(installed_version, 'no') || ')', '; '), 'ninguna disponible') from pg_available_extensions where name in ('supabase_vault', 'pgsodium')")"
       echo "  INFO  privilegios sobre el esquema vault (USAGE) anon/authenticated/service_role: $(qro "select case when to_regnamespace('vault') is null then 'el esquema vault no existe' else (select string_agg(r || '=' || has_schema_privilege(r, 'vault', 'USAGE')::text, ' ') from unnest(array['anon','authenticated','service_role']) r) end")"
-      if [ "$ETAPA" = "2" ]; then
-        local sal; if sal="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f docs/migracion-28/verificacion-posterior-28.sql 2>&1)"; then echo "  OK    catálogo de la migración 28 (verificacion-posterior-28.sql, solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO catálogo de la migración 28: ${sal:0:200}"; fallo=1; fi
+      # catálogo y conteos de solo lectura: etapa 1 = V1 reforzada (67 tablas, 49 políticas, 182 funciones, 57 disparadores, privilegios efectivos, 0 filas de negocio); etapa 2 = catálogo de la 28
+      local ARCH="docs/migracion-28/verificacion-posterior-27.sql" NOMBRE="V1 reforzada (etapa 1)"; [ "$ETAPA" = "2" ] && { ARCH="docs/migracion-28/verificacion-posterior-28.sql"; NOMBRE="catálogo de la migración 28"; }
+      if true; then
+        local sal; if sal="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f "$ARCH" 2>&1)"; then echo "  OK    $NOMBRE ($(basename "$ARCH"), solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO $NOMBRE: ${sal:0:200}"; fallo=1; fi
       fi
       return $fallo
     }
