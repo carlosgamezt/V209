@@ -90,6 +90,13 @@ select pg_temp.espera_error($$select public.fel_op_anulacion_iniciar('00000000-0
 
 -- ================= limitador de peticiones
 do $$ declare r record; i int; permitidas int := 0; denegadas int := 0; ret int; begin
+  -- HORA CONTROLADA, sin omitir ninguna afirmación: la cubeta del limitador es (clave, inicio de ventana), así que las ventanas de 60 s y de 3600 s de una MISMA clave empiezan a la vez en el minuto 0 de cada hora
+  -- (UTC) y ahí «otra ventana = otra cubeta» no puede cumplirse (falló en CI a las 03:00:07). En vez de depender del reloj real, la prueba espera —como mucho unos 70 s, solo en esos minutos— a estar dentro de un
+  -- tramo seguro de la hora (≥ 62 s después del minuto 0 y ≥ 10 s antes de la hora siguiente), y entonces ejecuta TODAS las afirmaciones de siempre.
+  loop
+    exit when (extract(epoch from clock_timestamp())::bigint % 3600) between 62 and 3590;
+    perform pg_sleep(1);
+  end loop;
   for i in 1..7 loop
     select * into r from public.fel_limite_consumir('prueba:a', 60, 5);
     if r.permitido then permitidas := permitidas + 1; else denegadas := denegadas + 1; ret := r.reintentar_en; end if;
