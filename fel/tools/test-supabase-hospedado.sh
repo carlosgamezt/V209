@@ -286,13 +286,15 @@ case "${FAKE_API:-ok}" in
   *) if [ "$perfil" = public ]; then resp 404 '{"code":"PGRST205","details":null,"hint":null,"message":"Could not find the table '"'"'public.fel_sonda_inexistente'"'"' in the schema cache"}'
      else case "${FAKE_API}" in
        ok) resp 406 '{"code":"PGRST106","details":null,"hint":null,"message":"The schema must be one of the following: public, graphql_public"}';;
+       hint_ok) resp 406 '{"code":"PGRST106","details":null,"hint":"Only the following schemas are exposed: public, graphql_public","message":"Invalid schema: vault"}';;
+       hint_con_vault) resp 406 '{"code":"PGRST106","hint":"Only the following schemas are exposed: public, vault","message":"Invalid schema: vault"}';;
+       sin_lista) resp 406 '{"code":"PGRST106","message":"otra cosa"}';;
        lista_con_vault) resp 406 '{"code":"PGRST106","details":null,"hint":null,"message":"The schema must be one of the following: public, vault"}';;
        expuesto) resp 404 '{"code":"PGRST205","message":"Could not find the table '"'"'vault.fel_sonda_inexistente'"'"' in the schema cache"}';;
        expuesto_200) resp 200 '[]';;
        vault_401) resp 401 '{"code":"42501","message":"permission denied"}';;
        vault_403) resp 403 '{"message":"forbidden"}';;
        raro) resp 500 '{"message":"boom"}';;
-       sin_lista) resp 406 '{"code":"PGRST106","message":"otra cosa"}';;
      esac; fi;;
 esac
 SH
@@ -329,7 +331,11 @@ limpia_api; FAKE_API=sin_clave api "$REF" "$JWT_ANON"; r=$?
 [ $r = 1 ] && grep -q "NO VERIFICADO (la API rechazó la autenticación (HTTP 401)" "$W/salida.txt" && [ "$(wc -l < "$CURL_ARGS" | tr -d ' ')" = 1 ] && ok "verificar-api-vault: clave rechazada por la API (401) → NO VERIFICADO, sin probar vault" || mal "401 no es NO VERIFICADO"
 limpia_api; FAKE_API=red api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO" "$W/salida.txt" && ok "verificar-api-vault: sin red → NO VERIFICADO (nunca OK)" || mal "sin red no es NO VERIFICADO"
 limpia_api; FAKE_API=raro api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (respuesta inesperada HTTP 500)" "$W/salida.txt" && ok "verificar-api-vault: respuesta inesperada → NO VERIFICADO" || mal "respuesta rara no es NO VERIFICADO"
-limpia_api; FAKE_API=sin_lista api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista" "$W/salida.txt" && ok "verificar-api-vault: 406 sin lista de esquemas → NO VERIFICADO" || mal "406 sin lista no es NO VERIFICADO"
+limpia_api; FAKE_API=hint_ok api "$REF" "$JWT_ANON"; r=$?
+[ $r = 0 ] && grep -q "Esquemas expuestos por la API: public, graphql_public" "$W/salida.txt" && ok "verificar-api-vault: lista de esquemas en «hint» (message «Invalid schema: vault») → OK" || { mal "lista en hint"; cat "$W/salida.txt"; }
+limpia_api; FAKE_API=hint_con_vault api "$REF" "$JWT_ANON"; r=$?
+[ $r = 1 ] && grep -q "REVISAR la lista de esquemas expuestos incluye vault" "$W/salida.txt" && ok "verificar-api-vault: «hint» con vault en la lista → REVISAR" || mal "hint con vault"
+limpia_api; FAKE_API=sin_lista api "$REF" "$JWT_ANON"; [ $? = 1 ] && grep -q "NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista.*otra cosa" "$W/salida.txt" && ok "verificar-api-vault: 406 sin lista de esquemas → NO VERIFICADO" || mal "406 sin lista no es NO VERIFICADO"
 # claves NO públicas: se rechazan SIN enviarlas a ningún sitio
 for caso in "clave secreta sb_secret_|sb_secret_abcdefghijklmnop" "JWT del rol service_role|$JWT_SERV" "JWT anon de OTRO proyecto|$JWT_OTRO" "texto cualquiera|esto-no-es-una-clave" "vacía|"; do
   desc="${caso%%|*}"; clave="${caso#*|}"; limpia_api; api "$REF" "$clave"; r=$?

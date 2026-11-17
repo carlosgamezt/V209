@@ -180,10 +180,17 @@ print(v if isinstance(v,str) else "",end="")' "$1"; }
     VAULT_COD="$(sonda vault)"; RESP="$(head -c 2000 "$CUERPO" | tr -d '\r')"; VAULT_CODE="$(printf '%s' "$RESP" | campo code)"
     if [ "$VAULT_COD" = "200" ] || { [ "$VAULT_COD" = "404" ] && { [ "$VAULT_CODE" = "PGRST205" ] || [ "$VAULT_CODE" = "42P01" ]; }; }; then echo "  REVISAR el esquema vault ESTÁ EXPUESTO por la API de datos (HTTP $VAULT_COD con Accept-Profile: vault: el esquema se resuelve)."; echo "API de datos: REVISAR. No se debe guardar nada en Vault ni aplicar migraciones hasta cerrarlo."; exit 1; fi
     if [ "$VAULT_COD" = "406" ] && [ "$VAULT_CODE" = "PGRST106" ]; then
-      LISTA="$(printf '%s' "$RESP" | campo message | python3 -c 'import sys,re
-m=sys.stdin.read()
-x=re.search(r"must be one of the following:\s*(.*)$", m); print(x.group(1).strip() if x else "")')"
-      if [ -z "$LISTA" ]; then echo "API de datos: NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista de esquemas expuestos)."; exit 1; fi
+      # la lista de esquemas expuestos puede venir en «message» («…must be one of the following: a, b») o en «hint» («Only the following schemas are exposed: a, b») según la versión de PostgREST
+      LISTA="$(printf '%s' "$RESP" | python3 -c 'import json,sys,re
+try: d=json.load(sys.stdin)
+except Exception: d={}
+r=""
+for k in ("hint","message"):
+    v=d.get(k) if isinstance(d,dict) else None
+    x=re.search(r"(?:must be one of the following|following schemas are exposed):\s*(.*?)\s*$", v) if isinstance(v,str) else None
+    if x: r=x.group(1).strip(); break
+print(r)')"
+      if [ -z "$LISTA" ]; then CRUDO="${RESP//"$ANON"/***}"; echo "API de datos: NO VERIFICADO (rechazó el esquema vault pero no se pudo leer la lista de esquemas expuestos). Respuesta (HTTP 406): ${CRUDO:0:400}"; exit 1; fi
       if printf '%s' "$LISTA" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -qx "vault"; then echo "  REVISAR la lista de esquemas expuestos incluye vault: $LISTA"; exit 1; fi
       echo "  OK    el esquema vault NO está expuesto (HTTP 406, PGRST106). Esquemas expuestos por la API: $LISTA"
       echo "API de datos: OK (solo lectura). Nada se modificó."; exit 0
