@@ -10,6 +10,8 @@
 #   bash tools/supabase-hospedado.sh conexion       → SOLO LECTURA: «db push --dry-run» (lista las migraciones pendientes; no aplica nada)
 #   bash tools/supabase-hospedado.sh diagnostico    → SOLO LECTURA: ¿qué contraseña autentica en el pooler? (un «select 1» por cada candidata; imprime solo SI/NO, nunca valores)
 #   bash tools/supabase-hospedado.sh estado         → SOLO LECTURA de METADATOS (sesión forzada a solo lectura): tablas existentes, RLS, historial de migraciones y cuáles faltan; no lee datos de negocio
+#   bash tools/supabase-hospedado.sh empresa-demo   → SOLO LECTURA: ¿qué UUID tiene la empresa de «ana»? (un SELECT con la sesión forzada a solo lectura; imprime solo UUID y conteos, nunca nombres, contraseñas ni tokens)
+#   bash tools/supabase-hospedado.sh secretos-estado → SOLO LECTURA: ¿qué secretos de Digifact existen en la función? (solo NOMBRES: presente/ausente; nunca valores ni huellas)
 #   bash tools/supabase-hospedado.sh migraciones    → enlaza y aplica las migraciones pendientes
 #   bash tools/supabase-hospedado.sh funcion        → carga los secretos de la función y la despliega
 #   bash tools/supabase-hospedado.sh verificar-api-vault   → SOLO LECTURA: ¿expone la API de Supabase el esquema «vault»? Un GET de una tabla INEXISTENTE de la API REST (nunca se lee un dato) con «Accept-Profile: vault» y la clave «anon» PÚBLICA
@@ -28,6 +30,16 @@ cd "$(dirname "$0")/.."
 source tools/destinos-demo.sh
 REF="${FEL_DEMO_PROYECTO_REF:-}"
 [[ "$REF" =~ ^[a-z0-9]{20}$ ]] && [ "$REF" = "$REF_ESPERADA" ] || { echo "PROHIBIDO: la referencia no es la del proyecto nexa-demo ($REF_ESPERADA). No se hace nada."; exit 2; }
+
+# Secretos de Digifact que este flujo puede dejar en la FUNCIÓN. Cada interruptor tiene los suyos; las credenciales de TEST las comparten (se retiran solo si AMBOS están apagados).
+SECRETOS_CERT=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA)
+SECRETOS_NIT=(FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA)
+SECRETOS_CRED=(DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT)
+SECRETOS_DIGIFACT=("${SECRETOS_CERT[@]}" "${SECRETOS_NIT[@]}" "${SECRETOS_CRED[@]}")
+# Lista (solo NOMBRES) de los secretos de la función. La salida de la CLI incluye huellas de los valores: NO se imprime, solo se busca en ella cada nombre conocido.
+LISTA_SECRETOS=""
+leer_lista_secretos() { LISTA_SECRETOS="$(supabase secrets list --remote="$REF" 2>/dev/null)" || { LISTA_SECRETOS=""; return 1; }; [ -n "$LISTA_SECRETOS" ]; }
+secreto_presente() { printf '%s\n' "$LISTA_SECRETOS" | grep -qw -- "$1"; }
 
 # Explica POR QUÉ no se aceptó la cadena: solo SI/NO por requisito, nunca valores (ni usuario, ni host, ni contraseña).
 explicar_url() {
@@ -129,6 +141,27 @@ case "${1:-}" in
       echo "  Migraciones ya registradas en la base ... 0 (no existe el historial: base sin migrar)"
       echo "  Migraciones PENDIENTES de aplicar ....... $(printf '%s\n' "$LOCALES" | grep -c .)"
     fi;;
+  empresa-demo)
+    # SOLO LECTURA: UUID de la empresa a la que pertenece «ana» (usuario fijo a001 de la demostración). Un solo SELECT con la sesión forzada a solo lectura; solo UUID y conteos, nunca nombres, NIT, correos, contraseñas ni tokens.
+    derivar_url_sesion
+    command -v psql >/dev/null || { echo "(psql no está disponible aquí: no se puede consultar la empresa)"; exit 1; }
+    CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
+    ANA_ID="00000000-0000-0000-0000-00000000a001"; ESPERADA="10000000-0000-0000-0000-0000000000d0"
+    qro() { PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -tA -c "$1" 2>/dev/null; }
+    EMP="$(qro "select coalesce(string_agg(e.id::text, ',' order by e.id::text), '') from public.empresas e join public.miembros m on m.empresa_id = e.id where m.user_id = '$ANA_ID'")" || { echo "No se pudo leer la empresa de «ana» (conexión o permisos): NO VERIFICADO."; exit 1; }
+    TOT="$(qro "select count(*) from public.empresas")" || TOT="?"
+    echo "== Empresa de la demostración (solo lectura; solo UUID y conteos)"
+    echo "  Empresas de «ana» (usuario a001) ........ $(printf '%s' "$EMP" | tr ',' '\n' | grep -c .)"
+    echo "  UUID de la empresa de «ana» ............. ${EMP:-—}"
+    echo "  Empresas en la base ..................... $TOT"
+    [[ "$EMP" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || { echo "  RESULTADO: «ana» no tiene exactamente UNA empresa: NO se debe habilitar nada hasta aclararlo."; exit 1; }
+    if [ "$EMP" = "$ESPERADA" ]; then echo "  RESULTADO: coincide con el UUID esperado (…0d0): se puede usar en FEL_DIGIFACT_NIT_EMPRESA."; else echo "  RESULTADO: NO coincide con el esperado (…0d0): usa el UUID de arriba en digifact_nit_empresa."; fi;;
+  secretos-estado)
+    # SOLO LECTURA: qué secretos de Digifact existen en la función (solo nombres). Útil antes de publicar y para comprobar que «apagado» dejó todo retirado.
+    if ! leer_lista_secretos; then echo "No se pudo leer la lista de secretos de la función (permiso del token o CLI): NO VERIFICADO. La publicación se niega a continuar sin poder asegurar el apagado."; exit 1; fi
+    echo "== Secretos de Digifact en la función (solo nombres)"
+    for n in "${SECRETOS_DIGIFACT[@]}"; do printf '  %-34s %s\n' "$n" "$(if secreto_presente "$n"; then echo presente; else echo ausente; fi)"; done;;
   migraciones)
     derivar_url_sesion
     supabase link --project-ref "$REF" --workdir . >/dev/null
@@ -338,7 +371,20 @@ print(r)')"
         echo "Consulta de NIT por Digifact TEST: habilitada para una empresa (valores no mostrados; no habilita la certificación)";;
       *) echo "FEL_DIGIFACT_NIT solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
     esac
+    # APAGAR DE VERDAD: «apagado» no es «no enviar»: un secreto publicado antes seguiría activo. Cada interruptor retira SOLO los suyos; las credenciales de TEST se retiran solo si ninguno está encendido.
+    # Primero se retira lo que debe estar apagado; si no se puede asegurar, la función NO se publica. Después se fijan los secretos y se VERIFICA por la lista (solo nombres).
+    APAGAR=(); DESEADOS=(); for n in "${SECRETOS_DIGIFACT[@]}"; do if grep -q "^$n=" "$ENVF"; then DESEADOS+=("$n"); else APAGAR+=("$n"); fi; done
+    if ! leer_lista_secretos; then echo "No se pudo leer la lista de secretos de la función: no se puede asegurar que Digifact quede apagado ni comprobarlo. No se publica la función."; exit 3; fi
+    SOBRAN=(); for n in ${APAGAR[@]+"${APAGAR[@]}"}; do if secreto_presente "$n"; then SOBRAN+=("$n"); fi; done
+    if [ ${#SOBRAN[@]} -gt 0 ]; then
+      supabase secrets unset "${SOBRAN[@]}" --remote="$REF" --yes >/dev/null || { echo "No se pudo retirar ${#SOBRAN[@]} secreto(s) de Digifact que deben estar apagados: no se publica la función."; exit 3; }
+      echo "Digifact: retirados ${#SOBRAN[@]} secreto(s) que deben estar apagados (nombres no mostrados)"
+    fi
     supabase secrets set --env-file "$ENVF" --remote="$REF" --yes >/dev/null
+    if ! leer_lista_secretos; then echo "No se pudo comprobar la lista de secretos tras publicarlos: NO VERIFICADO. No se publica la función."; exit 3; fi
+    for n in ${APAGAR[@]+"${APAGAR[@]}"}; do if secreto_presente "$n"; then echo "Quedó activo un secreto de Digifact que debía estar apagado: no se publica la función."; exit 3; fi; done
+    for n in ${DESEADOS[@]+"${DESEADOS[@]}"}; do if ! secreto_presente "$n"; then echo "Falta un secreto de Digifact que debía quedar activo: no se publica la función."; exit 3; fi; done
+    echo "Digifact en la función: certificación $(if grep -q '^FEL_DIGIFACT_TEST=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) · consulta de NIT $(if grep -q '^FEL_DIGIFACT_NIT=' "$ENVF"; then echo HABILITADA; else echo apagada; fi) (comprobado por la lista de secretos, solo nombres)"
     supabase functions deploy nexa-demo --remote="$REF" --yes --no-verify-jwt --workdir dist/nube/funcion;;
-  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|migraciones|verificar-api-vault|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
+  *) echo "Uso: supabase-hospedado.sh validar|conexion|diagnostico|estado|empresa-demo|secretos-estado|migraciones|verificar-api-vault|diagnostico-inicial|verificar-inicial|migraciones-etapa|verificar-etapa|funcion"; exit 2;;
 esac

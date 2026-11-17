@@ -15,7 +15,16 @@ if [ "$1 $2" = "db push" ]; then
     ls "$wd/supabase/migrations" | sort > "${LISTADO:-/dev/null}"; ls "$wd/supabase/migrations" | sed 's/_.*//' | tr '\n' ' ' > "${ESTADO_VERS:-/dev/null}"; echo 67 > "${ESTADO_TAB:-/dev/null}"
   fi
 fi
-if [ "$1 $2" = "secrets set" ]; then for a in "$@"; do case "$a" in --env-file) tomar=1;; *) [ "${tomar:-}" = 1 ] && { cat "$a" > "$ENV_COPIA"; tomar=0; };; esac; done; fi
+if [ "$1 $2" = "secrets set" ]; then for a in "$@"; do case "$a" in --env-file) tomar=1;; *) [ "${tomar:-}" = 1 ] && { cat "$a" > "$ENV_COPIA"; cut -d= -f1 "$a" >> "$ESTADO_SECRETOS"; sort -u "$ESTADO_SECRETOS" -o "$ESTADO_SECRETOS"; tomar=0; };; esac; done; fi
+# secretos FALSOS de la función: «unset» retira nombres, «list» solo muestra nombres con una huella inventada (como la CLI real). Fallos inyectables: FAKE_LIST_RC, FAKE_UNSET_RC, FAKE_UNSET_NOOP (dice que retiró pero no lo hace)
+if [ "$1 $2" = "secrets unset" ]; then
+  [ -n "${FAKE_UNSET_RC:-}" ] && exit "$FAKE_UNSET_RC"
+  if [ -z "${FAKE_UNSET_NOOP:-}" ]; then for a in "${@:3}"; do case "$a" in --*) ;; *) grep -vx "$a" "$ESTADO_SECRETOS" > "$ESTADO_SECRETOS.n" || true; mv "$ESTADO_SECRETOS.n" "$ESTADO_SECRETOS";; esac; done; fi
+fi
+if [ "$1 $2" = "secrets list" ]; then
+  [ -n "${FAKE_LIST_RC:-}" ] && exit "$FAKE_LIST_RC"
+  echo "NAME | DIGEST"; while read -r n; do [ -n "$n" ] && echo "$n | 0123456789abcdef0123456789abcdef"; done < "$ESTADO_SECRETOS"
+fi
 exit 0
 SH
 cat > "$W/psql" <<'SH'
@@ -48,7 +57,7 @@ if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then
 fi
 echo "psql: error: connection to server failed: FATAL:  password authentication failed for user x ($PGPASSWORD)" >&2; exit 2
 SH
-chmod +x "$W/psql" "$W/supabase"; export REGISTRO="$W/reg.txt" ENV_COPIA="$W/envcopia.txt" REG_PSQL="$W/regpsql.txt" CLAVE_BUENA="$CLAVE"
+chmod +x "$W/psql" "$W/supabase"; export ESTADO_SECRETOS="$W/secretos_estado.txt"; : > "$ESTADO_SECRETOS"; export REGISTRO="$W/reg.txt" ENV_COPIA="$W/envcopia.txt" REG_PSQL="$W/regpsql.txt" CLAVE_BUENA="$CLAVE"
 base() { # $1 ref, $2 acción, $3 url de la base (por defecto la de transacción); admite GITHUB_ACTIONS en el entorno
   env -u GITHUB_ACTIONS PATH="$W:$PATH" ${DBPW+SUPABASE_DB_PASSWORD=$DBPW} FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="${3-$URL_TX}" FEL_DEMO_HOSTS=nexa-fel-demo.pages.dev FEL_DEMO_MFA_SEMILLAS="maestro=AAAA" FEL_PROXY_SECRETO=SECRETO-FALSO-DE-PRUEBA ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" "$2" >"$W/salida.txt" 2>&1; }
 ok() { echo "OK    $1"; }; mal() { echo "FALLO $1"; fallos=$((fallos+1)); }
@@ -117,6 +126,58 @@ nit_limpiar; export FEL_DIGIFACT_NIT_EMPRESA="$DG_EMP"; nit_rechaza "una empresa
 # las dos juntas son independientes: no se duplican las credenciales en el archivo
 nit_completo; export FEL_DIGIFACT_TEST=habilitado FEL_DIGIFACT_TEST_EMPRESA="$DG_EMP" FEL_DIGIFACT_TEST_EMISOR="$DG_EMISOR" FEL_DIGIFACT_TEST_HUELLA="$DG_HUELLA"; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
 [ "$(grep -c "^DIGIFACT_TEST_PASSWORD=" "$ENV_COPIA")" = 1 ] && grep -q "^FEL_DIGIFACT_NIT=" "$ENV_COPIA" && grep -q "^FEL_DIGIFACT_TEST=" "$ENV_COPIA" && ok "certificación y consulta de NIT habilitadas por separado: cada interruptor viaja, las credenciales una sola vez" || mal "interruptores combinados"
+# --- APAGADO REAL de Digifact en la función: activar, desactivar y reactivar; cada interruptor retira solo lo suyo; si no se puede asegurar, la función NO se publica
+CERT="FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA"; NITV="FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA"; CRED="DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT"
+nombres_dg() { grep -E "^(FEL_DIGIFACT|DIGIFACT)" "$ESTADO_SECRETOS" | sort | tr '\n' ' ' | sed 's/ $//'; }
+esperado() { printf '%s\n' "$@" | tr ' ' '\n' | sort | tr '\n' ' ' | sed 's/ $//'; }
+publica() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; }
+dg_todo_apagado() { nit_limpiar; }
+dg_solo_nit() { nit_completo; }
+dg_solo_cert() { nit_limpiar; dg_completo; }
+dg_ambos() { nit_completo; export FEL_DIGIFACT_TEST=habilitado FEL_DIGIFACT_TEST_EMPRESA="$DG_EMP" FEL_DIGIFACT_TEST_EMISOR="$DG_EMISOR" FEL_DIGIFACT_TEST_HUELLA="$DG_HUELLA"; }
+: > "$ESTADO_SECRETOS"; printf 'FEL_PROXY_SECRETO\nFEL_DEMO_BD_URL\n' > "$ESTADO_SECRETOS"
+dg_todo_apagado; publica; [ $r = 0 ] && [ -z "$(nombres_dg)" ] && grep -q "certificación apagada · consulta de NIT apagada" "$W/salida.txt" && ok "todo apagado: no queda ningún secreto de Digifact y la salida lo dice (solo nombres)" || mal "todo apagado dejó secretos"
+dg_solo_nit; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $NITV $CRED)" ] && grep -q "certificación apagada · consulta de NIT HABILITADA" "$W/salida.txt" && ok "ACTIVAR solo la consulta de NIT: quedan solo sus secretos y las credenciales; ninguno de certificación" || mal "activar solo NIT: $(nombres_dg)"
+dg_todo_apagado; publica; [ $r = 0 ] && [ -z "$(nombres_dg)" ] && grep -q "^secrets unset" "$REGISTRO" && ok "DESACTIVAR la consulta de NIT: se retiran de verdad TODOS sus secretos y las credenciales (la certificación tampoco los necesita)" || mal "desactivar NIT dejó: $(nombres_dg)"
+dg_solo_nit; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $NITV $CRED)" ] && ok "REACTIVAR la consulta de NIT tras apagarla: vuelve a quedar solo lo suyo" || mal "reactivar NIT: $(nombres_dg)"
+dg_solo_cert; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $CRED)" ] && ok "pasar de consulta de NIT a SOLO certificación: se retiran los secretos de NIT y se fijan los de certificación (independientes)" || mal "cambio a certificación: $(nombres_dg)"
+dg_ambos; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $NITV $CRED)" ] && ok "las dos habilitadas: conviven los secretos de ambas con las credenciales una sola vez" || mal "ambas: $(nombres_dg)"
+dg_solo_nit; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $NITV $CRED)" ] && ok "APAGAR la certificación con la consulta de NIT encendida: se retiran solo los de certificación; los de NIT y las credenciales se conservan" || mal "apagar certificación: $(nombres_dg)"
+dg_ambos; publica; dg_solo_cert; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $CRED)" ] && ok "APAGAR la consulta de NIT con la certificación encendida: se retiran solo los de NIT; los de certificación y las credenciales se conservan" || mal "apagar NIT con cert: $(nombres_dg)"
+dg_solo_cert; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"; publica; grep -qx "FEL_DIGIFACT_AUTORIZA_REFERENCIA" "$ESTADO_SECRETOS" && dg_solo_cert && publica && ! grep -qx "FEL_DIGIFACT_AUTORIZA_REFERENCIA" "$ESTADO_SECRETOS" && ok "la autorización de UNA prueba se retira al publicar sin ella (no queda activa por error)" || mal "la autorización quedó activa"
+dg_todo_apagado; publica; [ -z "$(nombres_dg)" ] && grep -qx "FEL_PROXY_SECRETO" "$ESTADO_SECRETOS" && ok "al apagar solo se retiran secretos de Digifact: los demás secretos de la función no se tocan" || mal "se tocaron otros secretos"
+! grep -E "^secrets unset" "$REGISTRO" | grep -qE "FEL_PROXY_SECRETO|FEL_DEMO_BD_URL|FEL_DEMO_MFA_SEMILLAS|FEL_DEMO_HOSTS" && ok "«secrets unset» nunca nombra secretos que no sean de Digifact" || mal "unset de un secreto ajeno"
+# fallo seguro: no se pudo retirar / no se pudo leer / «retiró» pero sigue activo → la función NO se publica
+dg_solo_nit; publica; dg_todo_apagado; FAKE_UNSET_RC=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && grep -q "no se publica la función" "$W/salida.txt" && ok "si «secrets unset» falla: la función NO se publica (código 3)" || mal "unset fallido se publicó (código $r)"
+dg_todo_apagado; FAKE_LIST_RC=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && ! grep -q "^secrets set" "$REGISTRO" && ok "si no se puede LEER la lista de secretos: no se fija nada ni se publica (no se puede asegurar el apagado)" || mal "lista ilegible se publicó (código $r)"
+dg_todo_apagado; FAKE_UNSET_NOOP=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && grep -q "debía estar apagado" "$W/salida.txt" && ok "si «unset» dice haber retirado pero el secreto sigue activo: la verificación por lista lo detecta y NO se publica" || mal "unset ficticio no detectado (código $r)"
+dg_solo_nit; : > "$ESTADO_SECRETOS"; printf 'FEL_PROXY_SECRETO\n' > "$ESTADO_SECRETOS"; publica; [ $r = 0 ] && grep -q "^functions deploy" "$REGISTRO" && ok "tras una reactivación normal la función se publica" || mal "no se publicó tras reactivar"
+for f in "$W/salida.txt"; do ! grep -qF "$DG_PASS" "$f" && ! grep -qF "$DG_USER" "$f" && ! grep -q "0123456789abcdef0123456789abcdef" "$f" && ok "ninguna salida de estas pruebas contiene la contraseña, el usuario ni huellas de secretos" || mal "la salida muestra secretos"; done
+dg_todo_apagado
+# --- secretos-estado (solo lectura) y empresa-demo (solo lectura)
+dg_solo_nit; publica; rm -f "$REGISTRO"; base "$REF" secretos-estado; r=$?
+[ $r = 0 ] && grep -qE "FEL_DIGIFACT_NIT +presente" "$W/salida.txt" && grep -qE "FEL_DIGIFACT_TEST +ausente" "$W/salida.txt" && [ "$(cat "$REGISTRO")" = "secrets list --remote=$REF" ] && ! grep -q "0123456789abcdef" "$W/salida.txt" && ok "secretos-estado: solo «secrets list», muestra presente/ausente por nombre y jamás huellas" || mal "secretos-estado"
+FAKE_LIST_RC=1 base "$REF" secretos-estado; [ $? = 1 ] && grep -q "NO VERIFICADO" "$W/salida.txt" && ok "secretos-estado: si no puede leer la lista dice NO VERIFICADO (nunca «ok»)" || mal "secretos-estado sin lista"
+dg_todo_apagado
+cat > "$W/psql_emp" <<'SH'
+#!/usr/bin/env bash
+echo "[$PGOPTIONS] $*" >> "$REG_PSQL"
+[ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ] || { echo "psql: error ($PGPASSWORD)" >&2; exit 2; }
+case "$*" in
+  *"from public.empresas e join public.miembros"*) echo -n "${FAKE_EMPRESA_ANA-10000000-0000-0000-0000-0000000000d0}";;
+  *"count(*) from public.empresas"*) echo 2;;
+  *) echo 1;;
+esac
+SH
+chmod +x "$W/psql_emp"; cp "$W/psql" "$W/psql_viejo"; cp "$W/psql_emp" "$W/psql"
+rm -f "$REG_PSQL"; base "$REF" empresa-demo; r=$?
+[ $r = 0 ] && grep -q "UUID de la empresa de «ana» ............. 10000000-0000-0000-0000-0000000000d0" "$W/salida.txt" && grep -q "coincide con el UUID esperado" "$W/salida.txt" && ok "empresa-demo: imprime el UUID de «ana» y confirma que coincide con el esperado" || mal "empresa-demo (código $r)"
+grep -q "default_transaction_read_only=on" "$REG_PSQL" && ! grep -qiE "insert|update|delete|drop|create|alter" "$REG_PSQL" && ok "empresa-demo: sesión forzada a solo lectura y solo SELECT" || mal "empresa-demo no es de solo lectura"
+! grep -qF "$CLAVE" "$W/salida.txt" && ! grep -qiE "nombre|razon|correo|@|token" "$W/salida.txt" && ok "empresa-demo no imprime contraseña ni nombres, correos ni tokens (solo UUID y conteos)" || mal "empresa-demo imprime datos de más"
+FAKE_EMPRESA_ANA="10000000-0000-0000-0000-0000000000d9" base "$REF" empresa-demo; [ $? = 0 ] && grep -q "NO coincide con el esperado" "$W/salida.txt" && ok "empresa-demo: un UUID distinto se informa como NO coincide (y se indica cuál usar)" || mal "empresa-demo distinto"
+FAKE_EMPRESA_ANA="" base "$REF" empresa-demo; [ $? = 1 ] && grep -q "NO se debe habilitar nada" "$W/salida.txt" && ok "empresa-demo: si «ana» no tiene exactamente una empresa, falla y pide no habilitar nada" || mal "empresa-demo sin empresa"
+FAKE_EMPRESA_ANA="10000000-0000-0000-0000-0000000000d0,10000000-0000-0000-0000-0000000000d1" base "$REF" empresa-demo; [ $? = 1 ] && ok "empresa-demo: con dos empresas para «ana» también falla (no hay una única)" || mal "empresa-demo con dos"
+cp "$W/psql_viejo" "$W/psql"
 nit_limpiar
 # --- ocultación en el registro de GitHub Actions
 rm -f "$REGISTRO"; ACTIONS=1 base "$REF" migraciones

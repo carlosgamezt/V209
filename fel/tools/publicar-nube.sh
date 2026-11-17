@@ -33,7 +33,7 @@ case "${PAGES_PROYECTO:-}" in nexa|nexacorp) echo "PROHIBIDO: «$PAGES_PROYECTO�
 comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar nada, que existen los comandos y las opciones que este script usa
   command -v supabase >/dev/null || { echo "(CLI de Supabase no instalada aquí: no se comprueban sus opciones)"; return 0; }
   local mal=0 c f; echo "CLI de Supabase $(supabase --version 2>/dev/null | head -1): comprobando opciones…"
-  for par in "link|--project-ref" "db push|--remote" "db push|--yes" "db push|--dry-run" "secrets set|--env-file" "secrets set|--remote" "secrets set|--yes" "functions deploy|--remote" "functions deploy|--yes" "functions deploy|--no-verify-jwt"; do
+  for par in "link|--project-ref" "db push|--remote" "db push|--yes" "db push|--dry-run" "secrets set|--env-file" "secrets set|--remote" "secrets set|--yes" "secrets unset|--remote" "secrets unset|--yes" "secrets list|--remote" "functions deploy|--remote" "functions deploy|--yes" "functions deploy|--no-verify-jwt"; do
     c="${par%%|*}"; f="${par##*|}"
     if supabase $c --help 2>&1 | grep -q -- "$f"; then echo "  OK  supabase $c $f"; else echo "  FALLO supabase $c ya no admite $f"; mal=1; fi
   done
@@ -54,7 +54,7 @@ PLAN (simulación: no se ejecuta nada)
  3. supabase link --project-ref $REF  ·  supabase db push --remote=<Session Pooler, puerto 5432, IPv4> --yes   (migraciones aditivas al proyecto NUEVO; la URL se deriva de DEMO_BD_URL y se valida: usuario postgres.$REF, host *.pooler.supabase.com)
  4. deno run -A demo-facturacion/nube/aprovisionar.ts      (siembra la base y crea los usuarios con la API de Supabase Auth; guarda solo hashes)
  5. deno run -A demo-facturacion/nube/construir.ts         (dist/nube/pagina con _worker.js + _routes.json, dist/nube/funcion)
- 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt   (Digifact TEST certificación: $DG_ESTADO · consulta de NIT: $DG_NIT_ESTADO; solo llegan a la función)
+ 6. supabase secrets set --remote=$REF --yes (archivo temporal 600)  ·  supabase functions deploy nexa-demo --remote=$REF --yes --no-verify-jwt   (Digifact TEST certificación: $DG_ESTADO · consulta de NIT: $DG_NIT_ESTADO; solo llegan a la función. Lo que esté APAGADO se RETIRA de la función con «secrets unset» y se verifica por la lista de nombres; si no se puede asegurar, la función no se publica)
  7. wrangler pages secret put FUNCION_URL / PROXY_SECRETO  ·  wrangler pages deploy dist/nube/pagina
  8. Prueba de humo contra el subdominio real (inicio de sesión, MFA, factura, certificación simulada, PDF, persistencia)
 PLAN
@@ -64,6 +64,8 @@ PLAN
     bash tools/supabase-hospedado.sh validar || { echo "La cadena de conexión no es válida: no se publicará hasta corregirla."; exit 1; }
     bash tools/supabase-hospedado.sh conexion || { echo "La prueba de conectividad por el Session Pooler falló: no se publicará hasta resolverla."; bash tools/supabase-hospedado.sh diagnostico || true; exit 1; }
     bash tools/supabase-hospedado.sh estado || true   # SOLO LECTURA de metadatos: qué tablas y migraciones hay ya en la base
+    bash tools/supabase-hospedado.sh empresa-demo || true   # SOLO LECTURA: UUID de la empresa de «ana» (solo UUID y conteos)
+    bash tools/supabase-hospedado.sh secretos-estado || true   # SOLO LECTURA: qué secretos de Digifact existen en la función (solo nombres)
   else echo "(faltan variables o herramientas: se omite la prueba de conectividad)"; fi
   exit 0; fi
 
