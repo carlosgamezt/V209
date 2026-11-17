@@ -9,9 +9,9 @@ const claves = pares(Deno.env.get("FEL_DEMO_CLAVES")), semillas = pares(Deno.env
 if (!claves.ana) { console.error("Falta la contraseña de «ana» en FEL_DEMO_CLAVES."); Deno.exit(1); }
 const fallos: string[] = []; const ok = (c: boolean, m: string) => { console.log(`${c ? "OK   " : "FALLO"} ${m}`); if (!c) fallos.push(m); };
 type J = Record<string, any>; // deno-lint-ignore no-explicit-any
-class Cli { cookie = "";
+class Cli { cookie = ""; ultimasCookies: string[] = [];
   async ll(m: string, ruta: string, cuerpo?: unknown) { const r = await fetch(url + ruta, { method: m, redirect: "manual", headers: { "x-demo": "1", "content-type": "application/json", ...(this.cookie ? { cookie: this.cookie } : {}) }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
-    const sc = r.headers.get("set-cookie"); if (sc) this.cookie = sc.split(";")[0]; const buf = new Uint8Array(await r.arrayBuffer()); let json: J = {}; try { json = JSON.parse(new TextDecoder().decode(buf)); } catch { /* binario */ } return { status: r.status, json, r, buf }; } }
+    const sc = r.headers.get("set-cookie"); this.ultimasCookies = sc ? sc.split(/,(?=\s*[^;,=\s]+=)/).map((x) => x.split("=")[0].trim().slice(0, 30)) : []; if (sc) this.cookie = sc.split(";")[0]; const buf = new Uint8Array(await r.arrayBuffer()); let json: J = {}; try { json = JSON.parse(new TextDecoder().decode(buf)); } catch { /* binario */ } return { status: r.status, json, r, buf }; } }
 
 // 1) protecciones visibles desde fuera
 const c0 = new Cli(); const s0 = await c0.ll("GET", "/api/sesion"); ok(s0.status === 200 && s0.json.autenticado === false, "la API responde y no hay sesión");
@@ -27,7 +27,9 @@ const ana = new Cli(); const ent = await ana.ll("POST", "/api/sesion/entrar", { 
 const sc = ent.r.headers.get("set-cookie") ?? ""; ok(/HttpOnly/i.test(sc) && /SameSite=Strict/i.test(sc) && (/Secure/i.test(sc) || url.startsWith("http://")), "cookie HttpOnly + SameSite=Strict + Secure");
 const est = (await ana.ll("GET", "/api/estado")).json; ok(!!est.clientes?.length && !!est.establecimientos?.length, "datos de la empresa visibles");
 const d = await ana.ll("POST", "/api/documentos", { cliente_id: est.clientes[0].id, establecimiento_id: est.establecimientos[0].id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Prueba de humo A", cantidad: "2", precio_unitario: "100.00" }, { descripcion: "Prueba de humo B", cantidad: "1", precio_unitario: "50.00" }] });
-ok(d.status === 200, "factura con varios ítems creada"); if (d.status !== 200) console.log(`      (diagnóstico: HTTP ${d.status}, código ${String(d.json.codigo ?? "?").slice(0, 40)}, detalle ${String(d.json.detalle ?? "-").slice(0, 40)})`); const id = d.json.documento?.id;
+ok(d.status === 200, "factura con varios ítems creada"); if (d.status !== 200) {   // diagnóstico: SOLO estados HTTP, códigos de la API y NOMBRES de cookies (nunca valores)
+    const nom = ana.ultimasCookies.join("|") || "-"; const g = await ana.ll("GET", "/api/estado"); const d2 = await ana.ll("POST", "/api/documentos", { cliente_id: est.clientes[0].id, establecimiento_id: est.establecimientos[0].id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Prueba de humo A", cantidad: "1", precio_unitario: "10.00" }] });
+    console.log(`      (diagnóstico: POST HTTP ${d.status}, código ${String(d.json.codigo ?? "?").slice(0, 40)}, detalle ${String(d.json.detalle ?? "-").slice(0, 40)}; cookies en la respuesta: ${nom}; GET /api/estado después: HTTP ${g.status}; segundo POST: HTTP ${d2.status} ${String(d2.json.codigo ?? "").slice(0, 40)})`); } const id = d.json.documento?.id;
 if (id) {
   await ana.ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version });
   const cert = await ana.ll("POST", `/api/documentos/${id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: `humo-${crypto.randomUUID().slice(0, 18)}` }); ok(cert.json.documento?.estado_fiscal === "certificado", "certificación SIMULADA");

@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: "verificar (no toca nada) o publicar"
+        description: "verificar (no toca nada) · publicar · probar (SOLO la prueba de humo contra la página ya publicada; no migra ni despliega)"
         type: choice
-        options: [verificar, publicar]
+        options: [verificar, publicar, probar]
         default: verificar
       confirmar:
         description: "Para «publicar», escribe PUBLICAR"
@@ -75,4 +75,4 @@ jobs:
           FEL_DIGIFACT_AUTORIZA_REFERENCIA: ${{ inputs.digifact == 'habilitado' && inputs.digifact_referencia || '' }}
           MODO: ${{ inputs.modo }}
         run: |
-          if [ "$MODO" = publicar ]; then bash fel/tools/publicar-nube.sh; else bash fel/tools/publicar-nube.sh --simular; fi
+          if [ "$MODO" = publicar ]; then bash fel/tools/publicar-nube.sh; elif [ "$MODO" = probar ]; then bash fel/tools/publicar-nube.sh --probar; else bash fel/tools/publicar-nube.sh --simular; fi

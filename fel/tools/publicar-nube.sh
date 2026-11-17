@@ -17,6 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SIMULAR=0; [ "${1:-}" = "--simular" ] && SIMULAR=1
+PROBAR=0; [ "${1:-}" = "--probar" ] && PROBAR=1   # SOLO la prueba de humo contra la página YA publicada: no migra, no aprovisiona, no despliega
 OBLIG=(FEL_DEMO_PROYECTO_REF SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD FEL_DEMO_BD_URL SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY FEL_DEMO_CLAVES FEL_DEMO_MFA_SEMILLAS FEL_PROXY_SECRETO CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID PAGES_PROYECTO)
 falta=(); for v in "${OBLIG[@]}"; do [ -n "${!v:-}" ] || falta+=("$v"); done
 herr=(); for h in deno node npx supabase jq curl; do command -v "$h" >/dev/null || herr+=("$h"); done
@@ -65,6 +66,13 @@ PLAN
   else echo "(faltan variables o herramientas: se omite la prueba de conectividad)"; fi
   exit 0; fi
 
+if [ "$PROBAR" = 1 ]; then
+  paso "1/2 · comprobaciones previas (sin tocar nada)"
+  case "$SUPABASE_URL" in "https://$REF.supabase.co") ;; *) echo "SUPABASE_URL no corresponde a FEL_DEMO_PROYECTO_REF"; exit 1;; esac
+  SALIDA_PAGES="$(bash tools/pages-proyecto.sh)"; FEL_DEMO_HOSTS="$(echo "$SALIDA_PAGES" | sed -n 's/^HOST=//p' | tail -1)"; [ -n "$FEL_DEMO_HOSTS" ] || { echo "No se obtuvo el subdominio del proyecto"; exit 1; }; export FEL_DEMO_HOSTS   # el proyecto ya existe: se reutiliza (nada se crea ni se despliega)
+  paso "2/2 · prueba de humo contra la página ya publicada (https://$FEL_DEMO_HOSTS)"
+  ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_humo.ts ); exit $?
+fi
 comprobar_cli || { echo "La CLI instalada no es compatible con este script. No se hace nada."; exit 1; }
 paso "1/8 · comprobaciones previas"
 case "$SUPABASE_URL" in "https://$REF.supabase.co") ;; *) echo "SUPABASE_URL no corresponde a FEL_DEMO_PROYECTO_REF"; exit 1;; esac
