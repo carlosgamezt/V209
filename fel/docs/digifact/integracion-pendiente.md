@@ -98,7 +98,7 @@ El cliente distingue: **certificado** (código 1 y autorización, serie y númer
 | # | Caso | Quién lo ejecuta | Estado |
 |---|---|---|---|
 | 1 | Autenticación (JWT válido) | Workflow `Digifact TEST` → `autenticar` | **HECHO 15/11/2026**: token obtenido en la 4.ª ejecución (las 3 primeras: 2 por contraseña mal escrita y 1 por la clave `Token`) |
-| 2 | Consulta de NIT | `consultar-nit` | **HECHO 15/11/2026** (token sin prefijo; devuelve la razón social del NIT) |
+| 2 | Consulta de NIT | `consultar-nit` (**retirado**: imprimía el NIT y el nombre en el registro) → `consultar-nit-privado` | **HECHO 15/11/2026** con el paso anterior (token sin prefijo; devuelve la razón social del NIT). La versión privada está **preparada y probada con respuestas simuladas; todavía NO se ha ejecutado contra Digifact** |
 | 3 | Validación del NUC (sin red) | `validar-nuc` | Se ejecuta en CI en cada commit |
 | 4 | Certificación TEST (1 factura) | `certificar-test` con `CERTIFICAR-TEST` | **HECHO 15/11/2026**: `code` 1, serie y número entregados, XML y PDF recibidos. Datos del emisor leídos del XML de un DTE ya aceptado (no del ejemplo). El documento de TEST lleva la marca «Documento de Prueba» |
 | 5 | Consulta posterior y descarga | `consulta-posterior`, `descargar` | **HECHO 15/11/2026**: la consulta coincide con lo certificado y la descarga entrega XML y PDF |

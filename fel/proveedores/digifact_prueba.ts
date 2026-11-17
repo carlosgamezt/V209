@@ -1,8 +1,9 @@
 // Pruebas REALES contra Digifact TEST (solo TEST; producción está bloqueada en el cliente). Se ejecutan a mano desde el workflow «NEXA FEL · Digifact TEST» o en un servidor con las variables definidas.
 //   deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_REFERENCIA,DIGIFACT_HUELLA_EMISOR --allow-read --allow-write=./salida digifact_prueba.ts <paso>
-// Pasos:  autenticar · consultar-nit · validar-nuc · datos-emisor · certificar-test · consulta-posterior · descargar
+// Pasos:  autenticar · credenciales-presentes · consultar-nit-privado · (consultar-nit: retirado) · validar-nuc · datos-emisor · certificar-test · consulta-posterior · descargar
 // NUNCA imprime la contraseña ni el token; solo «sí/no», códigos, UUID, serie, número, fechas y datos fiscales NO sensibles del emisor de prueba.
 import { crearDigifactGt, DigifactGt, ErrorDigifact, nit12, soloUsuario } from "./src/digifact_gt.ts";
+import { consultaNitPrivada, presenciaCredenciales } from "./src/consulta_nit_privada.ts";
 import { construirNuc, NucInvalido, type FacturaGt } from "./src/nuc_gt.ts";
 import { type DatosEmisor, extraerEmisorDeDte, huellaEmisor } from "./src/datos_emisor.ts";
 
@@ -95,13 +96,16 @@ async function main() {
       catch (e) { out({ prueba: "autenticar", ok: false, error: errorLegible(e), ...(e instanceof ErrorDigifact && e.tipo === "autenticacion" ? { diagnosticoDeForma: formaDeCredenciales() } : {}) }); Deno.exit(1); }
       return;
     }
-    case "consultar-nit": {   // PRUEBA 2
-      const nit = Deno.env.get("DIGIFACT_NIT_CONSULTA") || Deno.env.get("DIGIFACT_TEST_NIT")!;
-      for (const esq of ["raw", "bearer"] as const) {
-        const c = cliente(esq);
-        try { const r = await c.consultarNit(nit); out({ prueba: "consultar-nit", ok: true, esquemaAutorizacionQueFunciona: esq === "raw" ? "token sin prefijo" : "Bearer", resultado: r }); return; }
-        catch (e) { if (e instanceof ErrorDigifact && e.tipo === "no_autorizado" && esq === "raw") continue; out({ prueba: "consultar-nit", ok: false, esquemaProbado: esq, error: errorLegible(e) }); Deno.exit(1); }
-      }
+    case "credenciales-presentes": {   // SOLO presencia (sí/no): sin red, sin valores, sin longitudes
+      const c = presenciaCredenciales((k) => Deno.env.get(k)); out({ prueba: "credenciales-presentes", ambiente: "TEST", credenciales: c, ok: c.usuario && c.clave && c.nit }); if (!(c.usuario && c.clave && c.nit)) Deno.exit(1);
+      return;
+    }
+    case "consultar-nit-privado": {   // UNA consulta real al ambiente TEST del NIT de la propia cuenta; la salida no lleva ningún dato personal (ver src/consulta_nit_privada.ts)
+      const r = await consultaNitPrivada((k) => Deno.env.get(k)); out({ ...r }); if (!r.ok) Deno.exit(1);
+      return;
+    }
+    case "consultar-nit": {   // RETIRADO: imprimía el NIT y el nombre del contribuyente en el registro; se sustituyó por «consultar-nit-privado»
+      salir("«consultar-nit» ya no existe porque dejaba el NIT y el nombre en el registro. Usa «consultar-nit-privado» (solo el NIT de la cuenta, salida sin datos personales).", 2);
       return;
     }
     case "validar-nuc": {   // PRUEBA 3 (sin red): con un emisor de EJEMPLO, solo para comprobar la estructura
@@ -160,7 +164,7 @@ async function main() {
       catch (e) { out({ prueba: "descargar", ok: false, error: errorLegible(e) }); Deno.exit(1); }
       return;
     }
-    default: salir("Uso: digifact_prueba.ts <autenticar|consultar-nit|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar>", 2);
+    default: salir("Uso: digifact_prueba.ts <autenticar|credenciales-presentes|consultar-nit-privado|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar>", 2);
   }
 }
 if (import.meta.main) await main();

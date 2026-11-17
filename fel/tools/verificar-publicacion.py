@@ -41,6 +41,16 @@ if "testnucgt.digifact.com" in txt_df and "nucgt.digifact.com/gt.com.apinuc" not
 else: mal("[digifact-test] debe limitar la red a testnucgt.digifact.com")
 if "Digifact" in txt_df and "echo ${{ secrets" not in txt_df and "::add-mask" not in txt_df: ok("[digifact-test] ningún paso imprime secretos")
 else: mal("[digifact-test] un paso podría imprimir secretos")
+# ---- consulta privada de NIT (sin datos personales en el registro): el paso que los imprimía se retiró y el nuevo exige confirmación explícita
+import yaml as _y2
+_wf = _y2.safe_load(open(DF, encoding="utf-8")); _op = _wf[True]["workflow_dispatch"]["inputs"]["paso"]["options"]
+if "consultar-nit" not in _op and "consultar-nit-privado" in _op and "credenciales-presentes" in _op: ok("[digifact-test] «consultar-nit» (imprimía NIT y nombre) se retiró; existen «credenciales-presentes» y «consultar-nit-privado»")
+else: mal("[digifact-test] debe retirarse «consultar-nit» y existir «consultar-nit-privado» y «credenciales-presentes»")
+if "inputs.paso == 'consultar-nit-privado' && inputs.confirmar != 'CONSULTAR-NIT-TEST'" in txt_df: ok("[digifact-test] «consultar-nit-privado» exige escribir CONSULTAR-NIT-TEST")
+else: mal("[digifact-test] «consultar-nit-privado» debe exigir CONSULTAR-NIT-TEST")
+_cnp = open("fel/proveedores/src/consulta_nit_privada.ts", encoding="utf-8").read()
+if "console." not in _cnp and "hacia producción" not in _cnp and 'ambiente: "test"' in _cnp and "esquemaAutorizacion: \"raw\"" in _cnp: ok("[consulta_nit_privada] ambiente fijo TEST, un solo esquema (sin segundo intento) y el módulo no imprime nada")
+else: mal("[consulta_nit_privada] debe fijar TEST, un solo esquema y no imprimir")
 PERMITIDOS = {R, DF, MG}
 for f in glob.glob(".github/workflows/*.yml"):
     if f not in PERMITIDOS and re.search(r"secrets\.DEMO_", open(f, encoding="utf-8").read()): mal(f"{f} usa secretos DEMO_")
