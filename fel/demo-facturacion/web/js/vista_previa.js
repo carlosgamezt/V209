@@ -22,14 +22,18 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
     lineas = det.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) }));
     try { c = calcular(lineas); } catch { c = null; }
   }
-  const certificado = doc.estado_fiscal === "certificado" && doc.autorizacion_sat;
+  const anu = doc.estado_fiscal === "anulado" ? "anulado" : doc.estado_fiscal === "anulacion_solicitada" ? "solicitada" : null;   // marca visible de anulación (hecho confirmado / pendiente de conciliar)
+  const certificado = ["certificado", "anulacion_solicitada", "anulado"].includes(doc.estado_fiscal) && doc.autorizacion_sat;
+  const textoAnu = anu === "anulado" ? "DOCUMENTO ANULADO" : "ANULACIÓN SOLICITADA · PENDIENTE";
+  const bandaAnu = anu ? h("div", { class: `anu-banda anu-${anu}`, "data-anulacion": anu, role: "status" }, h("strong", {}, textoAnu), anu === "anulado" ? h("small", {}, "Definitivo · simulación") : h("small", {}, "Sin confirmar todavía")) : null;
+  const selloAnu = anu ? h("div", { class: `sello-anu sello-${anu}`, "aria-hidden": "true" }, anu === "anulado" ? "ANULADO" : "ANULACIÓN PENDIENTE") : null;
   const referencia = doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "BR-????";
   const dato = (et, v) => h("div", { class: "pp-dato" }, h("span", {}, et), h("strong", {}, v));
   const sim = !certificado || String(doc.autorizacion_sat).toUpperCase().startsWith("SIM-");
   if (formato === "ticket") {   // ticket térmico de 80 mm: una sola columna, cada ítem en dos líneas (descripción / cantidad × precio y neto)
     const fila = (et, v, cls) => h("div", { class: `tk-fila${cls ? " " + cls : ""}` }, h("span", {}, et), h("strong", { class: "num" }, v));
-    return h("div", { class: "papel papel-ticket", "data-vista": "previa", "data-formato": "ticket" },
-      h("div", { class: "tk-banda" }, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, certificado ? (sim ? "Certificado en SIMULACIÓN" : "Certificado en PRUEBAS (TEST)") : "Vista previa NO certificada")),
+    return h("div", { class: `papel papel-ticket${anu ? " papel-" + anu : ""}`, "data-vista": "previa", "data-formato": "ticket" }, bandaAnu, selloAnu,
+      h("div", { class: "tk-banda" }, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, certificado ? (sim ? "Certificado en SIMULACIÓN" : "Certificado en PRUEBAS (TEST)") + (anu === "anulado" ? " · ANULADO" : anu ? " · anulación pendiente" : "") : "Vista previa NO certificada")),
       h("strong", { class: "tk-razon" }, emp.nombre), h("small", {}, `NIT ${emp.nit} (ficticio)`), h("small", {}, establecimiento?.direccion ?? emp.direccion ?? ""),
       h("div", { class: "tk-meta" }, h("strong", { class: "pp-ref" }, referencia), h("small", {}, fecha ? fechaLarga(fecha) : "—")),
       certificado ? h("small", { class: "mono" }, `Serie ${doc.serie} · Número ${doc.numero_fiscal}`) : null, certificado ? h("small", { class: "mono" }, `${sim ? "Autorización simulada" : "Autorización (pruebas)"} ${doc.autorizacion_sat}`) : null,
@@ -38,13 +42,13 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
       h("hr", {}), c ? [fila("Subtotal", quetzales(c.subtotal)), fila("Descuentos", quetzales(c.descuento_total)), fila("Base imponible", quetzales(c.base_imponible), "tk-base")] : h("p", { class: "mut" }, "Completa los importes."),
       h("small", { class: "mut" }, "Impuestos y total: pendientes (sin régimen fiscal verificado). NO es una factura ni un DTE."), h("div", { class: "tk-banda tk-pie" }, h("strong", {}, "SIN VALOR FISCAL")));
   }
-  return h("div", { class: "papel papel-carta", "data-vista": "previa", "data-formato": "carta" },
-    h("div", { class: "marca-agua", "aria-hidden": "true" }, "SIMULADO - SIN VALOR FISCAL"),
+  return h("div", { class: `papel papel-carta${anu ? " papel-" + anu : ""}`, "data-vista": "previa", "data-formato": "carta" },
+    h("div", { class: "marca-agua", "aria-hidden": "true" }, "SIMULADO - SIN VALOR FISCAL"), selloAnu, bandaAnu,
     h("div", { class: "papel-cab" },
       h("div", { class: "pp-emisor" }, h("span", { class: "pp-logo", "aria-hidden": "true" }, "N"),
         h("div", {}, h("strong", { class: "pp-razon" }, emp.nombre), dato("NIT", `${emp.nit} (ficticio)`), dato("Dirección", establecimiento?.direccion ?? emp.direccion), dato("Teléfono", emp.telefono), dato("Correo", emp.correo),
           dato("Establecimiento", establecimiento ? `${establecimiento.codigo_sat} · ${establecimiento.nombre}` : "Sin establecimiento"))),
-      h("div", { class: "papel-tipo" }, h("span", { class: "pp-tipo" }, certificado ? "Factura · certificada en SIMULACIÓN" : "Factura · vista previa NO certificada"),
+      h("div", { class: "papel-tipo" }, h("span", { class: "pp-tipo" }, anu === "anulado" ? "Factura · ANULADA (simulación)" : anu ? "Factura · anulación pendiente (simulación)" : certificado ? "Factura · certificada en SIMULACIÓN" : "Factura · vista previa NO certificada"),
         h("strong", { class: "pp-ref" }, referencia), h("small", {}, "Número interno de borrador"),
         dato("Fecha de emisión", fecha ? fechaLarga(fecha) : "—"), dato("Moneda", "GTQ – Quetzal"),
         certificado ? h("small", { class: "mono" }, `Serie ${doc.serie} · Número ${doc.numero_fiscal}`) : h("small", {}, "Sin serie, número ni autorización oficiales"),

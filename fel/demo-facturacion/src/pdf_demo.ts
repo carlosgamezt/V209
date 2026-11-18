@@ -8,7 +8,9 @@ export type FormatoPdf = "carta" | "ticket";
 export type ModoPdf = "simulado" | "prueba" | "oficial";
 export interface DatosPdf { empresa: string; nit: string; receptor: string; receptorId: string; fecha: string; numeroBorrador: string; estado: string; serie?: string | null; numero?: string | null; autorizacion?: string | null;
   lineas: { descripcion: string; cantidad: string; precio: string; neto: string }[]; subtotal: string; descuento: string; base: string;
-  formato?: FormatoPdf; modo?: ModoPdf; impuestos?: string; total?: string }
+  formato?: FormatoPdf; modo?: ModoPdf; impuestos?: string; total?: string;
+  /** Marca de anulación: «anulado» (hecho confirmado, definitivo) o «solicitada» (pendiente de conciliar). `fechaAnulacion` ya viene formateada dd/mm/aaaa. */
+  anulacion?: "anulado" | "solicitada"; fechaAnulacion?: string }
 
 export const ANCHO_TICKET = 226;   // 80 mm ≈ 226,8 pt
 export const CARTA = { w: 612, h: 792 };
@@ -33,6 +35,9 @@ type Cmd = (H: number) => string;   // cada orden dibuja con la altura final de 
 const T = (x: number, top: number, t: string, tam = 10, neg = false, gris = 0): Cmd => (H) => `BT /${neg ? "F2" : "F1"} ${tam} Tf ${gris} g 1 0 0 1 ${x} ${(H - top).toFixed(2)} Tm (${latin1(t.slice(0, 110))}) Tj ET`;
 const TD = (xd: number, top: number, t: string, tam = 10, neg = false, gris = 0): Cmd => T(Math.max(0, xd - ancho(t, tam)), top, t, tam, neg, gris);   // alineado a la derecha
 const L = (x1: number, x2: number, top: number, g = 0.5, color = 0.8): Cmd => (H) => `${color} G ${g} w ${x1} ${(H - top).toFixed(2)} m ${x2} ${(H - top).toFixed(2)} l S`;
+/** Texto en color (RGB 0–1) y rotado opcional: se usa solo para las marcas de anulación. */
+const TC = (x: number, top: number, t: string, tam: number, rgb: string, rot = 0): Cmd => (H) => { const a = (rot * Math.PI) / 180, co = Math.cos(a).toFixed(4), si = Math.sin(a).toFixed(4); return `q BT /F2 ${tam} Tf ${rgb} rg ${co} ${si} ${(-Math.sin(a)).toFixed(4)} ${co} ${x} ${(H - top).toFixed(2)} Tm (${latin1(t)}) Tj ET Q`; };
+const ROJO = "0.85 0.12 0.18", ROJO_CLARO = "0.97 0.72 0.74", AMBAR = "0.7 0.33 0.04", AMBAR_CLARO = "0.98 0.84 0.6";
 const R = (x: number, top: number, w: number, h: number, rgb: string): Cmd => (H) => `q ${rgb} rg ${x} ${(H - top - h).toFixed(2)} ${w} ${h} re f Q`;
 
 function ensamblar(W: number, H: number, cmds: Cmd[], pie: Cmd[] = []): Uint8Array {
@@ -70,6 +75,10 @@ function carta(d: DatosPdf, modo: ModoPdf, sim: boolean): Uint8Array {
     c.push((h) => `q 0.92 g BT /F2 44 Tf 0.7071 0.7071 -0.7071 0.7071 110 ${(h * 0.31).toFixed(0)} Tm (${latin1(modo === "simulado" ? "DOCUMENTO NO FISCAL" : "SOLO PRUEBAS")}) Tj ET Q`, (h) => `q 0.92 g BT /F2 30 Tf 0.7071 0.7071 -0.7071 0.7071 150 ${(h * 0.31 - 45).toFixed(0)} Tm (${latin1(modo === "simulado" ? "DEMOSTRACIÓN" : "SIN VALOR FISCAL")}) Tj ET Q`);
     c.push(R(40, 22, 515, 30, "1 0.93 0.75"), T(48, 42, BANDA[modo], 12, true, 0.45));
   }
+  if (d.anulacion) {   // marca de anulación: sello diagonal tenue (detrás del contenido) y una línea explícita junto al receptor
+    c.push(TC(d.anulacion === "anulado" ? 70 : 60, d.anulacion === "anulado" ? 560 : 540, d.anulacion === "anulado" ? "ANULADO" : "ANULACION PENDIENTE", d.anulacion === "anulado" ? 96 : 44, d.anulacion === "anulado" ? ROJO_CLARO : AMBAR_CLARO, 28));
+    c.push(TC(48, 168, d.anulacion === "anulado" ? `DOCUMENTO ANULADO${d.fechaAnulacion ? ` el ${d.fechaAnulacion}` : ""} (simulación)` : "ANULACIÓN SOLICITADA · pendiente de conciliar", 10, d.anulacion === "anulado" ? ROJO : AMBAR));
+  }
   c.push(T(48, 77, d.empresa, 14, true), T(48, 92, `NIT ${d.nit}`, 10), T(380, 77, oficial ? "Documento tributario electrónico" : `Borrador ${d.numeroBorrador}`, 10, true), T(380, 92, `Fecha: ${d.fecha}`, 10));
   c.push(T(48, 120, "Receptor", 9, true, 0.4), T(48, 134, d.receptor, 11, true), T(48, 148, d.receptorId, 10), T(380, 120, "Estado", 9, true, 0.4), T(380, 134, d.estado, 11, true));
   if (d.serie || d.numero) c.push(T(380, 148, `Serie ${d.serie ?? "-"} · Número ${d.numero ?? "-"}`, 10));
@@ -99,6 +108,8 @@ function ticket(d: DatosPdf, modo: ModoPdf, sim: boolean): Uint8Array {
   if (!oficial) {
     c.push(R(M, t, W - 2 * M, 34, "1 0.93 0.75"), T(M + 6, t + 14, modo === "simulado" ? "DOCUMENTO NO FISCAL" : "DOCUMENTO DE PRUEBAS", 10, true, 0.3), T(M + 6, t + 27, modo === "simulado" ? "DEMOSTRACIÓN · SIN VALOR FISCAL" : "AMBIENTE TEST · SIN VALOR FISCAL", 7.5, true, 0.4)); t += 42;
   }
+  if (d.anulacion) { c.push(R(M, t, W - 2 * M, 22, d.anulacion === "anulado" ? "1 0.88 0.9" : "0.99 0.93 0.8"), TC(M + 6, t + 15, d.anulacion === "anulado" ? "DOCUMENTO ANULADO" : "ANULACION PENDIENTE", 10, d.anulacion === "anulado" ? ROJO : AMBAR)); t += 30;
+    if (d.fechaAnulacion && d.anulacion === "anulado") { c.push(T(M, t + 4, `Anulado el ${d.fechaAnulacion} (simulación)`, 8, true, 0.3)); t += 14; } }
   lineas(d.empresa, 34, 10, true, 0, 13); lineas(`NIT ${d.nit}`, N); lineas(oficial ? "Documento tributario electrónico" : `Borrador ${d.numeroBorrador}`, N, 8, true); lineas(`Fecha: ${d.fecha}`, N);
   lineas(`Estado: ${d.estado}`, N);
   if (d.serie || d.numero) lineas(`Serie ${d.serie ?? "-"} · Número ${d.numero ?? "-"}`, N);

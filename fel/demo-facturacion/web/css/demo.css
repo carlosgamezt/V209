@@ -307,3 +307,19 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 
 /* WebKit: el texto de la opción elegida en un <select> se cuenta como desbordamiento propio (scrollWidth 432 en una caja de 262) y ensancha el documento a 320 px; no se ve, pero hace que la página tenga desplazamiento horizontal. overflow:clip recorta sin crear contenedor de desplazamiento (no rompe position:sticky) */
 @media(max-width:900px){#app{overflow-x:clip}select{min-width:0;max-width:100%;text-overflow:ellipsis}}
+
+/* marcas de anulación (vista previa y diálogo de confirmación) */
+.anu-banda{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:13px}
+.anu-anulado{background:#FFE5E8;color:#B3202F}.anu-solicitada{background:#FEF1D6;color:#8A4B06}
+.anu-banda small{font-weight:600;opacity:.85}
+.sello-anu{position:absolute;left:50%;top:66%;transform:translate(-50%,-50%) rotate(-24deg);z-index:0;pointer-events:none;white-space:nowrap;text-align:center;font-weight:800;border:5px solid;border-radius:14px;padding:2px 22px;letter-spacing:.06em}
+.sello-anulado{font-size:clamp(34px,10vw,76px);color:rgba(229,56,74,.30);border-color:rgba(229,56,74,.30)}
+.sello-solicitada{font-size:clamp(20px,6vw,40px);color:rgba(180,83,9,.30);border-color:rgba(180,83,9,.30)}
+.papel-ticket .sello-anulado{font-size:30px;padding:0 10px}
+.anu-dialogo .anu-ficha{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 12px;padding:10px 12px;border-radius:12px;background:var(--soft,#E8EAFF)}
+.anu-dialogo .anu-ficha dt{font-size:12px;font-weight:700;color:var(--mut)}.anu-dialogo .anu-ficha dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.anu-aviso{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#FFE5E8;color:#B3202F;font-size:13px;font-weight:600}
+.anu-dialogo textarea{width:100%}.anu-cuenta{display:block;text-align:right;margin-top:2px}
+.card-anulado{border-left:4px solid var(--bad)}
+.anu-dialogo .modal-pie{flex-wrap:wrap;gap:8px}.anu-dialogo .modal-pie .btn{white-space:nowrap}
+@media(max-width:400px){.anu-dialogo .modal-pie{flex-direction:column-reverse;align-items:stretch}.anu-dialogo .modal-pie .btn{width:100%;justify-content:center}}

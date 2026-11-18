@@ -60,7 +60,7 @@ Deno.test({ name: "nube: intermediario → función → base; secreto compartido
     // 7) «otra instancia» (arranque en frío, sin memoria): la sesión, el documento y el simulador siguen ahí; se puede anular lo certificado
     funcion = crearManejador({ get: (k) => env[k] });
     assert.equal((await ana.ll("GET", `/api/documentos/${id}`)).json.documento.estado_fiscal, "certificado");
-    const an = await ana.ll("POST", `/api/documentos/${id}/anular`, { motivo: "Anulación desde otra instancia", clave: "clave-nube-anula-01" }); assert.equal(an.status, 200, an.texto); assert.equal(an.json.documento.estado_fiscal, "anulado");
+    const an = await ana.ll("POST", `/api/documentos/${id}/anular`, { confirmacion: "ANULAR", motivo: "Anulación desde otra instancia", clave: "clave-nube-anula-01" }); assert.equal(an.status, 200, an.texto); assert.equal(an.json.documento.estado_fiscal, "anulado");
     // 9) límite de intentos por IP (la IP real la pone el intermediario; un visitante no puede cambiarla con cabeceras)
     const atacante = new Cli("198.51.100.5"); let limitado = 0; for (let i = 0; i < 9; i++) { const r = await atacante.ll("POST", "/api/sesion/entrar", { usuario: "luis", clave: "mala-" + i }, { "x-nexa-ip": `9.9.9.${i}`, "x-forwarded-for": `8.8.8.${i}` }); if (r.status === 429) limitado++; }
     assert.ok(limitado >= 1, "tras varios intentos desde la misma IP se limita, aunque cambie cabeceras");

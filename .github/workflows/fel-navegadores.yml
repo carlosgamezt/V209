@@ -39,3 +39,7 @@ jobs:
         env:
           FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
         run: node fel/demo-facturacion/tests/e2e_receptor.cjs
+      - name: Anulación simulada (confirmación reforzada, marca ANULADO, permisos, 320/360/390/430 px) en ${{ matrix.navegador }}
+        env:
+          FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
+        run: node fel/demo-facturacion/tests/e2e_anulacion.cjs

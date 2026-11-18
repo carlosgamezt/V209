@@ -185,6 +185,8 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const aut = String(dc.autorizacion_sat ?? ""), modoPdf = aut && !aut.toUpperCase().startsWith("SIM-") ? "prueba" : "simulado";
         const bytes = pdfDemo({ empresa: String(emp.razon_social), nit: String(emp.nit), receptor: String(dc.cliente_nombre ?? "Sin receptor"), receptorId: `${dc.cliente_tipo ?? ""} ${dc.cliente_numero ?? ""}`.trim(), fecha: f || "—", numeroBorrador: `BR-${String(dc.numero_borrador).padStart(4, "0")}`,
           estado: dc.estado_fiscal === "ninguno" ? (dc.estado_preparacion === "revisado" ? "Revisado" : "Borrador") : ESTADO[String(dc.estado_fiscal)] ?? String(dc.estado_fiscal), serie: dc.serie as string | null, numero: dc.numero_fiscal as string | null, autorizacion: dc.autorizacion_sat as string | null, formato: fmt, modo: modoPdf,
+          anulacion: dc.estado_fiscal === "anulado" ? "anulado" : dc.estado_fiscal === "anulacion_solicitada" ? "solicitada" : undefined,
+          fechaAnulacion: dc.anulado_en ? new Date(String(dc.anulado_en)).toISOString().slice(0, 10).split("-").reverse().join("/") : undefined,
           lineas: det.lineas.map((l) => ({ descripcion: String(l.descripcion), cantidad: String(l.cantidad), precio: String(l.precio_unitario), neto: String((l.importes as Obj)?.neto ?? "0") })), subtotal: String(dc.subtotal ?? dc.base_imponible), descuento: String(dc.descuento_total ?? "0"), base: String(dc.base_imponible) });
         return new Response(bytes as unknown as BodyInit, { headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="NO-FISCAL-DEMO-${fmt.toUpperCase()}-BR-${dc.numero_borrador}.pdf"`, "cache-control": "no-store", "x-content-type-options": "nosniff" } });
       }
@@ -199,8 +201,11 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         return c.json({ operacion_estado: o.estado, respuesta_del_proveedor: x.tipo === "certificado" ? { tipo: x.tipo, serie: x.serie, numero: x.numero, autorizacion: x.autorizacion } : x, nota: "Consulta de solo lectura al proveedor simulado; no modifica el documento." });
       }
       if (m === "POST" && (r = /^\/api\/documentos\/([^/]+)\/anular$/.exec(ruta))) {
-        const b = await c.cuerpo(), docId = c.id(r[1]); const cert = await certOp(docId, E);
+        const b = await c.cuerpo(), docId = c.id(r[1]);
+        if (!(await c.permisos()).includes("fiscal.anular")) throw new ErrorPr(403, "No tienes permiso para anular documentos", "no_autorizado");
+        const cert = await certOp(docId, E);
         if (!cert) throw new ErrorPr(422, "Solo se anula un documento certificado con un certificador simulado que soporte la anulación", "regla");
+        if (b.confirmacion !== "ANULAR") throw new ErrorPr(400, "Falta la confirmación: escribe ANULAR para anular el documento", "confirmacion_requerida");
         const cd = registro.obtener(cert.proveedor)!; const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!cd.escenariosAnulacion.some((e) => e.id === esc)) throw new ErrorPr(400, "Escenario de anulación no válido", "entrada_invalida");
         cd.simulacion.fijarEscenarioAnulacion(docId, esc);
         await cd.servicio.anular({ actor: a.id, empresa: E, documento: docId, clave: texto(b.clave, 16, 80, "Clave de idempotencia"), motivo: texto(b.motivo, 5, 300, "Motivo"), canal: await c.canalDe(cert.proveedor), certificacion: { clave: cert.clave, autorizacion: cert.autorizacion } });

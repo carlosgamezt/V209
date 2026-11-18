@@ -204,8 +204,10 @@ export function pantallaFactura(ctx, id) {
     }
     async function archivar() { const m = await pedirMotivo({ titulo: "Archivar factura", texto: "Archivar es una decisión interna: no es una anulación fiscal.", confirmar: "Archivar" }); if (m) cambiar("archivado", m); }
 
+    const avisoDoc = h("div", { class: "aviso-doc" });   // se vuelve a pintar con cada cambio de estado (anulación, conciliación…)
+    function pintarAviso() { poner(avisoDoc, !editable() && doc.id ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, doc.estado_fiscal === "anulado" ? "Documento ANULADO (simulación): es definitivo y no se puede editar ni volver a emitir." : doc.estado_fiscal === "anulacion_solicitada" ? "Anulación solicitada: queda pendiente de conciliar con el proveedor. El documento no se puede editar." : doc.estado_fiscal !== "ninguno" ? "Este documento tiene vida fiscal (simulada) y su contenido ya no se puede editar." : doc.estado_preparacion === "borrador" ? "Tu rol no permite editar este borrador." : "El contenido está congelado porque fue revisado. Vuelve a borrador para editarlo.")) : null); }
     function todo() {
-      pintarCab(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
+      pintarAviso(); pintarCab(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
       poner(cardDatos, cuerpoReceptor);
       poner(cardItems, h("div", { class: "card-fila" }, h("h2", { class: "card-t" }, "Ítems"), cuerpoCatalogo()), cuerpoLineas);
     }
@@ -214,7 +216,7 @@ export function pantallaFactura(ctx, id) {
     const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", avisoSalir);
     return h("div", {}, cab,
-      !editable() && doc.id ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, doc.estado_fiscal !== "ninguno" ? "Este documento tiene vida fiscal (simulada) y su contenido ya no se puede editar." : doc.estado_preparacion === "borrador" ? "Tu rol no permite editar este borrador." : "El contenido está congelado porque fue revisado. Vuelve a borrador para editarlo.")) : null,
+      avisoDoc,
       h("div", { class: "doc-grid" }, cardDatos, cardItems, totales, err, proceso), barra);
   }
 }

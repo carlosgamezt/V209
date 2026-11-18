@@ -68,11 +68,11 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     const pdf = cert.json.artefactos.find((a: J) => a.tipo === "pdf"); assert.ok(pdf); const bin = await fetch(base + `/api/artefactos/${pdf.id}`, { headers: { cookie: ana.cookie } }); assert.equal(bin.status, 200); assert.match(bin.headers.get("content-disposition") ?? "", /SIMULADO-/);
 
     // ---- 4. anulación simulada (permiso, idempotencia, no se cobra)
-    assert.equal((await pedro.llamar("POST", `/api/documentos/${docId}/anular`, { motivo: "Error de datos", clave: "clave-anula-lector-0001" })).status, 403, "el lector no anula");
-    const an = await ana.llamar("POST", `/api/documentos/${docId}/anular`, { motivo: "Error en los datos del receptor", clave: "clave-anula-digifact-01" });
+    assert.equal((await pedro.llamar("POST", `/api/documentos/${docId}/anular`, { confirmacion: "ANULAR", motivo: "Error de datos", clave: "clave-anula-lector-0001" })).status, 403, "el lector no anula");
+    const an = await ana.llamar("POST", `/api/documentos/${docId}/anular`, { confirmacion: "ANULAR", motivo: "Error en los datos del receptor", clave: "clave-anula-digifact-01" });
     assert.equal(an.status, 200, JSON.stringify(an.json)); assert.equal(an.json.documento.estado_fiscal, "anulado"); assert.equal(an.json.operaciones.filter((o: J) => o.tipo === "anulacion").length, 1);
     assert.equal((await ana.llamar("GET", "/api/plan")).json.cargos.length, 1, "la anulación no se cobra");
-    assert.equal((await ana.llamar("POST", `/api/documentos/${docId}/anular`, { motivo: "Error en los datos del receptor", clave: "clave-anula-digifact-01" })).json.operaciones.filter((o: J) => o.tipo === "anulacion").length, 1, "repetir no duplica");
+    assert.equal((await ana.llamar("POST", `/api/documentos/${docId}/anular`, { confirmacion: "ANULAR", motivo: "Error en los datos del receptor", clave: "clave-anula-digifact-01" })).json.operaciones.filter((o: J) => o.tipo === "anulacion").length, 1, "repetir no duplica");
 
     // ---- 5. sin saldo, rechazo y desconocido (conciliación) 
     const d2 = await crear(marta, est2, [{ descripcion: "Servicio", cantidad: "1", precio_unitario: "100" }]); await ana.llamar("POST", `/api/documentos/${d2.documento.id}/estado`, { estado: "revisado", version: d2.documento.version });
@@ -94,8 +94,8 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     assert.equal(cB.status, 200, JSON.stringify(cB.json)); assert.equal(cB.json.documento.estado_fiscal, "certificado"); assert.equal(cB.json.operaciones[0].proveedor, "certificador_b"); assert.match(cB.json.documento.autorizacion_sat, /^SIM-/); assert.equal(cB.json.cobertura[0].cargado, "2.500000");
     assert.equal((await ana.llamar("GET", `/api/documentos/${dB.documento.id}/consultar-proveedor`)).json.respuesta_del_proveedor.tipo, "certificado");
     const bolB = (await maestro.llamar("GET", "/api/plataforma/bolson")).json; assert.equal(bolB.cuentas.find((x: J) => x.proveedor_id === "certificador_b").consumido, "1.000000", "cada certificador consume SU bolsón"); assert.equal(bolB.verificacion.fallos, 0);
-    assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/anular`, { motivo: "Error en los datos", clave: "clave-anula-certb-000001", escenario: "indeterminado" })).status, 400, "ese escenario no existe en Certificador B");
-    assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/anular`, { motivo: "Error en los datos", clave: "clave-anula-certb-000002", escenario: "timeout_despues" })).json.documento.estado_fiscal, "anulacion_solicitada");
+    assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/anular`, { confirmacion: "ANULAR", motivo: "Error en los datos", clave: "clave-anula-certb-000001", escenario: "indeterminado" })).status, 400, "ese escenario no existe en Certificador B");
+    assert.equal((await ana.llamar("POST", `/api/documentos/${dB.documento.id}/anular`, { confirmacion: "ANULAR", motivo: "Error en los datos", clave: "clave-anula-certb-000002", escenario: "timeout_despues" })).json.documento.estado_fiscal, "anulacion_solicitada");
     const opAnuB = (await ana.llamar("GET", `/api/documentos/${dB.documento.id}`)).json.operaciones.find((o: J) => o.tipo === "anulacion").id;
     assert.equal((await ana.llamar("POST", `/api/operaciones/${opAnuB}/conciliar-anulacion`, {})).json.documento.estado_fiscal, "anulado", "la conciliación de la anulación usa SU certificador");
     assert.equal((await ana.llamar("GET", "/api/plan")).json.monedero.disponible, "92.500000", "el monedero de la empresa es uno solo para todos los certificadores");
@@ -116,7 +116,7 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
     const dispY = await disp(), resY = await resumenCert(); const yb = await ana.llamar("POST", `/api/documentos/${docY}/certificar`, { proveedor: "certificador_b", escenario: "exito", clave: "clave-cambio-certb-0002" }); assert.ok(yb.status >= 400, "con un resultado desconocido no se prueba con otro certificador (podría haber dos DTE)");
     assert.equal((await resumenCert()).certificador_b.confirmados, resY.certificador_b.confirmados, "el otro certificador no consumió nada"); assert.equal(await disp(), dispY);
     await ana.llamar("POST", `/api/operaciones/${yd.json.operaciones[0].id}/conciliar`, {}); assert.equal((await ana.llamar("GET", `/api/documentos/${docY}`)).json.documento.estado_fiscal, "certificado");
-    const ya = await ana.llamar("POST", `/api/documentos/${docY}/anular`, { motivo: "Error en los datos", clave: "clave-cambio-anula-00001" }); assert.equal(ya.json.operaciones.find((o: J) => o.tipo === "anulacion").proveedor, "digifact", "la anulación va al certificador que certificó, no al «actual»");
+    const ya = await ana.llamar("POST", `/api/documentos/${docY}/anular`, { confirmacion: "ANULAR", motivo: "Error en los datos", clave: "clave-cambio-anula-00001" }); assert.equal(ya.json.operaciones.find((o: J) => o.tipo === "anulacion").proveedor, "digifact", "la anulación va al certificador que certificó, no al «actual»");
     const base1 = await resumenCert(); assert.ok(Number(base1.digifact.unidades) > Number(c1.digifact.unidades) && base1.certificador_b.unidades === (await resumenCert()).certificador_b.unidades);
     const planC = (await ana.llamar("GET", "/api/plan")).json; assert.deepEqual(planC.consumos.filter((x: J) => x.documento_id === docX).map((x: J) => x.certificador).sort(), ["certificador_b", "digifact"]); assert.ok(planC.consumos.every((x: J) => x.certificador_nombre && !x.certificador_nombre.includes("_")), "las pantallas reciben el nombre, no el id");
     const bolC = (await maestro.llamar("GET", "/api/plataforma/bolson")).json; const filaB = bolC.porEmpresa.find((e: J) => e.nombre_comercial === "Empresa Demo" && e.certificador === "certificador_b"), filaD = bolC.porEmpresa.find((e: J) => e.nombre_comercial === "Empresa Demo" && e.certificador === "digifact");
@@ -125,7 +125,7 @@ Deno.test({ name: "versión práctica: login, empresas, factura con varios ítem
 
     // ---- 6. aislamiento entre empresas
     assert.equal((await sofia.llamar("GET", `/api/documentos/${docId}`)).status, 404, "otra empresa no ve el documento");
-    assert.equal((await sofia.llamar("POST", `/api/documentos/${docId}/anular`, { motivo: "Intento ajeno", clave: "clave-ajena-0000001" })).status >= 400, true);
+    assert.equal((await sofia.llamar("POST", `/api/documentos/${docId}/anular`, { confirmacion: "ANULAR", motivo: "Intento ajeno", clave: "clave-ajena-0000001" })).status >= 400, true);
     // ataques entre empresas: Servicios Aguilar (sofia) usa identificadores REALES de Empresa Demo para leer o modificar
     const ajeno = async (m: string, ruta: string, cuerpo?: unknown) => { const r = await sofia.llamar(m, ruta, cuerpo); assert.ok(r.status >= 400 && r.status < 500, `${m} ${ruta} debía rechazarse y dio ${r.status}`); return r; };
     const cliAjeno = est2.clientes[0], conAjeno = est2.conceptos[0];

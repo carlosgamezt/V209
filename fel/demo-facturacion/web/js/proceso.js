@@ -8,8 +8,10 @@ import { api, llamar, usuarioActual } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { descargarArchivo } from "./descarga.js";
 import { panelDigifact } from "./digifact.js";
+import { confirmarAnulacion } from "./anular.js";
 
 let demoAbierto = false;   // los controles de la demostración permanecen abiertos mientras se usan
+const escAnu = new Map();   // respuesta elegida del proveedor simulado por documento: sobrevive a que el panel se vuelva a pintar (por ejemplo, tras cancelar el diálogo)
 const claves = new Map();   // una clave de idempotencia por intención: se conserva si repites el envío por un fallo de red
 const claveDe = (docId, nOps) => { const k = `${docId}:${nOps}`; if (!claves.has(k)) claves.set(k, crypto.randomUUID()); return claves.get(k); };
 const hora = (t) => (t ? new Date(t).toLocaleTimeString("es-GT") : "");
@@ -146,16 +148,25 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
         salida.textContent = x.tipo === "certificado" ? `${corto} confirma el documento: serie ${x.serie}, número ${x.numero}, autorización ${x.autorizacion}.` : x.tipo === "no_existe_confirmado" ? `${corto} confirma que el documento NO existe.` : `${corto} no puede confirmar ni descartar (${x.motivo ?? x.tipo}).`; } catch (e) { salida.textContent = mensajeError(e); } } }), salida));
   }
   if (practico && det.anulable && doc.estado_fiscal === "certificado" && !anulAbierta) {
-    let escA = "exito"; const permiso = ctx.tiene("fiscal.anular");
-    const selA = h("select", { "aria-label": "Respuesta del proveedor simulado a la anulación", onchange: (e) => { escA = e.target.value; } }, ...(certDoc?.escenariosAnulacion ?? []).map((x) => h("option", { value: x.id }, x.nombre)));
+    let escA = escAnu.get(doc.id) ?? "exito"; const permiso = ctx.tiene("fiscal.anular");
+    const selA = h("select", { "aria-label": "Respuesta del proveedor simulado a la anulación", onchange: (e) => { escA = e.target.value; escAnu.set(doc.id, escA); } }, ...(certDoc?.escenariosAnulacion ?? []).map((x) => h("option", { value: x.id, selected: x.id === escA }, x.nombre)));
+    selA.value = escA;
     const claveA = claveDe(doc.id + ":anular", operaciones.length);
     digifact.push(h("div", { class: "card", "data-panel": "anulacion" }, h("h2", { class: "card-t" }, "Anular (simulado)"),
       h("p", { class: "mut" }, `Solicita la anulación de este documento certificado ante ${nombreCert}. El plazo normativo de anulación está pendiente de verificación oficial: esta demostración no lo aplica.`),
       !permiso ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, "Tu rol no puede anular.")) : null,
       campo("Comportamiento del proveedor simulado (solo para la demostración)", selA, {}),
-      boton("Anular documento", { tipo: "peligro", icon: "trash", id: "anular", disabled: !permiso, onclick: accion(async () => { const motivo = await pedirMotivo({ titulo: "Anular documento (simulado)", texto: "Escribe el motivo de la anulación.", confirmar: "Anular", min: 5 }); if (!motivo) return null; return api.anular(doc.id, claveA, motivo, escA); },
-        (r) => r && avisar(r.documento.estado_fiscal === "anulado" ? "Documento anulado (simulación)" : r.documento.estado_fiscal === "certificado" ? "El proveedor rechazó la anulación: el documento sigue certificado" : "Sin respuesta utilizable: queda por conciliar", r.documento.estado_fiscal === "anulado" ? "ok" : "error")) })));
+      boton("Anular documento", { tipo: "peligro", icon: "trash", id: "anular", disabled: !permiso, onclick: accion(async () => {
+        const c = await confirmarAnulacion({ nombreCert, resumen: { codigo: doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "", receptor: doc.cliente_nombre, total: doc.base_imponible != null ? quetzales(doc.base_imponible) : "", autorizacion: doc.autorizacion_sat } });
+        if (!c) return null; return api.anular(doc.id, claveA, c.motivo, escA, "ANULAR"); },
+        (r) => { if (!r) return; const e = r.documento.estado_fiscal;
+          if (e === "anulado") avisar("Documento anulado (simulación). La anulación es definitiva.", "ok");
+          else if (e === "certificado") avisar("El proveedor simulado rechazó la anulación: el documento sigue certificado. Puedes intentarlo de nuevo.", "error");
+          else avisar("Sin respuesta confirmada: la anulación queda pendiente de conciliación y no se reintenta sola.", "error"); }) })));
   }
+  if (practico && doc.estado_fiscal === "anulado") digifact.push(h("div", { class: "card card-anulado", "data-panel": "documento-anulado" }, h("h2", { class: "card-t" }, "Documento anulado (simulación)"),
+    h("p", { class: "mut" }, `Anulado${doc.anulado_en ? ` el ${new Date(doc.anulado_en).toLocaleDateString("es-GT")}` : ""}. Es definitivo: ya no se puede editar ni volver a emitir.`),
+    doc.anulacion_motivo ? h("p", {}, h("strong", {}, "Motivo: "), doc.anulacion_motivo) : null));
   if (practico && anulAbierta?.estado === "desconocida") digifact.push(h("div", { class: "card", "data-panel": "anulacion-desconocida" }, h("h2", { class: "card-t" }, "Anulación por verificar"),
     h("p", { class: "mut" }, "No hubo respuesta utilizable. Consulta al proveedor: solo se cierra si él lo garantiza."),
     boton(`Consultar a ${corto} (anulación)`, { tipo: "sec", icon: "search", id: "conciliar-anulacion", disabled: !ctx.tiene("fiscal.conciliar"), onclick: accion(() => api.conciliarAnulacion(anulAbierta.id), () => avisar("Consulta hecha")) })));
