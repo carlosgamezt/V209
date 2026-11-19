@@ -61,9 +61,14 @@ Deno.test({ name: "nube: intermediario → función → base; secreto compartido
     funcion = crearManejador({ get: (k) => env[k] });
     assert.equal((await ana.ll("GET", `/api/documentos/${id}`)).json.documento.estado_fiscal, "certificado");
     const an = await ana.ll("POST", `/api/documentos/${id}/anular`, { confirmacion: "ANULAR", motivo: "Anulación desde otra instancia", clave: "clave-nube-anula-01" }); assert.equal(an.status, 200, an.texto); assert.equal(an.json.documento.estado_fiscal, "anulado");
+    // El límite por IP usa una VENTANA FIJA de 60 s alineada al reloj: si el minuto cambia en mitad de estas pruebas, el contador vuelve a empezar y la prueba fallaba sin que haya ningún defecto.
+    // Antes de contar intentos se espera al siguiente minuto si quedan menos de 10 s (el bloque dura ~1 s); la protección del servidor no se toca.
+    const esperarVentana = async () => { const resto = 60_000 - (Date.now() % 60_000); if (resto < 10_000) await new Promise((r) => setTimeout(r, resto + 250)); };
+    await esperarVentana();
     // 9) límite de intentos por IP (la IP real la pone el intermediario; un visitante no puede cambiarla con cabeceras)
     const atacante = new Cli("198.51.100.5"); let limitado = 0; for (let i = 0; i < 9; i++) { const r = await atacante.ll("POST", "/api/sesion/entrar", { usuario: "luis", clave: "mala-" + i }, { "x-nexa-ip": `9.9.9.${i}`, "x-forwarded-for": `8.8.8.${i}` }); if (r.status === 429) limitado++; }
     assert.ok(limitado >= 1, "tras varios intentos desde la misma IP se limita, aunque cambie cabeceras");
+    await esperarVentana();
     // 9b) el límite se comparte ENTRE instancias (PostgreSQL): 3 intentos en cada una suman 6; el séptimo, en cualquiera, ya se limita aunque esa instancia solo haya visto 4
     { const A = crearManejador({ get: (k) => env[k] }), B = crearManejador({ get: (k) => env[k] }); let k = 0; const intento = async (m: (r: Request) => Promise<Response>, ip: string) => (await reenviar(new Request(`https://${HOST}/api/sesion/entrar`, { method: "POST", headers: { "x-demo": "1", "content-type": "application/json", "cf-connecting-ip": ip }, body: JSON.stringify({ usuario: `fantasma${k++}`, clave: "mala" }) }), entorno, (i, o) => m(new Request(String(i), o as RequestInit)))).status;
       const ip = "198.51.100.77"; for (let i = 0; i < 3; i++) { const sa = await intento(A, ip), sb = await intento(B, ip); assert.ok(sa !== 429 && sb !== 429, `i=${i} A=${sa} B=${sb}`); }
