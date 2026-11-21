@@ -268,4 +268,11 @@ if os.path.exists("fel/docs/migracion-29/20261114000100_fel_digifact_operaciones
 else: mal("[migración 29] falta la propuesta en docs/migracion-29")
 if "20261114" not in sb and "ESPERADAS=29" not in sb: ok("[migración 29] las etapas de supabase-hospedado.sh solo conocen hasta la migración 28 (no hay etapa 3 todavía)")
 else: mal("[migración 29] supabase-hospedado.sh ya menciona la 29")
+
+# ---- correo de facturas (propio, con Resend): la propuesta del historial vive fuera de supabase/migrations y NINGUNA etapa de publicación lo conoce todavía (nada de correo real se publica sin autorización)
+if os.path.exists("fel/docs/migracion-correo/20261121000100_fel_correo_envios.sql") and not any("correo" in m for m in _mig): ok("[correo] la propuesta del historial de envíos está en docs/migracion-correo, fuera de supabase/migrations")
+else: mal("[correo] la propuesta del historial de envíos debe vivir en docs/migracion-correo y no en supabase/migrations")
+_pub = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml", "fel/tools/supabase-hospedado.sh") if os.path.exists(f))
+if not re.search(r"RESEND|FEL_CORREO|migracion-correo", _pub): ok("[correo] la publicación (scripts y flujo) no conoce el correo: ni claves de Resend ni la propuesta de migración")
+else: mal("[correo] un script o flujo de publicación menciona el correo: requiere autorización expresa")
 sys.exit(1 if fallos else 0)

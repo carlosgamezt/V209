@@ -20,6 +20,7 @@ import type { ConsultorCui } from "./digifact_cui_entorno.ts";
 import { normalizarCui, RE_CUI } from "./receptor_cui.ts";
 import { PersistenciaSimuladores } from "./simuladores.ts";
 import { EMPRESA, type Sembrado } from "./mundo_demo.ts";
+import { ErrorCorreo, type ServicioCorreo } from "./correo/servicio.ts";
 
 export const ESCENARIOS: { id: Escenario; nombre: string; explicacion: string }[] = [
   { id: "exito", nombre: "Éxito", explicacion: "El proveedor certifica y responde correctamente." },
@@ -44,11 +45,11 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; correo?: ServicioCorreo } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
-  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui }) : null;
+  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, correo: extras.correo }) : null;
   // estado de los simuladores en la base real (solo modo PostgreSQL con versión práctica): sobrevive a reinicios y es común a todas las instancias
   const simPersist = pr ? new PersistenciaSimuladores(bd, { mock, ...Object.fromEntries(pr.registro.listar().filter((x) => x.persistible).map((x) => [x.id, x.persistible!])) }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
@@ -82,7 +83,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
   const permisosDe = async (a: { id: string }) => await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[];
 
   async function detalle(docId: string) {
-    const [d] = await bd.filas<Obj>("select d.*, c.nombre as cliente_nombre, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]);
+    const [d] = await bd.filas<Obj>("select d.*, c.nombre as cliente_nombre, c.email as cliente_email, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]);
     if (!d) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado");
     const lineas = await bd.filas("select orden, descripcion, cantidad::text as cantidad, precio_unitario::text as precio_unitario, descuento_tipo, descuento_valor::text as descuento_valor, importes from public.documento_lineas where documento_id = $1 order by orden", [docId]);
     const operaciones = await bd.filas("select id, tipo, estado, proveedor, ambiente, enviada_en, orden_externa, resolucion, motivo_desconocido, reintento_desde, iniciada_en, resuelta_en, clave_idempotencia from public.operaciones_fiscales where documento_id = $1 order by iniciada_en, id", [docId]);
@@ -232,16 +233,26 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     }
     if (m === "POST" && (r = /^\/api\/documentos\/([^/]+)\/certificar$/.exec(ruta))) {
       const b = await cuerpo(); const docId = id(r[1]);
+      // Envío AUTOMÁTICO del correo tras certificar: solo si el servidor lo habilita (FEL_CORREO_AUTOMATICO) Y la petición lo pide Y quedó certificada. Un fallo del correo NUNCA afecta a la certificación.
+      const correoAuto = async (): Promise<Obj | null> => {
+        const svc = extras.correo; if (!svc || b.enviar_correo !== true || !svc.automatico) return null;
+        try {
+          const [op] = await bd.filas<{ id: string }>("select id from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' order by iniciada_en desc limit 1", [docId, emp()]);
+          if (!op) return null;   // no quedó certificada: no hay nada que enviar
+          const x = await svc.enviar({ empresaId: emp(), actorId: a.id, permisos: [] }, { documentoId: docId, clave: `auto:${op.id}`, origen: "automatico" });
+          return { estado: x.envio.estado, repetido: x.repetido };
+        } catch (e) { return { error: e instanceof ErrorCorreo ? e.codigo : "error_interno", mensaje: e instanceof ErrorCorreo ? e.message : "No se pudo enviar el correo." }; }
+      };
       if (b.proveedor !== undefined && b.proveedor !== "mock") {   // certificador SIMULADO registrado: con cobertura (bolsón + monedero)
         if (!pr || !pr.registro.tiene(b.proveedor)) throw new ErrorHttp(400, "Certificador no válido o no disponible en este modo", "entrada_invalida");
         const s = await pr.certificar(a, docId, b, await canalDe(b.proveedor as string));
-        return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)) });
+        return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)), correo_auto: await correoAuto() });
       }
       const esc = typeof b.escenario === "string" ? b.escenario : "exito"; if (!ESC_IDS.has(esc as Escenario)) throw new ErrorHttp(400, "Escenario no válido", "entrada_invalida");
       const clave = texto(b.clave, 16, 80, "Clave de idempotencia");
       mock.fijarEscenario(docId, esc as Escenario);
       const s = await orq().solicitar({ actor: a.id, empresa: emp(), documento: docId, clave, canal: await canalBase() });
-      return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)) });
+      return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)), correo_auto: await correoAuto() });
     }
     if (m === "POST" && (r = /^\/api\/operaciones\/([^/]+)\/conciliar$/.exec(ruta))) {
       const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[]; if (!permisos.includes("fiscal.conciliar")) throw new ErrorHttp(403, "No tienes permiso para conciliar", "no_autorizado");

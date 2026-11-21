@@ -15,6 +15,7 @@ import { leerConfigPublicada } from "./src/publicado.ts";
 import { crearApi } from "./src/api.ts";
 import { crearDigifactParaBd } from "./src/digifact_entorno.ts";
 import { montarAgente } from "./src/agente_demo.ts";
+import { crearCorreoDesdeEntorno } from "./src/correo/entorno.ts";
 import { intervaloDesdeEntorno } from "../proveedores/src/supervisor_ordenes.ts";
 import { PREFIJO_AGENTE } from "../proveedores/src/plano_control_agente.ts";
 
@@ -64,7 +65,10 @@ else if (sesiones && (ALEATORIAS || Deno.env.get("FEL_DEMO_MFA") === "1")) {
 // Digifact TEST (apagado por defecto): el almacén es persistente solo con PostgreSQL real que ya tenga la tabla de la migración 29; si no, prepara y valida pero NO envía nada real
 const digifact = await crearDigifactParaBd((k) => Deno.env.get(k), bd);
 console.log(`  Digifact TEST: ${digifact.motivo}${digifact.servicio ? (digifact.almacenPersistente ? " · almacén persistente (PostgreSQL)" : " · almacén en memoria: prepara y valida, NO envía nada real") : ""}`);
-const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio });
+// Correo de facturas (apagado por defecto; FEL_CORREO=simulado ensaya sin enviar nada real; «habilitado» exige remitente, destinatarios de prueba y RESEND_API_KEY). Ver src/correo/entorno.ts.
+const correo = crearCorreoDesdeEntorno((k) => Deno.env.get(k), bd);
+console.log(`  Correo: ${correo.motivo}`);
+const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio, correo: correo.servicio });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;
