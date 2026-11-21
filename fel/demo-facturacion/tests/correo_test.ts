@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { montar, type J } from "./ayudas_receptor.ts";
 import { crearBdPg, type BdDemo } from "../src/bd.ts";
 import { prepararBase } from "../src/aprovisionar.ts";
+import { PERSONAS } from "../src/mundo_practico.ts";
 import { baseDePrueba } from "./bd_prueba.ts";
 import { CorreoSimulado, ResendCorreo, type MensajeCorreo } from "../src/correo/proveedor.ts";
 import { crearCorreoDesdeEntorno, listaDestinatarios } from "../src/correo/entorno.ts";
@@ -121,6 +122,8 @@ Deno.test({ name: "correo: reglas — sin correo, dirección inválida, no certi
 }});
 
 Deno.test({ name: "correo: límites de frecuencia por persona", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  // El límite usa una VENTANA FIJA de 60 s alineada al reloj: si el minuto cambia en mitad de la prueba el contador vuelve a cero y la prueba fallaría sin defecto real. Se espera al siguiente minuto si quedan menos de 10 s.
+  { const resto = 60_000 - (Date.now() % 60_000); if (resto < 10_000) await new Promise((r) => setTimeout(r, resto + 250)); }
   const { Cli, prov } = await entorno(undefined, { empresa: 1000, persona: 10 }); const marta = await new Cli("marta").entrar();
   let ultimo = 0, n429 = 0; for (let i = 0; i < 13; i++) { const r = await marta.llamar("POST", `/api/documentos/00000000-0000-4000-8000-00000000000${i % 9}/correo`, { destinatario: DEST, clave: `envio-limite-${i}xx` }); ultimo = r.status; if (r.status === 429) { n429++; assert.equal(r.json.codigo, "demasiados_envios"); } }
   assert.ok(n429 >= 1 && ultimo === 429, "tras varios intentos seguidos se limita"); assert.equal(prov.enviados.length, 0);
@@ -218,6 +221,21 @@ Deno.test({ name: "correo (PostgreSQL REAL): envío, duplicados simultáneos, re
     assert.equal((await enviar(ana, id, { destinatario: DEST, clave: "reenvio-pg-2", reenvio: true, confirmacion: "REENVIAR" })).status, 201); assert.equal(prov.enviados.length, 3);
     assert.equal((await enviar(sofia, id, { destinatario: DEST, clave: "envio-pg-sofia-1" })).status, 404); assert.deepEqual((await sofia.llamar("GET", `/api/documentos/${id}/correos`)).json.envios, []);
     const eid = a.json.envio.id as string;
+    // ---- RLS y privilegios desde los roles de la app (authenticated/anon), con la sesión de cada persona: solo se LEE lo de la propia empresa y nunca se escribe
+    const como = (userId: string, sql: string, rol = "authenticated") => bd.transaccion!(async (tx) => {
+      await tx.ejecutar(`set local role ${rol}`); await tx.filas("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: userId, role: rol })]); return await tx.filas<Record<string, unknown>>(sql);
+    });
+    const filasVisibles = async (u: string) => Number((await como(u, `select count(*)::int as n from public.envios_correo`))[0].n);
+    const total = Number((await bd.filas<{ n: number }>("select count(*)::int as n from public.envios_correo"))[0].n); assert.equal(total, 3, "hay 3 envíos de la empresa de Ana (dos primeros envíos y un reenvío)");
+    assert.equal(await filasVisibles(PERSONAS.ana.id), total, "Ana (propietaria) ve todos los envíos de su empresa");
+    assert.equal(await filasVisibles(PERSONAS.pedro.id), total, "Pedro (lector, tiene correos.ver) ve el historial de SU empresa");
+    assert.equal(await filasVisibles(PERSONAS.sofia.id), 0, "Sofía (otra empresa) no ve ningún envío ajeno");
+    for (const [sql, quien] of [["insert into public.envios_correo (empresa_id) values (gen_random_uuid())", "insertar"], ["update public.envios_correo set estado = 'rechazado'", "actualizar"], ["delete from public.envios_correo", "borrar"]] as const)
+      await assert.rejects(() => como(PERSONAS.ana.id, sql), /permission denied/i, `authenticated no puede ${quien}`);
+    await assert.rejects(() => como(PERSONAS.ana.id, "select 1 from public.envios_correo", "anon"), /permission denied/i, "anon no puede ni leer");
+    const [{ rls }] = await bd.filas<{ rls: boolean }>("select relrowsecurity as rls from pg_class where oid = 'public.envios_correo'::regclass"); assert.equal(rls, true, "RLS activado");
+    const perm = await bd.filas<{ rol: string; permiso: string }>("select rol, permiso from public.rol_permisos where permiso like 'correos.%' order by rol, permiso");
+    assert.deepEqual(perm.map((x) => `${x.rol}:${x.permiso}`), ["administrador:correos.enviar", "administrador:correos.reenviar", "administrador:correos.ver", "emisor:correos.enviar", "emisor:correos.ver", "lector:correos.ver", "propietario:correos.enviar", "propietario:correos.reenviar", "propietario:correos.ver"], "permisos por rol");
     for (const [sql, re] of [["update public.envios_correo set destinatario = 'x@ejemplo.com' where id = $1", /FEL_APPEND_ONLY/], ["delete from public.envios_correo where id = $1", /FEL_APPEND_ONLY/], ["update public.envios_correo set estado = 'rechazado' where id = $1", /FEL_ESTADO_INVALIDO/]] as const) await assert.rejects(() => bd.ejecutar(sql, [eid]), re);
   } finally { await bd.cerrar(); await b.limpiar(); }
 }});

@@ -58,6 +58,7 @@ begin
   end if;
   return new;
 end $$;
+revoke all on function public.fel_envios_correo_guardia() from public, anon, authenticated, service_role;   -- igual que fel_solo_insertar: una función de disparador no la ejecuta ningún rol de la API
 create trigger envios_correo_guardia before update or delete on public.envios_correo for each row execute function public.fel_envios_correo_guardia();
 
 -- ============================================================ RLS: la app solo LEE lo de su empresa; escribe el servidor (fel-api)
