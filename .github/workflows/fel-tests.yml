@@ -46,7 +46,7 @@ jobs:
           DENO_BIN="$(deno eval 'console.log(Deno.execPath())')"
           deno test --allow-run="$DENO_BIN" --allow-read pruebas_cli/ > salida_cli.txt 2>&1 || { cat salida_cli.txt; exit 1; }
           cat salida_cli.txt
-          grep -q "ok | 2 passed | 0 failed" salida_cli.txt || { echo "Las pruebas de la línea de órdenes (NIT y CUI) deben ejecutarse y pasar (2 passed, 0 failed)"; exit 1; }
+          grep -q "ok | 3 passed | 0 failed" salida_cli.txt || { echo "Las pruebas de la línea de órdenes (NIT, CUI y correo de prueba) deben ejecutarse y pasar (3 passed, 0 failed)"; exit 1; }
           ! grep -qi "ignored" salida_cli.txt || { echo "La prueba de la línea de órdenes no puede quedar omitida"; exit 1; }
       - name: Demostración de facturación simulada (tipos)
         working-directory: fel/demo-facturacion
