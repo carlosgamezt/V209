@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DigifactGt } from "../src/digifact_gt.ts";
 import type { PeticionHttp, RespuestaHttp } from "../src/digifact.ts";
-import { AlmacenGtMemoria, CONFIRMACION_TEST, ErrorFelGt, ServicioFelGt, ivaIncluidoGeneral, type ContextoFel, type DocumentoFel, type EstadoOpGt } from "../src/felgt_servicio.ts";
+import { AlmacenGtMemoria, CONFIRMACION_TEST, ErrorFelGt, MAX_RENOVACIONES, ServicioFelGt, ivaIncluidoGeneral, type ContextoFel, type DocumentoFel, type EstadoOpGt } from "../src/felgt_servicio.ts";
 import { facturaPrueba } from "./digifact_gt_fixture.ts";
 
 // Todo con transporte SIMULADO sobre el cliente REAL de Digifact: ninguna prueba toca la red ni usa credenciales reales.
@@ -374,4 +374,54 @@ Deno.test("resultado desconocido tras enviar: no hay reintento automático — r
   assert.equal(r.operacion.estado, "desconocida"); assert.equal(m.envios(), 1);
   for (let i = 0; i < 3; i++) { assert.equal((await m.s.certificar(ctx(), doc(), confirmar(p))).reutilizada, true); await rechaza(m.s.preparar(ctx(), doc()), "ESTADO"); assert.equal((await m.s.conciliar(ctx(), p.operacionId)).resultado, "no_encontrado"); }
   assert.equal(m.envios(), 1, "tras la incertidumbre, nada se reenvía por sí solo");
+});
+
+// ---- RENOVACIÓN de una preparación vencida (misma operación y referencia; no autoriza nada; acotada; solo «preparada»)
+function relojManual() { let t = AHORA.getTime(); return { ahora: () => new Date(t), avanza: (min: number) => { t += min * 60_000; } }; }
+const identidad = (o: { id: string; referencia: string; hash: string; huellaEmisor: string; total: string; fechaEmision: string; intentoDelDocumento: number; creada: number }) => JSON.stringify([o.id, o.referencia, o.hash, o.huellaEmisor, o.total, o.fechaEmision, o.intentoDelDocumento, o.creada]);
+
+Deno.test("renovación: tras vencer, volver a preparar RENUEVA la misma operación (misma referencia, huella e identidad) y se certifica UNA vez", async () => {
+  const r = relojManual(); const m = mundo({ ahora: r.ahora });
+  const p1 = await m.s.preparar(ctx(), doc()); const antes = identidad((await m.almacen.obtener(EMPRESA_A, p1.operacionId))!);
+  r.avanza(31); const confirma = confirmar(p1);
+  await rechaza(m.s.certificar(ctx(), doc(), confirma), "ESTADO"); assert.equal(m.llamadas.length, 0, "vencida: no se envía");
+  const p2 = await m.s.preparar(ctx(), doc());
+  assert.deepEqual([p2.operacionId, p2.referencia, p2.huellaEmisor, p2.reutilizada, p2.renovada, p2.renovaciones], [p1.operacionId, p1.referencia, p1.huellaEmisor, true, true, 1], "la misma operación, renovada");
+  assert.ok(p2.caducaEnMs > 29 * 60_000, "vuelve a tener vigencia");
+  assert.equal(identidad((await m.almacen.obtener(EMPRESA_A, p2.operacionId))!), antes, "la identidad fiscal no cambia");
+  assert.equal((await m.almacen.deDocumento(EMPRESA_A, "d1")).length, 1, "NO se creó una segunda operación");
+  // renovar NO autoriza: sin la autorización expresa de la referencia no sale nada
+  await rechaza(m.s.certificar(ctx(), doc(), confirmar(p2)), "PRUEBA_NO_AUTORIZADA"); assert.equal(m.llamadas.filter((l) => l.ruta.startsWith("/v2/transform")).length, 0);
+  m.autorizar(p2.referencia); const c = await m.s.certificar(ctx(), doc(), confirmar(p2)); assert.equal(c.operacion.estado, "certificada"); assert.equal(m.envios(), 1, "un solo envío");
+  const otra = await m.s.certificar(ctx(), doc(), confirmar(p2)); assert.equal(otra.reutilizada, true); assert.equal(m.envios(), 1, "ni repitiendo");
+  assert.ok(m.aud.some((a) => a.evento === "digifact_test.preparada_renovada"), "la renovación queda auditada");
+});
+
+Deno.test("renovación: dentro de la vigencia no se renueva (reutiliza) y no se puede renovar indefinidamente: tras 3 renovaciones se descarta SIN enviar y se prepara otra", async () => {
+  const r = relojManual(); const m = mundo({ ahora: r.ahora });
+  const p0 = await m.s.preparar(ctx(), doc()); r.avanza(5); const igual = await m.s.preparar(ctx(), doc()); assert.deepEqual([igual.operacionId, igual.renovada, igual.renovaciones], [p0.operacionId, false, 0], "vigente: no se renueva");
+  for (let i = 1; i <= MAX_RENOVACIONES; i++) { r.avanza(31); const p = await m.s.preparar(ctx(), doc()); assert.deepEqual([p.operacionId, p.renovada, p.renovaciones], [p0.operacionId, true, i]); }
+  r.avanza(31); const nueva = await m.s.preparar(ctx(), doc());   // 4.º vencimiento: sin más renovaciones
+  assert.notEqual(nueva.operacionId, p0.operacionId); assert.notEqual(nueva.referencia, p0.referencia, "referencia NUEVA: otro intento");
+  const ops = await m.almacen.deDocumento(EMPRESA_A, "d1"); const vieja = ops.find((o) => o.id === p0.operacionId)!;
+  assert.deepEqual([vieja.estado, vieja.resultado?.codigo], ["no_enviada", "preparacion_caducada"]); assert.equal(m.llamadas.length, 0, "NUNCA se envió nada");
+  assert.ok(m.aud.some((a) => a.evento === "digifact_test.preparada_descartada" && a.detalle.enviada === false));
+});
+
+Deno.test("renovación: pasadas 24 h desde su creación la preparación no se renueva aunque le queden renovaciones", async () => {
+  const r = relojManual(); const m = mundo({ ahora: r.ahora }); const p0 = await m.s.preparar(ctx(), doc());
+  r.avanza(25 * 60); const p = await m.s.preparar(ctx(), doc());
+  assert.notEqual(p.operacionId, p0.operacionId); assert.equal((await m.almacen.obtener(EMPRESA_A, p0.operacionId))!.estado, "no_enviada"); assert.equal(m.llamadas.length, 0);
+});
+
+Deno.test("renovación: una operación «enviando», «certificada» o «desconocida» NUNCA se renueva ni se reemplaza (un resultado incierto sigue bloqueando)", async () => {
+  for (const estado of ["enviando", "desconocida", "certificada"] as const) {
+    const r = relojManual(); const m = mundo({ ahora: r.ahora }); const p = await m.s.preparar(ctx(), doc());
+    await m.almacen.transicion(EMPRESA_A, p.operacionId, ["preparada"], { estado: "enviando", actualizada: r.ahora().getTime() + 1 });
+    if (estado !== "enviando") await m.almacen.transicion(EMPRESA_A, p.operacionId, ["enviando"], { estado, actualizada: r.ahora().getTime() + 2, ...(estado === "desconocida" ? { resultado: { motivoDesconocido: "corte" } } : { resultado: { autorizacion: "A7220268-0BCF-4C35-9661-6791E5ADF2DC", serie: "A", numero: "1" } }) });
+    r.avanza(60); const antes = identidad((await m.almacen.obtener(EMPRESA_A, p.operacionId))!);
+    await rechaza(m.s.preparar(ctx(), doc()), "ESTADO");
+    const despues = (await m.almacen.deDocumento(EMPRESA_A, "d1")); assert.equal(despues.length, 1, `${estado}: no se creó otra`); assert.equal(despues[0].estado, estado); assert.equal(identidad(despues[0]), antes); assert.equal(despues[0].renovaciones ?? 0, 0, `${estado}: no se renovó`);
+    assert.equal(m.llamadas.length, 0);
+  }
 });

@@ -110,6 +110,7 @@ jobs:
         run: |
           deno test -A fel/demo-facturacion/tests/digifact_correo_test.ts
           node fel/demo-facturacion/tests/e2e_digifact_correo.cjs
+          node fel/demo-facturacion/tests/e2e_digifact_panel.cjs
       - name: Rediseño móvil de Nueva factura, etapas 1 y 2 (encabezado y navegación, menú de la cuenta, receptor inteligente NIT/CUI/CF/Otro, «Marcar revisado» sin certificar, 320–430 px con importes grandes)
         run: node fel/demo-facturacion/tests/e2e_rediseno.cjs
       - name: Versión práctica · inicio de sesión (unidad), API real (Digifact simulado, plan y saldo, plataforma, aislamiento) y navegador en PC y teléfono (PWA); simulado y local

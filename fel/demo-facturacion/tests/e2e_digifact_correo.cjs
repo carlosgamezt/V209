@@ -31,7 +31,7 @@ async function arrancar() {
       const env = { ops: [], cuerpos: { validar: [], preparar: [], certificar: [] }, correo: { solicitado: false }, destinatario: { clienteId: "cli-1", consumidorFinal: false, correo: "cliente.uno@ejemplo.com", registradoNoValido: false }, peticionesDestinatario: 0 };
       const refDe = (c) => `REFC-${String(c).toLowerCase()}`;   // el servidor real devuelve una huella del correo preparado y exige la misma al certificar
       const json = (r, o, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(o) });
-      await p.route("**/api/digifact/estado", (r) => json(r, { habilitado: true, certificacion: true, consultaNit: false, consultaCui: false, correoDigifact: { habilitado: correoHabilitado }, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST" }));
+      await p.route("**/api/digifact/estado", (r) => json(r, { habilitado: true, certificacion: true, consultaNit: false, consultaCui: false, correoDigifact: { habilitado: correoHabilitado }, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST", almacenamiento: "persistente" }));
       await p.route(/\/api\/documentos\/[0-9a-f-]{36}\/digifact(\/[a-z]+)?$/, async (r) => {
         const rq = r.request(), accion = (/digifact\/([a-z]+)$/.exec(rq.url()) ?? [])[1], id = /documentos\/([0-9a-f-]{36})/.exec(rq.url())[1];
         if (rq.method() === "GET" && !accion) return json(r, { operaciones: env.ops });

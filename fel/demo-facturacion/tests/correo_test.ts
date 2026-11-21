@@ -226,6 +226,7 @@ Deno.test({ name: "correo (PostgreSQL REAL): envío, duplicados simultáneos, re
     const id = await documento(ana, "clave-cert-correo-pg-01");
     const a = await enviar(ana, id, { destinatario: DEST, clave: "envio-pg-0001-a" }); assert.equal(a.status, 201, a.texto); assert.equal(a.json.envio.estado, "aceptado"); assert.equal(prov.enviados.length, 1);
     assert.equal((await enviar(ana, id, { destinatario: DEST, clave: "envio-pg-0001-a" })).json.repetido, true);
+    { const mal = await bd.filas<Record<string, unknown>>("select accion from public.auditoria where jsonb_typeof(datos) is distinct from 'object'"); assert.deepEqual(mal, [], "AUDITORÍA del correo: se guarda como objeto JSON, no como cadena (PostgreSQL real)"); assert.ok((await bd.filas("select 1 from public.auditoria where accion like 'correo.%' and jsonb_typeof(datos) = 'object' and datos ->> 'envio' is not null")).length >= 1, "y se puede leer por campo"); }
     assert.equal((await enviar(ana, id, { destinatario: DEST, clave: "envio-pg-0001-b" })).json.codigo, "ya_enviado");
     const id2 = await documento(ana, "clave-cert-correo-pg-02");
     const rs = await Promise.all([1, 2, 3, 4].map(() => enviar(ana, id2, { destinatario: DEST, clave: "envio-pg-0002-a" })));

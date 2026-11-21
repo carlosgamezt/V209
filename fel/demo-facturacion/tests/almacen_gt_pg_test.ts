@@ -34,9 +34,20 @@ Deno.test({ name: "almacén persistente de Digifact (PostgreSQL real): contrato,
     const { almacen: al, sql } = t;
     assert.equal(al.persistente, true);
     // crear: idempotente por referencia mientras está «preparada»
-    const p1 = op(docId(1)); const c1 = await al.crear(p1); assert.equal(c1.creada, true); assert.deepEqual({ ...c1.op }, { ...p1 });
+    const p1 = op(docId(1)); const c1 = await al.crear(p1); assert.equal(c1.creada, true); assert.deepEqual({ ...c1.op }, { ...p1, renovaciones: 0 });
     const c1b = await al.crear({ ...p1, id: uuid() }); assert.equal(c1b.creada, false); assert.equal(c1b.op.id, p1.id, "la misma referencia preparada devuelve la existente");
     const p1c = await al.crear(op(docId(1))); assert.equal(p1c.creada, true, "otra referencia (cambió el documento) se prepara aparte mientras no haya una que bloquee");
+    // renovación de la vigencia de una preparación (PostgreSQL real): misma identidad, de a una vez, máximo 3, dentro de las 24 h; solo «preparada»
+    { const r = op(docId(30)); await al.crear(r); const antes = JSON.stringify([r.id, r.referencia, r.hash, r.huellaEmisor, r.total, r.fechaEmision, r.intentoDelDocumento, r.creada]);
+      for (let i = 1; i <= 3; i++) { const n = await al.transicion(A, r.id, ["preparada"], { actualizada: r.actualizada + i * 1000, renovaciones: i }); assert.equal(n?.renovaciones, i); assert.equal(n?.estado, "preparada"); assert.equal(JSON.stringify([n!.id, n!.referencia, n!.hash, n!.huellaEmisor, n!.total, n!.fechaEmision, n!.intentoDelDocumento, n!.creada]), antes, "la renovación no cambia la identidad"); }
+      await falla(() => al.transicion(A, r.id, ["preparada"], { actualizada: r.actualizada + 4000, renovaciones: 4 }), /renovaciones|check/, "no más de 3 renovaciones");
+      await falla(() => al.transicion(A, r.id, ["preparada"], { actualizada: r.actualizada + 4000 }), /una preparación solo puede renovarse|ya no cambia/, "no se renueva sin contar la renovación");
+      const r2 = op(docId(31)); await al.crear(r2); await falla(() => al.transicion(A, r2.id, ["preparada"], { actualizada: r2.creada + 25 * 3_600_000, renovaciones: 1 }), /24 horas/, "pasadas 24 h no se renueva");
+      assert.equal((await al.transicion(A, r2.id, ["preparada"], { estado: "no_enviada", actualizada: r2.creada + 1, resultado: { codigo: "preparacion_caducada" } }))?.estado, "no_enviada", "una preparación agotada se descarta sin enviar");
+      const r3 = op(docId(32)); await al.crear(r3); await al.transicion(A, r3.id, ["preparada"], { estado: "enviando", actualizada: r3.creada + 1 });
+      await falla(() => al.transicion(A, r3.id, ["enviando"], { actualizada: r3.creada + 2, renovaciones: 1 }), /ya no cambia|solo cambian/, "una «enviando» no se renueva");
+      await al.transicion(A, r3.id, ["enviando"], { estado: "desconocida", actualizada: r3.creada + 3, resultado: { motivoDesconocido: "corte" } });
+      await falla(() => al.transicion(A, r3.id, ["desconocida"], { actualizada: r3.creada + 4, renovaciones: 1 }), /solo cambian|renovaciones/, "una «desconocida» no se renueva"); }
     // compare-and-set y exclusión mutua
     const env = await al.transicion(A, p1.id, ["preparada"], { estado: "enviando", actualizada: Date.now() }); assert.equal(env?.estado, "enviando");
     assert.equal(await al.transicion(A, p1.id, ["preparada"], { estado: "enviando" }), null, "el segundo intento pierde (compare-and-set)");

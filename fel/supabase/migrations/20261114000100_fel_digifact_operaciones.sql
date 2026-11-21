@@ -2,7 +2,7 @@
 -- ADITIVA: crea 2 tablas, 3 funciones y sus índices/disparadores; no modifica ninguna tabla, función, política ni dato de las migraciones 1–28.
 -- Una operación = un intento de certificar UN documento, con su referencia determinista. Garantías EN LA PROPIA BASE (no solo en el código): una sola operación que bloquea por documento
 -- (enviando/certificada/desconocida), la misma referencia no se prepara dos veces, una autorización de Digifact no se repite dentro de la empresa, la identidad de la operación no cambia,
--- solo existen las transiciones de estado válidas, nada se borra y los XML/PDF son de solo inserción con su SHA-256 verificado por la base.
+-- solo existen las transiciones de estado válidas (y la renovación acotada de una preparación, que no toca su identidad), nada se borra y los XML/PDF son de solo inserción con su SHA-256 verificado por la base.
 -- Aislamiento por empresa EN LA BASE: toda clave foránea es compuesta e incluye empresa_id (operación→documento y artefacto→operación), así que una fila no puede apuntar a datos de otra empresa aunque el código se equivocara.
 -- Privilegios: ninguna tabla ni función es accesible para anon, authenticated ni service_role (solo el rol propietario, que es el que usa el servidor de NEXA FEL por conexión directa). RLS activado y sin políticas.
 -- No guarda credenciales ni tokens. La reversión segura y la verificación posterior viven fuera de las migraciones: docs/migracion-29/.
@@ -36,6 +36,7 @@ create table public.digifact_operaciones (
   actor_id              uuid not null,
   intento_del_documento integer not null check (intento_del_documento >= 0),
   intentos_conciliacion integer not null default 0 check (intentos_conciliacion >= 0),
+  renovaciones          integer not null default 0 check (renovaciones between 0 and 3),   -- cuántas veces se renovó la vigencia de una preparación (máximo 3, y solo dentro de las 24 h de su creación)
   resultado             jsonb check (resultado is null or jsonb_typeof(resultado) = 'object'),
   unique (id, empresa_id),                                                                 -- destino de la clave foránea compuesta de los artefactos
   foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id)     -- una operación jamás apunta al documento de otra empresa
@@ -49,7 +50,7 @@ create function public.fel_digifact_op_guarda() returns trigger language plpgsql
 begin
   if tg_op = 'DELETE' then raise exception 'FEL_DIGIFACT: las operaciones de certificación no se borran' using errcode = 'P0001'; end if;
   if tg_op = 'INSERT' then   -- toda operación nace «preparada», sin resultado: el estado solo avanza por las transiciones válidas
-    if new.estado <> 'preparada' or new.resultado is not null or new.intentos_conciliacion <> 0 then raise exception 'FEL_DIGIFACT: una operación nueva solo puede crearse «preparada» y sin resultado' using errcode = 'P0001'; end if;
+    if new.estado <> 'preparada' or new.resultado is not null or new.intentos_conciliacion <> 0 or new.renovaciones <> 0 then raise exception 'FEL_DIGIFACT: una operación nueva solo puede crearse «preparada» y sin resultado' using errcode = 'P0001'; end if;
     return new;
   end if;
   if new.id is distinct from old.id or new.empresa_id is distinct from old.empresa_id or new.documento_id is distinct from old.documento_id or new.referencia is distinct from old.referencia
@@ -59,14 +60,19 @@ begin
     raise exception 'FEL_DIGIFACT: los datos de identidad de la operación no se modifican' using errcode = 'P0001';
   end if;
   if new.estado is distinct from old.estado then
-    if not ((old.estado = 'preparada' and new.estado = 'enviando')
+    if not ((old.estado = 'preparada' and new.estado in ('enviando','no_enviada'))   -- «preparada → no_enviada»: se descarta una preparación que NUNCA se envió (agotó sus renovaciones)
          or (old.estado = 'enviando' and new.estado in ('no_enviada','desconocida','certificada','rechazada'))
          or (old.estado = 'desconocida' and new.estado = 'certificada')) then
       raise exception 'FEL_DIGIFACT: transición de estado no permitida (% → %)', old.estado, new.estado using errcode = 'P0001';
     end if;
+  elsif old.estado = 'preparada' then   -- RENOVACIÓN: solo prolonga la vigencia (la identidad no cambia), no autoriza nada y está acotada: 1 por vez, máximo 3 y dentro de las 24 h de su creación
+    if new.renovaciones <> old.renovaciones + 1 or new.actualizada_ms <= old.actualizada_ms or new.actualizada_ms > old.creada_ms + 86400000
+       or new.resultado is not null or new.intentos_conciliacion <> 0 then
+      raise exception 'FEL_DIGIFACT: una preparación solo puede renovarse de a una vez, hasta 3 veces y dentro de las 24 horas de su creación' using errcode = 'P0001'; end if;
   elsif old.estado <> 'desconocida' then
     raise exception 'FEL_DIGIFACT: la operación en estado % ya no cambia', old.estado using errcode = 'P0001';
   end if;
+  if new.renovaciones is distinct from old.renovaciones and not (old.estado = 'preparada' and new.estado = old.estado) then raise exception 'FEL_DIGIFACT: las renovaciones solo cambian al renovar una preparación' using errcode = 'P0001'; end if;
   if old.estado = 'certificada' and new.resultado is distinct from old.resultado then raise exception 'FEL_DIGIFACT: el resultado certificado no se modifica' using errcode = 'P0001'; end if;
   if new.actualizada_ms < old.actualizada_ms then raise exception 'FEL_DIGIFACT: la fecha de actualización no retrocede' using errcode = 'P0001'; end if;
   return new;

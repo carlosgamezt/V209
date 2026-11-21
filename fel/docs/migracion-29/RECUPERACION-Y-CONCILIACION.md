@@ -34,6 +34,12 @@
 
 **Control humano que cubre el límite:** solo se puede enviar la referencia de `FEL_DIGIFACT_AUTORIZA_REFERENCIA` (una a la vez). Tras restaurar un respaldo, lo primero es publicar con `digifact = apagado` (retira esa autorización y los secretos de Digifact de la función) y conciliar antes de volver a autorizar nada.
 
+## Preparaciones vencidas: renovación acotada (sin crear otra operación)
+Una preparación vence a los 30 minutos (no se certifica vencida). Al volver a preparar el mismo documento, **la misma operación se renueva**: misma referencia, huella y contenido fiscal, sin segunda operación y sin autorizar nada (certificar sigue exigiendo la confirmación escrita, la referencia, la huella y la autorización expresa de esa referencia).
+- Solo se renueva una operación **«preparada»**. «enviando», «certificada» y «desconocida» no se renuevan ni se reemplazan: un resultado incierto sigue bloqueando.
+- Tope, impuesto también por la base: de a una renovación por vez, **máximo 3** y dentro de las **24 horas** de su creación. Agotada, se **descarta sin enviar** (`preparada → no_enviada`, nunca salió nada) y se prepara otra con referencia nueva.
+- Queda auditada (`digifact_test.preparada_renovada` / `digifact_test.preparada_descartada`). Esto permite publicar la función con la referencia autorizada entre preparar y certificar sin que la preparación venza.
+
 ## Límites que conviene conocer (no se ocultan)
 - La ventana del chequeo previo es **7 días**; una certificación más antigua que la fecha de emisión menos 7 días no se vería (ampliar `prevueloDias` si el respaldo es más viejo).
 - El chequeo depende de la **disponibilidad del reporte de acuses** de Digifact. Su respuesta para días sin documentos (`Respuesta = 0`) se asume como «no hay» según la documentación y las pruebas hechas; **debe confirmarse con una consulta real de solo lectura antes de habilitar la certificación desde la aplicación** (ver el plan de aplicación). Si Digifact respondiera algo distinto, el sistema **se niega a enviar** (falla cerrado), nunca envía de más.

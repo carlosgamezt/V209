@@ -22,7 +22,7 @@ export function emisorDeDatos(e: DatosEmisor): EmisorGt {
     establecimiento: { codigo: Number(e.codigoEstablecimiento), ...(e.nombreComercial ? { nombre: e.nombreComercial } : {}), direccion: { direccion: e.direccion.direccion, codigoPostal: e.direccion.codigoPostal, municipio: e.direccion.municipio, departamento: e.direccion.departamento, pais: e.direccion.pais || "GT" } } };
 }
 
-export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: AlmacenGt; auditar?: (evento: string, ctx: ContextoFel, detalle: Record<string, unknown>) => Promise<void> | void; fetchImpl?: typeof fetch } = {}): Promise<ResultadoEntorno> {
+export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: AlmacenGt; auditar?: (evento: string, ctx: ContextoFel, detalle: Record<string, unknown>) => Promise<void> | void; fetchImpl?: typeof fetch; /** solo para pruebas: reloj del servicio (p. ej. para vencer una preparación sin esperar) */ ahora?: () => Date } = {}): Promise<ResultadoEntorno> {
   if (env("FEL_DIGIFACT_TEST") !== "habilitado") return { motivo: "Digifact TEST no está habilitado (FEL_DIGIFACT_TEST)." };
   const empresa = env("FEL_DIGIFACT_TEST_EMPRESA") ?? ""; if (!UUID.test(empresa)) return { motivo: "Falta FEL_DIGIFACT_TEST_EMPRESA (UUID de la única empresa que usa las credenciales de TEST)." };
   const usuario = env("DIGIFACT_TEST_USERNAME"), nit = env("DIGIFACT_TEST_NIT"); if (!usuario || !env("DIGIFACT_TEST_PASSWORD") || !nit) return { motivo: "Faltan las credenciales de Digifact TEST (usuario, contraseña o NIT)." };
@@ -35,16 +35,17 @@ export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: Alm
   const servicio = new ServicioFelGt({
     clienteDe: (e) => (e === empresa.toLowerCase() ? cliente : null), emisorDe: (e) => (e === empresa.toLowerCase() ? emisor : null),
     almacen: o.almacen ?? new AlmacenGtMemoria(),   // sin almacén persistente el servicio PREPARA y VALIDA, pero se niega a enviar nada real
-    autorizaPrueba: () => { const a = env("FEL_DIGIFACT_AUTORIZA_REFERENCIA") ?? ""; return UUID.test(a) ? a.toLowerCase() : null; }, auditar: o.auditar,
+    autorizaPrueba: () => { const a = env("FEL_DIGIFACT_AUTORIZA_REFERENCIA") ?? ""; return UUID.test(a) ? a.toLowerCase() : null; }, auditar: o.auditar, ...(o.ahora ? { ahora: o.ahora } : {}),
   });
   return { servicio, motivo: "Digifact TEST habilitado" };
 }
 
 /** Digifact TEST para un servidor con base de datos (el local y la función de la nube lo usan igual): el almacén es PERSISTENTE solo si la base es PostgreSQL real y ya tiene la tabla de la migración 29;
  *  si no, el servicio prepara y valida pero se niega a enviar nada real. La auditoría va a la base, sin valores sensibles. Sin las variables FEL_DIGIFACT_*, el servicio no existe. */
-export async function crearDigifactParaBd(env: Entorno, bd: BdDemo, fetchImpl?: typeof fetch): Promise<ResultadoEntorno & { almacenPersistente: boolean }> {
+export async function crearDigifactParaBd(env: Entorno, bd: BdDemo, fetchImpl?: typeof fetch, ahora?: () => Date): Promise<ResultadoEntorno & { almacenPersistente: boolean }> {
   const persistente = bd.tipo === "pg" && (await bd.filas<{ ok: boolean }>("select to_regclass('public.digifact_operaciones') is not null as ok"))[0]?.ok === true;
-  const r = await crearDigifactDesdeEntorno(env, { almacen: persistente ? new AlmacenGtPg(bd.filas) : undefined, fetchImpl,
-    auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
+  const r = await crearDigifactDesdeEntorno(env, { almacen: persistente ? new AlmacenGtPg(bd.filas) : undefined, fetchImpl, ahora,
+    // «$5::text::jsonb»: con PostgreSQL REAL el parámetro de un «::jsonb» directo viaja como cadena JSON y la auditoría quedaba guardada como TEXTO (no como objeto); pasando por text se guarda el objeto
+    auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::text::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
   return { ...r, almacenPersistente: persistente };
 }

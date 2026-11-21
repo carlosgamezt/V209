@@ -47,7 +47,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
     const ctxR: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
     try {
       const b = await c.cuerpo();
-      return c.json(await consultarReceptorNit(ctxR, b.nit, { consultor, limitador: limitadores.get(bd)!, limitadorReal: limitesReales.get(bd)!.empresa, limitadorGlobal: limitesReales.get(bd)!.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
+      return c.json(await consultarReceptorNit(ctxR, b.nit, { consultor, limitador: limitadores.get(bd)!, limitadorReal: limitesReales.get(bd)!.empresa, limitadorGlobal: limitesReales.get(bd)!.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::text::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
     } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
   }
   if (esReceptorCui) {   // autollenado del nombre por CUI/DPI: Digifact TEST solo para la empresa autorizada, o simulador rotulado; el CUI nunca se registra ni se devuelve
@@ -55,10 +55,10 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
     const lc = limitadoresCui.get(bd)!, ctxC: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
     try {
       const b = await c.cuerpo();
-      return c.json(await consultarReceptorCui(ctxC, b.cui, { consultor: consultorCui, limitador: lc.sim, limitadorReal: lc.empresa, limitadorGlobal: lc.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
+      return c.json(await consultarReceptorCui(ctxC, b.cui, { consultor: consultorCui, limitador: lc.sim, limitadorReal: lc.empresa, limitadorGlobal: lc.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::text::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
     } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
   }
-  if (esEstado) return c.json({ habilitado: !!svc, certificacion: !!svc, consultaNit: !!consultor && c.empresa.toLowerCase() === consultor.empresaId, consultaCui: !!consultorCui && c.empresa.toLowerCase() === consultorCui.empresaId, correoDigifact: { habilitado: !!politicaCorreo && c.empresa.toLowerCase() === politicaCorreo.empresaId }, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST" });   // «certificacion» y «consultaNit» son interruptores distintos
+  if (esEstado) return c.json({ habilitado: !!svc, certificacion: !!svc, consultaNit: !!consultor && c.empresa.toLowerCase() === consultor.empresaId, consultaCui: !!consultorCui && c.empresa.toLowerCase() === consultorCui.empresaId, correoDigifact: { habilitado: !!politicaCorreo && c.empresa.toLowerCase() === politicaCorreo.empresaId }, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST", almacenamiento: svc ? (svc.almacenPersistente ? "persistente" : "temporal") : null });   // «certificacion» y «consultaNit» son interruptores distintos
   if (!svc) return c.json(NO_HABILITADO, 503);
   const ctx: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
   try {
@@ -73,7 +73,8 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       if (accion === "correo") {   // ¿se pidió a Digifact enviar el correo al certificar? Solo lo que NEXA sabe: «solicitado». NEXA no recibe confirmación de entrega.
         if (!ctx.permisos.includes("fiscal.ver")) throw new ErrorFelGt("NO_AUTORIZADO", "No tienes permiso para ver Digifact TEST");
         const [x] = await bd.filas<{ ocurrido_en: unknown; datos: Obj }>("select ocurrido_en, datos from public.auditoria where empresa_id = $1 and accion = 'digifact_test.correo_solicitado' and entidad = 'documento' and entidad_id = $2 order by id desc limit 1", [c.empresa, docId]);
-        return c.json({ solicitado: !!x, destinatario: x ? String(x.datos?.destinatario ?? "") : null, cuando: x ? (x.ocurrido_en instanceof Date ? x.ocurrido_en.toISOString() : String(x.ocurrido_en)) : null, entrega: "sin_confirmacion" });
+        const datosCorreo: Obj = typeof x?.datos === "string" ? (() => { try { return JSON.parse(x.datos as unknown as string) as Obj; } catch { return {}; } })() : (x?.datos ?? {});   // tolera registros guardados como cadena JSON
+        return c.json({ solicitado: !!x, destinatario: x ? String(datosCorreo.destinatario ?? "") : null, cuando: x ? (x.ocurrido_en instanceof Date ? x.ocurrido_en.toISOString() : String(x.ocurrido_en)) : null, entrega: "sin_confirmacion" });
       }
       if (accion === "destinatario") {   // el correo REGISTRADO del cliente de ESTE documento, para prellenar la casilla. Solo de la empresa de la sesión (el cliente se busca con la empresa del documento, nunca con lo que mande el navegador) y solo para quien puede certificar.
         if (!politicaCorreo || c.empresa.toLowerCase() !== politicaCorreo.empresaId) return c.json({ codigo: "correo_no_habilitado", mensaje: "El envío de la factura por correo de Digifact no está habilitado para esta empresa." }, 403);

@@ -42,6 +42,7 @@ if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then
     vers="${FAKE_VERSIONS:-}"; [ -s "${ESTADO_VERS:-/nonexistent}" ] && vers="$(cat "$ESTADO_VERS")"; tab="${FAKE_TABLAS:-0}"; [ -s "${ESTADO_TAB:-/nonexistent}" ] && tab="$(cat "$ESTADO_TAB")"
     case "$*" in
       *" -f "*) if [ "${FAKE_CATALOGO_RC:-0}" != 0 ]; then echo "psql:verificacion-posterior-28.sql:86: ERROR:  service_role puede borrar empresas ($PGPASSWORD)" >&2; exit 3; fi; exit 0;;
+      *requisitos_29*) echo "${FAKE_REQ29:-ok}";;
       *digifact_operaciones*) echo "${FAKE_LIBRE:-t}";;
       *to_regclass*) echo "${FAKE_HIST:-f}";;
       *"string_agg(version"*) echo -n "$vers";;
@@ -294,7 +295,7 @@ base "$REF" validar "$URL_TX"; [ $? = 0 ] && ok "explicación: una cadena correc
 # --- migraciones POR ETAPAS (solo migraciones, con parada) y su verificación de solo lectura
 export FAKE_ETAPAS=1 LISTADO="$W/listado.txt" ESTADO_VERS="$W/estado_vers.txt" ESTADO_TAB="$W/estado_tab.txt"
 V1="$(cd "$R" && for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; [ "$v" -le 20261112001000 ] && echo "$v"; done | sort | tr '\n' ' ')"
-reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE; }
+reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE FAKE_REQ29; }
 etapa() { # $1 ref, $2 acción, $3 etapa, $4 confirmación (opcional)
   env -u GITHUB_ACTIONS PATH="$W:$PATH" SUPABASE_DB_PASSWORD="$CLAVE" FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${4:+FEL_CONFIRMAR_MIGRACIONES=$4} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" "$2" "$3" >"$W/salida.txt" 2>&1; }
 solo_lectura() { ! grep -v "default_transaction_read_only=on" "$REG_PSQL" | grep -q .; }
@@ -311,6 +312,10 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_CATALOGO_RC
 [ $r = 1 ] && grep -q "FALLO V1 reforzada (etapa 1)" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-etapa 1: si la V1 reforzada falla → FALLA y no imprime la contraseña" || mal "V1 reforzada fallida no falla"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67; etapa "$REF" verificar-etapa 2; r=$?
 [ $r = 0 ] && grep -q "catálogo de la migración 28" "$W/salida.txt" && grep -q -- "-f docs/migracion-28/verificacion-posterior-28.sql" "$REG_PSQL" && solo_lectura && ok "verificar-etapa 2: corre el catálogo de la migración 28 (solo lectura)" || { mal "verificar-etapa 2"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67; etapa "$REF" verificar-etapa 2; r=$?
+[ $r = 0 ] && grep -q "INFO  rol efectivo de la conexión (solo lectura):" "$W/salida.txt" && grep -q "INFO  alcance del rol:" "$W/salida.txt" && grep -q "OK    requisitos de la migración 29" "$W/salida.txt" && solo_lectura && ! grep -q "$CLAVE" "$W/salida.txt" && ! grep -qi "postgres\.$REF\|postgresql://" "$W/salida.txt" && ok "verificar-etapa 2: informa el rol efectivo y los requisitos de la 29 (solo lectura, sin cadena de conexión ni contraseña)" || mal "verificar-etapa 2 no informa el rol efectivo o los requisitos de la 29 como se esperaba"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67 FAKE_REQ29="el rol de la conexión no es el propietario de las tablas"; etapa "$REF" verificar-etapa 2; r=$?
+[ $r = 1 ] && grep -q "FALLO requisitos de la migración 29: el rol de la conexión no es el propietario de las tablas" "$W/salida.txt" && ok "verificar-etapa 2: un requisito de la 29 que falta se nombra y la verificación FALLA (exit 1)" || mal "verificar-etapa 2 no falla ante un requisito de la 29 faltante"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67 FAKE_CATALOGO_RC=3; etapa "$REF" verificar-etapa 2; r=$?
 [ $r = 1 ] && grep -q "FALLO catálogo de la migración 28" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-etapa 2: si el catálogo falla → FALLA y no imprime la contraseña (aunque el psql falso la incluya)" || mal "verificar-etapa 2 con catálogo fallido"
 # aplicar: confirmación literal y precondiciones

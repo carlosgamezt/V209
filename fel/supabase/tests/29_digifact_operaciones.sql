@@ -18,7 +18,7 @@ insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id
   select e.id, e.nom, e.nom || ' S.A.', e.nit, r.id from (values ('10000000-0000-0000-0000-0000000029a1'::uuid, 'Empresa 29-A', '2900001-1'), ('10000000-0000-0000-0000-0000000029b2'::uuid, 'Empresa 29-B', '2900002-2')) e(id, nom, nit),
        (select id from public.regimenes_fiscales where codigo = 'general') r;
 insert into public.documentos (id, empresa_id, numero_borrador, estado_preparacion)
-  select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, case when n = 900 then '10000000-0000-0000-0000-0000000029b2'::uuid else '10000000-0000-0000-0000-0000000029a1'::uuid end, n, 'borrador' from unnest(array[1,2,3,4,5,6,900]) n;
+  select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, case when n = 900 then '10000000-0000-0000-0000-0000000029b2'::uuid else '10000000-0000-0000-0000-0000000029a1'::uuid end, n, 'borrador' from unnest(array[1,2,3,4,5,6,7,8,9,10,900]) n;
 update public.documentos set estado_preparacion = 'revisado' where id::text like '20000000-0000-0000-0000-%';
 
 create function pg_temp.doc(n int) returns uuid language sql as $$ select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid $$;
@@ -131,6 +131,42 @@ do $$ declare c uuid := pg_temp.certificada('10000000-0000-0000-0000-0000000029a
   perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 1 where id = %L$q$, p), 'ya no cambia|no retrocede');
   perform pg_temp.estado(p, 'no_enviada', '{"codigo":"autenticacion"}', 6000);
   perform pg_temp.falla(format($q$update public.digifact_operaciones set estado = 'enviando', actualizada_ms = 9000 where id = %L$q$, p), 'transición de estado no permitida');   -- una no enviada es final
+end $$;
+
+-- 5b. RENOVACIÓN de una preparación: solo «preparada», de a una vez, máximo 3, dentro de las 24 h; no toca la identidad ni autoriza nada; las demás no se renuevan; una agotada se descarta sin enviar
+do $$ declare p uuid := pg_temp.nueva('10000000-0000-0000-0000-0000000029a1', pg_temp.doc(7)); e uuid := pg_temp.nueva('10000000-0000-0000-0000-0000000029a1', pg_temp.doc(8)); k uuid := pg_temp.certificada('10000000-0000-0000-0000-0000000029a1', pg_temp.doc(9), 'AAAAAAAA-0000-0000-0000-00000000A103');
+  u uuid := pg_temp.nueva('10000000-0000-0000-0000-0000000029a1', pg_temp.doc(10)); r0 text; begin
+  select concat_ws('|', referencia, hash, huella_emisor, total, fecha_emision, intento_del_documento, creada_ms) into r0 from public.digifact_operaciones where id = p;
+  update public.digifact_operaciones set actualizada_ms = 5000, renovaciones = 1 where id = p;   -- 1.ª renovación válida
+  assert (select estado from public.digifact_operaciones where id = p) = 'preparada', 'sigue preparada';
+  assert (select concat_ws('|', referencia, hash, huella_emisor, total, fecha_emision, intento_del_documento, creada_ms) from public.digifact_operaciones where id = p) = r0, 'la renovación no cambia la identidad fiscal';
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 6000 where id = %L$q$, p), 'solo puede renovarse');                           -- sin contar la renovación
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 6000, renovaciones = 3 where id = %L$q$, p), 'solo puede renovarse');   -- no se saltan renovaciones
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 4000, renovaciones = 2 where id = %L$q$, p), 'solo puede renovarse|no retrocede');   -- el tiempo no retrocede
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 5000, renovaciones = 2 where id = %L$q$, p), 'solo puede renovarse');   -- tiene que avanzar
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 90000000, renovaciones = 2 where id = %L$q$, p), 'solo puede renovarse');   -- más de 24 h desde su creación
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set renovaciones = 0, actualizada_ms = 7000 where id = %L$q$, p), 'solo puede renovarse');   -- el contador no baja
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 6000, renovaciones = 2, resultado = '{"autorizacion":"X"}' where id = %L$q$, p), 'solo puede renovarse');   -- renovar no concede resultado
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 6000, renovaciones = 2, intentos_conciliacion = 1 where id = %L$q$, p), 'solo puede renovarse');
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 6000, renovaciones = 2, referencia = gen_random_uuid() where id = %L$q$, p), 'identidad de la operación');
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 6000, renovaciones = 2, creada_ms = 5500 where id = %L$q$, p), 'identidad de la operación');
+  update public.digifact_operaciones set actualizada_ms = 6000, renovaciones = 2 where id = p; update public.digifact_operaciones set actualizada_ms = 7000, renovaciones = 3 where id = p;   -- 2.ª y 3.ª
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 8000, renovaciones = 4 where id = %L$q$, p), 'renovaciones|check');                       -- máximo 3: no se renueva indefinidamente
+  -- agotada: se descarta SIN enviar (preparada → no_enviada) y la base sigue sin permitir nada raro
+  perform pg_temp.estado(p, 'no_enviada', '{"codigo":"preparacion_caducada"}', 8000); assert (select estado from public.digifact_operaciones where id = p) = 'no_enviada';
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 9000, renovaciones = 1 where id = %L$q$, p), 'ya no cambia|solo cambian|renovaciones');   -- una no enviada es final
+  -- enviar cambia de estado sin tocar el contador: no se «renueva» al enviar
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set estado = 'enviando', actualizada_ms = 9000, renovaciones = 1 where id = %L$q$, u), 'solo cambian');
+  perform pg_temp.estado(u, 'enviando', null, 3000);
+  -- enviando, certificada y desconocida NO se renuevan
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 9000, renovaciones = 1 where id = %L$q$, u), 'ya no cambia|solo cambian');
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 9000, renovaciones = 1 where id = %L$q$, k), 'ya no cambia|solo cambian');
+  perform pg_temp.estado(u, 'desconocida', '{"motivoDesconocido":"corte"}', 4000);
+  perform pg_temp.falla(format($q$update public.digifact_operaciones set actualizada_ms = 9000, renovaciones = 1 where id = %L$q$, u), 'solo cambian|renovaciones');
+  -- una operación nueva no nace con renovaciones
+  perform pg_temp.falla($q$insert into public.digifact_operaciones (id, empresa_id, documento_id, referencia, hash, huella_emisor, fecha_emision, establecimiento, total, estado, creada_ms, actualizada_ms, actor_id, intento_del_documento, renovaciones)
+    values (gen_random_uuid(), '10000000-0000-0000-0000-0000000029a1', '20000000-0000-0000-0000-000000000008', gen_random_uuid(), repeat('a', 64), '0123456789abcdef', '2026-11-16', 1, '1.00', 'preparada', 1, 1, '30000000-0000-0000-0000-000000000029', 0, 1)$q$, 'solo puede crearse');
+  assert (select estado from public.digifact_operaciones where id = e) = 'preparada';
 end $$;
 
 -- 6. artefactos reales: solo inserción, solo de una operación certificada, con el SHA-256 y el tamaño verificados por la base

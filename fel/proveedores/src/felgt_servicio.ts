@@ -34,7 +34,7 @@ export interface DocumentoFel {
 export type EstadoOpGt = "preparada" | "enviando" | "certificada" | "rechazada" | "desconocida" | "no_enviada";
 export interface OperacionGt {
   id: string; empresaId: string; documentoId: string; referencia: string; hash: string; huellaEmisor: string; fechaEmision: string; establecimiento: number; total: string;
-  estado: EstadoOpGt; creada: number; actualizada: number; actorId: string; intentoDelDocumento: number; intentosConciliacion: number;
+  estado: EstadoOpGt; creada: number; actualizada: number; actorId: string; intentoDelDocumento: number; intentosConciliacion: number; /** veces que se renovó la vigencia de la preparación (0 si nunca) */ renovaciones?: number;
   resultado?: { autorizacion?: string; serie?: string; numero?: string; fechaCertificacion?: string; codigo?: string; mensaje?: string; motivoDesconocido?: string; fechaReporte?: string };
 }
 export interface AlmacenGt {
@@ -56,6 +56,8 @@ export interface AlmacenGt {
 export interface ArtefactoGt { tipo: "xml" | "pdf"; nombre: string; mime: "application/xml" | "application/pdf"; sha256: string; contenido: Uint8Array }
 export const MAX_ARTEFACTO = 5 * 1024 * 1024;
 const BLOQUEAN: EstadoOpGt[] = ["enviando", "certificada", "desconocida"];
+/** Una preparación vence a los 30 min (preparadaCaducaMs). Se puede RENOVAR (misma operación, misma referencia, sin autorizar nada) como máximo 3 veces y dentro de las 24 h de su creación (la base lo impone también); después se DESCARTA sin enviar y se prepara una nueva. */
+export const MAX_RENOVACIONES = 3, MAX_EDAD_PREPARADA_MS = 24 * 3_600_000;
 
 /** Almacén en memoria: SOLO para pruebas y demostración sin base. No es persistente: el servicio no enviará nada real con él. */
 export class AlmacenGtMemoria implements AlmacenGt {
@@ -140,7 +142,7 @@ export function fechaGt(d: Date): string { return new Date(d.getTime() - 6 * 360
 
 export interface ResumenPreparacion {
   operacionId: string; referencia: string; documentoId: string; total: string; receptor: { tipoId: string; id: string; nombre: string };
-  fechaEmision: string; huellaEmisor: string; establecimiento: number; caducaEnMs: number; reutilizada: boolean;
+  fechaEmision: string; huellaEmisor: string; establecimiento: number; caducaEnMs: number; reutilizada: boolean; /** true si esta llamada renovó la vigencia de una preparación vencida (la misma operación y referencia) */ renovada?: boolean; renovaciones?: number;
   /** Correo (enmascarado) al que Digifact enviará la factura al certificar, si la persona lo pidió; null si no. Es solo un eco: NO forma parte de la huella ni de la referencia. */ correoSolicitado?: string | null;
   aviso: string;
 }
@@ -215,6 +217,9 @@ export class ServicioFelGt {
     return { ok: errores.length === 0, errores, total: factura ? totalFactura(factura) : null, huellaEmisor: e.huella };
   }
 
+  /** ¿Pasó la vigencia de la preparación? Se cuenta desde la última renovación (o la creación). */
+  #vencida(op: OperacionGt, ahoraMs: number): boolean { return ahoraMs - op.actualizada > (this.d.preparadaCaducaMs ?? 30 * 60_000); }
+
   /* ---------------------------------------------------------------- 3. preparación (guarda la operación; NO envía) */
   async preparar(ctx: ContextoFel, doc: DocumentoFel, o: { correo?: unknown } = {}): Promise<ResumenPreparacion> {
     this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc);
@@ -232,11 +237,26 @@ export class ServicioFelGt {
     const ahora = this.#ahora().getTime();
     const nueva: OperacionGt = { id: crypto.randomUUID(), empresaId: ctx.empresaId, documentoId: doc.id, referencia, hash, huellaEmisor: emisor.huella, fechaEmision: fecha, establecimiento: emisor.emisor.establecimiento.codigo,
       total: v.total!, estado: "preparada", creada: ahora, actualizada: ahora, actorId: ctx.actorId, intentoDelDocumento: intento, intentosConciliacion: 0 };
-    const { op, creada } = await this.d.almacen.crear(nueva);
+    let { op, creada } = await this.d.almacen.crear(nueva);
     if (op.estado !== "preparada") throw new ErrorFelGt("ESTADO", `Este documento tiene una operación «${op.estado}»`);
+    // preparación VENCIDA que se vuelve a preparar: se RENUEVA la vigencia (misma operación, referencia, huella y contenido; NO autoriza nada: certificar sigue exigiendo la confirmación, la referencia, la huella y la autorización expresa)
+    // con tope: máximo MAX_RENOVACIONES y MAX_EDAD_PREPARADA_MS desde su creación; agotada, se descarta SIN enviar (nunca se envió) y se prepara otra con referencia nueva
+    let renovada = false;
+    if (!creada && this.#vencida(op, ahora)) {
+      if ((op.renovaciones ?? 0) < MAX_RENOVACIONES && ahora - op.creada <= MAX_EDAD_PREPARADA_MS) {
+        const n = await this.d.almacen.transicion(ctx.empresaId, op.id, ["preparada"], { actualizada: Math.max(ahora, op.actualizada + 1), renovaciones: (op.renovaciones ?? 0) + 1 });
+        if (!n) { const ya = await this.d.almacen.obtener(ctx.empresaId, op.id); if (!ya || ya.estado !== "preparada") throw new ErrorFelGt("ESTADO", "La operación cambió mientras se renovaba: vuelve a intentarlo"); op = ya; }
+        else { op = n; renovada = true; await this.#aud("digifact_test.preparada_renovada", ctx, { documento: doc.id, operacion: op.id, referencia: op.referencia, renovaciones: op.renovaciones ?? 0 }); }
+      } else {
+        const d = await this.d.almacen.transicion(ctx.empresaId, op.id, ["preparada"], { estado: "no_enviada", actualizada: Math.max(ahora, op.actualizada + 1), resultado: { codigo: "preparacion_caducada", mensaje: "La preparación agotó sus renovaciones; se descartó sin enviar nada" } });
+        await this.#aud("digifact_test.preparada_descartada", ctx, { documento: doc.id, operacion: op.id, referencia: op.referencia, enviada: false });
+        if (d) return await this.preparar(ctx, doc, o);   // ahora cuenta como intento resuelto: la nueva preparación tiene OTRA referencia
+        throw new ErrorFelGt("ESTADO", "La operación cambió mientras se descartaba: vuelve a intentarlo");
+      }
+    }
     await this.#aud("digifact_test.preparada", ctx, { documento: doc.id, referencia: op.referencia, total: op.total, ...(correo ? { correo_solicitado: true } : {}) });
     return { operacionId: op.id, referencia: op.referencia, documentoId: op.documentoId, total: op.total, receptor: { tipoId: doc.receptor.tipoId, id: doc.receptor.id, nombre: doc.receptor.nombre }, fechaEmision: op.fechaEmision,
-      huellaEmisor: op.huellaEmisor, establecimiento: op.establecimiento, caducaEnMs: Math.max(0, op.creada + (this.d.preparadaCaducaMs ?? 30 * 60_000) - ahora), reutilizada: !creada, correoSolicitado: correo ? enmascararCorreo(correo) : null,
+      huellaEmisor: op.huellaEmisor, establecimiento: op.establecimiento, caducaEnMs: Math.max(0, op.actualizada + (this.d.preparadaCaducaMs ?? 30 * 60_000) - ahora), reutilizada: !creada, renovada, renovaciones: op.renovaciones ?? 0, correoSolicitado: correo ? enmascararCorreo(correo) : null,
       aviso: "Preparada: NO se envió nada a Digifact. Para certificar en TEST escribe la confirmación y repite la referencia y la huella del emisor." };
   }
 
@@ -251,7 +271,7 @@ export class ServicioFelGt {
       return { reutilizada: true as const, operacion: this.#publica(op0), ...(op0.estado === "certificada" ? await this.#sellar(ctx, op0) : {}) };   // una certificación ya hecha se repara (idempotente), nunca se reenvía
     }
     if (op0.estado !== "preparada") throw new ErrorFelGt("ESTADO", `La operación está «${op0.estado}»: prepara el documento de nuevo`);
-    if (this.#ahora().getTime() - op0.creada > (this.d.preparadaCaducaMs ?? 30 * 60_000)) throw new ErrorFelGt("ESTADO", "La preparación caducó: vuelve a prepararla");
+    if (this.#vencida(op0, this.#ahora().getTime())) throw new ErrorFelGt("ESTADO", "La preparación caducó: vuelve a prepararla (se renueva sin cambiar la referencia)");
     const { cliente, emisor } = this.#canal(ctx);
     if (c.confirmacion !== CONFIRMACION_TEST) throw new ErrorFelGt("CONFIRMACION", `Falta la confirmación explícita: escribe ${CONFIRMACION_TEST}`);
     if (c.referencia !== op0.referencia) throw new ErrorFelGt("CONFIRMACION", "La referencia escrita no coincide con la de la operación preparada");
@@ -403,9 +423,11 @@ export class ServicioFelGt {
 
   /* ---------------------------------------------------------------- internos */
   #mismaEmpresa(ctx: ContextoFel, doc: DocumentoFel) { if (doc.empresaId !== ctx.empresaId) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado"); }
+  /** ¿El almacén sobrevive a un reinicio? Sin esto no se envía nada real. Solo lo informa la API (nunca un dato de la base). */
+  get almacenPersistente(): boolean { return this.d.almacen.persistente; }
   #publica(o: OperacionGt) {
     return { id: o.id, documentoId: o.documentoId, referencia: o.referencia, estado: o.estado, total: o.total, fechaEmision: o.fechaEmision, huellaEmisor: o.huellaEmisor, intentoDelDocumento: o.intentoDelDocumento,
-      intentosConciliacion: o.intentosConciliacion, resultado: o.resultado ?? null };
+      intentosConciliacion: o.intentosConciliacion, renovaciones: o.renovaciones ?? 0, ...(o.estado === "preparada" ? { vigenteHasta: o.actualizada + (this.d.preparadaCaducaMs ?? 30 * 60_000) } : {}), resultado: o.resultado ?? null };
   }
   #traducir(e: unknown): ErrorFelGt {
     if (e instanceof ErrorFelGt) return e;

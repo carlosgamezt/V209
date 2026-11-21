@@ -20,6 +20,7 @@ Deno.test({ name: "Receptor por NIT con Digifact APAGADO: simulador con datos fi
   for (const v of ["CF", "cf", "Cf", "C F", " c f "]) assert.deepEqual((await nit(ana, v)).json, { origen: "local", simulado: false, encontrado: true, cf: true, nit: "CF", nombre: NOMBRE_CF }, `«${v}»`);
   // ---- auditoría: solo origen y si hubo coincidencia; nunca el NIT consultado
   const aud = await bd.filas<J>("select datos::text as d from public.auditoria where accion = 'receptor.nit_consultado'"); assert.ok(aud.length >= 4, "se audita cada consulta"); for (const f of aud) assert.doesNotMatch(f.d, /1000|9990/, "el NIT no se guarda en la auditoría");
+  { const mal = await bd.filas<J>("select accion, jsonb_typeof(datos) as t from public.auditoria where jsonb_typeof(datos) is distinct from 'object'"); assert.deepEqual(mal, [], "AUDITORÍA: todo evento se guarda como objeto JSON (no como cadena), también en PostgreSQL real"); }
   // ---- aislamiento: la empresa 2 también recibe el simulador, y nada cruza entre empresas
   assert.equal((await nit(sofia, n1)).json.simulado, true);
 }});

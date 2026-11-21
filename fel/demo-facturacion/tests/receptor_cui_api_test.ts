@@ -120,6 +120,7 @@ Deno.test({ name: "errores del proveedor (500, sesión rechazada, ilegible, 429,
     for (const x of [TEXTO_PROVEEDOR, CLAVE, USUARIO, "firma-secreta", CUI, NOMBRE_REAL]) assert.ok(!r.texto.includes(x), `${modo}: la respuesta no muestra «${x}»`);
     if (modo === "tiempo") assert.ok(Date.now() - inicio < 3000, "el tiempo máximo corta la espera");
     const aud = await bd.filas<J>("select datos::text as d from public.auditoria where accion = 'receptor.cui_consultado'"); assert.equal(aud.length, 1, `${modo}: el intento se audita`); assert.doesNotMatch(aud[0].d, new RegExp(`${CUI}|${TEXTO_PROVEEDOR}|${CLAVE}`), `${modo}: la auditoría no guarda CUI ni detalles`);
+    { const mal = await bd.filas<J>("select accion, jsonb_typeof(datos) as t from public.auditoria where jsonb_typeof(datos) is distinct from 'object'"); assert.deepEqual(mal, [], "AUDITORÍA: todo evento se guarda como objeto JSON (no como cadena), también en PostgreSQL real"); }
   }
   const f = consultorDe("sin_coincidencia"); const { Cli } = await montar({ digifactCui: f.consultor }), ana = await new Cli("ana").entrar();
   assert.deepEqual((await cui(ana, CUI)).json, { origen: "digifact_test", simulado: false, encontrado: false }, "sin coincidencia: no se inventa un nombre");

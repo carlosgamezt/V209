@@ -154,7 +154,7 @@ export class ServicioCorreo {
     // 10) resultado y auditoría (sin contenido ni claves)
     await this.bd.ejecutar("update public.envios_correo set estado = $3, proveedor_mensaje_id = $4, error_codigo = $5, resuelto_en = now() where id = $1 and empresa_id = $2",
       [envioId, ctx.empresaId, res.estado, res.estado === "aceptado" ? res.mensajeId : null, res.estado === "aceptado" ? null : res.codigo]);
-    try { await this.bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::jsonb, 'fel-correo')", [ctx.empresaId, ctx.actorId, `correo.${res.estado}`, p.documentoId, JSON.stringify({ envio: envioId, origen: reenvio ? "reenvio" : origen, proveedor: this.proveedor.nombre, destinatario: enmascarar(destinatario), ...(res.estado === "aceptado" ? {} : { codigo: res.codigo }) })]); } catch { /* la auditoría no debe ocultar el resultado del envío */ }
+    try { await this.bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::text::jsonb, 'fel-correo')", [ctx.empresaId, ctx.actorId, `correo.${res.estado}`, p.documentoId, JSON.stringify({ envio: envioId, origen: reenvio ? "reenvio" : origen, proveedor: this.proveedor.nombre, destinatario: enmascarar(destinatario), ...(res.estado === "aceptado" ? {} : { codigo: res.codigo }) })]); } catch { /* la auditoría no debe ocultar el resultado del envío */ }
     const [fin] = await this.bd.filas<Obj>("select id, destinatario, origen, estado, proveedor, error_codigo, creado_en, resuelto_en from public.envios_correo where id = $1 and empresa_id = $2", [envioId, ctx.empresaId]);
     return { envio: this.#publico(fin), repetido: false };
   }
