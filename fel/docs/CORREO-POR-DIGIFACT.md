@@ -26,9 +26,9 @@ El correo sale **solo al certificar**, si el XML trae el correo en el nodo del r
 - En TEST solo salen correos a buzones de la lista autorizada (no sabemos si Digifact entrega los de TEST a la dirección real).
 
 ## Primera prueba real
-Plan, controles, procedimiento exacto y reversión: [`digifact/PRUEBA-CORREO-DIGIFACT-TEST.md`](digifact/PRUEBA-CORREO-DIGIFACT-TEST.md) (camino A: flujo manual `demo-privada`; **sin ejecutar ni autorizado**).
+**HECHA 21/11/2026: exitosa.** Digifact certificó en TEST y envió el correo con PDF y XML (confirmado en el buzón autorizado). Resultado y datos: [`digifact/RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md`](digifact/RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md). Plan y controles: [`digifact/PRUEBA-CORREO-DIGIFACT-TEST.md`](digifact/PRUEBA-CORREO-DIGIFACT-TEST.md).
 
-## Pendiente (consulta a Digifact, borrador sin enviar)
+## Pendiente (consulta a Digifact, ya enviada por el responsable; sin respuesta registrada). El correo recibido (remitente `eface@digifact.com.gt`, emisor TEST GENS) muestra el logotipo de AGRIPACK: investigar cómo se asigna la plantilla y su funcionamiento multiempresa; no suponer que se cambie por el NUC
 [`digifact/borrador-consulta-plantilla-correo.md`](digifact/borrador-consulta-plantilla-correo.md): logotipo y colores, alcance por NIT/integrador/global (multiempresa), datos del XML visibles, `AdditionalDocumentInfo.DocTemplate`, costo, comportamiento en TEST y efecto de `Seller.Contact.EmailList`. Diseño de referencia: [`digifact/plantilla-correo-propuesta.html`](digifact/plantilla-correo-propuesta.html) (el nombre comercial del correo es el del XML; **no se alteran datos fiscales por decoración**).
 
 ## No incluido

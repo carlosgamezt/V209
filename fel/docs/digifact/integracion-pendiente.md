@@ -107,9 +107,12 @@ El cliente distingue: **certificado** (código 1 y autorización, serie y númer
 | 8 | Anulación y nota de crédito total en TEST | requieren habilitación explícita | Pendiente |
 | 9 | Timeout real forzado (cliente con tiempo muy corto) | manual | Pendiente |
 | 10 | Receptor con NIT y con CUI; ítem de Bien y de Servicio; descuento | manual | Pendiente |
+| 11 | Certificación TEST con el correo enviado por Digifact (`Buyer.Contact.EmailList.Email`) | `certificar-test` con `con_correo = si` | **HECHO 21/11/2026 13:33**: `code` 1, correo recibido con PDF y XML. Ver `RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md` |
+| 12 | Comparar los SHA-256 de los adjuntos recibidos con los de la salida | manual | Pendiente. Remitente (TEST GENS, `eface@digifact.com.gt`), asunto y recepción ya registrados |
 
 ## 10. Pendientes de NEXA (no de Digifact)
 
+- **Personalización de la plantilla de correo de Digifact (observación importante):** el correo de la prueba del 21/11/2026 (remitente `eface@digifact.com.gt`, emisor TEST GENS) mostró el logotipo de **AGRIPACK**. Investigar con Digifact cómo se asigna la plantilla (NIT, cuenta, integrador o global) y cómo funcionará con varias empresas de NEXA FEL; no suponer que se pueda cambiar mediante el NUC sin su confirmación. Ver `RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md`. **Pendiente.**
 - **Migración nueva y aditiva** para permitir el ambiente `pruebas` en el proveedor `digifact` (hoy una restricción de tabla lo limita a `simulado`). **No creada ni aplicada**: necesita tu autorización.
 - Dirección real del establecimiento 2 (hoy se usa la del ejemplo oficial solo en TEST).
 - Almacenamiento privado de XML/PDF y descarga autorizada por usuario/empresa.

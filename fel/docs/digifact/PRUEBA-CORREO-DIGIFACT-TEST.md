@@ -1,6 +1,6 @@
 # Primera prueba REAL del correo por Digifact (TEST) · plan, controles y reversión
 
-**Estado: PREPARADA y probada con transporte simulado. NO se ha ejecutado nada real ni está autorizada.** Todos los horarios de abajo, en hora de Guatemala (UTC−6). La consulta a Emmanuel y Jeimmy ya se envió: este documento no genera otro envío.
+**Estado: EJECUTADA el 21/11/2026 con éxito (ver [`RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md`](RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md)).** El procedimiento sirve de referencia para futuras pruebas, cada una con su propia autorización. Todos los horarios de abajo, en hora de Guatemala (UTC−6). La consulta a Emmanuel y Jeimmy ya se envió: este documento no genera otro envío.
 
 ## 1. Qué camino se usa y por qué
 | Camino | Qué es | Estado |
@@ -62,5 +62,6 @@
 ## 8. Camino B (después, con su propia autorización)
 Requiere: migración 29 (almacén persistente) aplicada, despliegue con `FEL_DIGIFACT_TEST`, `FEL_DIGIFACT_AUTORIZA_REFERENCIA` y `FEL_DIGIFACT_CORREO` (+ `_EMPRESA` + `_DESTINATARIOS`). Se apaga con `secrets unset` del flujo de publicación. No se hace en esta prueba.
 
-## 9. Pendiente que cambiaría lo esperado
+## 9. Observación tras la prueba y pendiente que cambiaría lo esperado
+El correo real mostró el logotipo AGRIPACK con emisor TEST GENS (remitente `eface@digifact.com.gt`): ver [`RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md`](RESULTADO-PRUEBA-CORREO-DIGIFACT-TEST.md). Sigue pendiente la respuesta de Digifact:
 Respuesta de Digifact sobre: si los correos de TEST salen a la dirección real, qué plantilla usa por defecto y el efecto de `Seller.Contact.EmailList`. La plantilla NEXA FEL se mantiene como propuesta; **no se envía ningún parámetro de plantilla** cuyo comportamiento Digifact no haya confirmado.
