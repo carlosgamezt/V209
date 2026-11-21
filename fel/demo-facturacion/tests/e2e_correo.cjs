@@ -49,7 +49,7 @@ function arrancar(env = {}) {
     await p.click("#correo-reenviar"); await p.waitForSelector("#correo-reenviar-ok"); assert.equal(await p.locator("#correo-reenviar-ok").isDisabled(), true);
     await p.fill("#correo-palabra", "reenviar"); assert.equal(await p.locator("#correo-reenviar-ok").isDisabled(), true, "la palabra se escribe exacta"); await p.click("#correo-reenviar-cancelar");
     assert.equal(await p.locator(".correo-fila").count(), 1, "cancelar no envía nada");
-    await p.click("#correo-reenviar"); await p.fill("#correo-palabra", "REENVIAR"); await p.click("#correo-reenviar-ok"); await p.waitForFunction(() => document.querySelectorAll(".correo-fila").length === 2);
+    await p.click("#correo-reenviar"); await p.fill("#correo-palabra", "REENVIAR"); await p.click("#correo-reenviar-ok"); await p.waitForSelector(".correo-fila:nth-child(2)"); assert.equal(await p.locator(".correo-fila").count(), 2);   // sin waitForFunction: la política de seguridad de la página (script-src 'self') prohíbe eval
     assert.match(await p.locator(PANEL).innerText(), /Reenvío/); await sinDesborde(p, "historial de correo");
     // recargar: el historial persiste
     await p.reload(); await p.waitForSelector(".correo-fila"); assert.equal(await p.locator(".correo-fila").count(), 2);
