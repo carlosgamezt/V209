@@ -2,6 +2,7 @@
 // sin desplazamiento horizontal ni elementos fijos que tapen acciones, guardado y recuperación del borrador, vista previa limpia, impresión y PDF en HOJA CARTA y TICKET 80 MM.
 // Uso: node e2e_movil.cjs [carpeta-de-capturas]   (servidor real en modo con inicio de sesión; sin red externa, sin SAT)
 const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), assert = require("assert/strict"), pw = require("playwright");
+const { esperarNueva, elegirReceptor, receptorNuevo, elegirTipo, tipoActual, ID: ID_RECEPTOR } = require("./ayudas_nueva.cjs");
 // Navegador a probar: chromium (por defecto), firefox o webkit (FEL_E2E_NAVEGADOR). Firefox no admite «isMobile»: el teléfono se emula con la pantalla y el tacto. El PDF de la impresión del navegador solo existe en Chromium.
 const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV];
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null; if (capturas) fs.mkdirSync(capturas, { recursive: true });
@@ -49,12 +50,12 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       await p.goto(srv.url); await p.waitForSelector("#login-usuario"); await p.selectOption("#login-usuario", "ana"); await p.fill("#login-clave", "demo1234"); await p.click("#login-entrar"); await p.waitForSelector(".cab-demo");
 
       // ---- una sola pantalla: receptor + ítems + resumen, una acción principal y «Más acciones», sin botón flotante «+»
-      await p.goto(srv.url + "/#/nueva"); await p.waitForSelector('select[aria-label="Receptor"]');
+      await p.goto(srv.url + "/#/nueva"); await esperarNueva(p);
       assert.equal(await p.locator("li.paso, .stepper").count(), 0, donde("sin asistente de pasos")); assert.equal(await p.locator("#fab-agregar, .ab-fab").count(), 0, donde("sin botón flotante +"));
       assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, donde("una acción principal")); assert.equal(await p.locator("#mas-acciones").count(), 1);
-      assert.ok(await p.locator('select[aria-label="Receptor"]').isVisible() && await p.locator("#agregar-item").count() === 1, donde("datos e ítems en la misma pantalla"));
+      assert.ok(await p.locator('input[aria-label="Identificación del receptor"]').isVisible() && await p.locator("#agregar-item").count() === 1, donde("datos e ítems en la misma pantalla"));
       await sinDesborde("nueva factura vacía"); await foto("01-nueva"); await textoVisible("nueva factura vacía");
-      await p.selectOption('select[aria-label="Receptor"]', { index: 1 }); await p.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
+      await elegirReceptor(p); await p.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
 
       // ---- captura rápida: descripción ⏎ cantidad ⏎ precio ⏎ guarda y deja la hoja lista para el siguiente ítem
       await p.click("#agregar-item", { timeout: 8000 }).catch(async (e) => {
@@ -92,7 +93,7 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       assert.equal(await p.locator("button.it").count(), 3, donde("tres ítems como filas compactas")); await sinDesborde("lista de ítems"); await foto("04-lista");
       assert.ok((await p.locator("#agregar-item").boundingBox()).y > (await p.locator("button.it").last().boundingBox()).y, donde("«Agregar ítem» al final de la lista"));
       assert.match(await p.locator(".totales").innerText(), /Subtotal\s*Q 686\.50[\s\S]*Descuentos\s*Q 30\.10[\s\S]*Total provisional\s*Q 656\.40/, donde("resumen compacto: subtotal y total provisional"));
-      for (const s of ["#agregar-item", "#guardar", "#mas-acciones", 'select[aria-label="Receptor"]']) await libre(s, `acción accesible ${s}`);
+      for (const s of ["#agregar-item", "#guardar", "#mas-acciones", 'input[aria-label="Identificación del receptor"]']) await libre(s, `acción accesible ${s}`);
       await textoVisible("barra de acciones");
 
       // ---- «Más acciones»: el menú cabe en pantalla; la barra no pisa la navegación inferior ni a sí misma

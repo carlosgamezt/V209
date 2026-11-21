@@ -29,7 +29,7 @@ async function copiar(texto) {
 let alCambiarRuta = null;
 const NAV = [
   { ruta: "/panel", titulo: "Panel", icon: "file", permiso: "borradores.ver", practico: true },
-  { ruta: "/nueva", titulo: "Nueva factura", icon: "plus", permiso: "borradores.crear" },
+  { ruta: "/nueva", titulo: "Nueva factura", corto: "Nueva", icon: "plus", permiso: "borradores.crear" },
   { ruta: "/", titulo: "Facturas", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
   { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
   { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
@@ -54,7 +54,8 @@ async function iniciar(estadoInicial) {
     cambiarUsuario(e.target.value);
     try { estado = await api.estado(); await pintarTodo(); toast(`Ahora actúas como ${estado.usuario.nombre} (${estado.usuario.rol})`); } catch (x) { toast(mensajeError(x), "error"); }
   } });
-  let masAbierto = false;
+  let masAbierto = false, cerrarCuentaFn = () => {};
+  const cerrarCuenta = () => cerrarCuentaFn();
   const reportar = async () => {
     const texto = ["REPORTE NEXA FEL (DEMO)", `versión: ${VERSION_DEMO}`, `pantalla: #${rutaActual()}`, `persona/rol: ${estado.usuario?.nombre ?? "?"} / ${estado.usuario?.rol ?? "plataforma"}`,
       `ventana: ${innerWidth}x${innerHeight} · ${navigator.userAgent}`, `hora: ${new Date().toISOString()}`, `errores recientes: ${ERRORES.length ? "" : "ninguno"}`, ...ERRORES, "(no incluye datos de facturas ni clientes) · ¿Qué esperabas y qué pasó? →"].join("\n");
@@ -80,7 +81,8 @@ async function iniciar(estadoInicial) {
   function pintarMenu() {
     const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin));
     const enlaces = (clase) => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null }, icono(n.icon), h("span", {}, n.titulo)));
-    const todos = enlaces(), principales = todos.slice(0, 4), resto = todos.slice(4), restoActivo = items.slice(4).some((n) => activa(n, r));
+    const enlacesMovil = () => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null, "aria-label": n.titulo }, icono(n.icon), h("span", {}, n.corto ?? n.titulo)));
+    const todos = enlaces(), movilTodos = enlacesMovil(), principales = movilTodos.slice(0, 4), resto = todos.slice(4), restoActivo = items.slice(4).some((n) => activa(n, r));
     poner(nav, ...enlaces());
     const masBtn = h("button", { type: "button", class: `nv nv-mas${restoActivo || masAbierto ? " act" : ""}`, id: "nav-mas", "aria-expanded": String(masAbierto), "aria-label": "Más secciones", onclick: () => { masAbierto = !masAbierto; pintarMenu(); } }, icono("info"), h("span", {}, "Más"));
     const hoja = h("div", { class: "hoja-mas", role: "menu", hidden: !masAbierto, onclick: () => { masAbierto = false; } }, ...resto, h("button", { type: "button", class: "nv", id: "reportar-problema-mas", onclick: reportar }, icono("info"), h("span", {}, "Reportar un problema")));
@@ -99,13 +101,32 @@ async function iniciar(estadoInicial) {
         h("small", {}, d.alertas > 0 ? "Alerta fiscal abierta" : d.estado_fiscal === "por_verificar" ? "Por verificar con el proveedor" : "Envío en curso"))) : h("p", { class: "mut" }, "No hay nada pendiente."));
     const btn = h("button", { type: "button", class: "icon-circ", "aria-label": `Pendientes: ${pendientes.length}`, "aria-expanded": "false", onclick: () => { panel.hidden = !panel.hidden; btn.setAttribute("aria-expanded", String(!panel.hidden)); } }, icono("info"), pendientes.length ? h("span", { class: "punto" }, String(pendientes.length)) : null);
     poner(campana, btn, panel);
+    // móvil (≤ 900 px): marca + avatar con el menú de la cuenta (nombre, empresa, estado de la demostración, pendientes y «Cerrar sesión»); en PC se conserva el encabezado de siempre
+    cerrarCuenta();
+    const selUsuarioMovil = !conLogin ? h("select", { "aria-label": "Actuar como", class: "sel-usuario", onchange: (e) => { selUsuario.value = e.target.value; selUsuario.dispatchEvent(new Event("change")); } }, ...estado.usuarios.map((u) => h("option", { value: u.clave, selected: u.clave === estado.usuario.clave }, `${u.nombre} · ${u.rol}`))) : null;
+    const itemsPend = pendientes.length ? pendientes.map((d) => h("a", { href: `#/f/${d.id}`, class: "mc-pend", onclick: () => cerrarCuenta() },
+      h("span", {}, `BR-${String(d.numero_borrador).padStart(4, "0")} · ${d.cliente_nombre ?? "Sin receptor"}`), h("small", {}, d.alertas > 0 ? "Alerta fiscal abierta" : d.estado_fiscal === "por_verificar" ? "Por verificar con el proveedor" : "Envío en curso"))) : [h("p", { class: "mut mc-nada" }, "No hay nada pendiente.")];
+    const menuCuenta = h("div", { class: "menu-cuenta", id: "menu-cuenta-panel", role: "menu", "aria-label": "Cuenta", hidden: true },
+      h("div", { class: "mc-id" }, h("strong", {}, estado.usuario.nombre), h("small", {}, maestro ? "Administrador de la plataforma" : `${estado.usuario.rol} · ${estado.empresa.nombre_comercial}`)),
+      h("p", { class: "mc-demo" }, estado.persistente ? "DEMO · datos persistentes de prueba" : "DEMO · datos NO persistentes"),
+      selUsuarioMovil ? h("label", { class: "campo" }, h("span", { class: "campo-et" }, "Actuar como"), selUsuarioMovil) : null,
+      maestro ? null : h("div", { class: "mc-pendientes" }, h("strong", { class: "et" }, `Requieren atención${pendientes.length ? ` (${pendientes.length})` : ""}`), ...itemsPend),
+      conLogin ? h("button", { type: "button", class: "mc-salir", id: "cerrar-sesion-cab", role: "menuitem", onclick: salir }, icono("logout"), h("span", {}, "Cerrar sesión")) : null);
+    const bAvatar = h("button", { type: "button", class: "avatar-btn", id: "menu-cuenta", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": `Cuenta de ${estado.usuario.nombre}${pendientes.length ? ` · ${pendientes.length} pendiente(s)` : ""}`,
+      onclick: (e) => { e.stopPropagation(); menuCuenta.hidden ? abrirCuenta() : cerrarCuenta(); } }, h("span", { class: "avatar" }, iniciales(estado.usuario.nombre)), pendientes.length ? h("span", { class: "punto-av", "aria-hidden": "true" }) : null);
+    const cuentaWrap = h("div", { class: "cuenta-wrap" }, bAvatar, menuCuenta);
+    const fueraCuenta = (e) => { if (!cuentaWrap.contains(e.target)) cerrarCuenta(); }, teclaCuenta = (e) => { if (e.key === "Escape") { cerrarCuenta(); bAvatar.focus(); } };
+    function abrirCuenta() { menuCuenta.hidden = false; bAvatar.setAttribute("aria-expanded", "true"); document.addEventListener("click", fueraCuenta); document.addEventListener("keydown", teclaCuenta); }
+    cerrarCuentaFn = () => { menuCuenta.hidden = true; bAvatar.setAttribute("aria-expanded", "false"); document.removeEventListener("click", fueraCuenta); document.removeEventListener("keydown", teclaCuenta); };
     poner(cab,
       h("div", { class: "cab-fila" },
+        h("div", { class: "cab-marca" }, h("span", { class: "marca-logo" }, "N"), h("strong", {}, "Nexa FEL")),
         h("div", { class: "cab-tit" }, h("strong", {}, "Nexa FEL"), h("span", { class: "mut" }, "Facturación electrónica")),
         h("div", { class: "cab-der" },
           h("div", { class: "emp-sel", title: maestro ? "Plataforma" : "Empresa ficticia de la demostración" }, icono("building"), h("strong", {}, (maestro ? "PLATAFORMA" : estado.empresa.nombre_comercial).toUpperCase())),
           campana,
-          conLogin ? h("span", { class: "cab-usuario", id: "usuario-actual" }, estado.usuario.nombre, h("button", { type: "button", class: "btn btn-sec cab-salir", id: "cerrar-sesion-cab", onclick: salir }, "Salir")) : h("label", { class: "cab-usuario" }, h("span", { class: "mut" }, "Actuar como"), selUsuario))),
+          conLogin ? h("span", { class: "cab-usuario", id: "usuario-actual" }, estado.usuario.nombre) : h("label", { class: "cab-usuario" }, h("span", { class: "mut" }, "Actuar como"), selUsuario)),
+        cuentaWrap),
       h("div", { class: "banda-simulado", role: "status" }, icono("lock"), h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("span", { class: "tag-demo" }, estado.persistente ? "DEMO · datos persistentes de prueba" : "DEMO · datos NO persistentes"), h("span", { class: "banda-det" }, "No se conecta a SAT ni a ningún certificador; nada de lo que ves se emite de verdad.")));
   }
   function pintar() {

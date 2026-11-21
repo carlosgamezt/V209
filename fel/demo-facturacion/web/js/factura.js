@@ -8,7 +8,7 @@ import { api } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { panelProceso } from "./proceso.js";
 import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
-import { crearAutollenado, textoEstado, ETIQUETAS, RE_CUI, normalizarCui } from "./receptor_nit.js";
+import { crearAutollenado, textoEstado, ETIQUETAS, RE_CUI, RE_NIT, normalizarCui, normalizarId } from "./receptor_nit.js";
 /** Etiqueta del origen del nombre (Digifact TEST / simulado / manual / consumidor final). */
 const pintarEtiqueta = (el, t) => { if (!el) return; el.hidden = !t; el.textContent = t ? ETIQUETAS[t] : ""; el.className = `nit-etiqueta${t ? ` nit-et-${t}` : ""}`; };
 
@@ -42,7 +42,7 @@ export function pantallaFactura(ctx, id) {
     // ---------------------------------------------------------------- validación local (vista previa; el servidor y la base vuelven a validar)
     function problemas() {
       const p = [];
-      if (!f.nuevo && !f.cliente_id) p.push("Elige el receptor o crea uno nuevo.");
+      if (!f.nuevo && !f.cliente_id) p.push("Indica el receptor: escribe su NIT o CUI, o elige CF.");
       if (f.nuevo && f.tipo !== "CF" && !f.numero.trim()) p.push("Escribe la identificación del receptor.");
       if (f.nuevo && f.tipo !== "CF" && !f.nombre.trim()) p.push("Escribe el nombre del receptor.");
       if (f.nuevo && f.tipo !== "CF" && !/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) p.push("La identificación solo admite letras, números y guion (máximo 30).");
@@ -62,48 +62,165 @@ export function pantallaFactura(ctx, id) {
       try { return { ok: true, r: calcular(f.lineas) }; } catch (e) { return { ok: false, msg: e.message }; }
     }
 
+    const abrirPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio });
+
     // ---------------------------------------------------------------- pintado
     function pintarCab() {
       const [pt, ptono] = PREPARACION[doc.estado_preparacion];
-      poner(cab, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nueva factura"),
-        h("div", { class: "celda-tags" }, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, insignia("SIMULADO", "ambar")));
+      const sim = insignia("SIMULADO", "ambar"); sim.classList.add("tag-solo-pc");   // en el teléfono la franja de simulación ya lo dice
+      poner(cab, h("div", { class: "doc-tit" }, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nueva factura"),
+        h("div", { class: "celda-tags" }, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, sim)),
+        h("button", { type: "button", class: "btn btn-sec btn-previa", id: "previa-titulo", "aria-label": "Vista previa", title: "Vista previa e impresión", onclick: abrirPrevia }, icono("eye"), h("span", { class: "bp-txt" }, "Vista previa")));
     }
     // Q0.00 se acepta SOLO en la demostración simulada (decisión de DEMO); nunca para certificar de verdad
     const lineasPrecioCero = () => f.lineas.map((l, i) => (RE_MONTO.test(l.precio_unitario) && Number(l.precio_unitario) === 0 ? i + 1 : 0)).filter(Boolean);
     const avisoPrecioCero = () => { const z = lineasPrecioCero(); return z.length ? h("p", { class: "aviso", id: "aviso-precio-cero", role: "status" }, icono("info"), h("span", {}, `Precio Q0.00 en ${z.length === 1 ? "la línea" : "las líneas"} ${z.join(", ")}: se acepta solo en esta DEMO. No es válido para certificar.`)) : null; };
+    // Receptor INTELIGENTE: un solo campo de identificación con el tipo (NIT · CUI · CF · Otro) a un toque. Si lo escrito coincide con un cliente guardado se ofrece (o se elige si es idéntico) y se marca «Existente»;
+    // si no, es un receptor «Nuevo» y el autollenado de siempre (controlador de receptor_nit.js, consultas por el SERVIDOR) trae el nombre. Nada de esto cambia lo que se guarda: cliente_id o cliente_nuevo.
+    const TIPOS = [["NIT", "NIT"], ["CUI", "CUI"], ["CF", "CF"], ["EXT", "Otro"]];
+    const textoDe = (t) => (t === "CUI" ? "CUI (13 dígitos)" : t === "CF" ? "CF" : t === "EXT" ? "Identificación del extranjero" : "NIT del receptor");
+    let verObs = false;
     function pintarReceptor() {
-      const ed = editable();
-      const selCli = h("select", { "aria-label": "Receptor", disabled: !ed || f.nuevo, onchange: (e) => { f.cliente_id = e.target.value; sucio = true; pintarBarra(); pintarTotales(); } },
-        h("option", { value: "" }, "Selecciona un receptor…"), ...est.clientes.map((c) => h("option", { value: c.id }, `${c.nombre} — ${c.tipo_identificacion === "CF" ? "CF" : `${c.tipo_identificacion} ${c.numero_identificacion}`}`)));
-      selCli.value = f.cliente_id;
-      const selEst = h("select", { "aria-label": "Establecimiento", disabled: !ed, onchange: (e) => { f.establecimiento_id = e.target.value; sucio = true; pintarBarra(); pintarTotales(); } },
-        h("option", { value: "" }, "Selecciona un establecimiento…"), ...est.establecimientos.map((x) => h("option", { value: x.id }, `${x.codigo_sat} · ${x.nombre}`)));
-      selEst.value = f.establecimiento_id;
-      const chkNuevo = h("label", { class: "check" }, h("input", { type: "checkbox", checked: f.nuevo, disabled: !ed, "aria-label": "Receptor nuevo", onchange: (e) => { f.nuevo = e.target.checked; sucio = true; pintarReceptor(); pintarBarra(); pintarTotales(); } }), h("span", {}, "Crear un receptor nuevo"));
-      // autollenado del nombre del receptor: CF local, NIT consultado por el SERVIDOR (Digifact TEST o simulador con datos ficticios); nunca se pisa un nombre escrito a mano
-      if (f.nuevo && (!ctrl || ctrlModelo !== f)) {
-        ctrlModelo = f;
+      const ed = editable(); nit.render = null;
+      const cambio = () => { sucio = true; pintarBarra(); pintarTotales(); };
+      const asegurarCtrl = () => {
+        if (ctrl && ctrlModelo === f) return; ctrlModelo = f;
         ctrl = crearAutollenado({ modelo: f, consultar: (n, o) => (o.tipo === "CUI" ? api.receptorCui(n, o) : api.receptorNit(n, o)),
-          refrescar: () => { if (nit.tipo) nit.tipo.value = f.tipo; if (nit.numero) nit.numero.value = f.numero; if (nit.nombre) { nit.nombre.value = f.nombre; nit.nombre.readOnly = f.tipo === "CF"; } sucio = true; pintarBarra(); pintarTotales(); },
-          estado: (info) => { nit.info = info; if (nit.estado) nit.estado.textContent = textoEstado(info); },
+          refrescar: () => { sincronizar(); cambio(); },
+          estado: (info) => { nit.info = info; if (nit.estado) nit.estado.textContent = textoEstado(info); actualizarOk(); },
           etiqueta: (t) => { nit.et = t; pintarEtiqueta(nit.etiqueta, t); } });
+      };
+      const clienteActual = () => (f.cliente_id ? est.clientes.find((c) => c.id === f.cliente_id) : null);
+      const modo = () => (f.cliente_id ? "existente" : f.nuevo ? "nuevo" : "vacio");
+
+      // ---- tipo de identificación (control segmentado)
+      nit.seg = h("div", { class: "seg-tipo", role: "radiogroup", "aria-label": "Tipo de identificación" },
+        ...TIPOS.map(([v, t]) => h("button", { type: "button", role: "radio", class: "st-op", "data-tipo": v, disabled: !ed, "aria-checked": String(f.tipo === v), title: v === "EXT" ? "Extranjero u otro tipo de identificación" : null, onclick: () => elegirTipo(v) }, t)));
+      // ---- identificación
+      nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": "rc-sug", maxlength: 30, disabled: !ed, autocomplete: "off", enterkeyhint: "next", placeholder: textoDe(f.tipo),
+        oninput: (e) => alEscribir(e.target.value), onfocus: () => mostrarSugerencias(), onblur: () => { setTimeout(ocultarSugerencias, 120); if (f.nuevo && ctrl) ctrl.alSalirIdentificacion(); },
+        onkeydown: (e) => { if (e.key === "Escape") { ocultarSugerencias(); return; } if (e.key !== "Enter" || e.isComposing) return; e.preventDefault(); ocultarSugerencias(); if (f.nuevo && ctrl) { ctrl.alConfirmarIdentificacion(); nit.nombre?.focus(); } } });
+      nit.ok = h("span", { class: "rc-ok", hidden: true, "aria-hidden": "true" }, icono("check"));
+      nit.sug = h("div", { class: "rc-sug", id: "rc-sug", role: "listbox", "aria-label": "Clientes y opciones", hidden: true });
+      nit.ayuda = h("small", { class: "rc-ayuda" }, "Escribe el NIT o CUI: busco entre tus clientes o lo consulto.");
+      // ---- receptor elegido o nuevo (tarjeta sin marco: nombre, etiqueta Existente/Nuevo, origen y «Cambiar»)
+      // el nombre se muestra como información CONFIRMADA (texto, sin recuadro); solo se vuelve campo si está vacío (hay que escribirlo) o si la persona lo toca para corregirlo
+      nit.editando = false;
+      nit.nombre = h("textarea", { class: "rc-nombre", rows: 1, maxlength: 200, "aria-label": "Nombre del receptor", placeholder: "Nombre del receptor", disabled: !ed, readonly: f.tipo === "CF", spellcheck: "false",
+        onfocus: () => { nit.editando = true; },
+        onblur: () => { nit.editando = false; actualizarNombre(); },
+        oninput: (e) => { const v = e.target.value.replace(/[\r\n]+/g, " "); if (v !== e.target.value) e.target.value = v; ctrl?.alEscribirNombre(v); crecer(); cambio(); },
+        onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } } });
+      nit.nombre.value = f.nombre;
+      nit.nombreVer = h("button", { type: "button", class: "rc-nombre-ver", id: "receptor-nombre-ver", "aria-label": "Editar el nombre del receptor", disabled: !ed || f.tipo === "CF", onclick: () => { nit.editando = true; actualizarNombre(); nit.nombre.focus(); nit.nombre.setSelectionRange(nit.nombre.value.length, nit.nombre.value.length); } });
+      function actualizarNombre() {
+        const v = f.nombre.trim(), texto = v !== "" && !nit.editando;
+        nit.nombreVer.textContent = f.nombre; nit.nombreVer.hidden = !texto; nit.nombre.hidden = texto; nit.nombreVer.disabled = !ed || f.tipo === "CF"; if (!texto) crecer();
       }
-      let nuevo = null;
-      if (f.nuevo) {
-        const cambio = () => { sucio = true; pintarBarra(); pintarTotales(); };
-        nit.tipo = h("select", { "aria-label": "Tipo de identificación", disabled: !ed, onchange: (e) => { ctrl.alElegirTipo(e.target.value); ajustarTeclado(); cambio(); } }, ...["NIT", "CUI", "EXT", "CF"].map((t) => h("option", { value: t, selected: f.tipo === t }, t === "EXT" ? "Extranjero / otro" : t)));
-        nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", maxlength: 30, disabled: !ed, autocomplete: "off", enterkeyhint: "next", oninput: (e) => { ctrl.alEscribirId(e.target.value); cambio(); }, onblur: () => ctrl.alSalirIdentificacion(),
-          onkeydown: (e) => { if (e.key !== "Enter" || e.isComposing) return; e.preventDefault(); ctrl.alConfirmarIdentificacion(); nit.nombre?.focus(); } });   // Enter / «Siguiente»: confirma el NIT o el CUI (consulta ya) y pasa al nombre
-        const ajustarTeclado = () => { if (nit.numero) nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text"); }; ajustarTeclado();   // CUI: teclado numérico en el teléfono
-        nit.nombre = h("input", { value: f.nombre, "aria-label": "Nombre del receptor", maxlength: 200, disabled: !ed, readonly: f.tipo === "CF", oninput: (e) => { ctrl.alEscribirNombre(e.target.value); cambio(); } });
-        nit.estado = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }, textoEstado(nit.info));
-        nit.etiqueta = h("small", { class: "nit-etiqueta", hidden: true }); pintarEtiqueta(nit.etiqueta, nit.et);
-        nuevo = h("div", { class: "grid3" }, campo("Tipo", nit.tipo), h("div", { class: "nit-id" }, campo("Identificación", nit.numero), nit.estado, nit.etiqueta), campo("Nombre", nit.nombre));
+      nit.estado = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }, textoEstado(nit.info));
+      nit.etiqueta = h("small", { class: "nit-etiqueta", hidden: true }); pintarEtiqueta(nit.etiqueta, nit.et);
+      nit.chip = h("span", { class: "tg" }); nit.cuando = h("span", { class: "rc-meta" }, "· se creará al guardar"); nit.nombreFijo = h("strong", { class: "rc-nombre-fijo" }); nit.meta = h("span", { class: "rc-meta" });
+      nit.cambiar = h("button", { type: "button", class: "rc-cambiar", id: "receptor-cambiar", hidden: !ed, onclick: cambiarReceptor }, "Cambiar");
+      nit.tarjeta = h("div", { class: "rc-card", "data-modo": modo() });
+      const crecer = () => { if (!nit.nombre.isConnected || nit.nombre.offsetParent === null) return; nit.nombre.style.height = "auto"; nit.nombre.style.height = `${nit.nombre.scrollHeight}px`; };
+
+      function pintarTarjeta() {
+        const m = modo(), c = clienteActual(); nit.tarjeta.dataset.modo = m; nit.tarjeta.hidden = m === "vacio"; nit.ayuda.hidden = m !== "vacio";
+        if (nit.render === m && m === "nuevo") { nit.chip.hidden = nit.cuando.hidden = f.tipo === "CF"; actualizarNombre(); return; }   // mismo modo: no se reconstruye (así no se pierde el foco del nombre)
+        nit.render = m;
+        if (m === "existente") {
+          nit.chip.className = "tg t-ex"; nit.chip.textContent = "Existente"; nit.chip.hidden = false; nit.nombreFijo.textContent = c?.nombre ?? "Receptor"; nit.meta.textContent = c ? `Cliente guardado · ${c.tipo_identificacion === "CF" ? "CF" : `${c.tipo_identificacion} ${c.numero_identificacion}`}` : "";
+          poner(nit.tarjeta, h("div", { class: "rc-l1" }, nit.nombreFijo, nit.cambiar), h("div", { class: "rc-l2" }, nit.chip, nit.meta));
+        } else if (m === "nuevo") {
+          nit.chip.className = "tg t-nu"; nit.chip.textContent = "Nuevo"; nit.chip.hidden = nit.cuando.hidden = f.tipo === "CF";
+          poner(nit.tarjeta, h("div", { class: "rc-l1" }, nit.nombreVer, nit.nombre, nit.cambiar), h("div", { class: "rc-l2" }, nit.chip, nit.etiqueta, nit.cuando), nit.estado);
+          actualizarNombre();
+        } else poner(nit.tarjeta);
       }
+      function actualizarOk() { nit.ok.hidden = !(f.cliente_id || nit.info?.fase === "ok" || (f.tipo === "CF" && f.nuevo)); }
+      function sincronizar() {   // vuelca el modelo en los campos (lo llama el controlador y las acciones de esta función)
+        for (const b of nit.seg.querySelectorAll(".st-op")) b.setAttribute("aria-checked", String(b.dataset.tipo === f.tipo));
+        nit.numero.placeholder = textoDe(f.tipo); nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text");
+        if (f.nuevo && nit.numero.value !== f.numero) nit.numero.value = f.numero;
+        nit.nombre.value = f.nombre; nit.nombre.readOnly = f.tipo === "CF"; nit.chip.hidden = f.tipo === "CF" && modo() === "nuevo";
+        pintarTarjeta(); actualizarOk(); actualizarNombre();
+      }
+      // ---- acciones
+      function elegirTipo(t) {
+        if (!ed) return;
+        if (f.cliente_id) { f.cliente_id = ""; f.numero = ""; f.nombre = ""; nit.numero.value = ""; ctrl = null; }
+        f.nuevo = true; asegurarCtrl(); ctrl.alElegirTipo(t); if (t === "CF") nit.numero.value = f.numero;
+        ocultarSugerencias(); sincronizar(); cambio(); if (t !== "CF") nit.numero.focus();
+      }
+      function alEscribir(valor) {
+        if (!ed) return;
+        if (f.cliente_id) { f.cliente_id = ""; f.nombre = ""; ctrl = null; }
+        if (!f.nuevo) { f.nuevo = true; f.nombre = ""; }
+        asegurarCtrl();
+        const n = normalizarId(valor), tipoBusca = f.tipo === "CF" ? "NIT" : f.tipo;
+        const exacto = n.length >= 4 && est.clientes.find((c) => c.tipo_identificacion === tipoBusca && normalizarId(c.numero_identificacion) === n);
+        if (exacto) { elegirExistente(exacto); return; }   // idéntico a un cliente guardado: no se consulta nada fuera
+        ctrl.alEscribirId(valor); sincronizar(); mostrarSugerencias(); cambio();
+      }
+      function elegirExistente(c) {
+        ctrl?.cancelar(); ctrl = null; f.cliente_id = c.id; f.nuevo = false; f.tipo = c.tipo_identificacion === "CF" ? "NIT" : c.tipo_identificacion; f.numero = ""; f.nombre = ""; nit.info = null; nit.et = null;
+        nit.numero.value = c.tipo_identificacion === "CF" ? "CF" : c.numero_identificacion; ocultarSugerencias(); sincronizar(); cambio();
+      }
+      function cambiarReceptor() {
+        if (!ed) return; ctrl?.cancelar(); ctrl = null; f.cliente_id = ""; f.nuevo = false; f.numero = ""; f.nombre = ""; nit.info = null; nit.et = null;
+        nit.numero.value = ""; nit.estado.textContent = ""; pintarEtiqueta(nit.etiqueta, null); ocultarSugerencias(); sincronizar(); cambio(); nit.numero.focus();
+      }
+      function coincidencias() {
+        const q = nit.numero.value.trim(), qn = normalizarId(q), ql = q.toLowerCase(); if (!q || f.tipo === "CF") return [];
+        const soloLetras = /[a-záéíóúñ]/i.test(q) && !/\d/.test(q);
+        return est.clientes.filter((c) => c.tipo_identificacion !== "CF" && (soloLetras ? c.nombre.toLowerCase().includes(ql) : c.tipo_identificacion === f.tipo && normalizarId(c.numero_identificacion).includes(qn))).slice(0, 4);
+      }
+      function mostrarSugerencias() {
+        if (!ed || f.cliente_id || f.tipo === "CF") { ocultarSugerencias(); return; }
+        const q = nit.numero.value.trim(), lista = coincidencias();
+        // la fila «consultar y crear nuevo» solo mientras la identificación está incompleta: con una completa (CUI de 13 dígitos, NIT con formato válido) la lista no debe tapar el nombre
+        const completa = f.tipo === "CUI" ? RE_CUI.test(normalizarCui(q)) : f.tipo === "NIT" ? RE_NIT.test(normalizarId(q)) && normalizarId(q).length >= 5 : false;
+        const crear = q && !completa && (/\d/.test(q) || f.tipo === "EXT");
+        if (!lista.length && !crear) { ocultarSugerencias(); return; }
+        poner(nit.sug, ...lista.map((c) => h("button", { type: "button", role: "option", class: "sg sg-ex", onmousedown: (e) => e.preventDefault(), onclick: () => elegirExistente(c) },
+            h("span", { class: "sg-t" }, h("strong", {}, c.nombre), h("small", {}, `${c.tipo_identificacion} ${c.numero_identificacion}`)), h("span", { class: "tg t-ex" }, "Existente"))),
+          crear ? h("button", { type: "button", role: "option", class: "sg sg-nu", id: "receptor-crear", onmousedown: (e) => e.preventDefault(), onclick: () => { ocultarSugerencias(); asegurarCtrl(); f.nuevo = true; ctrl.alConfirmarIdentificacion(); nit.nombre?.focus(); } },
+            h("span", { class: "sg-t" }, h("strong", {}, f.tipo === "EXT" ? `Crear con «${q}»` : `Consultar «${q}» y crear nuevo`), h("small", {}, f.tipo === "EXT" ? "El nombre se escribe a mano" : "Se busca el nombre en Digifact TEST al confirmar")), h("span", { class: "tg t-nu" }, "Nuevo")) : null);
+        nit.sug.hidden = false; nit.numero.setAttribute("aria-expanded", "true");
+      }
+      function ocultarSugerencias() { if (!nit.sug) return; nit.sug.hidden = true; nit.numero.setAttribute("aria-expanded", "false"); }
+      if (f.cliente_id) { const c = clienteActual(); nit.numero.value = c ? (c.tipo_identificacion === "CF" ? "CF" : c.numero_identificacion) : ""; if (c && c.tipo_identificacion !== "CF") f.tipo = c.tipo_identificacion; for (const b of nit.seg.querySelectorAll(".st-op")) b.setAttribute("aria-checked", String(b.dataset.tipo === f.tipo)); }
+      if (f.nuevo) asegurarCtrl();
+      nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text");
+      pintarTarjeta(); actualizarOk();
+
+      // ---- establecimiento y fecha en una fila; observaciones plegadas
+      const selEst = h("select", { "aria-label": "Establecimiento", class: "sv-in", disabled: !ed, onchange: (e) => { f.establecimiento_id = e.target.value; try { if (e.target.value) localStorage.setItem("fel.establecimiento", e.target.value); } catch { /* opcional */ } pintarEstab(); sucio = true; pintarBarra(); pintarTotales(); } },
+        h("option", { value: "" }, "Selecciona…"), ...est.establecimientos.map((x) => h("option", { value: x.id }, `${x.codigo_sat} · ${x.nombre}`)));
+      selEst.value = f.establecimiento_id;
+      // lo VISIBLE es una presentación compacta («1 · Casa matriz»; con muy poco ancho, solo «Casa matriz»); el valor elegido y la lista de opciones son los del <select> nativo, sin cambios
+      const vistaEst = h("span", { class: "sv-t", id: "establecimiento-vista" }), icoEst = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>', "image/svg+xml").documentElement; icoEst.classList.add("sv-i"); icoEst.setAttribute("aria-hidden", "true");
+      function pintarEstab() { const x = est.establecimientos.find((e) => e.id === f.establecimiento_id); vistaEst.classList.toggle("sv-vacio", !x); poner(vistaEst, x ? [h("span", { class: "sv-cod" }, `${x.codigo_sat} · `), h("span", { class: "sv-nom" }, x.nombre)] : "Selecciona…"); }
+      const campoEst = h("div", { class: `sv${ed ? "" : " sv-off"}` }, vistaEst, icoEst, selEst);
+      if (!f.establecimiento_id && ed && !doc.id && est.establecimientos.length) {   // factura nueva: viene elegido el único establecimiento, el último que usaste o, si no, el principal (código SAT más bajo); se puede cambiar
+        let elegido = est.establecimientos.length === 1 ? est.establecimientos[0].id : "";
+        if (!elegido) { try { const g = localStorage.getItem("fel.establecimiento"); if (g && est.establecimientos.some((x) => x.id === g)) elegido = g; } catch { /* sin almacenamiento: se usa el principal */ } }
+        if (!elegido) elegido = [...est.establecimientos].sort((a, b) => Number(a.codigo_sat) - Number(b.codigo_sat))[0].id;
+        f.establecimiento_id = elegido; selEst.value = elegido;
+      }
+      pintarEstab();
+      // la fecha se MUESTRA día/mes/año (formato de Guatemala) sin importar el idioma del navegador; el campo de fecha nativo, transparente encima, conserva el valor AAAA-MM-DD y abre el selector del dispositivo
+      const ddmmaaaa = (iso) => { const [y, m, d] = String(iso ?? "").slice(0, 10).split("-"); return y && m && d ? `${d}/${m}/${y}` : "dd/mm/aaaa"; };
+      const vistaFecha = h("span", { class: "fv-t", id: "fecha-vista" }, ddmmaaaa(f.fecha));
+      const nativo = h("input", { type: "date", class: "fv-in", value: f.fecha, "aria-label": "Fecha de emisión", disabled: !ed, oninput: (e) => { f.fecha = e.target.value; vistaFecha.textContent = ddmmaaaa(f.fecha); sucio = true; pintarBarra(); } });
+      const icoFecha = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>', "image/svg+xml").documentElement; icoFecha.classList.add("fv-i"); icoFecha.setAttribute("aria-hidden", "true");
+      const fecha = h("div", { class: `fv${ed ? "" : " fv-off"}`, onclick: () => { if (!ed) return; try { nativo.showPicker(); } catch { nativo.focus(); } } }, vistaFecha, icoFecha, nativo);
+      const obs = h("input", { value: f.observaciones, maxlength: 500, "aria-label": "Observaciones", disabled: !ed, placeholder: "Observaciones (opcional)", oninput: (e) => { f.observaciones = e.target.value; sucio = true; pintarBarra(); } });
+      const bloqueObs = (f.observaciones || verObs) ? obs : (ed ? h("button", { type: "button", class: "rc-obs-btn", id: "agregar-observaciones", onclick: () => { verObs = true; pintarReceptor(); document.querySelector('input[aria-label="Observaciones"]')?.focus(); } }, "+ Agregar observaciones") : null);
       poner(cuerpoReceptor,
-        h("div", { class: "grid2" }, campo("Receptor", selCli), campo("Establecimiento", selEst)), chkNuevo, nuevo,
-        h("div", { class: "grid2 fila-fo" }, campo("Fecha de emisión", h("input", { type: "date", value: f.fecha, "aria-label": "Fecha de emisión", disabled: !ed, oninput: (e) => { f.fecha = e.target.value; sucio = true; pintarBarra(); } })),
-          campo("Observaciones", h("input", { value: f.observaciones, maxlength: 500, "aria-label": "Observaciones", disabled: !ed, oninput: (e) => { f.observaciones = e.target.value; sucio = true; pintarBarra(); } }))));
+        h("div", { class: "rc-sec" }, h("span", { class: "rc-et" }, "Receptor"), nit.seg, h("div", { class: "rc-campo" }, nit.numero, nit.ok, nit.sug), nit.ayuda, nit.tarjeta),
+        h("div", { class: "rc-emision" }, h("label", { class: "rc-mini" }, h("span", {}, "Establecimiento"), campoEst), h("label", { class: "rc-mini" }, h("span", {}, "Fecha"), fecha)),
+        bloqueObs);
     }
 
     // ---------------------------------------------------------------- ítems: filas compactas + editor en hoja
@@ -150,7 +267,6 @@ export function pantallaFactura(ctx, id) {
     function pintarBarra() {
       cerrarMenu();
       const ed = editable(), prep = doc.estado_preparacion;
-      const abrirPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio });
       const puedeRevisar = doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar");
       let principal;
       if (ed && (sucio || !doc.id)) principal = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { icon: "check", id: "guardar", onclick: guardar });
@@ -215,7 +331,7 @@ export function pantallaFactura(ctx, id) {
     // no perder lo escrito por un cierre o una recarga accidental de la página
     const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", avisoSalir);
-    return h("div", {}, cab,
+    return h("div", { class: "pf" }, cab,
       avisoDoc,
       h("div", { class: "doc-grid" }, cardDatos, cardItems, totales, err, proceso), barra);
   }

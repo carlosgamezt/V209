@@ -3,6 +3,7 @@
 // Uso: node e2e_practico.cjs [carpeta-de-capturas]   (FEL_DEMO_URL=http://127.0.0.1:8787 para usar un servidor ya iniciado en modo con inicio de sesión)
 const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), assert = require("assert/strict");
 const pw = require("playwright"), { devices } = pw;
+const { esperarNueva, elegirReceptor, receptorNuevo, elegirTipo, tipoActual, ID: ID_RECEPTOR } = require("./ayudas_nueva.cjs");
 // Navegador a probar: chromium (por defecto), firefox o webkit (FEL_E2E_NAVEGADOR). Firefox no admite «isMobile»: el teléfono se emula con la pantalla y el tacto.
 const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV];
 const movil = () => NAV === "webkit" ? { ...devices["iPhone 14"] } : NAV === "firefox" ? { viewport: { width: 412, height: 915 }, hasTouch: true, deviceScaleFactor: 2.625, userAgent: "Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0" } : { ...devices["Pixel 7"] };
@@ -41,8 +42,8 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
   };
   const toast = (p, t) => p.waitForSelector(`#toasts >> text=${t}`);
   const llenarFactura = async (p, lineas) => {
-    await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
-    const cli = await p.locator('select[aria-label="Receptor"] option', { hasText: "Comercial Los Pinos" }).getAttribute("value"); await p.selectOption('select[aria-label="Receptor"]', cli);
+    await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p);
+    await elegirReceptor(p, /Comercial Los Pinos/);
     const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Casa matriz" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
     for (const [d, c, pr] of lineas) {   // un ítem por vez en la hoja de edición
       await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await p.fill('.hoja-item [aria-label="Descripción"]', d); await p.fill('.hoja-item [aria-label="Cantidad"]', c); await p.fill('.hoja-item [aria-label="Precio unitario (Q)"]', pr);
@@ -143,9 +144,9 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
   const cacheadas = await m.evaluate(async () => { const out = []; for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) out.push(new URL(r.url).pathname); return out; });
   assert.ok(cacheadas.length > 0 && cacheadas.every((x) => /^\/(web|app)\/|^\/manifest/.test(x)), "solo recursos estáticos en caché: " + cacheadas.join(","));
   assert.ok(!cacheadas.some((x) => x.startsWith("/api/")), "la API nunca se guarda en caché");
-  await m.goto(`${srv.url}/#/nueva`); await m.waitForSelector('select[aria-label="Receptor"]'); await foto(m, "mov-03-nueva.png"); await sinDesborde(m, "nueva factura");
+  await m.goto(`${srv.url}/#/nueva`); await esperarNueva(m); await foto(m, "mov-03-nueva.png"); await sinDesborde(m, "nueva factura");
   for (const [ruta, sel, nombre] of [["/panel", '[data-panel="indicadores"]', "panel"], ["/usuarios", '[data-panel="usuarios"]', "usuarios"], ["/plan", '[data-panel="consumos"]', "plan"], ["/clientes", ".lista", "clientes"], ["/config", ".tabs", "config"]]) { await m.goto(`${srv.url}/#${ruta}`); await m.waitForSelector(sel); await foto(m, `mov-04-${nombre}.png`); await sinDesborde(m, nombre); }
-  await m.click("#cerrar-sesion-cab"); await m.waitForSelector("#login-usuario");   // en el teléfono se sale desde la barra superior
+  await m.click("#menu-cuenta"); await m.click("#cerrar-sesion-cab"); await m.waitForSelector("#login-usuario");   // en el teléfono se sale desde el menú de la cuenta (avatar)
   const { c: cMov2, p: m2 } = await nuevoCtx(movil());   // otra persona en otro teléfono: el administrador de la plataforma
   await entrar(m2, "maestro"); await m2.waitForSelector('[data-panel="empresas"]'); await foto(m2, "mov-05-plataforma.png"); await sinDesborde(m2, "plataforma");
   for (const [ruta, sel, nombre] of [["/planes", '[data-plan="prepago_basico"]', "planes"], ["/bolson", '[data-panel="conciliacion-bolson"]', "bolson"]]) { await m2.goto(`${srv.url}/#${ruta}`); await m2.waitForSelector(sel); await foto(m2, `mov-06-${nombre}.png`); await sinDesborde(m2, nombre); }

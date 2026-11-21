@@ -2,6 +2,7 @@
 // Servidor propio en modo de pruebas (sin credenciales, sin red externa). Uso: node e2e_acceso.cjs   (FEL_DEMO_URL para usar un servidor ya iniciado)
 const { spawn } = require("child_process"), path = require("path"), assert = require("assert/strict");
 const { chromium } = require("playwright");
+const { esperarNueva, elegirReceptor, receptorNuevo, elegirTipo, tipoActual, ID: ID_RECEPTOR } = require("./ayudas_nueva.cjs");
 function arrancar() {
   if (process.env.FEL_DEMO_URL) return Promise.resolve({ url: process.env.FEL_DEMO_URL, parar() {} });
   const puerto = 9800 + Math.floor(Math.random() * 150);
@@ -21,7 +22,8 @@ function arrancar() {
     const m = await nuevo({ width: 390, height: 844 }, ["clipboard-read", "clipboard-write"]);
     await m.goto(srv.url + "/#/nueva"); await m.waitForSelector(".banda-simulado");
     const banda = await m.locator(".banda-simulado").innerText();
-    assert.match(banda, /SIMULADO - SIN VALOR FISCAL/); assert.match(banda, /DEMO · datos NO persistentes/, "rótulo DEMO visible según la base real (memoria)");
+    assert.match(banda, /SIMULADO - SIN VALOR FISCAL/); assert.equal(await m.locator(".banda-simulado").evaluate((e) => e.getBoundingClientRect().height <= 24), true, "la franja de simulación es de una sola línea (≈22 px)");
+    await m.click("#menu-cuenta"); assert.match(await m.locator(".menu-cuenta").innerText(), /DEMO · datos NO persistentes/, "rótulo DEMO en el menú de la cuenta, según la base real (memoria)"); await m.click("#menu-cuenta"); assert.equal(await m.locator(".menu-cuenta").isHidden(), true);
     assert.equal(await m.locator(".nav-movil > a").count(), 4, "cuatro accesos principales + «Más»");
     assert.equal(await m.locator("#nav-mas").isVisible(), true);
     assert.equal(await m.locator(".hoja-mas").isHidden(), true); await m.click("#nav-mas"); assert.equal(await m.locator(".hoja-mas").isVisible(), true);
@@ -40,8 +42,8 @@ function arrancar() {
     assert.equal(await pc.locator(".nav-movil").isHidden(), true, "sin barra móvil en PC"); assert.match(await pc.locator(".pie-demo").innerText(), /demo-ea1/);
 
     // ---- precio Q0.00 con aviso; negativo rechazado
-    await pc.goto(srv.url + "/#/nueva"); await pc.waitForSelector('select[aria-label="Receptor"]');
-    await pc.selectOption('select[aria-label="Receptor"]', { index: 1 }); await pc.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
+    await pc.goto(srv.url + "/#/nueva"); await esperarNueva(pc);
+    await elegirReceptor(pc); await pc.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
     const editar = async (pg, fila, precio) => { await pg.click(fila === null ? "#agregar-item" : `button.it[data-linea="${fila}"]`); await pg.waitForSelector(".hoja-item"); if (fila === null) await pg.fill('.hoja-item [aria-label="Descripción"]', "Cortesía de prueba"); await pg.fill('.hoja-item [aria-label="Precio unitario (Q)"]', precio); await pg.click("#ed-guardar"); };
     assert.equal(await pc.locator("#aviso-precio-cero").count(), 0, "sin aviso mientras el precio no es cero");
     await editar(pc, null, "0.00"); await pc.waitForSelector(".hoja-item", { state: "detached" }); await pc.waitForSelector("#aviso-precio-cero");
@@ -61,7 +63,7 @@ function arrancar() {
           return { desborde: document.documentElement.scrollWidth > innerWidth + 1, chicos: innerWidth < 900 ? els.filter((e) => e.getBoundingClientRect().height < 40).map((e) => (e.getAttribute("aria-label") || e.textContent).trim().slice(0, 30)) : [], fuente: innerWidth < 900 ? els.filter((e) => /INPUT|SELECT|TEXTAREA/.test(e.tagName) && parseFloat(getComputedStyle(e).fontSize) < 16).length : 0 }; });
         assert.equal(g.desborde, false, `${nom} ${ruta}: desborde horizontal`); assert.deepEqual(g.chicos, [], `${nom} ${ruta}: objetivos táctiles menores de 40 px: ${g.chicos.join(" | ")}`); assert.equal(g.fuente, 0, `${nom} ${ruta}: campos con fuente menor de 16 px (el navegador haría zoom)`);
       }
-      await q.goto(srv.url + "/#/nueva"); await q.waitForSelector('select[aria-label="Receptor"]'); await q.selectOption('select[aria-label="Receptor"]', { index: 1 }); await q.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
+      await q.goto(srv.url + "/#/nueva"); await esperarNueva(q); await elegirReceptor(q); await q.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
       assert.equal(await q.locator("#fab-agregar").count(), 0, `${nom}: ya no hay botón flotante «+»`);
       await q.click("#agregar-item"); await q.waitForSelector(".hoja-item");
       assert.deepEqual(await q.locator('.hoja-item input[aria-label^="Cantidad"],.hoja-item input[aria-label^="Precio"]').evaluateAll((l) => l.map((e) => e.getAttribute("inputmode"))), ["decimal", "decimal"], `${nom}: teclado numérico en cantidad y precio`);

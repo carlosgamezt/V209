@@ -2,6 +2,7 @@
 // y el proveedor SIMULADO. Sin credenciales, sin red externa, sin SAT. Uso: node e2e.cjs [carpeta-de-capturas]   (FEL_DEMO_URL=http://127.0.0.1:8787 para usar un servidor ya iniciado)
 const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), assert = require("assert/strict");
 const { chromium } = require("playwright");
+const { esperarNueva, elegirReceptor, receptorNuevo, elegirTipo, tipoActual, ID: ID_RECEPTOR } = require("./ayudas_nueva.cjs");
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null;
 if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
@@ -40,8 +41,8 @@ function arrancar() {
   const menu = async (id) => { await p.click("#mas-acciones"); await p.click(id); };   // acción del menú «Más acciones»
   const abrirPrevia = async () => { if (await p.locator("#ver-previa").count()) await p.click("#ver-previa"); else await menu("#mi-previa"); await p.waitForSelector('[data-vista="previa"]'); };
   const crear = async (desc = "Servicio de consultoría", cant = "2", precio = "100") => {   // crea un borrador guardado y devuelve su id
-    await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
-    await p.selectOption('select[aria-label="Receptor"]', { label: /Comercial Los Pinos/ }).catch(async () => { const v = await p.locator('select[aria-label="Receptor"] option', { hasText: "Comercial Los Pinos" }).getAttribute("value"); await p.selectOption('select[aria-label="Receptor"]', v); });
+    await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p);
+    await elegirReceptor(p, /Comercial Los Pinos/);
     const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Casa matriz" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
     await agregarItem(desc, cant, precio);
     await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); return p.url().split("/").pop();
@@ -58,9 +59,9 @@ function arrancar() {
 
   // ============ 2. crear con el emisor: validaciones, agregar y quitar líneas, guardar; el emisor no revisa ni certifica
   await como("marta");
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
+  await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p);
   assert.match(await p.locator(".totales").innerText(), /SIMULADO · SIN VALOR FISCAL/); assert.match(await p.locator(".totales").innerText(), /dato.* por completar/);
-  await p.click("#guardar"); await p.waitForSelector(".validacion"); assert.match(await p.locator(".validacion").innerText(), /Elige el receptor/); assert.match(await p.locator(".validacion").innerText(), /Agrega al menos un ítem/);
+  await p.click("#guardar"); await p.waitForSelector(".validacion"); assert.match(await p.locator(".validacion").innerText(), /Indica el receptor/); assert.match(await p.locator(".validacion").innerText(), /Agrega al menos un ítem/);
   assert.equal(await p.locator("li.paso").count(), 0, "una sola pantalla: sin pasos"); assert.equal(await p.locator("#fab-agregar").count(), 0, "sin botón flotante «+»"); assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, "una acción principal"); assert.equal(await p.locator("#mas-acciones").count(), 1, "y un menú «Más acciones»");
   await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await p.fill('.hoja-item [aria-label="Descripción"]', "Línea de prueba"); await p.fill('.hoja-item [aria-label="Cantidad"]', "abc"); await p.click("#ed-guardar"); assert.match(await p.locator(".hoja-item .err").innerText(), /cantidad/); await p.click("#ed-cancelar"); await p.waitForSelector(".hoja-item", { state: "detached" });
   assert.equal(await p.locator("button.it").count(), 0, "cancelar no agrega nada");
@@ -69,8 +70,7 @@ function arrancar() {
   await p.fill('.hoja-item [aria-label="Valor del descuento"]', "10"); await p.click("#ed-guardar"); await p.waitForSelector(".hoja-item", { state: "detached" });
   await agregarItem("Línea que se quita", "1", "5"); assert.equal(await p.locator("button.it").count(), 2); await p.click('button.it[data-linea="2"]'); await p.click("#ed-quitar"); await p.waitForSelector(".hoja-item", { state: "detached" }); assert.equal(await p.locator("button.it").count(), 1);
   assert.match(await p.locator('button.it[data-linea="1"]').innerText(), /2 × Q 100\.00 · −10%/); assert.match(await p.locator(".totales").innerText(), /Q 180\.00/, "total provisional = 2 × 100 − 10 %");
-  await p.check('input[aria-label="Receptor nuevo"]'); await p.selectOption('select[aria-label="Tipo de identificación"]', "NIT");
-  await p.fill('input[aria-label="Identificación del receptor"]', "5550001-2"); await p.fill('input[aria-label="Nombre del receptor"]', "Cliente nuevo de prueba (ficticio)");
+  await receptorNuevo(p, "NIT", "5550001-2", "Cliente nuevo de prueba (ficticio)");
   const est = await p.locator('select[aria-label="Establecimiento"] option', { hasText: "Sucursal" }).getAttribute("value"); await p.selectOption('select[aria-label="Establecimiento"]', est);
   await foto("02-editor-con-validaciones.png");
   await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); await toast("guardado");
@@ -165,7 +165,7 @@ function arrancar() {
   await p.click("#nuevo-cliente"); await p.fill('input[aria-label="Identificación del cliente"]', "9990001-3"); await p.fill('input[aria-label="Nombre del cliente"]', "Repetido"); await p.click("#guardar-cliente"); await p.waitForSelector(".modal .err:has-text('Ya existe')"); await p.keyboard.press("Escape");
   await p.goto(`${srv.url}/#/conceptos`); await p.waitForSelector("[data-concepto]"); assert.ok(await p.locator("[data-concepto]").count() >= 4);
   await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "SERV-900"); await p.fill('input[aria-label="Descripción del concepto"]', "Concepto de prueba"); await p.fill('input[aria-label="Precio sugerido"]', "77.5"); await p.click("#guardar-concepto"); await toast("Concepto creado");
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]');
+  await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p);
   await p.selectOption('select[aria-label="Agregar un concepto del catálogo"]', await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).getAttribute("value")); assert.match(await p.locator('button.it[data-linea="1"]').innerText(), /Concepto de prueba/); assert.match(await p.locator('button.it[data-linea="1"]').innerText(), /1 × Q 77\.50/);
   await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tabs"); await p.waitForSelector(".tab-cuerpo .datos"); assert.match(await p.locator(".tab-cuerpo").innerText(), /Empresa activa/);
   for (const t of ["establecimientos", "canal", "numeracion", "impuestos", "preferencias"]) { await p.click(`[data-tab="${t}"]`); await p.waitForTimeout(200); }
@@ -203,7 +203,7 @@ function arrancar() {
   await p.goto(`${srv.url}/#/clientes`); await p.reload(); await p.waitForSelector(".indicadores"); await p.fill('input[aria-label="Buscar clientes"]', "Tornillo"); assert.equal(await p.locator('[data-estrella="7654321-4"]').getAttribute("aria-pressed"), "true", "la marca persiste");
   await p.fill('input[aria-label="Buscar clientes"]', ""); await p.check('input[aria-label="Solo frecuentes"]'); const nf = await p.locator("[data-cliente]").count(); assert.ok(nf >= 3 && await p.locator('[data-cliente][data-cliente="CF"]').count() === 0); await p.uncheck('input[aria-label="Solo frecuentes"]');
   await p.fill('input[aria-label="Buscar clientes"]', "Consumidor"); assert.equal(await p.locator('[data-estrella="CF"]').isDisabled(), true, "el consumidor final no es frecuente"); await p.fill('input[aria-label="Buscar clientes"]', "");
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); const ops = await p.locator('select[aria-label="Receptor"] option').allInnerTexts(); assert.match(ops[1], /Comercial Los Pinos/, "los frecuentes salen primero"); assert.ok(ops.findIndex((t) => /Multiservicios/.test(t)) > ops.findIndex((t) => /Ferretería El Tornillo/.test(t)), "un no frecuente va después");
+  await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p); const ops = (await p.evaluate(async () => (await (await fetch("/api/estado", { headers: { "x-demo": "1" } })).json()).clientes)).map((c) => c.nombre); assert.match(ops[0], /Comercial Los Pinos/, "los frecuentes salen primero"); assert.ok(ops.findIndex((t) => /Multiservicios/.test(t)) > ops.findIndex((t) => /Ferretería El Tornillo/.test(t)), "un no frecuente va después"); await p.fill(ID_RECEPTOR, "Co"); assert.match(await p.locator(".rc-sug .sg-ex").first().innerText(), /Comercial Los Pinos/, "las sugerencias respetan el mismo orden"); await p.fill(ID_RECEPTOR, "");
   await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores"); await p.fill('input[aria-label="Buscar clientes"]', "5550001-2");
   await p.click('button[aria-label^="Editar Cliente nuevo de prueba"]'); await p.fill('input[aria-label="Correo del cliente"]', "no-es-correo"); await p.click("#guardar-cliente"); await p.waitForSelector(".modal .err:has-text('correo no es válido')");
   await p.fill('input[aria-label="Correo del cliente"]', "nuevo@cliente.example"); await p.fill('input[aria-label="Teléfono del cliente"]', "2200-7777"); await p.fill('input[aria-label="Nombre del cliente"]', "Cliente editado (ficticio)"); await p.click("#guardar-cliente"); await toast("Cliente actualizado");
@@ -218,7 +218,7 @@ function arrancar() {
   assert.match(await p.locator('[data-concepto="SERV-900"]').innerText(), /Bien/);
   await p.click("#nuevo-concepto"); await p.fill('input[aria-label="Código del concepto"]', "SERV-900"); await p.fill('input[aria-label="Descripción del concepto"]', "Duplicado"); await p.click("#guardar-concepto"); await p.waitForSelector(".modal .err:has-text('Ya existe')"); await p.keyboard.press("Escape");
   await p.click('button[aria-label="Editar Concepto de prueba"]'); await p.click("#estado-concepto"); await toast("Concepto desactivado"); await p.waitForTimeout(200); assert.equal(await p.locator('[data-concepto="SERV-900"]').count(), 0);
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); assert.equal(await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).count(), 0, "un concepto inactivo no se ofrece al facturar");
+  await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p); assert.equal(await p.locator('select[aria-label="Agregar un concepto del catálogo"] option', { hasText: "Concepto de prueba" }).count(), 0, "un concepto inactivo no se ofrece al facturar");
   await p.goto(`${srv.url}/#/conceptos`); await p.check('input[aria-label="Incluir inactivos"]'); await p.click('button[aria-label="Editar Concepto de prueba"]'); await p.click("#estado-concepto"); await toast("Concepto reactivado");
   // empresa: edición con permiso, validación, solo lectura sin permiso, vista previa con los datos nuevos; datos fiscales intactos
   await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tab-cuerpo .datos"); assert.equal(await p.locator(".tab-cuerpo .aviso-azul").count(), 0, "sin avisos azules redundantes en Empresa"); assert.match(await p.locator(".tab-cuerpo").innerText(), /datos fiscales críticos/); assert.match(await p.locator(".tab-cuerpo .aviso-ambar").innerText(), /sin verificar/i); assert.equal(await p.locator(".tab-cuerpo .card").count(), 2);
@@ -226,7 +226,7 @@ function arrancar() {
   await p.fill('input[aria-label="Correo de facturación"]', "nuevo@empresa-demo.example"); await p.fill('input[aria-label="Nombre comercial"]', "Empresa Demo Editada"); await p.click("#guardar-empresa"); await toast("Datos de la empresa guardados");
   const emp = await api("GET", "/api/configuracion"); assert.equal(emp.empresa.telefono, "2200-9999"); assert.equal(emp.empresa.nit, "7770001-0", "el NIT no cambia"); assert.match(emp.empresa.razon_social, /FICTICIA/, "la razón social no cambia");
   assert.match((await api("POST", "/api/empresa", { nombre_comercial: "Intento", telefono: "1" }, "marta")).mensaje, /permiso/i, "el emisor no edita la empresa");
-  await p.goto(`${srv.url}/#/nueva`); await p.waitForSelector('select[aria-label="Receptor"]'); await abrirPrevia(); assert.match(await p.locator('[data-vista="previa"]').innerText(), /2200-9999/, "la vista previa usa los datos guardados"); await p.keyboard.press("Escape");
+  await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p); await abrirPrevia(); assert.match(await p.locator('[data-vista="previa"]').innerText(), /2200-9999/, "la vista previa usa los datos guardados"); await p.keyboard.press("Escape");
   await como("marta"); await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tab-cuerpo .datos"); assert.equal(await p.locator('input[aria-label="Teléfono de la empresa"]').isDisabled(), true); assert.equal(await p.locator("#guardar-empresa").count(), 0);
   // canales: Playwright principal previsto, Digifact secundario, agente sin conexión simulada, activación real bloqueada
   await como("ana"); await p.goto(`${srv.url}/#/config`); await p.waitForSelector(".tabs"); await p.click('[data-tab="canal"]'); await p.waitForSelector('[data-canal="portal_playwright"]');
