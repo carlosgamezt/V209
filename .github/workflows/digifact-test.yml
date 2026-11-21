@@ -11,6 +11,9 @@ name: NEXA FEL · Digifact TEST (manual)
 #  · validar-nuc         Prueba 3: construye y valida la factura de prueba (sin red).
 #  · datos-emisor        SOLO LECTURA: lee de un DTE ya aceptado por SAT los datos del emisor y muestra la factura exacta que se enviaría (requiere «referencia»).
 #  · certificar-test     Prueba 4: UNA certificación en TEST. Exige CERTIFICAR-TEST en «confirmar», la «referencia» mostrada y la «huella_emisor» aprobada.
+#                        CORREO DE LA FACTURA ENVIADO POR DIGIFACT (opcional, apagado por defecto): con_correo = si + confirmar_correo = ENVIAR-CORREO-TEST. El destinatario NUNCA se escribe aquí: viene del secreto
+#                        DEMO_DIGIFACT_CORREO_PRUEBA y debe estar en la lista cerrada DEMO_DIGIFACT_CORREO_DESTINATARIOS. Se verifica que Buyer.Contact.EmailList.Email lleve EXACTAMENTE ese correo y nada más cambie, y se
+#                        bloquea si la referencia ya está certificada. La salida solo lleva el correo enmascarado; «solicitado» no es «entregado» (Digifact no confirma la entrega: se revisa el buzón).
 #  · consulta-posterior  Prueba 5: consulta el DTE certificado por su autorización (UUID).
 #  · descargar           Descarga XML/PDF de un DTE de TEST por su autorización.
 # Secretos de ENTORNO (prefijo DEMO_, solo en este entorno): DEMO_DIGIFACT_TEST_USERNAME, DEMO_DIGIFACT_TEST_PASSWORD, DEMO_DIGIFACT_TEST_NIT; y, solo para consultar-cui-privado, DEMO_DIGIFACT_CUI_PRUEBA (el CUI de prueba autorizado).
@@ -46,6 +49,15 @@ on:
         description: "Huella de los datos del emisor que aprobaste (la muestra «datos-emisor»), para «certificar-test»"
         type: string
         default: ""
+      con_correo:
+        description: "Pedir a Digifact que envíe el correo de la factura al certificar («datos-emisor» lo muestra sin enviar; «certificar-test» lo pide). Apagado por defecto"
+        type: choice
+        options: ["no", "si"]
+        default: "no"
+      confirmar_correo:
+        description: "Solo con con_correo = si: escribe ENVIAR-CORREO-TEST. NO escribas aquí ningún correo (el destinatario viene de un secreto)"
+        type: string
+        default: ""
 permissions:
   contents: read
 concurrency:
@@ -62,6 +74,9 @@ jobs:
       - name: Confirmación explícita
         if: inputs.paso == 'certificar-test' && inputs.confirmar != 'CERTIFICAR-TEST'
         run: echo "Para certificar en TEST hay que escribir CERTIFICAR-TEST en «confirmar»."; exit 1
+      - name: Confirmación explícita (correo de la factura por Digifact)
+        if: inputs.con_correo == 'si' && inputs.paso == 'certificar-test' && inputs.confirmar_correo != 'ENVIAR-CORREO-TEST'
+        run: echo "Para pedir el correo hay que escribir ENVIAR-CORREO-TEST en «confirmar_correo» (con_correo = si)."; exit 1
       - name: Confirmación explícita (consulta privada de NIT)
         if: inputs.paso == 'consultar-nit-privado' && inputs.confirmar != 'CONSULTAR-NIT-TEST'
         run: echo "Para la consulta privada de NIT hay que escribir CONSULTAR-NIT-TEST en «confirmar»."; exit 1
@@ -85,10 +100,15 @@ jobs:
           DIGIFACT_AUTORIZACION: ${{ inputs.autorizacion }}
           DIGIFACT_REFERENCIA: ${{ inputs.referencia }}
           DIGIFACT_HUELLA_EMISOR: ${{ inputs.huella_emisor }}
+          DIGIFACT_CON_CORREO: ${{ inputs.con_correo }}
+          DIGIFACT_CONFIRMAR_CORREO: ${{ inputs.confirmar_correo }}
+          # los secretos del correo solo se entregan cuando hacen falta: comprobar su presencia, vista previa (datos-emisor) o certificar con correo
+          DIGIFACT_CORREO_PRUEBA: ${{ (inputs.paso == 'credenciales-presentes' || (inputs.con_correo == 'si' && (inputs.paso == 'datos-emisor' || inputs.paso == 'certificar-test'))) && secrets.DEMO_DIGIFACT_CORREO_PRUEBA || '' }}
+          DIGIFACT_CORREO_DESTINATARIOS: ${{ (inputs.paso == 'credenciales-presentes' || (inputs.con_correo == 'si' && (inputs.paso == 'datos-emisor' || inputs.paso == 'certificar-test'))) && secrets.DEMO_DIGIFACT_CORREO_DESTINATARIOS || '' }}
         run: |
           case "$PASO" in autenticar|credenciales-presentes|consultar-nit-privado|consultar-cui-privado|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar) ;; *) echo "Paso no válido"; exit 2;; esac
           cd fel/proveedores
-          deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CUI_PRUEBA,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_REFERENCIA,DIGIFACT_HUELLA_EMISOR --allow-read --allow-write=./salida digifact_prueba.ts "$PASO"
+          deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CUI_PRUEBA,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_REFERENCIA,DIGIFACT_HUELLA_EMISOR,DIGIFACT_CON_CORREO,DIGIFACT_CONFIRMAR_CORREO,DIGIFACT_CORREO_PRUEBA,DIGIFACT_CORREO_DESTINATARIOS --allow-read --allow-write=./salida digifact_prueba.ts "$PASO"
       # solo los documentos de TEST de una certificación; se borran al día siguiente
       - name: Documentos de la certificación de prueba
         if: inputs.paso == 'certificar-test' && always()

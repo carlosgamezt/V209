@@ -25,6 +25,9 @@ El correo sale **solo al certificar**, si el XML trae el correo en el nodo del r
 - El módulo propio rechaza enviar (`lo_envia_digifact`) cualquier documento para el que ya se pidió el correo a Digifact.
 - En TEST solo salen correos a buzones de la lista autorizada (no sabemos si Digifact entrega los de TEST a la dirección real).
 
+## Primera prueba real
+Plan, controles, procedimiento exacto y reversión: [`digifact/PRUEBA-CORREO-DIGIFACT-TEST.md`](digifact/PRUEBA-CORREO-DIGIFACT-TEST.md) (camino A: flujo manual `demo-privada`; **sin ejecutar ni autorizado**).
+
 ## Pendiente (consulta a Digifact, borrador sin enviar)
 [`digifact/borrador-consulta-plantilla-correo.md`](digifact/borrador-consulta-plantilla-correo.md): logotipo y colores, alcance por NIT/integrador/global (multiempresa), datos del XML visibles, `AdditionalDocumentInfo.DocTemplate`, costo, comportamiento en TEST y efecto de `Seller.Contact.EmailList`. Diseño de referencia: [`digifact/plantilla-correo-propuesta.html`](digifact/plantilla-correo-propuesta.html) (el nombre comercial del correo es el del XML; **no se alteran datos fiscales por decoración**).
 

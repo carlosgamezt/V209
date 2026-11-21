@@ -7,6 +7,7 @@ import { consultaNitPrivada, presenciaCredenciales } from "./src/consulta_nit_pr
 import { consultaCuiPrivada, presenciaCuiPrueba } from "./src/consulta_cui_privada.ts";
 import { construirNuc, NucInvalido, type FacturaGt } from "./src/nuc_gt.ts";
 import { type DatosEmisor, extraerEmisorDeDte, huellaEmisor } from "./src/datos_emisor.ts";
+import { conCorreo, estadoDeLaReferencia, nucParaMostrar, presenciaCorreoPrueba, resolverCorreoDePrueba, sha256Hex, verificarNucConCorreo } from "./src/correo_prueba.ts";
 
 const NECESARIAS = ["DIGIFACT_TEST_USERNAME", "DIGIFACT_TEST_PASSWORD", "DIGIFACT_TEST_NIT"] as const;
 const UUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
@@ -98,7 +99,7 @@ async function main() {
       return;
     }
     case "credenciales-presentes": {   // SOLO presencia (sí/no): sin red, sin valores, sin longitudes
-      const c = presenciaCredenciales((k) => Deno.env.get(k)); out({ prueba: "credenciales-presentes", ambiente: "TEST", credenciales: c, cuiPrueba: presenciaCuiPrueba((k) => Deno.env.get(k)), ok: c.usuario && c.clave && c.nit }); if (!(c.usuario && c.clave && c.nit)) Deno.exit(1);
+      const c = presenciaCredenciales((k) => Deno.env.get(k)); out({ prueba: "credenciales-presentes", ambiente: "TEST", credenciales: c, cuiPrueba: presenciaCuiPrueba((k) => Deno.env.get(k)), correoPrueba: presenciaCorreoPrueba((k) => Deno.env.get(k)), ok: c.usuario && c.clave && c.nit }); if (!(c.usuario && c.clave && c.nit)) Deno.exit(1);
       return;
     }
     case "consultar-nit-privado": {   // UNA consulta real al ambiente TEST del NIT de la propia cuenta; la salida no lleva ningún dato personal (ver src/consulta_nit_privada.ts)
@@ -127,26 +128,47 @@ async function main() {
       const problemas = verificarEmisorEsperado(r.datos);
       let nuc: Record<string, unknown> | null = null, errores: unknown = null;
       try { nuc = construirNuc(facturaDePruebaTest(r.datos, ref)); } catch (e) { errores = e instanceof NucInvalido ? e.errores : [String(e)]; }
-      out({ prueba: "datos-emisor", ok: problemas.length === 0 && nuc !== null, fuente: r.fuente, emisorValidado: r.datos, huellaEmisor: await huellaEmisor(r.datos), discrepanciasConLoEsperado: problemas, errores, facturaQueSeEnviaria: nuc, nota: "IssuedDateTime se fija al momento de ejecutar (hora de Guatemala)" });
-      if (problemas.length || !nuc) Deno.exit(1);
+      // correo de la factura enviado por Digifact (solo si la ejecución lo pide con «con_correo = si»): se muestra ENMASCARADO y se verifica el nodo exacto; sin pedirlo, la salida es la de siempre
+      const cp = resolverCorreoDePrueba((k) => Deno.env.get(k)); let correoInfo: Record<string, unknown> | null = null, nucMostrar: Record<string, unknown> | null = nuc, correoOk = true;
+      if (cp.estado === "bloqueado") { correoInfo = { estado: "bloqueado", motivo: cp.motivo }; correoOk = false; }
+      else if (cp.estado === "listo" && nuc) {
+        try { const conC = construirNuc(conCorreo(facturaDePruebaTest(r.datos, ref), cp.correo)); const v = verificarNucConCorreo(nuc, conC, cp.correo);
+          correoInfo = { estado: "listo", destinatario: cp.enmascarado, cantidadDeCorreosEnElNuc: v.cantidad, nodoExactoYSinOtrosCambios: v.ok, problemas: v.problemas, nota: "Es una vista previa: NO se envió nada. «Solicitado» no es «entregado»." }; correoOk = v.ok; nucMostrar = nucParaMostrar(conC); }
+        catch (e) { correoInfo = { estado: "bloqueado", motivo: "nuc_no_valido_con_correo", errores: e instanceof NucInvalido ? e.errores : [String(e)] }; correoOk = false; }
+      }
+      out({ prueba: "datos-emisor", ok: problemas.length === 0 && nuc !== null && correoOk, fuente: r.fuente, emisorValidado: r.datos, huellaEmisor: await huellaEmisor(r.datos), discrepanciasConLoEsperado: problemas, errores, facturaQueSeEnviaria: nucMostrar, ...(correoInfo ? { correo: correoInfo } : {}), nota: "IssuedDateTime se fija al momento de ejecutar (hora de Guatemala)" });
+      if (problemas.length || !nuc || !correoOk) Deno.exit(1);
       return;
     }
     case "certificar-test": {   // PRUEBA 4: UNA certificación en TEST, solo con la confirmación literal, la referencia mostrada y la huella del emisor aprobada
       if (Deno.env.get("DIGIFACT_CONFIRMAR") !== "CERTIFICAR-TEST") salir("Falta la confirmación explícita: DIGIFACT_CONFIRMAR=CERTIFICAR-TEST", 3);
       const ref = Deno.env.get("DIGIFACT_REFERENCIA") ?? ""; if (!UUID.test(ref)) salir("Falta DIGIFACT_REFERENCIA (la referencia interna que se mostró para aprobar)", 2);
       const aprobada = Deno.env.get("DIGIFACT_HUELLA_EMISOR") ?? ""; if (!/^[0-9a-f]{16}$/.test(aprobada)) salir("Falta DIGIFACT_HUELLA_EMISOR (la huella de los datos del emisor que aprobaste)", 2);
+      const cp = resolverCorreoDePrueba((k) => Deno.env.get(k));   // ANTES de cualquier llamada a la red: si se pidió el correo y algo no está en regla, no se envía nada
+      if (cp.estado === "bloqueado") { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, correo: { estado: "bloqueado", motivo: cp.motivo } }); Deno.exit(1); }
       const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw");
       let r; try { r = await descubrirEmisor(c); } catch (e) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, error: errorLegible(e) }); Deno.exit(1); }
       if (!r.ok) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, motivo: r.motivo }); Deno.exit(1); }
       const huella = await huellaEmisor(r.datos), problemas = verificarEmisorEsperado(r.datos);
       if (huella !== aprobada || problemas.length) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, motivo: huella !== aprobada ? "los datos del emisor ya no coinciden con los que se aprobaron" : "el emisor no coincide con lo esperado", problemas }); Deno.exit(1); }
       let nuc: Record<string, unknown>; try { nuc = construirNuc(facturaDePruebaTest(r.datos, ref)); } catch (e) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, errores: e instanceof NucInvalido ? e.errores : [String(e)] }); Deno.exit(1); }
+      if (cp.estado === "listo") {   // el NUC que se envía lleva el correo; se comprueba el nodo exacto y que no cambió nada más, y se evita repetir una referencia ya certificada
+        let conC: Record<string, unknown>; try { conC = construirNuc(conCorreo(facturaDePruebaTest(r.datos, ref), cp.correo)); } catch (e) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, correo: { estado: "bloqueado", motivo: "nuc_no_valido_con_correo", errores: e instanceof NucInvalido ? e.errores : [String(e)] } }); Deno.exit(1); }
+        const v = verificarNucConCorreo(nuc, conC, cp.correo); if (!v.ok) { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, correo: { estado: "bloqueado", motivo: "nodo_de_correo_no_exacto", problemas: v.problemas } }); Deno.exit(1); }
+        const er = await estadoDeLaReferencia(c, fechaGt(), ref, Number(r.datos.codigoEstablecimiento)); if (er !== "no_encontrada") { out({ prueba: "certificar-test", ok: false, noSeEnvioNada: true, referenciaInterna: ref, correo: { estado: "bloqueado", motivo: er === "ya_certificada" ? "la_referencia_ya_esta_certificada_no_se_repite" : "no_se_pudo_verificar_que_la_referencia_sea_nueva" } }); Deno.exit(1); }
+        nuc = conC;
+      }
       let res; try { res = await c.certificar(nuc, { referencia: ref, formatos: ["XML", "PDF"] }); } catch (e) { out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, noSeProceso: true, error: errorLegible(e) }); Deno.exit(1); }
       if (res.tipo === "certificado") {
         const dir = Deno.env.get("DIGIFACT_SALIDA") ?? "./salida"; await Deno.mkdir(dir, { recursive: true });
         const guarda = async (n: string, b64?: string) => { if (b64) await Deno.writeFile(`${dir}/${n}`, Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0))); return !!b64; };
         const xml = await guarda(`${res.autorizacion}.xml`, res.artefactos.xml), pdf = await guarda(`${res.autorizacion}.pdf`, res.artefactos.pdf);
-        out({ prueba: "certificar-test", ok: true, referenciaInterna: ref, codigoDeRespuesta: res.crudoSaneado.code ?? null, mensaje: res.crudoSaneado.message ?? null, autorizacionUuid: res.autorizacion, serie: res.serie, numero: res.numero, fechaCertificacion: res.fechaCertificacion, xmlRecibido: xml, pdfRecibido: pdf });
+        const bytes = (b64?: string) => (b64 ? Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)) : null);
+        const bx = bytes(res.artefactos.xml), bp = bytes(res.artefactos.pdf);
+        const correoRecibido = cp.estado === "listo" && bx ? (/CorreoReceptor="([^"]*)"/.exec(new TextDecoder().decode(bx))?.[1] ?? null) : null;
+        out({ prueba: "certificar-test", ok: true, referenciaInterna: ref, codigoDeRespuesta: res.crudoSaneado.code ?? null, mensaje: res.crudoSaneado.message ?? null, autorizacionUuid: res.autorizacion, serie: res.serie, numero: res.numero, fechaCertificacion: res.fechaCertificacion, xmlRecibido: xml, pdfRecibido: pdf,
+          sha256Xml: bx ? await sha256Hex(bx as Uint8Array<ArrayBuffer>) : null, sha256Pdf: bp ? await sha256Hex(bp as Uint8Array<ArrayBuffer>) : null,
+          ...(cp.estado === "listo" ? { correo: { estado: "solicitado_a_digifact", destinatario: cp.enmascarado, entregaConfirmada: false, xmlCertificadoTraeCorreoReceptor: correoRecibido === null ? null : correoRecibido.toLowerCase() === cp.correo.toLowerCase(), nota: "Digifact no confirma la entrega: revisa el buzón autorizado y compara los adjuntos con sha256Xml/sha256Pdf." } } : {}) });
       } else if (res.tipo === "rechazado_confirmado") { out({ prueba: "certificar-test", ok: false, referenciaInterna: ref, rechazo: { codigo: res.codigo, mensaje: res.mensaje } }); Deno.exit(1); }
       else {   // desconocido: NUNCA se reenvía; se consulta y se concilia por la referencia interna (hasta 4 consultas espaciadas)
         let conciliacion: unknown = null;
@@ -165,7 +187,7 @@ async function main() {
     case "descargar": {
       const aut = Deno.env.get("DIGIFACT_AUTORIZACION"); if (!aut) salir("Falta DIGIFACT_AUTORIZACION (UUID del DTE certificado)", 2);
       const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw");
-      try { const r = await c.obtenerDocumento(aut!, ["XML", "PDF"]); out({ prueba: "descargar", ok: r.encontrado, xml: r.encontrado && !!r.artefactos.xml, pdf: r.encontrado && !!r.artefactos.pdf }); if (!r.encontrado) Deno.exit(1); }
+      try { const r = await c.obtenerDocumento(aut!, ["XML", "PDF"]); const h = async (b64?: string) => (b64 ? await sha256Hex(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)) as Uint8Array<ArrayBuffer>) : null); out({ prueba: "descargar", ok: r.encontrado, xml: r.encontrado && !!r.artefactos.xml, pdf: r.encontrado && !!r.artefactos.pdf, sha256Xml: r.encontrado ? await h(r.artefactos.xml) : null, sha256Pdf: r.encontrado ? await h(r.artefactos.pdf) : null }); if (!r.encontrado) Deno.exit(1); }
       catch (e) { out({ prueba: "descargar", ok: false, error: errorLegible(e) }); Deno.exit(1); }
       return;
     }
