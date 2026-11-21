@@ -29,6 +29,7 @@ async function montar(env: Record<string, string>) {
   const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
     if (p.ruta === "/login/get_token") return ok({ token: TOKEN });
     if (p.ruta.startsWith("/v2/transform/nuc_json")) { nucs.push(JSON.parse(p.cuerpo!)); return ok({ code: "1", message: "Procesado Correctamente", authNumber: AUT, batch: "A001", serial: "5", enrolledTimeStamp: "2026-11-16T10:00:05", responseData1: btoa("<x/>"), responseData3: btoa("%PDF-1.4") }); }
+    if (p.ruta.startsWith("/Shared")) return ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] });   // reporte de acuses: Digifact todavía no tiene la referencia (chequeo previo de solo lectura)
     return ok({}, 404);
   };
   const cliente = new DigifactGt({ nit: "5888492", usuario: "USUARIO_TEST", obtenerClave: () => CLAVE, transporte });

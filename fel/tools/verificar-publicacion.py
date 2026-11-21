@@ -206,11 +206,22 @@ _pn = _yaml.safe_load(open(R, encoding="utf-8")); _txt_pn = open(R, encoding="ut
 _ent = _pn[True]["workflow_dispatch"]["inputs"].get("digifact", {})
 if _ent.get("default") == "apagado" and _ent.get("options") == ["apagado", "habilitado"]: ok("[publicar-nube] Digifact TEST llega a la función solo si eliges «habilitado» en la ejecución (por defecto: apagado)")
 else: mal("[publicar-nube] el interruptor «digifact» debe ser apagado/habilitado con valor por defecto apagado")
-_dg = [l for l in _txt_pn.splitlines() if re.search(r"secrets\.DEMO_DIGIFACT", l)]
+_dg_todos = [l for l in _txt_pn.splitlines() if re.search(r"secrets\.DEMO_DIGIFACT", l)]
+_dg_correo = [l for l in _dg_todos if "DEMO_DIGIFACT_CORREO_DESTINATARIOS" in l]; _dg = [l for l in _dg_todos if l not in _dg_correo]   # el correo tiene su propio interruptor (verificado más abajo)
 if _dg and all("inputs.digifact == 'habilitado'" in l for l in _dg): ok(f"[publicar-nube] los {len(_dg)} secretos de Digifact solo se cargan con digifact=habilitado")
 else: mal("[publicar-nube] hay un secreto de Digifact que se carga sin el interruptor")
-if len({x for x in re.findall(r"secrets\.(DEMO_DIGIFACT_\w+)", _txt_pn)}) == 6 and "DEMO_DIGIFACT_TEST_PASSWORD" in _txt_pn: ok("[publicar-nube] los secretos de Digifact son DEMO_* y están en el mismo único paso que los demás")
+if len({x for x in re.findall(r"secrets\.(DEMO_DIGIFACT_\w+)", _txt_pn)}) == 7 and "DEMO_DIGIFACT_TEST_PASSWORD" in _txt_pn: ok("[publicar-nube] los secretos de Digifact son DEMO_* y están en el mismo único paso que los demás")
 else: mal("[publicar-nube] conjunto inesperado de secretos de Digifact")
+# ---- correo de la factura por Digifact: INDEPENDIENTE (otro interruptor, apagado por defecto), solo interruptor + empresa + lista cerrada de destinatarios; nunca credenciales, emisor, huella ni referencia
+_ec = _pn[True]["workflow_dispatch"]["inputs"].get("digifact_correo", {})
+if _ec.get("default") == "apagado" and _ec.get("options") == ["apagado", "habilitado"] and "digifact_correo_empresa" in _pn[True]["workflow_dispatch"]["inputs"]: ok("[publicar-nube] el correo por Digifact es otro interruptor («digifact_correo»), apagado por defecto, con su empresa")
+else: mal("[publicar-nube] falta el interruptor «digifact_correo» (apagado/habilitado, por defecto apagado) con su empresa")
+_lc = [l for l in _txt_pn.splitlines() if re.search(r"FEL_DIGIFACT_CORREO\w*:", l)]
+if len(_lc) == 3 and all("inputs.digifact_correo == 'habilitado'" in l for l in _lc) and len(_dg_correo) == 1 and "inputs.digifact_correo == 'habilitado'" in _dg_correo[0] and not any(re.search(r"DEMO_DIGIFACT_(TEST|CUI)", l) for l in _lc): ok("[publicar-nube] el correo solo carga su interruptor, su empresa y la lista cerrada (secreto del entorno protegido), y solo con digifact_correo=habilitado: nunca credenciales, emisor ni referencia")
+else: mal("[publicar-nube] las variables del correo no cumplen la disciplina de secretos (solo interruptor, empresa y lista, solo con su interruptor)")
+_sh_correo = sb[sb.index('case "${FEL_DIGIFACT_CORREO:-}" in'):sb.index("    # APAGAR DE VERDAD")] if 'case "${FEL_DIGIFACT_CORREO:-}" in' in sb else ""
+if _sh_correo and "todo o nada" in _sh_correo and "no habilita la certificación" in _sh_correo and not re.search(r"DIGIFACT_TEST_(USERNAME|PASSWORD|NIT)|FEL_DIGIFACT_TEST_(EMISOR|HUELLA)", _sh_correo.replace("DIGIFACT_TEST_(USERNAME", "")) and "SECRETOS_CORREO" in sb: ok("[funcion] el correo por Digifact es todo o nada, no lleva credenciales ni datos del emisor y no habilita la certificación; se retira de verdad al apagarlo")
+else: mal("[funcion] el bloque del correo por Digifact no cumple (todo o nada, sin credenciales, sin habilitar la certificación)")
 # ---- consulta de NIT por Digifact TEST: INDEPENDIENTE de la certificación (otro interruptor, solo las credenciales de consulta, nunca el emisor ni la huella ni la autorización de una prueba)
 _en = _pn[True]["workflow_dispatch"]["inputs"].get("digifact_nit", {})
 if _en.get("default") == "apagado" and _en.get("options") == ["apagado", "habilitado"]: ok("[publicar-nube] la consulta de NIT por Digifact TEST es otro interruptor («digifact_nit»), apagado por defecto")
@@ -260,14 +271,29 @@ else: mal("[publicar-nube.sh] falta comprobar la CLI de unset/list o las lectura
 _wk = open("fel/demo-facturacion/nube/pages/worker.ts", encoding="utf-8").read()
 if not re.search(r"DIGIFACT|digifact", _wk): ok("[cloudflare] el intermediario de Cloudflare no conoce nada de Digifact: ningún secreto fiscal llega ni al navegador ni a Cloudflare")
 else: mal("[cloudflare] el worker menciona Digifact")
-# ---- la migración 29 es solo una PROPUESTA: el conjunto ejecutable sigue siendo exactamente el aprobado (28) hasta que se autorice su aplicación
+# ---- migración 29 (almacén persistente de Digifact): el conjunto ejecutable son EXACTAMENTE las 28 aprobadas (inmutables, con su huella) + la 29; ninguna otra
 _mig = sorted(os.path.basename(f) for f in glob.glob("fel/supabase/migrations/*.sql"))
-if len(_mig) == 28 and _mig[-1].startswith("20261113000100_") and not any("digifact_operaciones" in m or m.startswith("2026111400") for m in _mig): ok("[migración 29] fuera de supabase/migrations: el conjunto ejecutable son exactamente las 28 aprobadas (la última, 20261113000100)")
+M29 = "20261114000100_fel_digifact_operaciones.sql"
+if len(_mig) == 29 and _mig[-1] == M29 and not any(m > M29 for m in _mig): ok("[migración 29] el conjunto ejecutable son exactamente las 29 (las 28 aprobadas + la 29, la última 20261114000100)")
 else: mal(f"[migración 29] el conjunto de migraciones ejecutables cambió ({len(_mig)} archivos, última {_mig[-1] if _mig else '—'}): una migración nueva exige autorización expresa")
-if os.path.exists("fel/docs/migracion-29/20261114000100_fel_digifact_operaciones.sql"): ok("[migración 29] la propuesta sigue en docs/migracion-29")
-else: mal("[migración 29] falta la propuesta en docs/migracion-29")
-if "20261114" not in sb and "ESPERADAS=29" not in sb: ok("[migración 29] las etapas de supabase-hospedado.sh solo conocen hasta la migración 28 (no hay etapa 3 todavía)")
-else: mal("[migración 29] supabase-hospedado.sh ya menciona la 29")
+_inm = [l.split() for l in open("fel/supabase/tests/inmutables_migraciones_1_28.sha256", encoding="utf-8").read().splitlines() if l.strip()]
+_cambiadas = [r for h, r in _inm if (not os.path.exists(r)) or hashlib.sha256(open(r, "rb").read()).hexdigest() != h]
+if len(_inm) == 28 and not _cambiadas: ok("[migración 29] las 28 migraciones anteriores no cambiaron (huella SHA-256 de cada archivo)")
+else: mal(f"[migración 29] cambió una de las 28 migraciones aprobadas: {_cambiadas[:3]}")
+_m29 = open("fel/supabase/migrations/" + M29, encoding="utf-8").read() if os.path.exists("fel/supabase/migrations/" + M29) else ""
+_m29c = re.sub(r"--[^\n]*", "", _m29)
+_mal29 = [x for x in (re.findall(r"\bdrop\s+\w+", _m29c, re.I) + re.findall(r"\btruncate\b", _m29c, re.I) + re.findall(r"\bdelete\s+from\b", _m29c, re.I)
+                      + [m for m in re.findall(r"\b(?:update|insert\s+into|alter\s+table|create\s+trigger\s+\w+\s+\w+\s+\w+(?:\s+or\s+\w+)*\s+on)\s+(?:only\s+)?public\.(\w+)", _m29c, re.I) if not m.startswith("digifact_")]
+                      + re.findall(r"\bgrant\b", _m29c, re.I))]
+if _m29 and not _mal29 and "enable row level security" in _m29c and _m29c.count("revoke all on public.digifact_") == 2: ok("[migración 29] es ADITIVA: sin DROP/TRUNCATE/DELETE, sin tocar tablas ajenas, sin ningún GRANT y con RLS y revoke en sus dos tablas")
+else: mal(f"[migración 29] no es aditiva o abre privilegios: {_mal29[:5]}")
+if all(os.path.exists(f"fel/docs/migracion-29/{x}") for x in ("verificacion-posterior-29.sql", "reversion-29.sql")) and os.path.exists("fel/supabase/tests/29_digifact_operaciones.sql") and os.path.exists("fel/supabase/tests/procedimiento_migracion_29.sh"): ok("[migración 29] existen su verificación posterior, su reversión segura y sus pruebas")
+else: mal("[migración 29] falta la verificación posterior, la reversión o sus pruebas")
+_rev = open("fel/docs/migracion-29/reversion-29.sql", encoding="utf-8").read() if os.path.exists("fel/docs/migracion-29/reversion-29.sql") else ""
+if "REVERSIÓN 29 RECHAZADA" in _rev and "count(*) into a" in _rev and _rev.index("RECHAZADA") < _rev.index("drop table"): ok("[migración 29] la reversión comprueba las filas ANTES de cualquier DROP y se niega si hay rastro de certificaciones")
+else: mal("[migración 29] la reversión no se niega con datos antes de borrar")
+if "ESPERADAS=29" in sb and "20261114000100" in sb and "docs/migracion-29/verificacion-posterior-29.sql" in sb and "EXACTAMENTE las $ANT migraciones anteriores" in sb: ok("[migración 29] supabase-hospedado.sh conoce la etapa 3 con sus precondiciones (28 exactas, 29 ausente, catálogo de la 28 sano)")
+else: mal("[migración 29] falta la etapa 3 o sus precondiciones en supabase-hospedado.sh")
 
 # ---- correo de facturas (propio, con Resend): la propuesta del historial vive fuera de supabase/migrations y NINGUNA etapa de publicación lo conoce todavía (nada de correo real se publica sin autorización)
 if os.path.exists("fel/docs/migracion-correo/20261121000100_fel_correo_envios.sql") and not any("correo" in m for m in _mig): ok("[correo] la propuesta del historial de envíos está en docs/migracion-correo, fuera de supabase/migrations")

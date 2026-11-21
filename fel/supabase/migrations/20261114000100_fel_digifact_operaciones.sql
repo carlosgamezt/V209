@@ -1,8 +1,24 @@
--- PROPUESTA (migración 29, NO aplicada a ninguna base hospedada y fuera de supabase/migrations a propósito: el conjunto aprobado sigue siendo 1–28).
--- Almacén persistente de las operaciones de certificación con Digifact (TEST): una operación = un intento de certificar UN documento, con su referencia determinista.
--- Garantías en la propia base (no solo en el código): una sola operación que bloquea por documento (enviando/certificada/desconocida), la misma referencia no se prepara dos veces,
--- una autorización de Digifact no se repite dentro de la empresa, los datos de identidad de la operación no se pueden cambiar y solo existen las transiciones de estado válidas.
--- Solo la usa el servidor (rol propietario): RLS activo y sin privilegios para anon/authenticated/service_role. No guarda credenciales, tokens ni el XML/PDF (eso es una fase posterior).
+-- NEXA FEL · migración 29: almacén persistente de las certificaciones de Digifact (TEST) y aplicación de la certificación al documento.
+-- ADITIVA: crea 2 tablas, 3 funciones y sus índices/disparadores; no modifica ninguna tabla, función, política ni dato de las migraciones 1–28.
+-- Una operación = un intento de certificar UN documento, con su referencia determinista. Garantías EN LA PROPIA BASE (no solo en el código): una sola operación que bloquea por documento
+-- (enviando/certificada/desconocida), la misma referencia no se prepara dos veces, una autorización de Digifact no se repite dentro de la empresa, la identidad de la operación no cambia,
+-- solo existen las transiciones de estado válidas, nada se borra y los XML/PDF son de solo inserción con su SHA-256 verificado por la base.
+-- Aislamiento por empresa EN LA BASE: toda clave foránea es compuesta e incluye empresa_id (operación→documento y artefacto→operación), así que una fila no puede apuntar a datos de otra empresa aunque el código se equivocara.
+-- Privilegios: ninguna tabla ni función es accesible para anon, authenticated ni service_role (solo el rol propietario, que es el que usa el servidor de NEXA FEL por conexión directa). RLS activado y sin políticas.
+-- No guarda credenciales ni tokens. La reversión segura y la verificación posterior viven fuera de las migraciones: docs/migracion-29/.
+
+-- Precondiciones: se aplica SOLO sobre un esquema con las 28 migraciones y sin rastro de la 29 (si algo no cuadra, no se crea nada y el mensaje dice qué).
+do $$ begin
+  if to_regclass('public.digifact_operaciones') is not null or to_regclass('public.digifact_artefactos') is not null
+     or exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('fel_digifact_op_guarda', 'fel_digifact_art_guarda', 'fel_sys_digifact_aplicar')) then
+    raise exception 'PRECONDICIÓN 29: ya existen objetos de la migración 29; no se vuelve a aplicar' using errcode = 'P0001'; end if;
+  if not exists (select 1 from pg_trigger where tgname = 'empresas_no_borrar' and tgrelid = 'public.empresas'::regclass) then
+    raise exception 'PRECONDICIÓN 29: falta la migración 28 (las empresas aún se podrían borrar)' using errcode = 'P0001'; end if;
+  if not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname = 'fel__fiscal_cambiar') then
+    raise exception 'PRECONDICIÓN 29: falta fel__fiscal_cambiar (migraciones anteriores)' using errcode = 'P0001'; end if;
+  if not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname = 'fel_auditar') then
+    raise exception 'PRECONDICIÓN 29: falta fel_auditar (migraciones anteriores)' using errcode = 'P0001'; end if;
+end $$;
 
 create table public.digifact_operaciones (
   id                    uuid primary key,
@@ -21,6 +37,7 @@ create table public.digifact_operaciones (
   intento_del_documento integer not null check (intento_del_documento >= 0),
   intentos_conciliacion integer not null default 0 check (intentos_conciliacion >= 0),
   resultado             jsonb check (resultado is null or jsonb_typeof(resultado) = 'object'),
+  unique (id, empresa_id),                                                                 -- destino de la clave foránea compuesta de los artefactos
   foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id)     -- una operación jamás apunta al documento de otra empresa
 );
 create unique index digifact_op_una_que_bloquea_uq on public.digifact_operaciones (empresa_id, documento_id) where estado in ('enviando','certificada','desconocida');
@@ -28,9 +45,13 @@ create unique index digifact_op_preparada_uq        on public.digifact_operacion
 create unique index digifact_op_autorizacion_uq     on public.digifact_operaciones (empresa_id, (resultado ->> 'autorizacion')) where resultado ->> 'autorizacion' is not null;
 create index digifact_op_documento_idx on public.digifact_operaciones (empresa_id, documento_id, creada_ms);
 
-create function public.fel_digifact_op_guarda() returns trigger language plpgsql set search_path = pg_catalog, public as $$
+create function public.fel_digifact_op_guarda() returns trigger language plpgsql set search_path = '' as $$
 begin
   if tg_op = 'DELETE' then raise exception 'FEL_DIGIFACT: las operaciones de certificación no se borran' using errcode = 'P0001'; end if;
+  if tg_op = 'INSERT' then   -- toda operación nace «preparada», sin resultado: el estado solo avanza por las transiciones válidas
+    if new.estado <> 'preparada' or new.resultado is not null or new.intentos_conciliacion <> 0 then raise exception 'FEL_DIGIFACT: una operación nueva solo puede crearse «preparada» y sin resultado' using errcode = 'P0001'; end if;
+    return new;
+  end if;
   if new.id is distinct from old.id or new.empresa_id is distinct from old.empresa_id or new.documento_id is distinct from old.documento_id or new.referencia is distinct from old.referencia
      or new.hash is distinct from old.hash or new.huella_emisor is distinct from old.huella_emisor or new.fecha_emision is distinct from old.fecha_emision
      or new.establecimiento is distinct from old.establecimiento or new.total is distinct from old.total or new.actor_id is distinct from old.actor_id
@@ -50,7 +71,7 @@ begin
   if new.actualizada_ms < old.actualizada_ms then raise exception 'FEL_DIGIFACT: la fecha de actualización no retrocede' using errcode = 'P0001'; end if;
   return new;
 end $$;
-create trigger digifact_op_guarda before update or delete on public.digifact_operaciones for each row execute function public.fel_digifact_op_guarda();
+create trigger digifact_op_guarda before insert or update or delete on public.digifact_operaciones for each row execute function public.fel_digifact_op_guarda();
 revoke all on function public.fel_digifact_op_guarda() from public, anon, authenticated, service_role;
 
 alter table public.digifact_operaciones enable row level security;
@@ -72,13 +93,13 @@ create table public.digifact_artefactos (
   contenido    bytea not null,
   origen       text not null default 'digifact_test' check (origen = 'digifact_test'),
   creado_en    timestamptz not null default now(),
-  foreign key (operacion_id) references public.digifact_operaciones (id),
+  foreign key (operacion_id, empresa_id) references public.digifact_operaciones (id, empresa_id),   -- un artefacto jamás apunta a la operación de otra empresa
   foreign key (documento_id, empresa_id) references public.documentos (id, empresa_id),
   unique (operacion_id, tipo),
   check (sha256 = encode(sha256(contenido), 'hex') and tamano = octet_length(contenido)),
   check ((tipo = 'xml' and mime = 'application/xml') or (tipo = 'pdf' and mime = 'application/pdf'))
 );
-create function public.fel_digifact_art_guarda() returns trigger language plpgsql set search_path = pg_catalog, public as $$
+create function public.fel_digifact_art_guarda() returns trigger language plpgsql set search_path = '' as $$
 declare o public.digifact_operaciones;
 begin
   if tg_op <> 'INSERT' then raise exception 'FEL_APPEND_ONLY: los artefactos de Digifact son de solo inserción' using errcode = 'P0001'; end if;
@@ -117,5 +138,5 @@ begin
   perform public.fel_auditar(p_empresa, o.actor_id, 'digifact_test.aplicada_al_documento', 'documento', d.id::text, jsonb_build_object('operacion', o.id, 'referencia', o.referencia));
   return 'aplicada';
 end $$;
-revoke all on function public.fel_sys_digifact_aplicar(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.fel_sys_digifact_aplicar(uuid, uuid) to service_role;
+-- Solo el rol propietario puede ejecutarla: el servidor de NEXA FEL la llama por la conexión directa y ningún rol de la API la necesita (mínimo privilegio; una llave de servicio filtrada no puede invocarla).
+revoke all on function public.fel_sys_digifact_aplicar(uuid, uuid) from public, anon, authenticated, service_role;

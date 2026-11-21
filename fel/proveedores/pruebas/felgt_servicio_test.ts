@@ -23,7 +23,7 @@ const doc = (empresaId = EMPRESA_A, id = "d1", extra: Partial<DocumentoFel> = {}
 const referenciaEnviada = (p: PeticionHttp) => { const n = JSON.parse(p.cuerpo!); return n.AdditionalDocumentInfo.AdditionalInfo[0].Code as string; };
 
 type Manejador = (p: PeticionHttp, envios: number) => RespuestaHttp | Promise<RespuestaHttp>;
-function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null) => RespuestaHttp; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
+function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fecha?: string) => RespuestaHttp; prevueloDias?: number; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
   const llamadas: PeticionHttp[] = []; let envios = 0; let ultimaReferencia: string | null = null;
   const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
     llamadas.push(p);
@@ -33,7 +33,7 @@ function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null) => 
     if (p.ruta.startsWith("/Shared")) {
       const q = new URL("https://x" + p.ruta).searchParams;
       if (q.get("DATA1") === "SHARED_GETINFONITcom") return ok({ RESPONSE: [{ NIT: "44653948", NOMBRE: "EMPRESA DE PRUEBA, S.A." }] });
-      if (q.get("DATA1") === "SHARED_GETREPORTDAILYACUSES") return (opc.reporte ?? (() => ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] })))(ultimaReferencia);
+      if (q.get("DATA1") === "SHARED_GETREPORTDAILYACUSES") { const fecha = /FECHA\|(\d{4}-\d{2}-\d{2})/.exec(decodeURIComponent(p.ruta))?.[1]; return (opc.reporte ?? (() => ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] })))(ultimaReferencia, fecha); }
     }
     return ok({}, 404);
   };
@@ -43,7 +43,7 @@ function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null) => 
   const emisor = { emisor: facturaPrueba().emisor, huella: HUELLA };
   const s = new ServicioFelGt({
     clienteDe: (e) => (e === EMPRESA_A || (e === EMPRESA_B && !opc.sinCanalB) ? cliente : null), emisorDe: (e) => (e === EMPRESA_A || (e === EMPRESA_B && !opc.sinCanalB) ? emisor : null),
-    almacen, autorizaPrueba: () => (opc.autorizada === false ? null : autorizada), ahora: opc.ahora ?? (() => AHORA), auditar: (evento, _c, detalle) => { aud.push({ evento, detalle }); },
+    almacen, autorizaPrueba: () => (opc.autorizada === false ? null : autorizada), ahora: opc.ahora ?? (() => AHORA), auditar: (evento, _c, detalle) => { aud.push({ evento, detalle }); }, ...(opc.prevueloDias !== undefined ? { prevueloDias: opc.prevueloDias } : {}),
   });
   return { s, llamadas, almacen, aud, envios: () => envios, autorizar: (ref: string) => { autorizada = ref; }, cliente };
 }
@@ -313,4 +313,65 @@ Deno.test("correo por Digifact: correo inválido o demasiado largo se rechaza AN
   const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia);
   await assert.rejects(m.s.certificar(ctx(), doc(), { ...confirmar(p), correo: "no-es-correo" }), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "VALIDACION");
   assert.equal(m.envios(), 0, "un correo inválido en la certificación tampoco envía el NUC");
+});
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// RECUPERACIÓN: una certificación hecha en Digifact no se «deshace» restaurando un respaldo. Antes de enviar se busca la referencia (determinista) en Digifact; si ya está, NO se envía.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+const FILA = (ref: string, aut = AUT) => ({ GUID: aut, SERIE: "A001", NUMERO: "5", TIPO_DTE: "FACT", FECHA_DE_CERTIFICACION: "2026-11-16T10:00:05", REFERENCIA_INTERNA: ref, ESTADO_ACUSE: "ACEPTADO_SAT", ANULADO: "0", TOTAL: "100.00", NE: "2", NOMBRE: "X" });
+const reporteCon = (ref: string) => ok({ REQUEST_DATA: [{ Respuesta: "1" }], RESPONSE: [FILA(ref)] }), reporteVacio = () => ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] });
+const reportes = (m: { llamadas: PeticionHttp[] }) => m.llamadas.filter((l) => l.ruta.includes("SHARED_GETREPORTDAILYACUSES")).length;
+
+Deno.test("restauración de un respaldo (la base perdió la memoria de lo enviado): si Digifact YA tiene la referencia, NO se envía; queda «desconocida», se concilia con SUS datos y repetir no reenvía", async () => {
+  let existente: string | null = null;
+  const m = mundo({ reporte: () => (existente ? reporteCon(existente) : reporteVacio()), documento: () => ok({ RESPONSE: [{ ResponseData1: XML64, ResponseData3: PDF64 }] }) });
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); existente = p.referencia;   // la certificó antes de la «restauración»: Digifact la tiene, la base de NEXA no
+  const r = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(r.reutilizada, false); assert.equal(r.operacion.estado, "desconocida"); assert.equal(r.operacion.resultado?.motivoDesconocido, "ya_existia_en_digifact"); assert.equal(m.envios(), 0, "NO se envió ningún NUC");
+  assert.ok("aviso" in r && /NO se envió nada/.test(String((r as { aviso?: string }).aviso)));
+  assert.ok(m.aud.some((a) => a.evento === "digifact_test.ya_existia_en_digifact") && !m.aud.some((a) => a.evento === "digifact_test.envio_iniciado"), "se audita el hallazgo y jamás un envío");
+  // la operación «desconocida» bloquea: ni repetir ni volver a preparar envían algo
+  assert.equal((await m.s.certificar(ctx(), doc(), confirmar(p))).reutilizada, true); await rechaza(m.s.preparar(ctx(), doc()), "ESTADO"); assert.equal(m.envios(), 0);
+  // conciliar: se adopta el resultado que Digifact ya tiene (UUID, serie, número), se aplica al documento y NO se reenvía
+  const c = await m.s.conciliar(ctx(), p.operacionId);
+  assert.equal(c.resultado, "certificada"); assert.deepEqual([c.operacion.resultado?.autorizacion, c.operacion.resultado?.serie, c.operacion.resultado?.numero], [AUT, "A001", "5"]); assert.equal(m.envios(), 0);
+  assert.equal(m.almacen.aplicadas.has(p.operacionId), true, "la certificación quedó aplicada al documento");
+  assert.equal((await m.s.conciliar(ctx(), p.operacionId)).resultado, "sin_cambios", "idempotente");
+  // los archivos se recuperan de Digifact (no se reconstruyen) y se validan
+  assert.equal(texto((await m.s.descargar(ctx(), "d1", "xml")).contenido), XML_REAL);
+  assert.equal(m.envios(), 0, "en todo el recorrido no salió ni un solo NUC");
+});
+
+Deno.test("chequeo previo: la referencia se busca en la fecha de emisión y hacia atrás; hallada en un día anterior bloquea el envío y se concilia en ESE día", async () => {
+  let dia = "2026-11-13", ref: string | null = null;   // AHORA es 2026-11-16: tres días antes
+  const m = mundo({ reporte: (_r, fecha) => (ref && fecha === dia ? reporteCon(ref) : reporteVacio()) });
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); ref = p.referencia;
+  const r = await m.s.certificar(ctx(), doc(), confirmar(p)); assert.equal(r.operacion.estado, "desconocida"); assert.equal(m.envios(), 0); assert.equal(r.operacion.resultado?.motivoDesconocido, "ya_existia_en_digifact");
+  assert.equal((await m.s.conciliar(ctx(), p.operacionId)).resultado, "certificada", "la conciliación consulta el día en que se halló");
+  // fuera de la ventana (9 días antes) NO se ve con 7 días: ese es el límite del chequeo (documentado); con una ventana mayor sí
+  dia = "2026-11-07"; const m2 = mundo({ reporte: (_r, fecha) => (ref && fecha === dia ? reporteCon(ref) : reporteVacio()) });
+  const p2 = await m2.s.preparar(ctx(), doc()); ref = p2.referencia; m2.autorizar(p2.referencia); await m2.s.certificar(ctx(), doc(), confirmar(p2)); assert.equal(m2.envios(), 1, "con la ventana por defecto (7 días) no se alcanza a ver un día 9 días atrás");
+  const m3 = mundo({ prevueloDias: 10, reporte: (_r, fecha) => (ref && fecha === dia ? reporteCon(ref) : reporteVacio()) });
+  const p3 = await m3.s.preparar(ctx(), doc()); ref = p3.referencia; m3.autorizar(p3.referencia); const r3 = await m3.s.certificar(ctx(), doc(), confirmar(p3)); assert.equal(m3.envios(), 0); assert.equal(r3.operacion.estado, "desconocida");
+});
+
+Deno.test("chequeo previo: sin referencia en Digifact se envía UNA vez (8 consultas de solo lectura antes); con una duda (reporte caído o ilegible) NO se envía, no se reintenta solo y la operación sigue «preparada»", async () => {
+  const ok1 = mundo(); const p = await ok1.s.preparar(ctx(), doc()); ok1.autorizar(p.referencia); await ok1.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(ok1.envios(), 1); assert.equal(reportes(ok1), 8, "el día de la emisión y 7 hacia atrás, todos de solo lectura");
+  for (const [nombre, falla] of [["reporte caído (500)", () => ok({}, 500)], ["reporte ilegible", () => ({ estado: 200, cuerpo: "<html>" })], ["reporte sin filas ni respuesta clara", () => ok({ REQUEST_DATA: [{}], RESPONSE: [] })]] as const) {
+    let sano = false; const m = mundo({ reporte: () => (sano ? reporteVacio() : falla()) });
+    const q = await m.s.preparar(ctx(), doc()); m.autorizar(q.referencia);
+    await rechaza(m.s.certificar(ctx(), doc(), confirmar(q)), "PREVUELO");
+    assert.equal(m.envios(), 0, `${nombre}: no se envió nada`); assert.equal(reportes(m), 1, `${nombre}: una sola consulta, sin reintento automático`);
+    assert.equal((await m.s.estadoDocumento(ctx(), "d1"))[0].estado, "preparada", `${nombre}: la operación sigue preparada (no bloquea ni queda «enviando»)`);
+    sano = true; const r = await m.s.certificar(ctx(), doc(), confirmar(q)); assert.equal(r.operacion.estado, "certificada"); assert.equal(m.envios(), 1, `${nombre}: una persona lo repite y entonces se envía UNA vez`);
+  }
+});
+
+Deno.test("resultado desconocido tras enviar: no hay reintento automático — repetir, volver a preparar y conciliar sin hallazgo jamás vuelven a enviar", async () => {
+  const m = mundo({ certificar: () => { throw new Error("corte"); } });   // el reporte nunca la tiene
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); const r = await m.s.certificar(ctx(), doc(), confirmar(p));
+  assert.equal(r.operacion.estado, "desconocida"); assert.equal(m.envios(), 1);
+  for (let i = 0; i < 3; i++) { assert.equal((await m.s.certificar(ctx(), doc(), confirmar(p))).reutilizada, true); await rechaza(m.s.preparar(ctx(), doc()), "ESTADO"); assert.equal((await m.s.conciliar(ctx(), p.operacionId)).resultado, "no_encontrado"); }
+  assert.equal(m.envios(), 1, "tras la incertidumbre, nada se reenvía por sí solo");
 });

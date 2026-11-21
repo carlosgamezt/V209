@@ -20,7 +20,7 @@ fi
 psq postgres -c "drop database if exists nexa_plantilla with (force)"; psq postgres -c "create database nexa_plantilla"
 psq nexa_plantilla -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do psq nexa_plantilla -f "$f" >/dev/null; done
-# PROPUESTA del historial de correos (fuera de supabase/migrations): solo en esta plantilla de pruebas; el conjunto de 28 migraciones no cambia.
+# PROPUESTA del historial de correos (fuera de supabase/migrations): solo en esta plantilla de pruebas; el conjunto de 29 migraciones no cambia.
 for f in docs/migracion-correo/2[0-9]*_*.sql; do psq nexa_plantilla -f "$f" >/dev/null; done   # solo el archivo de migración (prefijo numérico), no la reversión ni la verificación
 echo "plantilla lista; ejecutando las pruebas de la demostración contra PostgreSQL real…"
 cd demo-facturacion

@@ -5,9 +5,9 @@ name: NEXA FEL · solo migraciones (manual, por etapas)
 #      Supabase, no pide confirmación y NO tiene ninguna ruta hacia migraciones: su paso ejecuta únicamente «verificar-inicial» y los pasos que aplican están excluidos por su condición.
 #  · acción «diagnostico-inicial»: SOLO LECTURA ESTRICTA con las mismas 4 capas y los mismos 2 secretos: función propia en public, disparadores de evento y privilegios efectivos sobre Vault (informativo).
 #  · acción «verificar-api-vault»: SOLO LECTURA: ¿expone la API de Supabase el esquema vault? GET de una tabla inexistente de la API (el listado OpenAPI de la raíz ya no se sirve a claves públicas) con la clave «anon» PÚBLICA (secreto DEMO_SUPABASE_ANON_KEY, que debes crear; no es una clave de servicio).
-#  · acción «verificar-etapa»  : SOLO LECTURA: comprueba historial, tablas, RLS, dependencias de Auth y, en la etapa 2, el catálogo de la migración 28.
+#  · acción «verificar-etapa»  : SOLO LECTURA: comprueba historial, tablas, RLS, dependencias de Auth y, en las etapas 2 y 3, el catálogo de la migración 28 y de la 29.
 #  · acción «migraciones-etapa»: aplica la etapa y, al terminar, corre la verificación de esa etapa. Exige escribir APLICAR-MIGRACIONES.
-#      etapa 1 = migraciones 1 a 27 (exige base VACÍA y sin historial)   ·   etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27)
+#      etapa 1 = migraciones 1 a 27 (exige base VACÍA y sin historial)   ·   etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27)   ·   etapa 3 = migración 29 (exige EXACTAMENTE las 28, la 29 ausente y el catálogo de la 28 sano; solo lectura antes de tocar nada)
 # Cada etapa es una ejecución distinta con su propia aprobación. Secretos (solo en el paso que los usa): verificar-inicial y diagnostico-inicial → DEMO_SUPABASE_PROYECTO_REF y DEMO_BD_URL; verificar-api-vault → DEMO_SUPABASE_PROYECTO_REF y DEMO_SUPABASE_ANON_KEY;
 # etapas → además DEMO_SUPABASE_ACCESS_TOKEN y DEMO_SUPABASE_DB_PASSWORD.
 # El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en digifact-test): está limitado a este mismo archivo y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual; ese camino jamás pide aprobación ni recibe secretos.
@@ -22,9 +22,9 @@ on:
         options: [verificar-inicial, diagnostico-inicial, verificar-api-vault, verificar-etapa, migraciones-etapa]
         default: verificar-inicial
       etapa:
-        description: "Etapa (solo para verificar-etapa y migraciones-etapa): 1 = migraciones 1–27 · 2 = migración 28"
+        description: "Etapa (solo para verificar-etapa y migraciones-etapa): 1 = migraciones 1–27 · 2 = migración 28 · 3 = migración 29 (almacén persistente de Digifact)"
         type: choice
-        options: ["1", "2"]
+        options: ["1", "2", "3"]
         default: "1"
       confirmar:
         description: "Para «migraciones-etapa», escribe APLICAR-MIGRACIONES"
@@ -84,5 +84,5 @@ jobs:
           ETAPA: ${{ inputs.etapa }}
         run: |
           case "$ACCION" in verificar-etapa|migraciones-etapa) ;; *) echo "Acción no válida"; exit 2;; esac
-          case "$ETAPA" in 1|2) ;; *) echo "Etapa no válida"; exit 2;; esac
+          case "$ETAPA" in 1|2|3) ;; *) echo "Etapa no válida"; exit 2;; esac
           cd fel && bash tools/supabase-hospedado.sh "$ACCION" "$ETAPA"

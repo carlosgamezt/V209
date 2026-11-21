@@ -39,6 +39,15 @@ on:
         description: "Solo con digifact_cui=habilitado: UUID de LA ÚNICA empresa de demostración que consulta CUI reales (las demás usan el simulador)"
         type: string
         default: ""
+      digifact_correo:
+        description: "Envío de la factura por correo por Digifact al certificar (INDEPENDIENTE de la certificación, del NIT y del CUI): apagado (por defecto) o habilitado (solo si TÚ lo eliges en esta ejecución). No habilita certificar. Requiere la empresa en digifact_correo_empresa y la lista cerrada de destinatarios de prueba (secreto DEMO_DIGIFACT_CORREO_DESTINATARIOS)"
+        type: choice
+        options: [apagado, habilitado]
+        default: apagado
+      digifact_correo_empresa:
+        description: "Solo con digifact_correo=habilitado: UUID de LA ÚNICA empresa de demostración que puede pedir el envío por correo"
+        type: string
+        default: ""
       digifact_referencia:
         description: "Solo con digifact=habilitado: referencia (GUID) de LA ÚNICA prueba autorizada (déjalo vacío para no autorizar ninguna)"
         type: string
@@ -97,6 +106,10 @@ jobs:
           # Consulta de CUI (independiente de la certificación y del NIT): mismas credenciales de TEST; nada del emisor.
           FEL_DIGIFACT_CUI: ${{ inputs.digifact_cui == 'habilitado' && 'habilitado' || '' }}
           FEL_DIGIFACT_CUI_EMPRESA: ${{ inputs.digifact_cui == 'habilitado' && inputs.digifact_cui_empresa || '' }}
+          # Correo de la factura por Digifact (independiente): solo el interruptor, la empresa y la lista CERRADA de destinatarios (secreto del entorno protegido); nunca credenciales, emisor ni referencia.
+          FEL_DIGIFACT_CORREO: ${{ inputs.digifact_correo == 'habilitado' && 'habilitado' || '' }}
+          FEL_DIGIFACT_CORREO_EMPRESA: ${{ inputs.digifact_correo == 'habilitado' && inputs.digifact_correo_empresa || '' }}
+          FEL_DIGIFACT_CORREO_DESTINATARIOS: ${{ inputs.digifact_correo == 'habilitado' && secrets.DEMO_DIGIFACT_CORREO_DESTINATARIOS || '' }}
           MODO: ${{ inputs.modo }}
         run: |
           if [ "$MODO" = publicar ]; then bash fel/tools/publicar-nube.sh; elif [ "$MODO" = probar ]; then bash fel/tools/publicar-nube.sh --probar; else bash fel/tools/publicar-nube.sh --simular; fi

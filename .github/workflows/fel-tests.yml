@@ -309,5 +309,5 @@ jobs:
       FEL_PG_ADMIN_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
-      - name: Reconocimiento de la función (12 escenarios) y compatibilidad de las 28 migraciones con ella
+      - name: Reconocimiento de la función (12 escenarios) y compatibilidad de las 29 migraciones con ella
         run: bash fel/tools/test-plataforma-ensure-rls.sh

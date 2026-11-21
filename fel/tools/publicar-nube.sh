@@ -41,10 +41,11 @@ comprobar_cli() { # la CLI cambia entre versiones: se comprueba, SIN ejecutar na
   return $mal
 }
 # Digifact TEST (opcional): las variables se APARTAN aquí y solo las recibe el paso de la función; migraciones, aprovisionamiento, construcción y Cloudflare nunca las ven.
-DG_VARS=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA)
+DG_VARS=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA FEL_DIGIFACT_CORREO FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS)
 for v in "${DG_VARS[@]}"; do eval "__DG_$v=\"\${$v:-}\""; unset "$v"; done
 DG_ESTADO="apagado"; [ "${__DG_FEL_DIGIFACT_TEST:-}" = "habilitado" ] && DG_ESTADO="HABILITADO (valores no mostrados)"
 DG_NIT_ESTADO="apagada"; [ "${__DG_FEL_DIGIFACT_NIT:-}" = "habilitado" ] && DG_NIT_ESTADO="HABILITADA para una empresa (valores no mostrados; NO habilita la certificación)"
+DG_CORREO_ESTADO="apagado"; [ "${__DG_FEL_DIGIFACT_CORREO:-}" = "habilitado" ] && DG_CORREO_ESTADO="HABILITADO para una empresa y una lista cerrada de destinatarios (valores no mostrados; NO habilita la certificación)"
 DG_CUI_ESTADO="apagada"; [ "${__DG_FEL_DIGIFACT_CUI:-}" = "habilitado" ] && DG_CUI_ESTADO="HABILITADA para una empresa (valores no mostrados; NO habilita la certificación ni la consulta de NIT)"
 REF="${FEL_DEMO_PROYECTO_REF:-<ref>}"; PAGES_PROYECTO="${PAGES_PROYECTO:-<nombre>}"; export FEL_DEMO_HOSTS="${FEL_DEMO_HOSTS:-${PAGES_PROYECTO}.pages.dev}"
 paso() { echo; echo "== $1"; }

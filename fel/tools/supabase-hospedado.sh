@@ -20,9 +20,9 @@
 #                                                          función propia en public, disparadores de evento y privilegios sobre Vault. Informativo: no falla por hallazgos. NO llama a la CLI, NO tiene ruta hacia migraciones ni escrituras.
 #   bash tools/supabase-hospedado.sh verificar-inicial     → SOLO LECTURA ESTRICTA de «nexa-demo» ANTES de migrar: ejecuta docs/migracion-28/verificacion-inicial-nexa-demo.sql (solo SELECT sobre el catálogo) dentro de «begin transaction read only … rollback»
 #                                                          y con la sesión forzada a solo lectura. NO llama a la CLI de Supabase, NO usa token ni confirmación, NO tiene ninguna ruta hacia «db push», «link», función ni escrituras. Falla si alguna fila dice REVISAR.
-#   bash tools/supabase-hospedado.sh migraciones-etapa 1|2   → SOLO MIGRACIONES, por etapas y con parada: etapa 1 = migraciones 1–27 (exige base VACÍA y sin historial), etapa 2 = migración 28 (exige que estén EXACTAMENTE las 27).
+#   bash tools/supabase-hospedado.sh migraciones-etapa 1|2   → SOLO MIGRACIONES, por etapas y con parada: etapa 1 = migraciones 1–27 (exige base VACÍA y sin historial), etapa 2 = migración 28, etapa 3 = migración 29 (exige EXACTAMENTE las 28 registradas, la 29 ausente y el catálogo de la 28 sano) (exige que estén EXACTAMENTE las 27).
 #                                                          Exige FEL_CONFIRMAR_MIGRACIONES=APLICAR-MIGRACIONES. NO carga secretos de función, NO despliega función ni frontend. Al terminar corre la verificación de solo lectura de esa etapa.
-#   bash tools/supabase-hospedado.sh verificar-etapa 1|2     → SOLO LECTURA: comprueba lo que debe cumplirse tras la etapa (historial, tablas, RLS, dependencias de Auth; en la 2, el catálogo de la migración 28)
+#   bash tools/supabase-hospedado.sh verificar-etapa 1|2|3   → SOLO LECTURA: comprueba lo que debe cumplirse tras la etapa (historial, tablas, RLS, dependencias de Auth; en la 2, el catálogo de la migración 28)
 # Entradas: FEL_DEMO_PROYECTO_REF (debe ser exactamente la de nexa-demo), FEL_DEMO_BD_URL, SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD; y para «funcion»: FEL_DEMO_HOSTS, FEL_DEMO_MFA_SEMILLAS, FEL_PROXY_SECRETO.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -35,8 +35,9 @@ REF="${FEL_DEMO_PROYECTO_REF:-}"
 SECRETOS_CERT=(FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA)
 SECRETOS_NIT=(FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA)
 SECRETOS_CUI=(FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA)
+SECRETOS_CORREO=(FEL_DIGIFACT_CORREO FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS)   # el correo por Digifact: sin credenciales (no consulta ni certifica); solo interruptor, empresa y lista cerrada
 SECRETOS_CRED=(DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT)
-SECRETOS_DIGIFACT=("${SECRETOS_CERT[@]}" "${SECRETOS_NIT[@]}" "${SECRETOS_CUI[@]}" "${SECRETOS_CRED[@]}")
+SECRETOS_DIGIFACT=("${SECRETOS_CERT[@]}" "${SECRETOS_NIT[@]}" "${SECRETOS_CUI[@]}" "${SECRETOS_CORREO[@]}" "${SECRETOS_CRED[@]}")
 # Lista (solo NOMBRES) de los secretos de la función. La salida de la CLI incluye huellas de los valores: NO se imprime, solo se busca en ella cada nombre conocido.
 LISTA_SECRETOS=""
 leer_lista_secretos() { LISTA_SECRETOS="$(supabase secrets list --remote="$REF" 2>/dev/null)" || { LISTA_SECRETOS=""; return 1; }; [ -n "$LISTA_SECRETOS" ]; }
@@ -282,7 +283,8 @@ print(r)')"
     case "$ETAPA" in
       1) HASTA=20261112001000; ESPERADAS=27; DESCRIPCION="etapa 1: migraciones 1 a 27";;
       2) HASTA=20261113000100; ESPERADAS=28; DESCRIPCION="etapa 2: migración 28";;
-      *) echo "Uso: supabase-hospedado.sh $ACCION 1|2"; exit 2;;
+      3) HASTA=20261114000100; ESPERADAS=29; DESCRIPCION="etapa 3: migración 29 (almacén persistente de Digifact)";;
+      *) echo "Uso: supabase-hospedado.sh $ACCION 1|2|3"; exit 2;;
     esac
     derivar_url_sesion
     command -v psql >/dev/null || { echo "Falta psql: sin él no se pueden comprobar las precondiciones (de solo lectura). No se hace nada."; exit 2; }
@@ -313,7 +315,7 @@ print(r)')"
       echo "  INFO  extensiones de cifrado: $(qro "select coalesce(string_agg(name || ' (disponible ' || coalesce(default_version, '-') || ', instalada ' || coalesce(installed_version, 'no') || ')', '; '), 'ninguna disponible') from pg_available_extensions where name in ('supabase_vault', 'pgsodium')")"
       echo "  INFO  privilegios sobre el esquema vault (USAGE) anon/authenticated/service_role: $(qro "select case when to_regnamespace('vault') is null then 'el esquema vault no existe' else (select string_agg(r || '=' || has_schema_privilege(r, 'vault', 'USAGE')::text, ' ') from unnest(array['anon','authenticated','service_role']) r) end")"
       # catálogo y conteos de solo lectura: etapa 1 = V1 reforzada (67 tablas, 49 políticas, 182 funciones, 57 disparadores, privilegios efectivos, 0 filas de negocio); etapa 2 = catálogo de la 28
-      local ARCH="docs/migracion-28/verificacion-posterior-27.sql" NOMBRE="V1 reforzada (etapa 1)"; [ "$ETAPA" = "2" ] && { ARCH="docs/migracion-28/verificacion-posterior-28.sql"; NOMBRE="catálogo de la migración 28"; }
+      local ARCH="docs/migracion-28/verificacion-posterior-27.sql" NOMBRE="V1 reforzada (etapa 1)"; [ "$ETAPA" = "2" ] && { ARCH="docs/migracion-28/verificacion-posterior-28.sql"; NOMBRE="catálogo de la migración 28"; }; [ "$ETAPA" = "3" ] && { ARCH="docs/migracion-29/verificacion-posterior-29.sql"; NOMBRE="catálogo de la migración 29"; }
       if true; then
         local sal; if sal="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f "$ARCH" 2>&1)"; then echo "  OK    $NOMBRE ($(basename "$ARCH"), solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO $NOMBRE: ${sal:0:200}"; fallo=1; fi
       fi
@@ -325,8 +327,19 @@ print(r)')"
     if [ "$ETAPA" = "1" ]; then
       [ "$NAPL" = "0" ] && [ "$NTAB" = "0" ] || { echo "PROHIBIDO: la etapa 1 exige una base VACÍA y sin historial (registradas: $NAPL, tablas: $NTAB). No se hace nada."; exit 2; }
     else
-      [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort | grep -c .)" = "27" ] && [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort)" = "$(printf '%s\n' "$LOCALES_ETAPA" | grep -v "^$HASTA$")" ] \
-        || { echo "PROHIBIDO: la etapa 2 exige que estén registradas EXACTAMENTE las 27 migraciones anteriores (registradas: $NAPL). No se hace nada."; exit 2; }
+      ANT=$((ESPERADAS - 1))   # etapa 2: las 27 anteriores · etapa 3: las 28 anteriores (exactamente las que aprobamos, ni una más ni una menos)
+      [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort | grep -c .)" = "$ANT" ] && [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort)" = "$(printf '%s\n' "$LOCALES_ETAPA" | grep -v "^$HASTA$")" ] \
+        || { echo "PROHIBIDO: la etapa $ETAPA exige que estén registradas EXACTAMENTE las $ANT migraciones anteriores (registradas: $NAPL). No se hace nada."; exit 2; }
+      if [ "$ETAPA" = "3" ]; then
+        # SOLO LECTURA, ANTES de tocar nada: (a) la 29 no está ya (ni a medias) en la base; (b) el catálogo de la 28 está sano (si no lo está, la 29 no se aplica sobre un esquema dudoso); (c) inventario previo para comparar después
+        LIBRE="$(qro "select to_regclass('public.digifact_operaciones') is null and to_regclass('public.digifact_artefactos') is null and not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('fel_digifact_op_guarda', 'fel_digifact_art_guarda', 'fel_sys_digifact_aplicar'))")"
+        [ "$LIBRE" = "t" ] || { echo "PROHIBIDO: la base ya tiene objetos de la migración 29 (o no se pudo comprobar). No se hace nada. $LIBRE"; exit 2; }
+        local_ok=1; PREV="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f docs/migracion-28/verificacion-posterior-28.sql 2>&1)" || local_ok=0
+        [ "$local_ok" = 1 ] || { PREV="$(printf '%s' "$PREV" | grep -m1 -E 'ERROR|error' || true)"; PREV="${PREV//"$CLAVE_URL"/***}"; echo "PROHIBIDO: el catálogo de la migración 28 NO está sano antes de la 29 (${PREV:-sin detalle}). No se hace nada."; exit 2; }
+        echo "  OK    precondiciones de la etapa 3: la 29 no existe, las 28 están registradas y el catálogo de la 28 está sano (solo lectura)"
+        echo "  INFO  rol de la conexión (solo lectura): $(qro "select current_user || ' · superusuario=' || r.rolsuper || ' · bypassrls=' || r.rolbypassrls || ' · propietario de public.documentos=' || (pg_get_userbyid(c.relowner) = current_user)::text from pg_roles r, pg_class c where r.rolname = current_user and c.oid = 'public.documentos'::regclass")"
+        echo "  INFO  inventario previo (tablas | políticas | funciones | disparadores | empresas | documentos): $(qro "select (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')) || ' | ' || (select count(*) from pg_policies where schemaname = 'public') || ' | ' || (select count(*) from pg_proc where pronamespace = 'public'::regnamespace) || ' | ' || (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'public'::regnamespace and not t.tgisinternal) || ' | ' || (select count(*) from public.empresas) || ' | ' || (select count(*) from public.documentos)")"
+      fi
     fi
     # carpeta de trabajo TEMPORAL con solo las migraciones de esta etapa: la CLI nunca ve (ni aplica) las posteriores
     SUB="$(mktemp -d)"; trap 'rm -rf -- "$SUB"' EXIT
@@ -385,6 +398,26 @@ print(r)')"
         done
         echo "Consulta de CUI por Digifact TEST: habilitada para una empresa (valores no mostrados; no habilita la certificación ni la consulta de NIT)";;
       *) echo "FEL_DIGIFACT_CUI solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
+    esac
+    # Correo de la factura por Digifact (OPCIONAL, apagado por defecto, INDEPENDIENTE de la certificación, del NIT y del CUI): solo con FEL_DIGIFACT_CORREO=habilitado, TODO O NADA, UNA sola empresa y lista CERRADA de destinatarios de una línea
+    # (direcciones exactas y/o @dominio, separadas por comas). No lleva credenciales ni datos del emisor y NO habilita la certificación: sin ella no existe nada que enviar. El correo lo envía Digifact con su plantilla; este flujo solo publica el permiso.
+    case "${FEL_DIGIFACT_CORREO:-}" in
+      "") for v in FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS; do [ -z "${!v:-}" ] || { echo "$v requiere FEL_DIGIFACT_CORREO=habilitado: no se publica la función"; exit 2; }; done;;
+      habilitado)
+        for v in FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS; do [ -n "${!v:-}" ] || { echo "Correo por Digifact habilitado, pero falta $v (todo o nada): no se publica la función"; exit 2; }; done
+        printf '%s' "${FEL_DIGIFACT_CORREO_EMPRESA}" | grep -Eiq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || { echo "FEL_DIGIFACT_CORREO_EMPRESA no es un UUID: no se publica la función"; exit 2; }
+        # lista cerrada: 1 a 50 elementos, cada uno una dirección (hasta 50 caracteres) o «@dominio»; cualquier elemento no válido invalida TODA la lista (misma regla que el servidor)
+        _n=0; IFS=',' read -ra _els <<<"${FEL_DIGIFACT_CORREO_DESTINATARIOS}"
+        for _e in "${_els[@]}"; do _e="$(printf '%s' "$_e" | tr -d ' ')"; [ -n "$_e" ] || continue; _n=$((_n+1))
+          printf '%s' "$_e" | grep -Eq '^([^@<>;,"()[:space:]\\]{1,40}@[A-Za-z0-9.-]{1,40}\.[A-Za-z]{2,10}|@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,24})$' || { echo "FEL_DIGIFACT_CORREO_DESTINATARIOS tiene un elemento no válido (se esperan direcciones o @dominio separados por comas): no se publica la función"; exit 2; }
+        done
+        [ "$_n" -ge 1 ] && [ "$_n" -le 50 ] || { echo "FEL_DIGIFACT_CORREO_DESTINATARIOS debe tener entre 1 y 50 elementos: no se publica la función"; exit 2; }
+        for v in FEL_DIGIFACT_CORREO FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS; do
+          valor="${!v:-}"; case "$valor" in *"'"*|*$'\n'*|*$'\r'*) echo "$v contiene un carácter no admitido (comilla simple o salto de línea): no se publica la función"; exit 2;; esac
+          grep -q "^$v=" "$ENVF" || printf "%s='%s'\n" "$v" "$valor" >> "$ENVF"
+        done
+        echo "Correo por Digifact TEST: habilitado para una empresa y una lista cerrada de destinatarios (valores no mostrados; no habilita la certificación)";;
+      *) echo "FEL_DIGIFACT_CORREO solo admite «habilitado» o vacío: no se publica la función"; exit 2;;
     esac
     # APAGAR DE VERDAD: «apagado» no es «no enviar»: un secreto publicado antes seguiría activo. Cada interruptor retira SOLO los suyos; las credenciales de TEST se retiran solo si ninguno está encendido.
     # Primero se retira lo que debe estar apagado; si no se puede asegurar, la función NO se publica. Después se fijan los secretos y se VERIFICA por la lista (solo nombres).

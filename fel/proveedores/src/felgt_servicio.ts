@@ -14,8 +14,8 @@
 import { ErrorDigifact, type ArtefactosB64, type DigifactGt } from "./digifact_gt.ts";
 import { construirNuc, aMicro, deMicro, validarFactura, totalFactura, type EmisorGt, type FacturaGt, type ItemGt, type ReceptorGt } from "./nuc_gt.ts";
 
-export type CodigoFelGt = "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO";
-const STATUS: Record<CodigoFelGt, number> = { NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502 };
+export type CodigoFelGt = "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO" | "PREVUELO";
+const STATUS: Record<CodigoFelGt, number> = { NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502, PREVUELO: 503 };
 export class ErrorFelGt extends Error {
   constructor(public codigo: CodigoFelGt, mensaje: string, public errores?: { campo: string; mensaje: string }[]) { super(mensaje); this.name = "ErrorFelGt"; }
   get status(): number { return STATUS[this.codigo]; }
@@ -35,7 +35,7 @@ export type EstadoOpGt = "preparada" | "enviando" | "certificada" | "rechazada" 
 export interface OperacionGt {
   id: string; empresaId: string; documentoId: string; referencia: string; hash: string; huellaEmisor: string; fechaEmision: string; establecimiento: number; total: string;
   estado: EstadoOpGt; creada: number; actualizada: number; actorId: string; intentoDelDocumento: number; intentosConciliacion: number;
-  resultado?: { autorizacion?: string; serie?: string; numero?: string; fechaCertificacion?: string; codigo?: string; mensaje?: string; motivoDesconocido?: string };
+  resultado?: { autorizacion?: string; serie?: string; numero?: string; fechaCertificacion?: string; codigo?: string; mensaje?: string; motivoDesconocido?: string; fechaReporte?: string };
 }
 export interface AlmacenGt {
   /** ¿Sobrevive a un reinicio? Sin esto no se envía nada real. */
@@ -109,6 +109,7 @@ export interface DepsFelGt {
   impuestos?: (totalItem: bigint, emisor: EmisorGt) => ItemGt["impuestos"];
   /** Un envío que lleva más de esto en «enviando» se considera interrumpido (proceso caído) y pasa a «desconocida» para conciliar. */
   enviandoCaducaMs?: number; preparadaCaducaMs?: number;
+  /** Días hacia atrás (además del de la emisión) en los que, ANTES de enviar, se busca la referencia en el reporte de acuses de Digifact (solo lectura). 7 por defecto; 0 lo desactiva (solo pruebas). */ prevueloDias?: number;
   limiteNitPorMinuto?: number;
 }
 
@@ -262,6 +263,17 @@ export class ServicioFelGt {
     if (doc.estadoPreparacion !== "revisado" || !["ninguno", "rechazado"].includes(doc.estadoFiscal)) throw new ErrorFelGt("ESTADO", "El documento ya no está en un estado que permita certificar");
     if (!this.d.almacen.persistente) throw new ErrorFelGt("ALMACEN_NO_PERSISTENTE", "No hay almacén persistente de operaciones: no se envía nada real (si el proceso se reiniciara, se perdería la memoria de lo enviado)");
     if (this.d.autorizaPrueba() !== op0.referencia) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada");
+    // CHEQUEO PREVIO (solo lectura): Digifact NO deduplica por referencia, y la base de NEXA puede haber perdido la memoria de lo enviado (restauración de un respaldo, reversión). La referencia es DETERMINISTA, así que si Digifact ya la
+    // tiene, NO se envía: la operación queda «desconocida» y una persona la concilia (se adopta el resultado que Digifact ya tiene). Si no se puede comprobar, tampoco se envía (falla cerrado; no hay reintento automático).
+    const pv = await this.#prevuelo(cliente, op0);
+    if (pv.tipo === "indeterminado") throw new ErrorFelGt("PREVUELO", "No se pudo verificar en Digifact que esta referencia sea nueva: no se envió nada. Una persona decide cuándo repetirlo (no hay reintentos automáticos).");
+    if (pv.tipo === "encontrado") {
+      const w = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["preparada"], { estado: "enviando", actualizada: this.#ahora().getTime() });
+      if (!w) { const ya = await this.d.almacen.obtener(ctx.empresaId, op0.id); return { reutilizada: true as const, operacion: this.#publica(ya ?? op0) }; }
+      const n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", resultado: { motivoDesconocido: "ya_existia_en_digifact", fechaReporte: pv.fecha }, actualizada: this.#ahora().getTime() });
+      await this.#aud("digifact_test.ya_existia_en_digifact", ctx, { operacion: op0.id, referencia: op0.referencia });
+      return { reutilizada: false as const, operacion: this.#publica(n ?? op0), aviso: "Digifact YA tiene un documento con esta referencia: NO se envió nada. Usa «Consultar a Digifact» para registrar ese resultado (sin reenviar)." };
+    }
     const correo = this.#correo(c.correo);   // opcional: lo que se pidió para ESTA certificación (no cambia la huella ni la referencia)
     const factura = this.#factura(doc, emisor.emisor, op0.referencia, op0.fechaEmision, correo);
     let nuc: Record<string, unknown>; try { nuc = construirNuc(factura); } catch (e) { throw new ErrorFelGt("VALIDACION", "El documento no cumple el NUC", (e as { errores?: { campo: string; mensaje: string }[] }).errores); }
@@ -312,7 +324,7 @@ export class ServicioFelGt {
     }
     if (op.estado !== "desconocida") return { resultado: "sin_cambios" as const, operacion: this.#publica(op), ...(op.estado === "certificada" ? await this.#sellar(ctx, op) : {}) };
     const { cliente } = this.#canal(ctx);
-    let r; try { r = await cliente.conciliarPorReferencia(op.fechaEmision.slice(0, 10), op.referencia, op.establecimiento); } catch (e) { throw this.#traducir(e); }
+    let r; try { r = await cliente.conciliarPorReferencia(op.resultado?.fechaReporte ?? op.fechaEmision.slice(0, 10), op.referencia, op.establecimiento); } catch (e) { throw this.#traducir(e); }
     if (r.tipo === "encontrado") {
       if (r.documento.referenciaInterna.toUpperCase() !== op.referencia.toUpperCase()) throw new ErrorFelGt("ESTADO", "El reporte devolvió otra referencia: no se concilia");
       let n: OperacionGt | null;
@@ -325,6 +337,19 @@ export class ServicioFelGt {
     await this.#aud("digifact_test.conciliacion_sin_resultado", ctx, { operacion: op.id, resultado: r.tipo });
     return { resultado: r.tipo === "no_encontrado" ? "no_encontrado" as const : "indeterminado" as const, operacion: this.#publica(n ?? op),
       aviso: "Digifact aún no muestra este documento. Puede haber demora: NO se reenvía; repite la consulta más tarde. Si no aparece, decide una persona." };
+  }
+
+  /** Busca la referencia en el reporte de acuses de Digifact (solo lectura), del día de la emisión hacia atrás. «indeterminado» ante cualquier duda: nunca se asume que no existe. */
+  async #prevuelo(cliente: ClienteGt, op: OperacionGt): Promise<{ tipo: "no_encontrado" } | { tipo: "encontrado"; fecha: string } | { tipo: "indeterminado" }> {
+    const dias = this.d.prevueloDias ?? 7; if (dias <= 0) return { tipo: "no_encontrado" };
+    const base = new Date(op.fechaEmision.slice(0, 10) + "T12:00:00Z");
+    for (let i = 0; i <= dias; i++) {
+      const f = new Date(base.getTime() - i * 86_400_000).toISOString().slice(0, 10);
+      let r; try { r = await cliente.conciliarPorReferencia(f, op.referencia, op.establecimiento); } catch { return { tipo: "indeterminado" }; }
+      if (r.tipo === "encontrado") return r.documento.referenciaInterna.toUpperCase() === op.referencia.toUpperCase() ? { tipo: "encontrado", fecha: f } : { tipo: "indeterminado" };
+      if (r.tipo === "indeterminado") return { tipo: "indeterminado" };
+    }
+    return { tipo: "no_encontrado" };
   }
 
   /** Estado de las operaciones de UN documento de la empresa del contexto. */

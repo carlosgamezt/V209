@@ -1,5 +1,5 @@
-// ALMACÉN PERSISTENTE DE DIGIFACT (propuesta de migración 29) contra PostgreSQL REAL: exclusión mutua, compare-and-set, concurrencia, aislamiento por empresa y garantías propias de la base.
-// Solo con FEL_TEST_PG_ADMIN (ver tools/test-demo-pg.sh). Aplica docs/migracion-29/*.sql sobre una copia de la plantilla (migraciones 1–28); no toca ninguna base hospedada.
+// ALMACÉN PERSISTENTE DE DIGIFACT (migración 29) contra PostgreSQL REAL: exclusión mutua, compare-and-set, concurrencia, aislamiento por empresa y garantías propias de la base.
+// Solo con FEL_TEST_PG_ADMIN (ver tools/test-demo-pg.sh). Usa una copia de la plantilla (migraciones 1–29 de supabase/migrations); no toca ninguna base hospedada.
 import assert from "node:assert/strict";
 import postgres from "npm:postgres@3.4.5";
 import { AlmacenGtPg } from "../../proveedores/src/almacen_gt_pg.ts";
@@ -9,7 +9,6 @@ import type { PeticionHttp, RespuestaHttp } from "../../proveedores/src/digifact
 import { facturaPrueba } from "../../proveedores/pruebas/digifact_gt_fixture.ts";
 
 const admin = Deno.env.get("FEL_TEST_PG_ADMIN");
-const SQL29 = new URL("../../docs/migracion-29/20261114000100_fel_digifact_operaciones.sql", import.meta.url);
 const A = "10000000-0000-0000-0000-0000000000a1", B = "10000000-0000-0000-0000-0000000000b2", ACTOR = "30000000-0000-0000-0000-000000000001";
 const docId = (n: number) => `20000000-0000-0000-0000-${String(n).padStart(12, "0")}`;
 const uuid = () => crypto.randomUUID();
@@ -18,7 +17,6 @@ async function entorno() {
   const nombre = `dg_${crypto.randomUUID().replaceAll("-", "").slice(0, 14)}`, ad = postgres(admin!, { max: 1, onnotice: () => {} });
   await ad.unsafe(`create database ${nombre} template nexa_plantilla`); await ad.end();
   const u = new URL(admin!); u.pathname = `/${nombre}`; const sql = postgres(u.toString(), { max: 12, onnotice: () => {} });
-  await sql.unsafe(await Deno.readTextFile(SQL29));
   for (const [e, nit, nom] of [[A, "1234567-8", "Empresa A"], [B, "7654321-0", "Empresa B"]]) await sql.unsafe(`insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id) select '${e}', '${nom}', '${nom} S.A.', '${nit}', id from public.regimenes_fiscales where codigo = 'general'`);
   await sql.unsafe(`insert into auth.users (id, email, email_confirmed_at) values ('${ACTOR}', 'actor@prueba.local', now()) on conflict (id) do nothing`);   // la persona que certifica existe en Auth (el documento registra quién actualizó)
   for (let i = 1; i <= 40; i++) await sql.unsafe(`insert into public.documentos (id, empresa_id, numero_borrador) values ('${docId(i)}', '${A}', ${i})`);
@@ -149,9 +147,55 @@ Deno.test({ name: "servicio de Digifact sobre PostgreSQL real: certificación ap
     autorizacion = "22222222-3333-4444-8555-666666666666"; const n = await svc.preparar(ctxDe(A), docFel(A, docId(13)));
     await falla(() => t.filas(`select public.fel_sys_digifact_aplicar($1::uuid, $2::uuid)`, [A, n.operacionId]), /no está certificada/, "solo certificadas");
     assert.equal((await fiscal(docId(13))).estado_fiscal, "ninguno");
-    for (const rol of ["anon", "authenticated"]) assert.equal((await t.filas<{ p: boolean }>(`select has_function_privilege('${rol}', 'public.fel_sys_digifact_aplicar(uuid, uuid)', 'execute') as p`))[0].p, false, `${rol} no ejecuta la función`);
+    for (const rol of ["anon", "authenticated", "service_role"]) assert.equal((await t.filas<{ p: boolean }>(`select has_function_privilege('${rol}', 'public.fel_sys_digifact_aplicar(uuid, uuid)', 'execute') as p`))[0].p, false, `${rol} no ejecuta la función`);
     assert.equal((await t.filas<{ p: boolean }>(`select has_table_privilege('service_role', 'public.digifact_artefactos', 'select') as p`))[0].p, false, "los bytes no se leen con la clave de servicio de la API");
     assert.ok(!(aud.join(",").includes("CLAVE-INVENTADA")), "ningún secreto en la auditoría");
     assert.ok(ErrorFelGt);
   } finally { await t.limpiar(); }
+} });
+
+// ---------------------------------------------------------------- RESTAURACIÓN: una certificación hecha en Digifact no se deshace restaurando un respaldo de Supabase
+Deno.test({ name: "restauración sobre PostgreSQL real: una base SIN la memoria de lo enviado no certifica dos veces; se concilia con Digifact y se conservan UUID, serie, número, XML y PDF", ignore: !admin, sanitizeOps: false, sanitizeResources: false, async fn() {
+  const t1 = await entorno(), t2 = await entorno();   // t1 = la base original · t2 = «la base restaurada»: los mismos documentos, sin la operación ni los archivos
+  try {
+    for (const t of [t1, t2]) await t.sql.unsafe(`update public.documentos set estado_preparacion = 'revisado' where id = '${docId(10)}'`);
+    let envios = 0; const memoria = new Map<string, string>();   // Digifact recuerda lo certificado (referencia → autorización), igual para las dos bases
+    const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
+      if (p.ruta === "/login/get_token") return ok({ token: TOKEN });
+      if (p.ruta.startsWith("/v2/transform/nuc_json")) { envios++; const ref = JSON.parse(p.cuerpo!).AdditionalDocumentInfo.AdditionalInfo[0].Code as string; memoria.set(ref, AUT);
+        return ok({ code: "1", message: "Procesado Correctamente", authNumber: AUT, batch: "A001", serial: "5", enrolledTimeStamp: "2026-11-16T10:00:05", responseData1: btoa(XML(AUT)), responseData3: btoa(PDF) }); }
+      if (p.ruta.startsWith("/GetDocument")) return ok({ RESPONSE: [{ ResponseData1: btoa(XML(AUT)), ResponseData3: btoa(PDF) }] });
+      if (p.ruta.startsWith("/Shared")) { const filas = [...memoria.entries()].map(([ref, aut]) => ({ GUID: aut, SERIE: "A001", NUMERO: "5", TIPO_DTE: "FACT", FECHA_DE_CERTIFICACION: "2026-11-16T10:00:05", REFERENCIA_INTERNA: ref, ESTADO_ACUSE: "ACEPTADO_SAT", ANULADO: "0", TOTAL: "100.00", NE: "2", NOMBRE: "X" }));
+        return ok({ REQUEST_DATA: [{ Respuesta: filas.length ? "1" : "0" }], RESPONSE: filas }); }
+      return ok({});
+    };
+    const cliente = new DigifactGt({ nit: "5888492", usuario: "USUARIO_TEST", obtenerClave: () => "CLAVE-INVENTADA-PARA-PRUEBAS-9", transporte });
+    let autorizada: string | null = null; const aud: string[] = [];
+    const nuevo = (t: Awaited<ReturnType<typeof entorno>>) => new ServicioFelGt({ clienteDe: () => cliente, emisorDe: () => ({ emisor: facturaPrueba().emisor, huella: "0123456789abcdef" }), almacen: t.almacen, autorizaPrueba: () => autorizada, auditar: (e) => { aud.push(e); } });
+    const s1 = nuevo(t1), s2 = nuevo(t2);
+    const fiscal = (t: typeof t1) => async () => (await t.filas<Record<string, string | null>>(`select estado_fiscal, serie, numero_fiscal, autorizacion_sat from public.documentos where id = '${docId(10)}'`))[0];
+    const arts = (t: typeof t1) => async () => t.filas<{ tipo: string; sha256: string }>(`select tipo, sha256 from public.digifact_artefactos order by tipo`);
+    // 1. certificación normal en la base original
+    const p1 = await s1.preparar(ctxDe(A), docFel(A, docId(10))); autorizada = p1.referencia;
+    const r1 = await s1.certificar(ctxDe(A), docFel(A, docId(10)), { operacionId: p1.operacionId, confirmacion: CONFIRMACION_TEST, referencia: p1.referencia, huellaEmisor: p1.huellaEmisor });
+    assert.equal(r1.operacion.estado, "certificada"); assert.equal(envios, 1); const original = await fiscal(t1)(); assert.deepEqual([original.estado_fiscal, original.serie, original.numero_fiscal, original.autorizacion_sat], ["certificado", "A001", "5", AUT]);
+    const archivos1 = await arts(t1)(); assert.deepEqual(archivos1.map((a) => a.tipo), ["pdf", "xml"]);
+    // 2. «se restaura un respaldo anterior a la certificación»: la base t2 no sabe nada, pero Digifact SÍ. La referencia es determinista: sale IGUAL.
+    assert.equal((await fiscal(t2)()).estado_fiscal, "ninguno"); assert.equal(Number((await t2.filas<{ n: string }>(`select count(*)::text as n from public.digifact_operaciones`))[0].n), 0);
+    const p2 = await s2.preparar(ctxDe(A), docFel(A, docId(10))); assert.equal(p2.referencia, p1.referencia, "la referencia determinista es la misma tras la restauración"); autorizada = p2.referencia;
+    const r2 = await s2.certificar(ctxDe(A), docFel(A, docId(10)), { operacionId: p2.operacionId, confirmacion: CONFIRMACION_TEST, referencia: p2.referencia, huellaEmisor: p2.huellaEmisor });
+    assert.equal(r2.operacion.estado, "desconocida"); assert.equal(r2.operacion.resultado?.motivoDesconocido, "ya_existia_en_digifact"); assert.equal(envios, 1, "NO hubo una segunda certificación en Digifact");
+    assert.ok(aud.includes("digifact_test.ya_existia_en_digifact")); assert.equal((await fiscal(t2)()).estado_fiscal, "ninguno", "el documento no se toca hasta conciliar");
+    await falla(() => s2.preparar(ctxDe(A), docFel(A, docId(10))), /operación|Este documento/, "la operación desconocida bloquea otro envío");
+    // 3. conciliar: se adopta lo que Digifact ya tiene → el documento queda con el MISMO UUID, serie y número
+    const c = await s2.conciliar(ctxDe(A), p2.operacionId); assert.equal(c.resultado, "certificada"); assert.equal((c as { aplicacion?: string }).aplicacion, "aplicada"); assert.equal(envios, 1);
+    const restaurado = await fiscal(t2)(); assert.deepEqual(restaurado, original, "UUID, serie, número y estado fiscal idénticos a los originales");
+    // 4. los archivos se recuperan de Digifact y quedan con el MISMO SHA-256 que tenían
+    const x = await s2.descargar(ctxDe(A), docId(10), "xml"), pdf = await s2.descargar(ctxDe(A), docId(10), "pdf");
+    assert.equal(x.sha256, archivos1.find((a) => a.tipo === "xml")!.sha256); assert.equal(pdf.sha256, archivos1.find((a) => a.tipo === "pdf")!.sha256); assert.deepEqual(await arts(t2)(), archivos1);
+    assert.equal(envios, 1, "en todo el recorrido solo hubo UNA certificación en Digifact");
+    // 5. la base restaurada sigue protegida: el resultado conciliado ya no cambia y nada se borra
+    await falla(() => t2.sql.unsafe(`delete from public.digifact_operaciones where id = '${p2.operacionId}'`), /no se borran/, "no se borran operaciones");
+    await falla(() => t2.sql.unsafe(`update public.digifact_operaciones set resultado = '{"autorizacion":"OTRA"}' where id = '${p2.operacionId}'`), /FEL_DIGIFACT/, "el resultado certificado no cambia");
+  } finally { await t1.limpiar(); await t2.limpiar(); }
 } });

@@ -12,7 +12,7 @@ echo "$*" >> "$REGISTRO"
 if [ "$1 $2" = "db push" ]; then
   wd=""; yes=0; dry=0; prev=""; for a in "$@"; do [ "$prev" = "--workdir" ] && wd="$a"; [ "$a" = "--yes" ] && yes=1; [ "$a" = "--dry-run" ] && dry=1; prev="$a"; done
   if [ -n "$wd" ] && [ -d "$wd/supabase/migrations" ] && [ "$yes" = 1 ] && [ "$dry" = 0 ]; then   # simula la aplicación: guarda qué se «aplicó» y deja el estado resultante para el psql falso
-    ls "$wd/supabase/migrations" | sort > "${LISTADO:-/dev/null}"; ls "$wd/supabase/migrations" | sed 's/_.*//' | tr '\n' ' ' > "${ESTADO_VERS:-/dev/null}"; echo 67 > "${ESTADO_TAB:-/dev/null}"
+    ls "$wd/supabase/migrations" | sort > "${LISTADO:-/dev/null}"; ls "$wd/supabase/migrations" | sed 's/_.*//' | tr '\n' ' ' > "${ESTADO_VERS:-/dev/null}"; if [ "$(ls "$wd/supabase/migrations" | wc -l | tr -d ' ')" = 29 ]; then echo 69 > "${ESTADO_TAB:-/dev/null}"; else echo 67 > "${ESTADO_TAB:-/dev/null}"; fi
   fi
 fi
 if [ "$1 $2" = "secrets set" ]; then for a in "$@"; do case "$a" in --env-file) tomar=1;; *) [ "${tomar:-}" = 1 ] && { cat "$a" > "$ENV_COPIA"; cut -d= -f1 "$a" >> "$ESTADO_SECRETOS"; sort -u "$ESTADO_SECRETOS" -o "$ESTADO_SECRETOS"; tomar=0; };; esac; done; fi
@@ -42,6 +42,7 @@ if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then
     vers="${FAKE_VERSIONS:-}"; [ -s "${ESTADO_VERS:-/nonexistent}" ] && vers="$(cat "$ESTADO_VERS")"; tab="${FAKE_TABLAS:-0}"; [ -s "${ESTADO_TAB:-/nonexistent}" ] && tab="$(cat "$ESTADO_TAB")"
     case "$*" in
       *" -f "*) if [ "${FAKE_CATALOGO_RC:-0}" != 0 ]; then echo "psql:verificacion-posterior-28.sql:86: ERROR:  service_role puede borrar empresas ($PGPASSWORD)" >&2; exit 3; fi; exit 0;;
+      *digifact_operaciones*) echo "${FAKE_LIBRE:-t}";;
       *to_regclass*) echo "${FAKE_HIST:-f}";;
       *"string_agg(version"*) echo -n "$vers";;
       *"count(*) from supabase_migrations.schema_migrations"*) echo -n "$vers" | wc -w | tr -d ' ';;
@@ -108,7 +109,7 @@ dg_limpiar; export FEL_DIGIFACT_AUTORIZA_REFERENCIA="aaaaaaaa-bbbb-4ccc-8ddd-eee
 dg_limpiar; export FEL_DIGIFACT_TEST="si"; dg_rechaza "FEL_DIGIFACT_TEST solo admite «habilitado» o vacío"
 dg_limpiar
 # --- Consulta de NIT por Digifact TEST (INDEPENDIENTE de la certificación): apagada por defecto, todo o nada, una empresa, sin datos de emisor ni de certificación
-nit_limpiar() { dg_limpiar; unset FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA; }
+nit_limpiar() { dg_limpiar; unset FEL_DIGIFACT_NIT FEL_DIGIFACT_NIT_EMPRESA FEL_DIGIFACT_CUI FEL_DIGIFACT_CUI_EMPRESA FEL_DIGIFACT_CORREO FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS; }   # «todo apagado» incluye el correo
 nit_completo() { nit_limpiar; export FEL_DIGIFACT_NIT=habilitado FEL_DIGIFACT_NIT_EMPRESA="$DG_EMP" DIGIFACT_TEST_USERNAME="$DG_USER" DIGIFACT_TEST_PASSWORD="$DG_PASS" DIGIFACT_TEST_NIT=5888492; }
 nit_rechaza() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; [ $r = 2 ] && nollamo && grep -q "no se publica la función" "$W/salida.txt" && ! grep -qF "$DG_PASS" "$W/salida.txt" && ok "$1" || mal "$1 (código $r)"; }
 nit_limpiar; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
@@ -177,6 +178,34 @@ cui_completo; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CUIV $CRED
 cui_completo; publica; dg_solo_cert; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $CRED)" ] && ok "pasar de CUI a solo certificación: se retiran los de CUI" || mal "CUI→cert: $(nombres_dg)"
 dg_todo_apagado; publica; [ -z "$(nombres_dg)" ] && grep -qx "FEL_PROXY_SECRETO" "$ESTADO_SECRETOS" && ok "al apagar todo solo se retiran secretos de Digifact (los demás no se tocan)" || mal "se tocaron otros secretos"
 cui_completo; publica; dg_todo_apagado; FAKE_UNSET_RC=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && ok "si «secrets unset» falla al apagar la consulta de CUI: la función NO se publica (código 3)" || mal "unset fallido de CUI se publicó (código $r)"
+dg_todo_apagado
+# --- Correo de la factura por Digifact: CUARTO interruptor independiente (sin credenciales: no consulta ni certifica; solo interruptor, empresa y lista CERRADA de destinatarios)
+CORREOV="FEL_DIGIFACT_CORREO FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS"; DG_DEST="prueba.nexa@ejemplo.com, @pruebas.example.org"
+correo_limpiar() { nit_limpiar; unset FEL_DIGIFACT_CORREO FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS; }
+correo_completo() { correo_limpiar; export FEL_DIGIFACT_CORREO=habilitado FEL_DIGIFACT_CORREO_EMPRESA="$DG_EMP" FEL_DIGIFACT_CORREO_DESTINATARIOS="$DG_DEST"; }
+correo_rechaza() { rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?; [ $r = 2 ] && nollamo && grep -q "no se publica la función" "$W/salida.txt" && ! grep -qF "prueba.nexa" "$W/salida.txt" && ok "$1" || mal "$1 (código $r)"; }
+printf 'FEL_PROXY_SECRETO\nFEL_DEMO_BD_URL\n' > "$ESTADO_SECRETOS"
+correo_limpiar; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
+! grep -qi "FEL_DIGIFACT_CORREO" "$ENV_COPIA" && ok "correo por Digifact apagado (por defecto): ningún valor llega a los secretos de la función" || mal "correo apagado pero llegó a la función"
+correo_completo; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?
+[ $r = 0 ] && grep -qx "FEL_DIGIFACT_CORREO='habilitado'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_CORREO_EMPRESA='$DG_EMP'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_CORREO_DESTINATARIOS='$DG_DEST'" "$ENV_COPIA" && ok "correo habilitado y completo: la función se publica y viajan el interruptor, la empresa y la lista cerrada" || mal "correo completo (código $r)"
+! grep -q "DIGIFACT_TEST\|FEL_DIGIFACT_AUTORIZA\|FEL_DIGIFACT_NIT\|FEL_DIGIFACT_CUI" "$ENV_COPIA" && ok "con solo el correo NO viajan credenciales, ni la certificación, ni el emisor, ni la consulta de NIT o CUI" || mal "el correo arrastró otros secretos"
+! grep -qF "prueba.nexa" "$W/salida.txt" && ! grep -qF "$DG_EMP" "$W/salida.txt" && grep -q "Correo por Digifact TEST: habilitado para una empresa y una lista cerrada de destinatarios (valores no mostrados" "$W/salida.txt" && ok "la salida no imprime la empresa ni los destinatarios" || mal "la salida muestra valores del correo"
+for falta in FEL_DIGIFACT_CORREO_EMPRESA FEL_DIGIFACT_CORREO_DESTINATARIOS; do correo_completo; unset "$falta"; correo_rechaza "correo habilitado SIN $falta: todo o nada, la función no se publica"; done
+correo_completo; export FEL_DIGIFACT_CORREO_EMPRESA="no-es-uuid"; correo_rechaza "empresa del correo que no es UUID: se rechaza"
+for malo in "no-es-correo" "uno@pruebas.example.org, basura" "a@b" "<s>@pruebas.example.org" "@" "uno@pruebas.example.org;dos@pruebas.example.org" "$(printf 'x%.0s' {1..45})@pruebas.example.org" "uno@pruebas.example.org,,,"; do
+  correo_completo; export FEL_DIGIFACT_CORREO_DESTINATARIOS="$malo"; [ "$malo" = "uno@pruebas.example.org,,," ] && continue; correo_rechaza "lista de destinatarios con un elemento no válido («${malo:0:24}»): se rechaza TODA la lista"
+done
+correo_completo; export FEL_DIGIFACT_CORREO_DESTINATARIOS="$(for i in $(seq 1 51); do printf 'u%s@pruebas.example.org,' "$i"; done)"; correo_rechaza "más de 50 destinatarios: se rechaza"
+correo_completo; export FEL_DIGIFACT_CORREO_DESTINATARIOS="o'brien@pruebas.example.org"; correo_rechaza "un valor con comilla simple se rechaza (correo)"
+correo_limpiar; export FEL_DIGIFACT_CORREO="si"; correo_rechaza "FEL_DIGIFACT_CORREO solo admite «habilitado» o vacío"
+correo_limpiar; export FEL_DIGIFACT_CORREO_EMPRESA="$DG_EMP"; correo_rechaza "una empresa del correo con el correo apagado se rechaza"
+correo_limpiar; export FEL_DIGIFACT_CORREO_DESTINATARIOS="$DG_DEST"; correo_rechaza "una lista de destinatarios con el correo apagado se rechaza"
+correo_completo; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CORREOV)" ] && ok "ACTIVAR solo el correo: quedan solo sus 3 secretos (sin credenciales)" || mal "activar solo correo: $(nombres_dg)"
+dg_solo_cert; export FEL_DIGIFACT_CORREO=habilitado FEL_DIGIFACT_CORREO_EMPRESA="$DG_EMP" FEL_DIGIFACT_CORREO_DESTINATARIOS="$DG_DEST"; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $CORREOV $CRED)" ] && ok "certificación y correo a la vez: conviven y las credenciales viajan una sola vez" || mal "cert+correo: $(nombres_dg)"
+dg_solo_cert; publica; [ $r = 0 ] && [ "$(nombres_dg)" = "$(esperado $CERT $CRED)" ] && grep -q "^secrets unset" "$REGISTRO" && ok "APAGAR el correo con la certificación encendida: se retiran solo los del correo; la certificación y las credenciales se conservan" || mal "apagar correo con cert: $(nombres_dg)"
+correo_completo; publica; dg_todo_apagado; publica; [ $r = 0 ] && [ -z "$(nombres_dg)" ] && grep -q "^secrets unset" "$REGISTRO" && ok "DESACTIVAR el correo: se retiran de verdad sus 3 secretos" || mal "desactivar correo dejó: $(nombres_dg)"
+correo_completo; publica; dg_todo_apagado; FAKE_UNSET_RC=1 publica; [ $r = 3 ] && ! grep -q "^functions deploy" "$REGISTRO" && ok "si «secrets unset» falla al apagar el correo: la función NO se publica (código 3)" || mal "unset fallido del correo se publicó (código $r)"
 dg_todo_apagado
 # --- secretos-estado (solo lectura) y empresa-demo (solo lectura)
 dg_solo_nit; publica; rm -f "$REGISTRO"; base "$REF" secretos-estado; r=$?
@@ -265,7 +294,7 @@ base "$REF" validar "$URL_TX"; [ $? = 0 ] && ok "explicación: una cadena correc
 # --- migraciones POR ETAPAS (solo migraciones, con parada) y su verificación de solo lectura
 export FAKE_ETAPAS=1 LISTADO="$W/listado.txt" ESTADO_VERS="$W/estado_vers.txt" ESTADO_TAB="$W/estado_tab.txt"
 V1="$(cd "$R" && for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; [ "$v" -le 20261112001000 ] && echo "$v"; done | sort | tr '\n' ' ')"
-reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC; }
+reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE; }
 etapa() { # $1 ref, $2 acción, $3 etapa, $4 confirmación (opcional)
   env -u GITHUB_ACTIONS PATH="$W:$PATH" SUPABASE_DB_PASSWORD="$CLAVE" FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${4:+FEL_CONFIRMAR_MIGRACIONES=$4} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" "$2" "$3" >"$W/salida.txt" 2>&1; }
 solo_lectura() { ! grep -v "default_transaction_read_only=on" "$REG_PSQL" | grep -q .; }
@@ -294,7 +323,7 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="20261110000100 " FAKE_TABLAS=0; etap
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; etapa "$REF" migraciones-etapa 2 APLICAR-MIGRACIONES; r=$?
 [ $r = 2 ] && grep -q "etapa 2 exige que estén registradas EXACTAMENTE las 27" "$W/salida.txt" && nollamo && ok "etapa 2 sin las 27 anteriores → se niega (no se puede saltar la etapa 1)" || mal "etapa 2 aceptó una base sin las 27"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$(echo "$V1" | awk '{$NF=""; print}') " FAKE_TABLAS=60; etapa "$REF" migraciones-etapa 2 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && ok "etapa 2 con solo 26 de las 27 → se niega" || mal "etapa 2 aceptó 26 migraciones"
-reinicia; etapa "$REF" migraciones-etapa 3 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && ok "una etapa que no existe se rechaza" || mal "etapa 3 aceptada"
+reinicia; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && ok "una etapa que no existe se rechaza" || mal "etapa 4 aceptada"
 reinicia; etapa "abcdefghijklmnopqrst" migraciones-etapa 1 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && [ ! -e "$REG_PSQL" ] && ok "con otra referencia de proyecto se rechaza sin conectar ni llamar a la CLI" || mal "otra referencia aceptada"
 # aplicar etapa 1 de verdad (CLI falsa): carpeta temporal con SOLO las 27, un único push, verificación y parada
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; etapa "$REF" migraciones-etapa 1 APLICAR-MIGRACIONES; r=$?
@@ -312,6 +341,29 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" mi
 grep -q "catálogo de la migración 28" "$W/salida.txt" && grep -q "VERIFICACIÓN DE LA ETAPA 2: OK. SE DETIENE AQUÍ" "$W/salida.txt" && ok "etapa 2: verifica el catálogo de la 28 en solo lectura y se detiene" || { mal "etapa 2: verificación"; cat "$W/salida.txt"; }
 # la verificación posterior fallida tras aplicar → exit 1
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_CATALOGO_RC=3; etapa "$REF" migraciones-etapa 2 APLICAR-MIGRACIONES; [ $? = 1 ] && grep -q "FALLÓ. No se sigue" "$W/salida.txt" && ok "etapa 2: si la verificación posterior falla, el flujo FALLA y no se sigue" || mal "verificación posterior fallida no detiene"
+# ---- ETAPA 3 (migración 29): verificación, precondiciones de solo lectura y aplicación
+V2="${V1}20261113000100 "; V3="${V2}20261114000100 "
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; etapa "$REF" verificar-etapa 3; r=$?
+[ $r = 0 ] && nollamo && solo_lectura && grep -q "catálogo de la migración 29" "$W/salida.txt" && grep -q -- "-f docs/migracion-29/verificacion-posterior-29.sql" "$REG_PSQL" && ok "verificar-etapa 3: solo lectura, sin CLI, catálogo de la 29" || { mal "verificar-etapa 3"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69 FAKE_CATALOGO_RC=3; etapa "$REF" verificar-etapa 3; r=$?
+[ $r = 1 ] && grep -q "FALLO catálogo de la migración 29" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-etapa 3: si el catálogo de la 29 falla → FALLA (exit 1) sin imprimir la contraseña" || mal "verificar-etapa 3 con catálogo fallido"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V2" FAKE_TABLAS=67; etapa "$REF" migraciones-etapa 3; r=$?
+[ $r = 2 ] && nollamo && ok "etapa 3 sin la confirmación literal → se niega sin llamar a la CLI" || mal "etapa 3 sin confirmación"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" migraciones-etapa 3 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "EXACTAMENTE las 28 migraciones anteriores" "$W/salida.txt" && ok "etapa 3 con solo las 27 registradas → se niega" || { mal "etapa 3 aceptó 27"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; etapa "$REF" migraciones-etapa 3 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && ok "etapa 3 con la 29 ya registrada → se niega (no se aplica dos veces)" || mal "etapa 3 aceptó la 29 ya registrada"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V2" FAKE_TABLAS=67 FAKE_LIBRE=f; etapa "$REF" migraciones-etapa 3 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "ya tiene objetos de la migración 29" "$W/salida.txt" && ok "etapa 3 con objetos de la 29 ya presentes (sin historial) → se niega" || { mal "etapa 3 aceptó objetos preexistentes"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V2" FAKE_TABLAS=67 FAKE_CATALOGO_RC=3; etapa "$REF" migraciones-etapa 3 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "catálogo de la migración 28 NO está sano" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "etapa 3 con el catálogo de la 28 dudoso → se niega ANTES de tocar nada (y sin imprimir la contraseña)" || { mal "etapa 3 con catálogo 28 dudoso"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V2" FAKE_TABLAS=67; etapa "$REF" migraciones-etapa 3 APLICAR-MIGRACIONES; r=$?
+[ $r = 0 ] && ok "migraciones-etapa 3: termina bien" || { mal "migraciones-etapa 3 falló"; cat "$W/salida.txt"; }
+grep -q "precondiciones de la etapa 3" "$W/salida.txt" && grep -q "inventario previo" "$W/salida.txt" && grep -q "rol de la conexión (solo lectura)" "$W/salida.txt" && solo_lectura && ok "etapa 3: muestra las precondiciones, el inventario previo y el rol de la conexión (todo en solo lectura)" || mal "etapa 3: sin precondiciones o inventario"
+[ "$(grep -c '^db push' "$REGISTRO")" = 1 ] && grep -qE "^db push --remote=$URL_SES --yes --workdir /" "$REGISTRO" && ok "etapa 3: UN solo «db push» por el Session Pooler, sobre una carpeta temporal" || { mal "etapa 3: push inesperado"; cat "$REGISTRO"; }
+[ "$(wc -l < "$LISTADO" | tr -d ' ')" = 29 ] && grep -q "digifact_operaciones" "$LISTADO" && ok "etapa 3: la carpeta aplicada tiene las 29 (28 ya registradas + la 29: la CLI solo empuja la pendiente)" || { mal "etapa 3: contenido"; cat "$LISTADO"; }
+! grep -E "^(secrets|functions)" "$REGISTRO" >/dev/null && ! grep -q -- "--include-all" "$REGISTRO" && ok "etapa 3: no carga secretos, no despliega función y no usa --include-all" || mal "etapa 3 hace más de lo debido"
+grep -q "catálogo de la migración 29" "$W/salida.txt" && grep -q "VERIFICACIÓN DE LA ETAPA 3: OK. SE DETIENE AQUÍ" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "etapa 3: verifica el catálogo de la 29 en solo lectura, se detiene y no imprime la contraseña" || { mal "etapa 3: verificación"; cat "$W/salida.txt"; }
 # GitHub Actions: la contraseña y la URL se enmascaran
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; ACTIONS=1 etapa "$REF" migraciones-etapa 1 APLICAR-MIGRACIONES; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "etapas en GitHub Actions: se enmascaran la contraseña y la URL derivada" || mal "etapas sin enmascarar"
 unset FAKE_ETAPAS
