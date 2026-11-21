@@ -433,3 +433,13 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .sv-off{opacity:.65;cursor:default}.sv:focus-within{border-color:var(--pri);box-shadow:0 0 0 3px var(--soft)}
 @media(max-width:375px){.sv .sv-t{font-size:15px}.sv .sv-cod{display:none}.sv{padding:0 10px;gap:4px}}   /* 360 px: la columna deja ~136 px; con 10 px de relleno el nombre cabe aunque la tipografía de respaldo sea más ancha (WebKit midió 89 px contra 87 disponibles) */
 @media(max-width:340px){.sv{padding:0 8px;gap:4px}}
+/* correo de facturas: tarjeta del detalle (compacta, 40 px mínimo, sin desbordes) */
+.card-correo .correo-nota{font-size:13px;line-height:1.4;margin:0}
+.card-correo .form{display:flex;flex-direction:column;gap:10px}
+.card-correo input[type=email]{min-height:44px;font-size:16px;width:100%}
+.correo-hist{margin-top:4px}.correo-sub{font-size:13px;font-weight:700;margin:6px 0}
+.correo-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.correo-fila{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:9px 0;border-top:1px solid var(--line)}
+.correo-dest{font-weight:600;font-size:14px;word-break:break-all;min-width:0;flex:1 1 180px}
+.correo-aviso{margin:0;font-size:13px}.correo-aviso:empty{display:none}
+.correo-auto{display:flex;align-items:center;gap:10px;min-height:44px;font-size:14px;font-weight:600}.correo-auto[hidden]{display:none}.correo-auto input{width:22px;height:22px;accent-color:var(--pri)}

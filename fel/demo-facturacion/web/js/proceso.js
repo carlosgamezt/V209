@@ -9,6 +9,7 @@ import { vistaPrevia } from "./vista_previa.js";
 import { descargarArchivo } from "./descarga.js";
 import { panelDigifact } from "./digifact.js";
 import { confirmarAnulacion } from "./anular.js";
+import { panelCorreo } from "./correo.js";
 
 let demoAbierto = false;   // los controles de la demostración permanecen abiertos mientras se usan
 const escAnu = new Map();   // respuesta elegida del proveedor simulado por documento: sobrevive a que el panel se vuelva a pintar (por ejemplo, tras cancelar el diálogo)
@@ -77,14 +78,19 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
     pintarEscenarios();
     const clave = claveDe(doc.id, operaciones.length);
     const permitido = ctx.tiene("fiscal.certificar");
+    // envío automático del correo al certificar: la casilla solo aparece si el servidor lo habilita (FEL_CORREO_AUTOMATICO) y la persona puede enviar; apagada por defecto
+    let correoAuto = false;
+    const chkCorreo = h("label", { class: "correo-auto", hidden: true }, h("input", { type: "checkbox", id: "correo-auto", onchange: (e) => { correoAuto = e.target.checked; } }), h("span", {}, "Enviar la factura por correo al certificar"));
+    api.correoEstado().then((e) => { if (e.habilitado && e.automatico && e.puedeEnviar) chkCorreo.hidden = false; }).catch(() => {});
+    const avisarCorreoAuto = (r) => { const c = r.correo_auto; if (!c) return; if (c.error) avisar(`Certificada, pero el correo no se envió: ${c.mensaje}`, "error"); else if (c.estado === "aceptado") avisar("Correo de la factura aceptado por el proveedor.", "ok"); else avisar(`Correo: ${c.estado}. Revisa el historial en el detalle.`, "error"); };
     const b = boton("Enviar a certificación simulada", { icon: "check", id: "enviar", disabled: !permitido || sucio(), title: !permitido ? "Tu rol no puede certificar" : sucio() ? "Guarda los cambios primero" : null,
-      onclick: accion(() => { b.disabled = true; return api.certificar(doc.id, clave, escenario, canalSel === "mock" ? undefined : canalSel); }, (r) => avisar(r.resultado.reutilizada ? "Esa clave ya tenía una operación: no se envió de nuevo" : r.resultado.estado === "confirmada_exitosa" ? "Certificado (simulación)" : r.resultado.estado === "confirmada_fallida" ? "El proveedor simulado rechazó el documento" : r.resultado.estado === "desconocida" ? "Resultado desconocido: queda por verificar" : "Operación en curso", r.resultado.estado === "confirmada_exitosa" ? "ok" : "error")) });
+      onclick: accion(() => { b.disabled = true; return api.certificar(doc.id, clave, escenario, canalSel === "mock" ? undefined : canalSel, correoAuto); }, (r) => { avisar(r.resultado.reutilizada ? "Esa clave ya tenía una operación: no se envió de nuevo" : r.resultado.estado === "confirmada_exitosa" ? "Certificado (simulación)" : r.resultado.estado === "confirmada_fallida" ? "El proveedor simulado rechazó el documento" : r.resultado.estado === "desconocida" ? "Resultado desconocido: queda por verificar" : "Operación en curso", r.resultado.estado === "confirmada_exitosa" ? "ok" : "error"); avisarCorreoAuto(r); }) });
     return h("div", { class: "card" }, h("h2", { class: "card-t" }, "Envío a certificación simulada"),
       h("p", { class: "mut" }, "El documento se guarda como operación ANTES de enviarse y el envío se marca antes de salir. Solo se envía una vez por operación."),
       !permitido ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, "Tu rol no puede certificar. Cambia de persona arriba (por ejemplo, Ana Torres).")) : null,
       selCanal ? campo("Canal de certificación", selCanal, { ayuda: "El certificador simulado reserva saldo antes de enviar y cobra según tu plan. Nada sale de este equipo." }) : null,
       campo("Comportamiento del proveedor simulado (solo para la demostración)", sel, {}), ayuda,
-      h("p", { class: "mut clave-idem" }, "Clave de idempotencia de este intento: ", h("span", { class: "mono" }, `${clave.slice(0, 8)}…`), " · si repites el envío con la misma clave no se duplica."), b);
+      h("p", { class: "mut clave-idem" }, "Clave de idempotencia de este intento: ", h("span", { class: "mono" }, `${clave.slice(0, 8)}…`), " · si repites el envío con la misma clave no se duplica."), chkCorreo, b);
   })();
 
   // ------------------------------------------------------------ conciliación
@@ -203,5 +209,6 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
   })();
 
   const digifactReal = practico && ctx.tiene("borradores.ver") ? panelDigifact({ ctx, doc, recargar, mostrarError }) : null;   // Digifact TEST real: solo vía el servidor de NEXA
-  return h("div", { class: "proceso-col" }, estadoCard, envio, conciliacion, digifactReal, ...digifact, ...extra, linea, demo);
+  const correo = panelCorreo({ ctx, doc, mostrarError, avisar });   // enviar la factura certificada por correo (nuestro servicio; oculto si el servidor no lo habilita)
+  return h("div", { class: "proceso-col" }, estadoCard, envio, conciliacion, digifactReal, ...digifact, correo, ...extra, linea, demo);
 }
