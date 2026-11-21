@@ -41,9 +41,12 @@ Cambiar de proveedor = otra clase con la interfaz `ProveedorCorreo`; el servicio
 | `FEL_CORREO_REMITENTE` | `NEXA FEL <facturas@dominio-verificado>` |
 | `RESEND_API_KEY` | **secreto**; solo con `habilitado` |
 | `FEL_CORREO_DESTINATARIOS` | lista cerrada de prueba: direcciones y/o `@dominio` |
+| `FEL_CORREO_TOPE_DIARIO` | máximo de envíos por empresa y por día con `habilitado` (1–1000; **50 por defecto**). Freno de seguridad de las pruebas reales; la ventana es de 24 h alineada a UTC (se reinicia a las 6:00 p. m. hora de Guatemala). |
 | `FEL_CORREO_AUTOMATICO` | `habilitado` activa la casilla «enviar al certificar». **Apagado por defecto.** |
 
 El envío automático actúa solo si el servidor lo habilita **y** la persona marca la casilla al certificar; un fallo del correo nunca afecta a la certificación. Hoy cubre la certificación simulada; la certificación real de Digifact TEST sigue su propio flujo manual.
+
+> Guía paso a paso de Resend, migración y primer envío real: [`CORREO-PRIMERA-PRUEBA-REAL.md`](CORREO-PRIMERA-PRUEBA-REAL.md).
 
 ## Pendiente de configuración externa (no hecho)
 1. Cuenta de Resend y **dominio remitente verificado** (SPF, DKIM y, recomendado, DMARC en el DNS).

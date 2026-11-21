@@ -176,6 +176,7 @@ Deno.test({ name: "correo: configuración del entorno — falla cerrado, lista d
   for (const quitar of ["FEL_CORREO_REMITENTE", "FEL_CORREO_DESTINATARIOS", "RESEND_API_KEY"]) { const e = { ...base } as Record<string, string>; delete e[quitar]; const r = cr(e); assert.equal(r.servicio, undefined, quitar); assert.ok(!r.motivo.includes("re_Test") && !r.motivo.includes("uno@ejemplo.com")); }
   assert.equal(cr({ ...base, RESEND_API_KEY: "mala" }).servicio, undefined); assert.ok(!cr({ ...base, RESEND_API_KEY: "mala-secreta" }).motivo.includes("mala-secreta"));
   assert.equal(cr({ ...base, FEL_CORREO_DESTINATARIOS: "uno@ejemplo.com, basura" }).servicio, undefined, "un elemento inválido invalida la lista"); assert.equal(cr({ ...base, FEL_CORREO_REMITENTE: "sin-arroba" }).servicio, undefined);
+  for (const mal of ["0", "-1", "1001", "abc", "1.5"]) assert.equal(cr({ ...base, FEL_CORREO_TOPE_DIARIO: mal }).servicio, undefined, `tope diario ${mal} no válido`); assert.ok(cr({ ...base, FEL_CORREO_TOPE_DIARIO: "5" }).servicio, "tope diario válido");
   const lista = listaDestinatarios("Uno@Ejemplo.com, @pruebas.example.org")!; assert.ok(lista("uno@ejemplo.com") && lista("UNO@EJEMPLO.COM") && lista("cualquiera@pruebas.example.org")); assert.ok(!lista("otro@ejemplo.com") && !lista("x@evil.pruebas.example.org.com") && !lista("x@mipruebas.example.org"));
   assert.equal(listaDestinatarios(""), null); assert.equal(listaDestinatarios(undefined), null);
 }});
@@ -183,12 +184,17 @@ Deno.test({ name: "correo: configuración del entorno — falla cerrado, lista d
 Deno.test({ name: "correo: con proveedor real, solo salen correos a destinatarios autorizados (lista cerrada) y la solicitud lleva la clave de idempotencia", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const llamadas: { url: string; init: RequestInit }[] = [];
   const falso = ((u: string, i: RequestInit) => { llamadas.push({ url: String(u), init: i }); return Promise.resolve(new Response(JSON.stringify({ id: "msg_123" }), { status: 200 })); }) as unknown as typeof fetch;
-  const w = await montar(async (bd) => { await aplicarCorreo(bd); return { correo: crearCorreoDesdeEntorno((k) => ({ FEL_CORREO: "habilitado", FEL_CORREO_REMITENTE: "NEXA FEL <facturas@ejemplo.com>", FEL_CORREO_DESTINATARIOS: "prueba@ejemplo.com", RESEND_API_KEY: "re_TestClaveFalsa123456789" } as Record<string, string>)[k], bd, { fetchImpl: falso }).servicio }; });
+  const w = await montar(async (bd) => { await aplicarCorreo(bd); return { correo: crearCorreoDesdeEntorno((k) => ({ FEL_CORREO: "habilitado", FEL_CORREO_REMITENTE: "NEXA FEL <facturas@ejemplo.com>", FEL_CORREO_DESTINATARIOS: "prueba@ejemplo.com", RESEND_API_KEY: "re_TestClaveFalsa123456789", FEL_CORREO_TOPE_DIARIO: "2" } as Record<string, string>)[k], bd, { fetchImpl: falso, limites: { empresa: 1000, persona: 1000 } }).servicio }; });
   const ana = await new w.Cli("ana").entrar(); const id = await documento(ana, "clave-cert-correo-0011");
   const no = await enviar(ana, id, { destinatario: "ajeno@dominio-externo.com", clave: "envio-0011-aaaa" }); assert.equal(no.status, 403); assert.equal(no.json.codigo, "destinatario_no_autorizado"); assert.equal(llamadas.length, 0, "a un destinatario no autorizado no sale nada");
   const si = await enviar(ana, id, { destinatario: "prueba@ejemplo.com", clave: "envio-0011-bbbb" }); assert.equal(si.status, 201, si.texto); assert.equal(si.json.envio.proveedor, "resend"); assert.equal(llamadas.length, 1);
   assert.ok(String((llamadas[0].init.headers as Record<string, string>)["idempotency-key"]).endsWith(":envio-0011-bbbb"));
   assert.ok(!si.texto.includes("re_TestClave") && !JSON.stringify(await ana.llamar("GET", "/api/correo/estado")).includes("re_TestClave"));
+  // tope diario de la etapa de pruebas reales (aquí 2): el tercer envío que llegaría al proveedor se frena, y lo bloqueado antes (destinatario no autorizado) no cuenta
+  const id2 = await documento(ana, "clave-cert-correo-0013"); const id3 = await documento(ana, "clave-cert-correo-0014");
+  assert.equal((await enviar(ana, id2, { destinatario: "prueba@ejemplo.com", clave: "envio-0013-aaaa" })).status, 201); assert.equal(llamadas.length, 2);
+  const tope = await enviar(ana, id3, { destinatario: "prueba@ejemplo.com", clave: "envio-0014-aaaa" }); assert.equal(tope.status, 429); assert.equal(tope.json.codigo, "tope_diario"); assert.equal(llamadas.length, 2, "con el tope alcanzado no sale nada");
+  assert.equal((await enviar(ana, id3, { destinatario: "ajeno@dominio-externo.com", clave: "envio-0014-bbbb" })).json.codigo, "destinatario_no_autorizado", "las validaciones previas siguen mandando");
 }});
 
 Deno.test("correo: plantilla — marca NEXA FEL, nombre del emisor, datos de la factura, rótulo de prueba, escapado, sin imágenes externas y adaptable", () => {

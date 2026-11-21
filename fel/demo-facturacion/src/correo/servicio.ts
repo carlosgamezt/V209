@@ -29,6 +29,8 @@ export interface ConfigCorreo {
   automatico: boolean;
   /** Solo para pruebas: otros topes por minuto. */
   limites?: { empresa: number; persona: number };
+  /** Tope de envíos por empresa y por día (ventana fija de 24 h) que SÍ llegan al proveedor: freno de seguridad de la etapa de pruebas reales. Sin valor = sin tope (proveedor simulado). */
+  topeDiario?: number;
 }
 export interface CtxCorreo { empresaId: string; actorId: string; permisos: string[] }
 export interface PeticionEnvio {
@@ -61,9 +63,10 @@ export function formatoQuetzales(valor: unknown, moneda = "GTQ"): string {
 const fechaCorta = (v: unknown) => { const s = v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split("-").reverse().join("/") : "—"; };
 
 export class ServicioCorreo {
-  readonly #limEmpresa: LimiteTasaPg; readonly #limPersona: LimiteTasaPg;
+  readonly #limEmpresa: LimiteTasaPg; readonly #limPersona: LimiteTasaPg; readonly #limDia: LimiteTasaPg | null;
   constructor(private bd: BdDemo, private proveedor: ProveedorCorreo, private cfg: ConfigCorreo) {
     this.#limEmpresa = new LimiteTasaPg(bd, cfg.limites?.empresa ?? LIMITE_EMPRESA_POR_MIN, 60_000); this.#limPersona = new LimiteTasaPg(bd, cfg.limites?.persona ?? LIMITE_PERSONA_POR_MIN, 60_000);
+    this.#limDia = cfg.topeDiario ? new LimiteTasaPg(bd, cfg.topeDiario, 86_400_000) : null;
   }
   get proveedorNombre() { return this.proveedor.nombre; }
   get automatico() { return this.cfg.automatico; }
@@ -123,6 +126,8 @@ export class ServicioCorreo {
       const bytes = aBytes(a.contenido); if (!bytes.length || hex(await crypto.subtle.digest("SHA-256", bytes)) !== a.sha256) throw new ErrorCorreo(409, "adjunto_alterado", "Un archivo certificado no coincide con su huella: no se envía.");
       adjuntos.push({ nombre: String(a.nombre), mime: String(a.mime), contenido: bytes });
     }
+    // 7b) tope diario de la etapa de pruebas reales: cuenta solo lo que llegaría al proveedor (ya validado todo lo anterior)
+    if (this.#limDia) { const d = await this.#limDia.permitir(`correo:d:${ctx.empresaId}`); if (!d.ok) throw new ErrorCorreo(429, "tope_diario", `Se alcanzó el tope diario de envíos de prueba (${this.cfg.topeDiario}). Se reinicia en unas horas.`); }
     // 8) se registra la solicitud ANTES de hablar con el proveedor (o se retoma el intento fallido de la misma clave)
     let envioId: string;
     if (previa) {   // misma clave y estado «fallido»: reintento SEGURO, el proveedor deduplica por la clave
