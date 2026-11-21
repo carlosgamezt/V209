@@ -17,7 +17,8 @@ export interface EmisorGt {
   nit: string; nombre: string; afiliacionIva: AfiliacionIva; frases: FraseGt[]; correo?: string;
   establecimiento: { codigo: number; nombre?: string; direccion: DireccionGt };
 }
-export interface ReceptorGt { tipoId: "NIT" | "CUI" | "CF"; id: string; nombre: string; direccion?: DireccionGt }
+export interface ReceptorGt { tipoId: "NIT" | "CUI" | "CF"; id: string; nombre: string; direccion?: DireccionGt;
+  /** Correo al que DIGIFACT envía la factura al certificar (nodo Buyer.Contact.EmailList). Solo si la persona lo pidió para ese documento; sin él el NUC es idéntico al de siempre. */ correo?: string }
 export interface ImpuestoItemGt { codigoUnidadGravable: number; nombre: "IVA"; gravable: string; monto: string }
 export interface ItemGt {
   tipo: "Bien" | "Servicio"; descripcion: string; cantidad: string; unidad?: string; precioUnitario: string; descuento?: string;
@@ -48,6 +49,8 @@ const prod = (a: bigint, b: bigint): bigint => (a * b + ESC / 2n) / ESC;
 const GUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const FECHA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/;
 const CORREO = /^[^\s@]{1,40}@[^\s@]{1,40}\.[^\s@]{2,10}$/;
+/** Correo del RECEPTOR (a ese buzón envía Digifact): más estricto que el del emisor: sin signos que permitan listas o marcado (<>,;'"()[]\) y dominio de letras, dígitos, puntos y guiones. Hasta 50 caracteres. */
+const CORREO_RECEPTOR = /^[^\s@<>,;'"()\[\]\\]{1,40}@[A-Za-z0-9.-]{1,40}\.[A-Za-z]{2,10}$/;
 const dentro = (s: string, min: number, max: number) => typeof s === "string" && s.trim().length >= min && s.length <= max;
 
 function validarDireccion(d: DireccionGt | undefined, base: string, e: ErrorNuc[], paisObligatorio: boolean) {
@@ -70,6 +73,7 @@ export function validarFactura(f: FacturaGt): ErrorNuc[] {
   if (!dentro(s.nombre, 2, 100)) e.push({ campo: "emisor.nombre", mensaje: "2 a 100 caracteres" });
   if (!AFILIACIONES.includes(s.afiliacionIva)) e.push({ campo: "emisor.afiliacionIva", mensaje: `uno de ${AFILIACIONES.join(", ")}` });
   if (s.correo !== undefined && !CORREO.test(s.correo)) e.push({ campo: "emisor.correo", mensaje: "correo no válido (hasta 50 caracteres)" });
+  if (f.receptor.correo !== undefined && (!CORREO_RECEPTOR.test(f.receptor.correo) || f.receptor.correo.length > 50)) e.push({ campo: "receptor.correo", mensaje: "correo no válido (hasta 50 caracteres)" });
   s.frases.forEach((fr, i) => {
     if (!Number.isInteger(fr.tipo) || fr.tipo < 1 || fr.tipo > 9) e.push({ campo: `emisor.frases[${i}].tipo`, mensaje: "entero de 1 a 9" });
     if (!Number.isInteger(fr.escenario) || fr.escenario < 1 || fr.escenario > 99) e.push({ campo: `emisor.frases[${i}].escenario`, mensaje: "entero de 1 a 99" });
@@ -145,7 +149,7 @@ export function construirNuc(f: FacturaGt): Record<string, unknown> {
       AdditionlInfo: frases,
       BranchInfo: { Code: String(b.codigo), ...(b.nombre ? { Name: b.nombre } : {}), AddressInfo: dir(b.direccion, true) },
     },
-    Buyer: { TaxID: r.id, ...(r.tipoId === "CUI" ? { TaxIDType: "CUI" } : {}), Name: r.nombre, ...(r.direccion ? { AddressInfo: dir(r.direccion, false) } : {}) },
+    Buyer: { TaxID: r.id, ...(r.tipoId === "CUI" ? { TaxIDType: "CUI" } : {}), Name: r.nombre, ...(r.correo ? { Contact: { EmailList: { Email: [r.correo] } } } : {}), ...(r.direccion ? { AddressInfo: dir(r.direccion, false) } : {}) },
     Items: f.items.map((it, i) => ({
       Number: String(i + 1), Type: it.tipo, Description: it.descripcion, Qty: seisDec(it.cantidad),
       ...(it.unidad ? { UnitOfMeasure: it.unidad } : {}), Price: seisDec(it.precioUnitario),

@@ -1,0 +1,60 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Propuesta de plantilla · factura por correo (Digifact)</title>
+<style>
+:root{--pri:#4654F5;--txt:#19191D;--mut:#666876;--line:#E7E8F3;--fondo:#F4F5FB;--ok:#0E8A3C;--aviso:#B35208;--avisoF:#FFF4E8}
+*{box-sizing:border-box}body{margin:0;background:var(--fondo);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--txt)}
+.pagina{display:flex;gap:28px;justify-content:center;align-items:flex-start;padding:28px 16px}
+.correo{width:100%;max-width:600px}
+.marca{display:flex;align-items:center;justify-content:space-between;padding:0 4px 14px}
+.marca b{font-weight:800;letter-spacing:.04em;color:var(--pri);font-size:15px}.marca small{color:var(--mut);font-size:12px}
+.aviso{background:var(--avisoF);border:1px solid #F0C9A0;border-radius:10px;padding:11px 14px;font-weight:700;font-size:13px;color:var(--aviso);letter-spacing:.02em;text-align:center;margin-bottom:12px}
+.tarjeta{background:#fff;border:1px solid var(--line);border-radius:16px;padding:28px 26px}
+.sup{color:var(--mut);font-size:13px}
+.com{font-size:24px;line-height:1.2;font-weight:700;margin:2px 0 2px}.raz{color:var(--mut);font-size:13px;margin-bottom:16px}
+.chip{display:inline-block;background:#E8F7EE;color:var(--ok);font-weight:700;font-size:12px;border-radius:999px;padding:4px 10px;letter-spacing:.02em;margin-bottom:16px}
+.hola{margin:0 0 18px}
+.total{background:#F4F5FF;border-radius:12px;padding:16px 18px;margin-bottom:6px}.total small{display:block;color:var(--mut);font-size:12px;letter-spacing:.05em;text-transform:uppercase}.total strong{font-size:32px;font-weight:800;color:var(--pri);line-height:1.2}
+.fila{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--line)}.fila span{color:var(--mut);font-size:13px}.fila b{font-weight:600;text-align:right;word-break:break-word}
+.adj{margin-top:16px;color:var(--mut);font-size:13px}.adj b{color:var(--txt)}
+.pie{padding:16px 8px 0;text-align:center;color:var(--mut);font-size:12px;line-height:1.55}
+.pie .nx{color:var(--pri);font-weight:700}
+/* anotaciones */
+.z{position:relative}
+body:not(.anot) .n,body:not(.anot) .leyenda{display:none}
+body.anot .correo{margin-right:34px}
+.n{position:absolute;right:-40px;top:0;width:26px;height:26px;border-radius:50%;color:#fff;font-weight:800;font-size:13px;display:grid;place-items:center;box-shadow:0 0 0 3px #fff;z-index:2}
+.v{background:#0E8A3C}.a{background:#2F6BFF}.o{background:#E07B00}.g{background:#7A7D8C}
+.leyenda{width:330px;flex:none;background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 18px 8px;font-size:13px;line-height:1.45}
+.leyenda h3{margin:0 0 10px;font-size:14px}.leyenda .k{display:flex;gap:8px;align-items:center;margin:0 0 6px}.leyenda .k i{width:14px;height:14px;border-radius:50%;flex:none}
+.leyenda ol{padding:0;margin:12px 0 0;list-style:none}.leyenda li{display:flex;gap:8px;padding:7px 0;border-top:1px solid var(--line)}.leyenda li s{text-decoration:none;width:22px;height:22px;border-radius:50%;color:#fff;font-weight:800;font-size:12px;display:grid;place-items:center;flex:none}
+.leyenda li div b{display:block}.leyenda li div span{color:var(--mut)}
+</style></head><body class="">
+<div class="pagina"><div class="correo">
+ <div class="z marca"><b>NEXA FEL</b><small>Certificada por Digifact</small><span class="n o">1</span></div>
+ <div class="z aviso">DOCUMENTO DE PRUEBA — SIN VALIDEZ FISCAL<span class="n o">8</span></div>
+ <div class="tarjeta">
+  <div class="sup">Factura electrónica de</div>
+  <div class="z"><div class="com">Comercial Los Pinos</div><div class="raz">Comercial Los Pinos, S.A. · NIT 1234567-8</div><span class="n v">2</span></div>
+  <div class="z"><span class="chip">● Certificada ante la SAT</span><span class="n o">3</span></div>
+  <p class="hola">Hola Distribuidora La Ceiba, te compartimos tu factura. Encontrarás el <b>PDF</b> y el <b>XML</b> certificados como archivos adjuntos.</p>
+  <div class="z total"><small>Total</small><strong>Q 2,240.00</strong><span class="n g">4</span></div>
+  <div class="z"><div class="fila"><span>Factura</span><b>SIMD-00000001</b></div><div class="fila"><span>Fecha de emisión</span><b>21/11/2026</b></div><div class="fila"><span>Receptor</span><b>Distribuidora La Ceiba</b></div><div class="fila"><span>Autorización</span><b>A1B2C3D4-0000-1111-2222-333344445555</b></div><span class="n g">5</span></div>
+  <div class="z adj">Adjuntos: <b>SIMD-00000001.pdf · SIMD-00000001.xml</b><span class="n v">6</span></div>
+ </div>
+ <div class="z pie">Factura emitida con <span class="nx">NEXA FEL</span> en nombre de Comercial Los Pinos.<br>Certificada ante la SAT por Digifact · Mensaje automático, no respondas a este correo.<span class="n o">7</span></div>
+</div>
+<div class="leyenda"><h3>Quién controla cada zona</h3>
+ <div class="k"><i class="v"></i>Lo controlamos nosotros con el XML (confirmado)</div>
+ <div class="k"><i class="a"></i>Se configura en el portal de Digifact (por confirmar)</div>
+ <div class="k"><i class="o"></i>Requiere desarrollo del equipo técnico de Digifact</div>
+ <div class="k"><i class="g"></i>Lo decide la plantilla estándar de Digifact</div>
+ <ol>
+  <li><s class="o">1</s><div><b>Marca NEXA FEL</b><span>Logotipo, color y encabezado propios.</span></div></li>
+  <li><s class="v">2</s><div><b>Nombre comercial y datos del emisor</b><span>Salen del XML: <i>BranchInfo.Name</i>, <i>Seller.Name</i> y NIT. Que se muestren depende de la plantilla.</span></div></li>
+  <li><s class="o">3</s><div><b>Estado «Certificada»</b><span>Elemento de diseño nuevo.</span></div></li>
+  <li><s class="g">4</s><div><b>Total</b><span>Dato del XML; su presentación la define la plantilla.</span></div></li>
+  <li><s class="g">5</s><div><b>Serie, número, fecha, receptor, autorización</b><span>Datos del XML/certificación; presentación de la plantilla.</span></div></li>
+  <li><s class="v">6</s><div><b>PDF y XML adjuntos</b><span>Automático, originales de Digifact (confirmado).</span></div></li>
+  <li><s class="o">7</s><div><b>Pie con NEXA FEL</b><span>Texto propio en la plantilla.</span></div></li>
+  <li><s class="o">8</s><div><b>Banner de prueba</b><span>Solo en TEST; por confirmar si Digifact lo pone.</span></div></li>
+ </ol></div>
+</div></body></html>

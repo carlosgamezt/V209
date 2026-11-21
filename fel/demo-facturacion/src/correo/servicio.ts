@@ -99,6 +99,9 @@ export class ServicioCorreo {
     if (d.estado_fiscal !== "certificado") throw new ErrorCorreo(409, "no_certificada", ESTADOS_NO_ENVIABLES[String(d.estado_fiscal)] ?? "La factura no está certificada.");
     const [op] = await this.bd.filas<{ id: string }>("select id from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' order by iniciada_en desc limit 1", [p.documentoId, ctx.empresaId]);
     if (!op) throw new ErrorCorreo(409, "sin_certificacion", "La factura no tiene una certificación confirmada.");
+    // 3b) si Digifact ya recibió la orden de enviar el correo de esta factura al certificar, NEXA NO envía otro (evita el duplicado entre los dos caminos)
+    const [dg] = await this.bd.filas<{ n: number }>("select count(*)::int as n from public.auditoria where empresa_id = $1 and entidad = 'documento' and entidad_id = $2 and accion = 'digifact_test.correo_solicitado'", [ctx.empresaId, p.documentoId]);
+    if (dg?.n) throw new ErrorCorreo(409, "lo_envia_digifact", "Digifact ya recibió la orden de enviar esta factura por correo al certificarla: no se envía otra vez desde NEXA.");
     // 4) destinatario
     const destinatario = String(p.destinatario ?? d.cliente_email ?? "").trim();
     if (!destinatario) throw new ErrorCorreo(400, "sin_correo", "El receptor no tiene correo electrónico: escribe uno para enviar la factura.");

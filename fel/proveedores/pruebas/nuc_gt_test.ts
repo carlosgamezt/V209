@@ -92,3 +92,15 @@ Deno.test("NUC: rechaza lo que ya se sabe incorrecto y reporta TODOS los errores
   const f = facturaPrueba(); f.emisor.nit = "x"; f.items[0].descripcion = ""; f.fechaEmision = "mal";
   assert.throws(() => construirNuc(f), (e: unknown) => e instanceof NucInvalido && e.errores.length >= 3);
 });
+
+Deno.test("NUC: el correo del receptor agrega SOLO Buyer.Contact.EmailList; sin él, el NUC es exactamente el mismo", () => {
+  const base = facturaPrueba(); const sin = construirNuc(base); assert.equal((sin.Buyer as Record<string, unknown>).Contact, undefined);
+  const con = construirNuc({ ...base, receptor: { ...base.receptor, correo: "cliente@ejemplo.com" } });
+  assert.deepEqual((con.Buyer as Record<string, unknown>).Contact, { EmailList: { Email: ["cliente@ejemplo.com"] } });
+  const { Buyer: b1, ...resto1 } = sin as Record<string, unknown>; const { Buyer: b2, ...resto2 } = con as Record<string, unknown>; assert.deepEqual(resto1, resto2, "nada fuera de Buyer cambia");
+  const { Contact: _c, ...b2sin } = b2 as Record<string, unknown>; assert.deepEqual(b1, b2sin, "los demás datos fiscales del receptor no cambian");
+  { const errs: string[] = []; validarEsquema(con, esquema, "NUC", errs); assert.deepEqual(errs, [], "el NUC con Buyer.Contact cumple el esquema OFICIAL de Digifact"); }
+  assert.ok(validarFactura({ ...base, receptor: { ...base.receptor, correo: "cliente@ejemplo.com" } }).length === 0);
+  assert.ok(validarFactura({ ...base, receptor: { ...base.receptor, correo: "x".repeat(45) + "@ejemplo.com" } }).some((e) => e.campo === "receptor.correo"), "más de 50 caracteres");
+  assert.ok(validarFactura({ ...base, receptor: { ...base.receptor, correo: "malo" } }).some((e) => e.campo === "receptor.correo"));
+});

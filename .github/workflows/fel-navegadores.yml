@@ -47,6 +47,10 @@ jobs:
         env:
           FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
         run: node fel/demo-facturacion/tests/e2e_correo.cjs
+      - name: Correo de la factura enviado por Digifact (casilla apagada por defecto, correo editable, resumen, «envío solicitado»; 320/360/390/430 px) en ${{ matrix.navegador }}
+        env:
+          FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}
+        run: node fel/demo-facturacion/tests/e2e_digifact_correo.cjs
       - name: Rediseño móvil etapas 1 y 2 (marco y receptor inteligente) en ${{ matrix.navegador }}
         env:
           FEL_E2E_NAVEGADOR: ${{ matrix.navegador }}

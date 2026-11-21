@@ -1,5 +1,7 @@
 # Envío de facturas por correo (NEXA FEL)
 
+> **Decisión vigente: el correo de la factura lo envía DIGIFACT al certificar** ([`CORREO-POR-DIGIFACT.md`](CORREO-POR-DIGIFACT.md)). Este módulo propio (Resend) se **conserva apagado y sin uso**; su texto de abajo describe lo que se construyó.
+
 Estado: **construido y probado en TEST con proveedor simulado. No hay envíos reales habilitados.** Digifact queda **solo como certificador**.
 
 ## Por qué un servicio propio

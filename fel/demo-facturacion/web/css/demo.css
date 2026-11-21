@@ -443,3 +443,10 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .correo-dest{font-weight:600;font-size:14px;word-break:break-all;min-width:0;flex:1 1 180px}
 .correo-aviso{margin:0;font-size:13px}.correo-aviso:empty{display:none}
 .correo-auto{display:flex;align-items:center;gap:10px;min-height:44px;font-size:14px;font-weight:600}.correo-auto[hidden]{display:none}.correo-auto input{width:22px;height:22px;accent-color:var(--pri)}
+/* correo de la factura enviado por Digifact al certificar: casilla apagada por defecto, ≥ 40 px, sin desbordes */
+.correo-dg{display:flex;flex-direction:column;gap:10px}
+.chk-correo{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:10px 12px;border:1.5px solid var(--neutro);border-radius:12px;background:var(--sup);cursor:pointer}
+.chk-correo.on{border-color:var(--pri)}.chk-correo input{width:22px;height:22px;margin-top:1px;flex:none;accent-color:var(--pri)}
+.chk-correo b{display:block;font-size:14px}.chk-correo small{display:block;color:var(--mut);font-size:12.5px;line-height:1.4}
+.correo-dg input[type=email]{min-height:44px;font-size:16px;width:100%}
+.correo-dg [hidden]{display:none}

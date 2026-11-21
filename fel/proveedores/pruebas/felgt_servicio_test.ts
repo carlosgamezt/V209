@@ -272,3 +272,45 @@ Deno.test("timeout y conciliación: el documento solo se certifica cuando Digifa
   const c = await m.s.conciliar(ctx(), p.operacionId); assert.equal(c.resultado, "certificada"); assert.equal((c as { aplicacion?: string }).aplicacion, "aplicada"); assert.ok(m.almacen.aplicadas.has(p.operacionId)); assert.equal(m.envios(), 1);
   await rechaza(m.s.preparar(ctx(), doc()), "ESTADO");   // ya certificado: no se prepara otro envío
 });
+
+// ---------------------------------------------------------------- correo de la factura enviado por DIGIFACT al certificar (Buyer.Contact.EmailList)
+const nucEnviado = (m: ReturnType<typeof mundo>) => JSON.parse(m.llamadas.find((l) => l.ruta.startsWith("/v2/transform/nuc_json"))!.cuerpo!);
+
+Deno.test("correo por Digifact: sin pedirlo, el NUC es idéntico al de siempre (sin Buyer.Contact) y no se audita ningún correo", async () => {
+  const m = mundo(); const p = await m.s.preparar(ctx(), doc()); assert.equal(p.correoSolicitado, null); m.autorizar(p.referencia);
+  await m.s.certificar(ctx(), doc(), confirmar(p)); const nuc = nucEnviado(m);
+  assert.equal(nuc.Buyer.Contact, undefined, "sin correo pedido no hay nodo de contacto"); assert.ok(!m.aud.some((a) => a.evento.includes("correo")));
+});
+
+Deno.test("correo por Digifact: pedido, viaja SOLO en Buyer.Contact.EmailList del NUC enviado; la huella y la referencia NO cambian; se audita «solicitado» enmascarado", async () => {
+  const m = mundo(); const sin = await m.s.preparar(ctx(), doc()); const con = await m.s.preparar(ctx(), doc(), { correo: "cliente.prueba@ejemplo.com" });
+  assert.equal(con.referencia, sin.referencia, "el correo no entra en la huella: misma operación preparada"); assert.equal(con.operacionId, sin.operacionId); assert.equal(con.correoSolicitado, "c***@ejemplo.com");
+  m.autorizar(con.referencia);
+  const r = await m.s.certificar(ctx(), doc(), { ...confirmar(con), correo: "cliente.prueba@ejemplo.com" }); assert.equal(r.operacion.estado, "certificada");
+  const nuc = nucEnviado(m); assert.deepEqual(nuc.Buyer.Contact, { EmailList: { Email: ["cliente.prueba@ejemplo.com"] } });
+  assert.equal(nuc.Buyer.TaxID, "CF"); assert.equal(nuc.Buyer.Name, "CONSUMIDOR FINAL", "los datos fiscales del receptor no cambian");
+  const a = m.aud.filter((x) => x.evento === "digifact_test.correo_solicitado"); assert.equal(a.length, 1, "un solo registro de envío solicitado"); assert.equal(a[0].detalle.destinatario, "c***@ejemplo.com"); assert.equal(a[0].detalle.documento, "d1");
+  assert.ok(!JSON.stringify(m.aud).includes("cliente.prueba"), "el correo completo no se audita");
+  assert.ok(!m.aud.some((x) => /entregad/i.test(x.evento) || /entregad/i.test(JSON.stringify(x.detalle))), "nunca «entregado»: NEXA no recibe confirmación de entrega");
+});
+
+Deno.test("correo por Digifact: duplicados — repetir la certificación no vuelve a enviar nada (ni correo) y la conciliación no reconstruye el NUC", async () => {
+  const m = mundo(); const p = await m.s.preparar(ctx(), doc(), { correo: "uno@ejemplo.com" }); m.autorizar(p.referencia);
+  await m.s.certificar(ctx(), doc(), { ...confirmar(p), correo: "uno@ejemplo.com" }); assert.equal(m.envios(), 1);
+  const otra = await m.s.certificar(ctx(), doc(), { ...confirmar(p), correo: "otro@ejemplo.com" }); assert.equal(otra.reutilizada, true); assert.equal(m.envios(), 1, "una sola salida hacia Digifact");
+  assert.equal(m.aud.filter((x) => x.evento === "digifact_test.correo_solicitado").length, 1, "un solo «correo solicitado» aunque se repita la petición con otro correo");
+  await rechaza(m.s.preparar(ctx(), doc(), { correo: "uno@ejemplo.com" }), "ESTADO");
+});
+
+Deno.test("correo por Digifact: correo inválido o demasiado largo se rechaza ANTES de enviar y sale nada hacia Digifact", async () => {
+  const m = mundo();
+  for (const mal of ["no-es-correo", "a@b", "x y@ejemplo.com", "uno@ejemplo.com,dos@ejemplo.com", "<s>@ejemplo.com", "a".repeat(45) + "@ejemplo.com"]) {
+    await assert.rejects(m.s.preparar(ctx(), doc(), { correo: mal }), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "VALIDACION" && !!e.errores?.some((x) => x.campo === "receptor.correo"), mal.slice(0, 20));
+  }
+  await rechaza(m.s.preparar(ctx(), doc(), { correo: 123 }), "ENTRADA");
+  const v = await m.s.validar(ctx(), doc(), { correo: "no-es-correo" }); assert.equal(v.ok, false); assert.ok(v.errores.some((x) => x.campo === "receptor.correo"));
+  assert.equal(m.llamadas.filter((l) => l.ruta.startsWith("/v2/")).length, 0, "nada salió hacia Digifact");
+  const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia);
+  await assert.rejects(m.s.certificar(ctx(), doc(), { ...confirmar(p), correo: "no-es-correo" }), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "VALIDACION");
+  assert.equal(m.envios(), 0, "un correo inválido en la certificación tampoco envía el NUC");
+});

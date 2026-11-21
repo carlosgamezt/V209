@@ -113,6 +113,8 @@ export interface DepsFelGt {
 }
 
 export const CONFIRMACION_TEST = "CERTIFICAR-TEST";
+/** «c***@dominio»: lo único del correo que se registra o devuelve. */
+export const enmascararCorreo = (c: string) => { const [u, d] = c.split("@"); return `${(u ?? "").slice(0, 1)}***@${d ?? ""}`; };
 const RE_NIT = /^\d{1,11}[0-9K]$/i;
 
 async function sha256(s: string): Promise<Uint8Array> { return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s))); }
@@ -138,6 +140,7 @@ export function fechaGt(d: Date): string { return new Date(d.getTime() - 6 * 360
 export interface ResumenPreparacion {
   operacionId: string; referencia: string; documentoId: string; total: string; receptor: { tipoId: string; id: string; nombre: string };
   fechaEmision: string; huellaEmisor: string; establecimiento: number; caducaEnMs: number; reutilizada: boolean;
+  /** Correo (enmascarado) al que Digifact enviará la factura al certificar, si la persona lo pidió; null si no. Es solo un eco: NO forma parte de la huella ni de la referencia. */ correoSolicitado?: string | null;
   aviso: string;
 }
 
@@ -195,7 +198,7 @@ export class ServicioFelGt {
 
   /* ---------------------------------------------------------------- 2. validación (sin red, sin efectos) */
   /** Arma la factura y la valida. No guarda nada y no llama a Digifact. Devuelve TODOS los errores. */
-  async validar(ctx: ContextoFel, doc: DocumentoFel, o: { fechaEmision?: string; referencia?: string } = {}) {
+  async validar(ctx: ContextoFel, doc: DocumentoFel, o: { fechaEmision?: string; referencia?: string; correo?: unknown } = {}) {
     this.#exigir(ctx, "borradores.ver");
     this.#mismaEmpresa(ctx, doc);
     const e = this.d.emisorDe(ctx.empresaId); if (!e) throw new ErrorFelGt("SIN_CANAL", "Esta empresa no tiene datos de emisor aprobados para Digifact TEST");
@@ -204,15 +207,17 @@ export class ServicioFelGt {
     if (!["ninguno", "rechazado"].includes(doc.estadoFiscal)) errores.push({ campo: "documento", mensaje: `El documento ya está en estado fiscal «${doc.estadoFiscal}»` });
     const referencia = o.referencia ?? "00000000-0000-5000-8000-000000000000";   // marcador: la referencia real se fija al preparar
     let factura: FacturaGt | null = null;
-    try { factura = this.#factura(doc, e.emisor, referencia, o.fechaEmision ?? fechaGt(this.#ahora())); }
+    let correoVal: string | undefined; try { correoVal = this.#correo(o.correo); } catch (x) { if (x instanceof ErrorFelGt) errores.push({ campo: "receptor.correo", mensaje: x.message }); else throw x; }
+    try { factura = this.#factura(doc, e.emisor, referencia, o.fechaEmision ?? fechaGt(this.#ahora()), correoVal); }
     catch (x) { if (x instanceof ErrorFelGt && x.errores) errores.push(...x.errores); else throw x; }
     if (factura) errores.push(...validarFactura(factura));
     return { ok: errores.length === 0, errores, total: factura ? totalFactura(factura) : null, huellaEmisor: e.huella };
   }
 
   /* ---------------------------------------------------------------- 3. preparación (guarda la operación; NO envía) */
-  async preparar(ctx: ContextoFel, doc: DocumentoFel): Promise<ResumenPreparacion> {
+  async preparar(ctx: ContextoFel, doc: DocumentoFel, o: { correo?: unknown } = {}): Promise<ResumenPreparacion> {
     this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc);
+    const correo = this.#correo(o.correo);   // solo se valida y se repite enmascarado: el correo NO entra en la huella, así que la referencia y la operación preparada no cambian
     const { emisor } = this.#canal(ctx);
     const previas = await this.d.almacen.deDocumento(ctx.empresaId, doc.id);
     const bloquea = previas.find((o) => BLOQUEAN.includes(o.estado));
@@ -221,21 +226,21 @@ export class ServicioFelGt {
     const intento = previas.filter((o) => o.estado === "rechazada" || o.estado === "no_enviada").length;   // solo los intentos ya resueltos: preparar dos veces lo mismo da la MISMA referencia
     const hash = hex(await sha256(JSON.stringify([ctx.empresaId, doc.id, doc.receptor, doc.lineas, emisor.huella])));
     const referencia = await guidDe("nexa-fel-gt", ctx.empresaId, doc.id, hash, String(intento));
-    const v = await this.validar(ctx, doc, { fechaEmision: fecha, referencia });
+    const v = await this.validar(ctx, doc, { fechaEmision: fecha, referencia, correo });
     if (!v.ok) throw new ErrorFelGt("VALIDACION", "El documento no cumple los requisitos de Digifact", v.errores);
     const ahora = this.#ahora().getTime();
     const nueva: OperacionGt = { id: crypto.randomUUID(), empresaId: ctx.empresaId, documentoId: doc.id, referencia, hash, huellaEmisor: emisor.huella, fechaEmision: fecha, establecimiento: emisor.emisor.establecimiento.codigo,
       total: v.total!, estado: "preparada", creada: ahora, actualizada: ahora, actorId: ctx.actorId, intentoDelDocumento: intento, intentosConciliacion: 0 };
     const { op, creada } = await this.d.almacen.crear(nueva);
     if (op.estado !== "preparada") throw new ErrorFelGt("ESTADO", `Este documento tiene una operación «${op.estado}»`);
-    await this.#aud("digifact_test.preparada", ctx, { documento: doc.id, referencia: op.referencia, total: op.total });
+    await this.#aud("digifact_test.preparada", ctx, { documento: doc.id, referencia: op.referencia, total: op.total, ...(correo ? { correo_solicitado: true } : {}) });
     return { operacionId: op.id, referencia: op.referencia, documentoId: op.documentoId, total: op.total, receptor: { tipoId: doc.receptor.tipoId, id: doc.receptor.id, nombre: doc.receptor.nombre }, fechaEmision: op.fechaEmision,
-      huellaEmisor: op.huellaEmisor, establecimiento: op.establecimiento, caducaEnMs: Math.max(0, op.creada + (this.d.preparadaCaducaMs ?? 30 * 60_000) - ahora), reutilizada: !creada,
+      huellaEmisor: op.huellaEmisor, establecimiento: op.establecimiento, caducaEnMs: Math.max(0, op.creada + (this.d.preparadaCaducaMs ?? 30 * 60_000) - ahora), reutilizada: !creada, correoSolicitado: correo ? enmascararCorreo(correo) : null,
       aviso: "Preparada: NO se envió nada a Digifact. Para certificar en TEST escribe la confirmación y repite la referencia y la huella del emisor." };
   }
 
   /* ---------------------------------------------------------------- 4. certificación en TEST (confirmación manual) */
-  async certificar(ctx: ContextoFel, doc: DocumentoFel, c: { operacionId: unknown; confirmacion: unknown; referencia: unknown; huellaEmisor: unknown }) {
+  async certificar(ctx: ContextoFel, doc: DocumentoFel, c: { operacionId: unknown; confirmacion: unknown; referencia: unknown; huellaEmisor: unknown; correo?: unknown }) {
     this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc);
     if (typeof c.operacionId !== "string") throw new ErrorFelGt("ENTRADA", "Falta la operación preparada");
     const op0 = await this.d.almacen.obtener(ctx.empresaId, c.operacionId); if (!op0 || op0.documentoId !== doc.id) throw new ErrorFelGt("NO_ENCONTRADO", "Operación no encontrada");
@@ -257,13 +262,16 @@ export class ServicioFelGt {
     if (doc.estadoPreparacion !== "revisado" || !["ninguno", "rechazado"].includes(doc.estadoFiscal)) throw new ErrorFelGt("ESTADO", "El documento ya no está en un estado que permita certificar");
     if (!this.d.almacen.persistente) throw new ErrorFelGt("ALMACEN_NO_PERSISTENTE", "No hay almacén persistente de operaciones: no se envía nada real (si el proceso se reiniciara, se perdería la memoria de lo enviado)");
     if (this.d.autorizaPrueba() !== op0.referencia) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada");
-    const factura = this.#factura(doc, emisor.emisor, op0.referencia, op0.fechaEmision);
+    const correo = this.#correo(c.correo);   // opcional: lo que se pidió para ESTA certificación (no cambia la huella ni la referencia)
+    const factura = this.#factura(doc, emisor.emisor, op0.referencia, op0.fechaEmision, correo);
     let nuc: Record<string, unknown>; try { nuc = construirNuc(factura); } catch (e) { throw new ErrorFelGt("VALIDACION", "El documento no cumple el NUC", (e as { errores?: { campo: string; mensaje: string }[] }).errores); }
 
     // write-ahead: el estado «enviando» se guarda ANTES de la llamada; si otro proceso ganó la carrera, no se envía
     const ganada = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["preparada"], { estado: "enviando", actualizada: this.#ahora().getTime() });
     if (!ganada) { const ya = await this.d.almacen.obtener(ctx.empresaId, op0.id); return { reutilizada: true as const, operacion: this.#publica(ya ?? op0) }; }
     await this.#aud("digifact_test.envio_iniciado", ctx, { operacion: op0.id, referencia: op0.referencia });
+    // «envío SOLICITADO a Digifact»: el correo viaja en el NUC y lo envía Digifact al certificar. NEXA no recibe confirmación de entrega y por eso nunca registra «entregado».
+    if (correo) await this.#aud("digifact_test.correo_solicitado", ctx, { documento: doc.id, operacion: op0.id, referencia: op0.referencia, destinatario: enmascararCorreo(correo) });
 
     let res;
     try { res = await cliente.certificar(nuc, { referencia: op0.referencia, formatos: ["XML", "PDF"] }); }
@@ -379,7 +387,13 @@ export class ServicioFelGt {
     if (e instanceof ErrorDigifact) return new ErrorFelGt(e.tipo === "limite" ? "LIMITE" : "ENTRADA", e.message);   // los mensajes de ErrorDigifact ya están limpios de secretos
     return new ErrorFelGt("ENTRADA", "No se pudo consultar a Digifact");
   }
-  #factura(doc: DocumentoFel, emisor: EmisorGt, referencia: string, fechaEmision: string): FacturaGt {
+  /** Correo pedido (texto) o undefined. El formato lo valida validarFactura (y el NUC); aquí solo el tipo. */
+  #correo(v: unknown): string | undefined {
+    if (v === undefined || v === null || v === "") return undefined;
+    if (typeof v !== "string" || v.length > 254) throw new ErrorFelGt("ENTRADA", "El correo no es válido");
+    return v.trim() || undefined;
+  }
+  #factura(doc: DocumentoFel, emisor: EmisorGt, referencia: string, fechaEmision: string, correo?: string): FacturaGt {
     const politica = this.d.impuestos ?? ivaIncluidoGeneral;
     const items: ItemGt[] = doc.lineas.map((l, i) => {
       const q = aMicro(l.cantidad), p = aMicro(l.precioUnitario), dsc = aMicro(l.descuento || "0");
@@ -389,6 +403,6 @@ export class ServicioFelGt {
       if (total < 0n) throw new ErrorFelGt("VALIDACION", `Línea ${i + 1}: el descuento supera el importe`, [{ campo: `lineas[${i}].descuento`, mensaje: "supera el importe de la línea" }]);
       return { tipo: l.tipo, descripcion: l.descripcion, cantidad: l.cantidad, ...(l.unidad ? { unidad: l.unidad } : {}), precioUnitario: l.precioUnitario, descuento: l.descuento || "0", impuestos: politica(total, emisor), totalItem: deMicro(total) };
     });
-    return { tipoDoc: "FACT", fechaEmision, moneda: "GTQ", emisor, receptor: doc.receptor, items, referenciaInterna: referencia };
+    return { tipoDoc: "FACT", fechaEmision, moneda: "GTQ", emisor, receptor: correo ? { ...doc.receptor, correo } : doc.receptor, items, referenciaInterna: referencia };
   }
 }

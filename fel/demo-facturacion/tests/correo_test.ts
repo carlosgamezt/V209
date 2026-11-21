@@ -121,6 +121,14 @@ Deno.test({ name: "correo: reglas — sin correo, dirección inválida, no certi
   const aud = await bd.filas<{ accion: string }>("select accion from public.auditoria where accion like 'correo.%' and entidad_id = $1 order by id", [id3]); assert.deepEqual(aud.map((x) => x.accion), ["correo.rechazado", "correo.fallido", "correo.aceptado"]);
 }});
 
+Deno.test({ name: "correo propio: si Digifact ya recibió la orden de enviar el correo al certificar, NEXA no envía otro (sin duplicados entre los dos caminos)", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const { bd, Cli, prov } = await entorno(); const ana = await new Cli("ana").entrar(); const id = await documento(ana, "clave-cert-correo-0020"); const id2 = await documento(ana, "clave-cert-correo-0021");
+  const [emp] = await bd.filas<{ empresa_id: string }>("select empresa_id from public.documentos where id = $1", [id]);
+  await bd.filas("select public.fel_auditar($1, $2, 'digifact_test.correo_solicitado', 'documento', $3, '{\"destinatario\":\"c***@ejemplo.com\"}'::jsonb)", [emp.empresa_id, PERSONAS.ana.id, id]);
+  const r = await enviar(ana, id, { destinatario: DEST, clave: "envio-0020-aaaa" }); assert.equal(r.status, 409); assert.equal(r.json.codigo, "lo_envia_digifact"); assert.equal(prov.enviados.length, 0);
+  assert.equal((await enviar(ana, id2, { destinatario: DEST, clave: "envio-0021-aaaa" })).status, 201, "otro documento sin orden a Digifact sí se puede enviar");
+}});
+
 Deno.test({ name: "correo: límites de frecuencia por persona", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   // El límite usa una VENTANA FIJA de 60 s alineada al reloj: si el minuto cambia en mitad de la prueba el contador vuelve a cero y la prueba fallaría sin defecto real. Se espera al siguiente minuto si quedan menos de 10 s.
   { const resto = 60_000 - (Date.now() % 60_000); if (resto < 10_000) await new Promise((r) => setTimeout(r, resto + 250)); }
