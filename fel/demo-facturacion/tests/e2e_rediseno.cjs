@@ -38,7 +38,7 @@ function arrancar() {
     const cab = await altura(p, ".cab-fila"), banda = await altura(p, ".banda-simulado"), navH = await altura(p, ".nav-movil");
     assert.ok(Math.abs(cab - 48) <= 1, `encabezado de 48 px (${cab})`); assert.ok(banda >= 21 && banda <= 24, `franja de una línea de 22 px (${banda})`); assert.ok(navH >= 56 && navH <= 60, `navegación de 56 px (${navH})`);
     assert.match(await p.locator(".banda-simulado").innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.equal(await p.locator(".cab-marca").isVisible(), true); assert.equal(await p.locator(".cab-der").isHidden(), true, "sin la fila de empresa/usuario/campana del encabezado de PC");
-    assert.deepEqual(await p.locator(".nav-movil > a").allInnerTexts(), ["Panel", "Nueva", "Facturas", "Clientes"], "cuatro accesos con etiqueta corta + «Más»"); assert.equal(await p.locator("#nav-mas").count(), 1);
+    assert.deepEqual((await p.locator(".nav-movil > a").allInnerTexts()).map((t) => t.trim()), ["Panel", "Nueva", "Facturas", "Clientes"], "cuatro accesos con etiqueta corta + «Más»"); assert.equal(await p.locator("#nav-mas").count(), 1);
     assert.equal(await p.locator('.nav-movil a[aria-current="page"]').getAttribute("aria-label"), "Nueva factura", "el acceso activo conserva su nombre completo para lectores de pantalla");
     await foto(p, "m1-marco-vacio.png");
     // menú de la cuenta: nombre, empresa, DEMO, pendientes y «Cerrar sesión»; se cierra tocando fuera y con Escape; objetivo táctil ≥ 40 px
@@ -50,7 +50,7 @@ function arrancar() {
 
     // ================= ETAPA 2 · receptor inteligente
     // estado vacío: control segmentado con NIT activo, ayuda y SIN tarjeta; «Vista previa» junto al título
-    assert.deepEqual(await p.locator(".seg-tipo [role=radio]").allInnerTexts(), ["NIT", "CUI", "CF", "Otro"]); assert.equal(await tipoActual(p), "NIT"); assert.equal(await p.locator(".rc-card").isHidden(), true); assert.equal(await p.locator(".rc-ayuda").isVisible(), true);
+    assert.deepEqual((await p.locator(".seg-tipo [role=radio]").allInnerTexts()).map((t) => t.trim()), ["NIT", "CUI", "CF", "Otro"]); assert.equal(await tipoActual(p), "NIT"); assert.equal(await p.locator(".rc-card").isHidden(), true); assert.equal(await p.locator(".rc-ayuda").isVisible(), true);
     const tit = await p.locator("h1").boundingBox(), vp = await p.locator("#previa-titulo").boundingBox(); assert.ok(Math.abs((tit.y + tit.height / 2) - (vp.y + vp.height / 2)) < 18, "«Vista previa» está en la fila del título"); assert.ok(vp.height >= 40 && vp.x + vp.width <= 391, "visible, táctil y dentro de la pantalla");
     await p.click("#previa-titulo"); await p.waitForSelector(".previa-modal .papel"); await p.keyboard.press("Escape"); await p.waitForSelector(".previa-modal", { state: "detached" });
     assert.equal((await p.locator("#guardar").count()) + (await p.locator(".barra-acciones").count()) > 0, true, "la barra de acciones sigue (etapa 3 pendiente)");
@@ -59,7 +59,7 @@ function arrancar() {
     // cliente EXISTENTE: se busca por nombre y se toca la sugerencia «Existente»; tarjeta con nombre, etiqueta y «Cambiar»; nada se consulta fuera
     await p.fill(ID, "Comerc"); await p.waitForSelector(".rc-sug .sg-ex"); assert.match(await p.locator(".rc-sug .sg-ex").first().innerText(), /Existente/); await foto(p, "m3-sugerencias.png");
     const cli = await elegirReceptor(p, /Comercial Los Pinos/);
-    assert.equal(await p.locator('.rc-card[data-modo="existente"] .tg').innerText(), "Existente"); assert.match(await p.locator(".rc-card").innerText(), /Comercial Los Pinos/); assert.match(await p.locator(".rc-card .rc-meta").innerText(), /Cliente guardado/); assert.equal(await p.inputValue(ID), cli.numero_identificacion);
+    assert.equal((await p.locator('.rc-card[data-modo="existente"] .tg').innerText()).trim(), "Existente"); assert.match(await p.locator(".rc-card").innerText(), /Comercial Los Pinos/); assert.match(await p.locator(".rc-card .rc-meta").innerText(), /Cliente guardado/); assert.equal(await p.inputValue(ID), cli.numero_identificacion);
     assert.ok((await altura(p, "#receptor-cambiar")) >= 40, "«Cambiar» táctil"); await foto(p, "m4-existente.png"); await sinDesborde(p, "receptor existente");
     // NIT idéntico al de un cliente guardado: se elige sin consultar nada
     await p.click("#receptor-cambiar"); assert.equal(await p.inputValue(ID), ""); assert.equal(await p.locator(".rc-card").isHidden(), true, "«Cambiar» vuelve al estado vacío"); pet.length = 0;
@@ -67,7 +67,7 @@ function arrancar() {
     // NUEVO por NIT (autollenado del servidor, igual que antes): una sola consulta, etiqueta «Nuevo»
     await p.click("#receptor-cambiar"); await p.fill(ID, "10000011"); await p.waitForSelector('.rc-card[data-modo="nuevo"] .nit-etiqueta:not([hidden])');
     for (let i = 0; i < 60 && (await p.inputValue(NOMBRE)) === ""; i++) await p.waitForTimeout(150);
-    assert.equal(await p.inputValue(NOMBRE), "CONTRIBUYENTE DE PRUEBA UNO, S.A."); assert.equal(await p.locator(".rc-card .tg").innerText(), "Nuevo"); assert.deepEqual(pet, ["nit"], "una sola consulta de NIT"); assert.match(await p.locator(".rc-card .nit-etiqueta").innerText(), /Datos simulados/);
+    assert.equal(await p.inputValue(NOMBRE), "CONTRIBUYENTE DE PRUEBA UNO, S.A."); assert.equal((await p.locator(".rc-card .tg").innerText()).trim(), "Nuevo"); assert.deepEqual(pet, ["nit"], "una sola consulta de NIT"); assert.match(await p.locator(".rc-card .nit-etiqueta").innerText(), /Datos simulados/);
     assert.equal(await p.locator("#receptor-nombre-ver").isVisible(), true, "el nombre consultado se ve como texto confirmado"); assert.equal(await p.locator(NOMBRE).isHidden(), true, "sin campo de edición a la vista");
     assert.equal(await p.locator("#receptor-nombre-ver").evaluate((e) => getComputedStyle(e).borderTopWidth), "0px", "sin recuadro alrededor del nombre");
     await p.click("#receptor-nombre-ver"); assert.equal(await p.locator(NOMBRE).isVisible(), true, "al tocarlo se puede corregir"); assert.equal(await p.evaluate((s) => document.activeElement === document.querySelector(s), NOMBRE), true);
@@ -77,7 +77,7 @@ function arrancar() {
     // NUEVO por CUI: solo al confirmar (Enter)
     pet.length = 0; await elegirTipo(p, "CUI"); assert.equal(await tipoActual(p), "CUI"); assert.equal(await p.locator(ID).getAttribute("inputmode"), "numeric"); await p.fill(ID, "1000000000101"); await p.waitForTimeout(900); assert.deepEqual(pet, [], "el CUI no se consulta mientras se escribe");
     await p.locator(ID).press("Enter"); for (let i = 0; i < 60 && (await p.inputValue(NOMBRE)) === ""; i++) await p.waitForTimeout(150); assert.equal(await p.inputValue(NOMBRE), "PERSONA FICTICIA DE PRUEBA CUI UNO"); assert.deepEqual(pet, ["cui"], "una sola consulta de CUI");
-    assert.equal(await p.locator(".rc-card .tg").innerText(), "Nuevo"); await p.locator(NOMBRE).blur(); await foto(p, "m6-nuevo-cui.png");
+    assert.equal((await p.locator(".rc-card .tg").innerText()).trim(), "Nuevo"); await p.locator(NOMBRE).blur(); await foto(p, "m6-nuevo-cui.png");
     // CF: sin consulta, nombre fijo y sin etiqueta «Nuevo»
     pet.length = 0; await elegirTipo(p, "CF"); assert.equal(await p.inputValue(ID), "CF"); assert.equal(await p.inputValue(NOMBRE), "CONSUMIDOR FINAL"); assert.equal(await p.locator(NOMBRE).evaluate((e) => e.readOnly), true); assert.equal(await p.locator(".rc-card .tg").isHidden(), true); await p.waitForTimeout(700); assert.deepEqual(pet, [], "CF no consulta nada");
     // «Otro»: ingreso manual
@@ -86,7 +86,7 @@ function arrancar() {
     const e1 = await p.locator('select[aria-label="Establecimiento"]').boundingBox(), e2 = await p.locator('input[aria-label="Fecha de emisión"]').boundingBox(); assert.ok(Math.abs(e1.y - e2.y) < 2, "establecimiento y fecha en una sola fila");
     // fecha SIEMPRE día/mes/año (el valor interno sigue siendo AAAA-MM-DD); establecimiento ya elegido (el principal)
     const vista = await p.locator("#fecha-vista").innerText(), iso = await p.inputValue('input[aria-label="Fecha de emisión"]'); assert.match(vista, /^\d{2}\/\d{2}\/\d{4}$/, `fecha en dd/mm/aaaa: ${vista}`); assert.match(iso, /^\d{4}-\d{2}-\d{2}$/); assert.equal(vista, iso.split("-").reverse().join("/"), "lo mostrado coincide con el valor interno");
-    await p.fill('input[aria-label="Fecha de emisión"]', "2026-12-31"); assert.equal(await p.locator("#fecha-vista").innerText(), "31/12/2026"); await p.fill('input[aria-label="Fecha de emisión"]', iso);
+    await p.fill('input[aria-label="Fecha de emisión"]', "2026-12-31"); assert.equal((await p.locator("#fecha-vista").innerText()).trim(), "31/12/2026"); await p.fill('input[aria-label="Fecha de emisión"]', iso);
     assert.match(await p.locator('select[aria-label="Establecimiento"] option:checked').innerText(), /^1 · /, "viene elegido el establecimiento principal");
     assert.equal(await p.locator('input[aria-label="Observaciones"]').count(), 0, `observaciones plegadas: ${await p.locator('input[aria-label="Observaciones"]').evaluateAll((l) => l.map((e) => e.outerHTML)).catch(() => "")}`); await p.click("#agregar-observaciones"); await p.waitForSelector('input[aria-label="Observaciones"]');
 

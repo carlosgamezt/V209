@@ -382,8 +382,8 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .tg{font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;white-space:nowrap;flex:none}.t-ex{background:var(--soft);color:var(--pri)}.t-nu{border:1px solid var(--neutro);color:var(--txt)}
 .rc-card{margin-top:10px}.rc-card[hidden]{display:none}
 .rc-l1{display:flex;gap:10px;align-items:flex-start}
-.rc-nombre-fijo{flex:1;min-width:0;font-size:17px;font-weight:800;line-height:1.22;overflow-wrap:anywhere}
-.rc-nombre{flex:1;min-width:0;width:100%;resize:none;overflow:hidden;font-size:17px;font-weight:800;line-height:1.22;border:0;background:transparent;padding:0;margin:0;border-radius:6px;min-height:0;box-sizing:border-box}
+.rc-nombre-fijo{flex:1;min-width:0;font-size:17px;font-weight:800;line-height:21px;overflow-wrap:anywhere}
+.rc-nombre{flex:1;min-width:0;width:100%;resize:none;overflow:hidden;font-size:17px;font-weight:800;line-height:21px;border:0;background:transparent;padding:0;margin:0;border-radius:6px;min-height:0;box-sizing:border-box}
 .rc-nombre:placeholder-shown{border:1.5px solid var(--neutro);background:var(--sup);padding:11px 12px;font-weight:600;font-size:16px;min-height:46px;border-radius:12px}
 /* con un nombre escrito el campo NO cambia de tamaño al enfocarlo o salir (así un toque en lo de abajo nunca se pierde por un desplazamiento): solo un anillo de enfoque */
 .rc-nombre:focus{outline:2px solid color-mix(in srgb,var(--pri) 65%,transparent);outline-offset:3px}
@@ -407,7 +407,7 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 @media(max-width:340px){.rc-emision{grid-template-columns:minmax(0,1fr) minmax(0,1.32fr)}}
 
 /* ---- correcciones de fidelidad con la maqueta (etapas 1 y 2): nombre confirmado, fecha dd/mm/aaaa ---- */
-.rc-nombre-ver{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;margin:0;min-height:0;font:inherit;font-size:17px;font-weight:800;line-height:1.22;color:var(--txt);cursor:text;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.rc-nombre-ver{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;margin:0;min-height:0;font:inherit;font-size:17px;font-weight:800;line-height:21px;color:var(--txt);cursor:text;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .rc-nombre-ver:disabled{cursor:default;color:var(--txt);opacity:1}.rc-nombre-ver[hidden]{display:none}
 .rc-nombre{max-height:7.5em;overflow:auto}.rc-nombre[hidden]{display:none}
 .rc-nombre-fijo{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
