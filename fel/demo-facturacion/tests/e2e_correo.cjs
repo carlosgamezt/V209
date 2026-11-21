@@ -3,9 +3,7 @@
 // Uso: node e2e_correo.cjs   (FEL_E2E_NAVEGADOR=firefox|webkit para otro motor)
 const { spawn } = require("child_process"), path = require("path"), assert = require("assert/strict"), pw = require("playwright");
 const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV];
-const net = require("net");
-// Puerto LIBRE asignado por el sistema operativo (un número al azar entre servidores podía repetirse: «Address already in use»). Los servidores se arrancan uno tras otro, así que ya escucha el anterior.
-const puertoLibre = () => new Promise((ok, mal) => { const sv = net.createServer(); sv.on("error", mal); sv.listen(0, "127.0.0.1", () => { const p = sv.address().port; sv.close(() => ok(p)); }); });
+const { puertoLibre } = require("./puerto_libre.cjs");
 async function arrancar(env = {}) {
   const puerto = await puertoLibre();
   const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "1", ...env } });

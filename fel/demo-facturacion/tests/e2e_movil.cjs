@@ -7,8 +7,9 @@ const { esperarNueva, elegirReceptor, receptorNuevo, elegirTipo, tipoActual, ID:
 const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV];
 const capturas = process.argv[2] ? path.resolve(process.argv[2]) : null; if (capturas) fs.mkdirSync(capturas, { recursive: true });
 
-function arrancar() {
-  const puerto = 9000 + Math.floor(Math.random() * 400);
+const { puertoLibre } = require("./puerto_libre.cjs");
+async function arrancar() {
+  const puerto = await puertoLibre();
   const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "1" } });
   return new Promise((ok, mal) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); mal(new Error("el servidor no arrancó a tiempo:\n" + salida)); }, 120000);

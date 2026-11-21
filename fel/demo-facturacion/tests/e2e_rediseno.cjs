@@ -5,8 +5,9 @@
 const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), assert = require("assert/strict"), pw = require("playwright");
 const { esperarNueva, elegirTipo, tipoActual, elegirReceptor, escribirNombre, ID, NOMBRE } = require("./ayudas_nueva.cjs");
 const NAV = process.env.FEL_E2E_NAVEGADOR ?? "chromium", motor = pw[NAV], capturas = process.argv[2] ? path.resolve(process.argv[2]) : null; if (capturas) fs.mkdirSync(capturas, { recursive: true });
-function arrancar() {
-  const puerto = 9700 + Math.floor(Math.random() * 250);
+const { puertoLibre } = require("./puerto_libre.cjs");
+async function arrancar() {
+  const puerto = await puertoLibre();
   const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "1" } });
   return new Promise((ok, mal) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); mal(new Error("el servidor no arrancó a tiempo:\n" + salida)); }, 120000);

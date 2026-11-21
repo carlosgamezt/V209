@@ -3,9 +3,10 @@
 const { spawn } = require("child_process"), path = require("path"), assert = require("assert/strict");
 const { chromium } = require("playwright");
 const { esperarNueva, elegirReceptor, receptorNuevo, elegirTipo, tipoActual, ID: ID_RECEPTOR } = require("./ayudas_nueva.cjs");
-function arrancar() {
+const { puertoLibre } = require("./puerto_libre.cjs");
+async function arrancar() {
   if (process.env.FEL_DEMO_URL) return Promise.resolve({ url: process.env.FEL_DEMO_URL, parar() {} });
-  const puerto = 9800 + Math.floor(Math.random() * 150);
+  const puerto = await puertoLibre();
   const hijo = spawn("deno", ["run", "-A", "servidor.ts", `--puerto=${puerto}`], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FEL_DEMO_LOGIN: "0" } });
   return new Promise((ok, mal) => {
     let salida = ""; const t = setTimeout(() => { hijo.kill(); mal(new Error("el servidor no arrancó a tiempo:\n" + salida)); }, 120000);
