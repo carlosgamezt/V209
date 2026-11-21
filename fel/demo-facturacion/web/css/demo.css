@@ -431,5 +431,5 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .sv .sv-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sv .sv-vacio{color:var(--mut)}.sv-i{width:16px;height:16px;color:var(--mut);flex:none}
 .sv .sv-in{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;cursor:pointer;border:0;padding:0;font-size:16px}
 .sv-off{opacity:.65;cursor:default}.sv:focus-within{border-color:var(--pri);box-shadow:0 0 0 3px var(--soft)}
-@media(max-width:375px){.sv .sv-t{font-size:15px}.sv .sv-cod{display:none}}
+@media(max-width:375px){.sv .sv-t{font-size:15px}.sv .sv-cod{display:none}.sv{padding:0 10px;gap:4px}}   /* 360 px: la columna deja ~136 px; con 10 px de relleno el nombre cabe aunque la tipografía de respaldo sea más ancha (WebKit midió 89 px contra 87 disponibles) */
 @media(max-width:340px){.sv{padding:0 8px;gap:4px}}
