@@ -32,6 +32,12 @@ function arrancar() {
     }, n);
     const SEL = 'select[aria-label="Respuesta del proveedor simulado a la anulación"]', MOT = 'textarea[aria-label="Motivo de la anulación"]', PAL = 'input[aria-label="Escribe ANULAR para confirmar"]';
     const abrirDialogo = async (p) => { await p.waitForSelector("#anular"); await p.click("#anular"); await p.waitForSelector(".anu-dialogo"); };
+    // Al cancelar o cerrar el diálogo la pantalla recarga el documento, y hasta que termina ignora nuevos toques en «Anular» (evita acciones dobles). Se espera esa recarga antes de volver a pulsar.
+    const cerrarDialogo = async (p, cerrar) => {
+      const recarga = p.waitForResponse((r) => r.request().method() === "GET" && /\/api\/documentos\/[0-9a-f-]{36}$/.test(r.url()), { timeout: 15000 });
+      await cerrar(); await p.waitForSelector(".anu-dialogo", { state: "detached" }); await recarga;
+      await p.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)))); await p.waitForSelector("#anular");
+    };
     const anuladas = (p, id) => p.evaluate(async (id) => (await (await fetch(`/api/documentos/${id}`, { headers: { "x-demo": "1" } })).json()).operaciones.filter((o) => o.tipo === "anulacion").length, id);
 
     // ================= Ana (propietaria) a 390 px
@@ -49,9 +55,9 @@ function arrancar() {
     const caja = await p.locator(".anu-dialogo").boundingBox(), bOk = await ok.boundingBox(); assert.ok(caja.x >= 0 && caja.x + caja.width <= 390 + 1, "el diálogo cabe en el ancho"); assert.ok(bOk.y + bOk.height <= 844, "el botón confirmar queda dentro de la pantalla"); assert.ok(bOk.height >= 40, `objetivo táctil ≥ 40 px (${bOk.height})`);
     await sinDesborde(p, "diálogo de anulación");
     // cancelar y cerrar con Escape no anulan nada ni envían nada
-    await p.click("#anular-cancelar"); await p.waitForSelector(".anu-dialogo", { state: "detached" }); await abrirDialogo(p); await p.fill(MOT, "Motivo escrito"); await p.fill(PAL, "ANULAR"); await p.keyboard.press("Escape"); await p.waitForSelector(".anu-dialogo", { state: "detached" });
+    await cerrarDialogo(p, () => p.click("#anular-cancelar")); await abrirDialogo(p); await p.fill(MOT, "Motivo escrito"); await p.fill(PAL, "ANULAR"); await cerrarDialogo(p, () => p.keyboard.press("Escape"));
     await p.waitForTimeout(300); assert.equal(peticiones.length, 0, "cancelar no envía ninguna petición"); assert.equal(await anuladas(p, idA), 0); assert.match(await p.locator(".doc-cab").innerText(), /Certificado/);
-    await abrirDialogo(p); assert.equal(await p.inputValue(MOT), "", "el diálogo nuevo empieza vacío"); await p.click("#anular-cancelar");
+    await abrirDialogo(p); assert.equal(await p.inputValue(MOT), "", "el diálogo nuevo empieza vacío"); await cerrarDialogo(p, () => p.click("#anular-cancelar"));
 
     // --- rechazada por el proveedor: mensaje claro, sigue certificado y se puede reintentar
     await p.selectOption(SEL, "rechazo"); await abrirDialogo(p); await p.fill(MOT, "Intento que el proveedor rechaza"); await p.fill(PAL, "ANULAR"); await p.click("#anular-confirmar");
