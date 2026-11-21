@@ -14,8 +14,9 @@ export function panelDigifact({ ctx, doc, recargar, mostrarError }) {
   const puedeVer = ctx.tiene("fiscal.ver"), puedeCert = ctx.tiene("fiscal.certificar");
   let ocupado = false, preparacion = null, resultadoValidar = null, aviso = "";
   const conf = { texto: "", referencia: "", huella: "" };
-  // «Enviar factura por correo»: lo envía DIGIFACT al certificar, con su plantilla. Apagado por defecto; el correo sale del cliente y se puede editar. El servidor valida el permiso, la lista de destinatarios de prueba y el formato.
-  const correo = { activo: false, texto: doc.cliente_email ?? "" };
+  // «Enviar factura por correo»: lo envía DIGIFACT al certificar, con su plantilla. Apagado por defecto; el correo sale del cliente (lo trae el SERVIDOR, solo de la empresa de la sesión) y se puede editar. El servidor valida el permiso, la lista de destinatarios de prueba y el formato.
+  // «clienteVisto»: el cliente del que se tomó el correo. Si el cliente del documento cambia, se descarta el correo anterior (escrito o prellenado), se apaga la casilla y se pide preparar de nuevo: nunca se conserva el correo de otro cliente.
+  const correo = { activo: false, texto: "", editado: false }; let origen = null, clienteVisto = "?";
   const RE_CORREO = /^[^\s@<>,;'"()\[\]\\]{1,40}@[A-Za-z0-9.-]{1,40}\.[A-Za-z]{2,10}$/;
   const correoOk = () => correo.texto.trim().length <= 50 && RE_CORREO.test(correo.texto.trim());
   const extraCorreo = () => (correo.activo ? { enviar_correo: true, correo: correo.texto.trim() } : {});
@@ -29,8 +30,8 @@ export function panelDigifact({ ctx, doc, recargar, mostrarError }) {
     const entrada = h("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "none", spellcheck: "false", maxlength: 50, id: "digifact-correo", "aria-label": "Correo del destinatario", placeholder: "correo@ejemplo.com", value: correo.texto });
     const nota = h("small", { class: "campo-ayuda", id: "digifact-correo-nota", role: "status" });
     const bloque = h("div", { class: "form", id: "digifact-correo-campo", hidden: !correo.activo }, campo("Correo del destinatario", entrada), nota);
-    const pintarNota = () => { const t = correo.texto.trim(); nota.className = correoOk() ? "campo-ayuda" : "err"; nota.textContent = !t ? "Escribe el correo del destinatario." : !correoOk() ? "Escribe un correo válido (hasta 50 caracteres)." : t === (doc.cliente_email ?? "") ? "Tomado del cliente: puedes editarlo." : "Correo escrito por ti."; };
-    entrada.addEventListener("input", () => { correo.texto = entrada.value; pintarNota(); refrescarReglas(); });
+    const pintarNota = () => { const t = correo.texto.trim(); nota.className = correoOk() ? "campo-ayuda" : "err"; nota.textContent = !t ? (origen?.consumidorFinal ? "Consumidor Final: el correo es opcional. Escríbelo si quieres enviar la factura." : origen?.registradoNoValido ? "El correo registrado del cliente no es válido: escribe otro." : "El cliente no tiene correo registrado: escríbelo.") : !correoOk() ? "Escribe un correo válido (hasta 50 caracteres)." : !correo.editado && origen?.correo && t === origen.correo ? "Tomado del cliente: puedes editarlo." : "Correo escrito por ti."; };
+    entrada.addEventListener("input", () => { correo.texto = entrada.value; correo.editado = correo.texto.trim() !== (origen?.correo ?? ""); pintarNota(); refrescarReglas(); });
     const chk = h("input", { type: "checkbox", id: "digifact-correo-chk", checked: correo.activo, onchange: (e) => { correo.activo = e.target.checked; bloque.hidden = !correo.activo; chkCaja.classList.toggle("on", correo.activo); pintarNota(); refrescarReglas(); } });
     const chkCaja = h("label", { class: `chk-correo${correo.activo ? " on" : ""}` }, chk, h("span", {}, h("b", {}, "Enviar factura por correo"), h("small", {}, "Digifact envía el correo al certificar, con su plantilla. Solo se puede pedir ahora: después no se puede reenviar desde NEXA. En pruebas solo a correos autorizados.")));
     pintarNota();
@@ -50,6 +51,15 @@ export function panelDigifact({ ctx, doc, recargar, mostrarError }) {
     if (!est.habilitado) { poner(cuerpo, h("p", { class: "mut", id: "digifact-no-habilitado" }, "Digifact TEST no está habilitado en este servidor. Las llamadas a Digifact solo ocurren en el servidor y requieren habilitarlo y autorizar cada prueba.")); return; }
     const activa = ops.find((o) => ["enviando", "certificada", "desconocida"].includes(o.estado));
     const puedeElegirCorreo = !!est.correoDigifact?.habilitado && puedeCert && !activa;
+    if (puedeElegirCorreo) {   // el correo registrado del cliente de ESTE documento, desde el servidor (no se confía en lo que el navegador tenía de antes)
+      try { origen = await api.destinatarioDigifact(doc.id); } catch { origen = null; }
+      const vistoAhora = origen ? String(origen.clienteId) : "?";
+      if (origen && vistoAhora !== clienteVisto) {
+        const habiaCliente = clienteVisto !== "?"; clienteVisto = vistoAhora;
+        correo.texto = origen.correo ?? ""; correo.activo = false; correo.editado = false;   // otro cliente: ni su correo ni la casilla se arrastran
+        if (habiaCliente) { preparacion = null; resultadoValidar = null; aviso = "El cliente del documento cambió: revisa el correo del destinatario y vuelve a preparar la certificación."; }
+      }
+    }
     let cs = null; if (puedeVer && ops.some((o) => ["enviando", "certificada", "desconocida", "rechazada"].includes(o.estado))) { try { cs = await api.correoDeDigifact(doc.id); } catch { cs = null; } }
     reglas.length = 0; textos.length = 0;
     const prep = preparacion ?? ops.find((o) => o.estado === "preparada" && o.documentoId === doc.id) ?? null;
@@ -85,19 +95,24 @@ export function panelDigifact({ ctx, doc, recargar, mostrarError }) {
     if (!activa && puedeCert) {
       if (!prep) { const regla = () => ocupado || doc.estado_preparacion !== "revisado" || (puedeElegirCorreo && sinCorreoValido());
         const bp = boton("Preparar certificación en TEST", { id: "digifact-preparar", disabled: regla(), title: doc.estado_preparacion !== "revisado" ? "Primero marca el documento como revisado" : null,
-          onclick: correr(async () => { preparacion = await api.digifactPreparar(doc.id, puedeElegirCorreo ? extraCorreo() : {}); resultadoValidar = null; conf.texto = conf.referencia = conf.huella = ""; }) });
+          onclick: correr(async () => { preparacion = { ...(await api.digifactPreparar(doc.id, puedeElegirCorreo ? extraCorreo() : {})), _correo: correo.activo ? correo.texto.trim().toLowerCase() : "" }; resultadoValidar = null; conf.texto = conf.referencia = conf.huella = ""; }) });
         reglas.push([bp, regla]); partes.push(h("div", { class: "acciones-fila" }, bp)); }
       else {
         const btn = boton("Certificar en TEST (una sola vez)", { tipo: "peligro", id: "digifact-certificar", disabled: true, onclick: correr(async () => {
-          const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: conf.texto, referencia: conf.referencia, huellaEmisor: conf.huella }, puedeElegirCorreo ? extraCorreo() : {});
+          const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: conf.texto, referencia: conf.referencia, huellaEmisor: conf.huella }, puedeElegirCorreo ? { ...extraCorreo(), ...(correo.activo ? { correo_ref: prep.correoRef } : {}) } : {});
           preparacion = null; aviso = r.reutilizada ? "Ya había una operación: no se envió nada nuevo." : r.error ? `No se envió: ${r.error.mensaje}` : ""; await recargar?.();
         }) });
-        const habilitar = () => { btn.disabled = ocupado || conf.texto !== "CERTIFICAR-TEST" || conf.referencia.trim() !== (prep.referencia) || conf.huella.trim() !== (prep.huellaEmisor) || (puedeElegirCorreo && sinCorreoValido()); }; reglas.push([btn, () => { habilitar(); return btn.disabled; }]);
+        // con el correo marcado, la preparación debe haberse hecho con ESTE mismo correo: si se cambió o se marcó después, hay que actualizarla (el servidor lo exige con la huella «correo_ref»)
+        const prepCorreoOk = () => !(puedeElegirCorreo && correo.activo) || (!!prep.correoRef && prep._correo === correo.texto.trim().toLowerCase());
+        const habilitar = () => { btn.disabled = ocupado || conf.texto !== "CERTIFICAR-TEST" || conf.referencia.trim() !== (prep.referencia) || conf.huella.trim() !== (prep.huellaEmisor) || (puedeElegirCorreo && (sinCorreoValido() || !prepCorreoOk())); };
+        const brep = boton("Actualizar la preparación con este correo", { tipo: "sec", id: "digifact-repreparar", disabled: true, onclick: correr(async () => { preparacion = { ...(await api.digifactPreparar(doc.id, extraCorreo())), _correo: correo.texto.trim().toLowerCase() }; }) });
+        const bloqueRep = h("div", { class: "form", id: "digifact-repreparar-bloque", hidden: true }, h("p", { class: "err", role: "status" }, "La preparación se hizo con otro correo (o sin correo). Actualízala antes de certificar."), brep);
+        reglas.push([brep, () => ocupado || !correo.activo || !correoOk()]); textos.push(() => { bloqueRep.hidden = prepCorreoOk(); }); reglas.push([btn, () => { habilitar(); return btn.disabled; }]);
         const inp = (k, et, ph) => h("input", { "aria-label": et, placeholder: ph, autocomplete: "off", spellcheck: "false", value: conf[k], oninput: (e) => { conf[k] = e.target.value; habilitar(); } });
-        const ddCorreo = h("dd", { id: "digifact-correo-resumen" }); const pintarResumen = () => { ddCorreo.textContent = correo.activo ? (correoOk() ? `Digifact enviará a ${mascara(correo.texto.trim())} al certificar` : "Correo no válido") : "No se enviará correo"; }; pintarResumen(); textos.push(pintarResumen);
+        const ddCorreo = h("dd", { id: "digifact-correo-resumen" }); const pintarResumen = () => { ddCorreo.textContent = correo.activo ? (!correoOk() ? "Correo no válido" : !prepCorreoOk() ? "Correo distinto al preparado: actualiza la preparación" : `Digifact enviará a ${mascara(correo.texto.trim())} al certificar`) : "No se enviará correo"; }; pintarResumen(); textos.push(pintarResumen); bloqueRep.hidden = prepCorreoOk();
         partes.push(h("div", { class: "form", id: "digifact-preparada" },
           h("dl", { class: "datos-sim" }, h("dt", {}, "Referencia"), h("dd", { class: "mono" }, prep.referencia), h("dt", {}, "Total"), h("dd", {}, `Q${prep.total}`), h("dt", {}, "Fecha de emisión"), h("dd", { class: "mono" }, prep.fechaEmision), h("dt", {}, "Huella del emisor"), h("dd", { class: "mono" }, prep.huellaEmisor), ...(puedeElegirCorreo ? [h("dt", {}, "Correo"), ddCorreo] : [])),
-          h("p", { class: "mut" }, "Revisa lo anterior. Para enviar UNA vez a Digifact TEST escribe CERTIFICAR-TEST y repite la referencia y la huella."),
+          h("p", { class: "mut" }, "Revisa lo anterior. Para enviar UNA vez a Digifact TEST escribe CERTIFICAR-TEST y repite la referencia y la huella."), ...(puedeElegirCorreo ? [bloqueRep] : []),
           campo("Confirmación", inp("texto", "Confirmación escrita", "CERTIFICAR-TEST")), campo("Referencia", inp("referencia", "Referencia repetida", "pega la referencia")), campo("Huella del emisor", inp("huella", "Huella repetida", "pega la huella")), btn));
         habilitar();
       }

@@ -6,7 +6,7 @@ import { ErrorFelGt, type ContextoFel, type DocumentoFel, type ServicioFelGt } f
 import { consultarReceptorNit, crearLimitador, ErrorReceptorNit, TOPE_REAL_GLOBAL, TOPE_REAL_POR_EMPRESA } from "./receptor_nit.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
 import type { ConsultorCui } from "./digifact_cui_entorno.ts";
-import type { PoliticaCorreoDigifact } from "./digifact_correo_entorno.ts";
+import { correoConFormatoNuc, type PoliticaCorreoDigifact } from "./digifact_correo_entorno.ts";
 import { consultarReceptorCui, TOPE_CUI_GLOBAL, TOPE_CUI_POR_EMPRESA } from "./receptor_cui.ts";
 
 type Obj = Record<string, unknown>;
@@ -39,7 +39,7 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
 export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFelGt | undefined, consultor?: ConsultorNit, consultorCui?: ConsultorCui, politicaCorreo?: PoliticaCorreoDigifact): Promise<Response | null> {
   const { m, ruta } = c; let r: RegExpExecArray | null;
   const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado", esReceptor = m === "POST" && ruta === "/api/receptores/nit", esReceptorCui = m === "POST" && ruta === "/api/receptores/cui";
-  const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf|correo))?$/.exec(ruta));
+  const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf|correo|destinatario))?$/.exec(ruta));
   if (!esNit && !esEstado && !esReceptor && !esReceptorCui && !rd) return null;
   if (esReceptor) {   // autollenado del nombre del receptor: CF local, Digifact TEST si está habilitado, o simulador con datos ficticios (siempre desde el servidor, con la empresa y los permisos de la SESIÓN)
     if (!limitadores.has(bd)) limitadores.set(bd, crearLimitador());
@@ -75,6 +75,14 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
         const [x] = await bd.filas<{ ocurrido_en: unknown; datos: Obj }>("select ocurrido_en, datos from public.auditoria where empresa_id = $1 and accion = 'digifact_test.correo_solicitado' and entidad = 'documento' and entidad_id = $2 order by id desc limit 1", [c.empresa, docId]);
         return c.json({ solicitado: !!x, destinatario: x ? String(x.datos?.destinatario ?? "") : null, cuando: x ? (x.ocurrido_en instanceof Date ? x.ocurrido_en.toISOString() : String(x.ocurrido_en)) : null, entrega: "sin_confirmacion" });
       }
+      if (accion === "destinatario") {   // el correo REGISTRADO del cliente de ESTE documento, para prellenar la casilla. Solo de la empresa de la sesión (el cliente se busca con la empresa del documento, nunca con lo que mande el navegador) y solo para quien puede certificar.
+        if (!politicaCorreo || c.empresa.toLowerCase() !== politicaCorreo.empresaId) return c.json({ codigo: "correo_no_habilitado", mensaje: "El envío de la factura por correo de Digifact no está habilitado para esta empresa." }, 403);
+        if (!ctx.permisos.includes("fiscal.certificar")) throw new ErrorFelGt("NO_AUTORIZADO", "No tienes permiso para elegir el envío por correo");
+        const [x] = await bd.filas<Obj>("select c.id as cliente_id, c.tipo_identificacion, c.email from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, c.empresa]);
+        if (!x) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado");
+        const reg = typeof x.email === "string" ? x.email.trim() : "", valido = reg !== "" && correoConFormatoNuc(reg);
+        return c.json({ clienteId: x.cliente_id ? String(x.cliente_id) : null, consumidorFinal: !x.cliente_id || x.tipo_identificacion === "CF", correo: valido ? reg : null, registradoNoValido: reg !== "" && !valido });
+      }
       if (accion) return null; return c.json({ operaciones: await svc.estadoDocumento(ctx, docId) });
     }
     const b = await c.cuerpo();
@@ -90,7 +98,15 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
     if (accion === "validar" || accion === "preparar" || accion === "certificar") {
       const pc = pedirCorreo(); if (pc.rechazo) return pc.rechazo;
       if (accion === "validar") return c.json(await svc.validar(ctx, await doc(), { correo: pc.correo }));
-      if (accion === "preparar") return c.json(await svc.preparar(ctx, await doc(), { correo: pc.correo }));
+      // El destinatario queda ATADO a la preparación: «correo_ref» es una huella de (empresa, documento, operación, correo). Al certificar se exige la misma, así que lo que se revisó y lo que se envía no pueden diferir,
+      // y cambiar después el correo del cliente (o escribir otro en el navegador) no altera el destinatario de la operación. Es solo una huella: el correo completo no se guarda ni se devuelve.
+      const refCorreo = async (operacionId: string, correo: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${c.empresa}|${docId}|${operacionId}|${correo.toLowerCase()}`)))].slice(0, 8).map((x) => x.toString(16).padStart(2, "0")).join("");
+      if (accion === "preparar") { const r = await svc.preparar(ctx, await doc(), { correo: pc.correo }); return c.json(pc.correo ? { ...r, correoRef: await refCorreo(r.operacionId, pc.correo) } : r); }
+      if (pc.correo) {
+        const ref = typeof b.correo_ref === "string" ? b.correo_ref : "";
+        if (!ref) return c.json({ codigo: "correo_sin_preparacion", mensaje: "Prepara de nuevo la certificación con este correo antes de certificar." }, 400);
+        if (ref !== await refCorreo(String(b.operacionId ?? ""), pc.correo)) return c.json({ codigo: "correo_distinto", mensaje: "El correo no coincide con el de la preparación. Prepara de nuevo la certificación con el correo que quieres usar." }, 409);
+      }
       return c.json(await svc.certificar(ctx, await doc(), { operacionId: b.operacionId, confirmacion: b.confirmacion, referencia: b.referencia, huellaEmisor: b.huellaEmisor, correo: pc.correo }));
     }
     if (accion === "conciliar") return c.json(await svc.conciliar(ctx, b.operacionId));

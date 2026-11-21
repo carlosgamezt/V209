@@ -58,6 +58,8 @@ export const api = {
   digifactPreparar: (id, extra = {}) => llamar("POST", `/api/documentos/${id}/digifact/preparar`, extra),
   digifactCertificar: (id, c, extra = {}) => llamar("POST", `/api/documentos/${id}/digifact/certificar`, { ...c, ...extra }),
   correoDeDigifact: (id) => llamar("GET", `/api/documentos/${id}/digifact/correo`),
+  // el correo REGISTRADO del cliente de este documento (solo de la empresa de la sesión): prellena la casilla «Enviar factura por correo»
+  destinatarioDigifact: (id) => llamar("GET", `/api/documentos/${id}/digifact/destinatario`),
   digifactConciliar: (id, operacionId) => llamar("POST", `/api/documentos/${id}/digifact/conciliar`, { operacionId }),
   sesion: () => llamar("GET", "/api/sesion"),
   entrar: (usuario, clave, recordar, codigo) => llamar("POST", "/api/sesion/entrar", { usuario, clave, recordar, codigo }),

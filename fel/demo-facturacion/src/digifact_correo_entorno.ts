@@ -13,6 +13,8 @@ export type VeredictoCorreo = { ok: true } | { ok: false; codigo: "CORREO_INVALI
 export interface PoliticaCorreoDigifact { readonly empresaId: string; evaluar(correo: string): VeredictoCorreo }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FORMATO = /^[^\s@<>,;'"()\[\]\\]{1,40}@[A-Za-z0-9.-]{1,40}\.[A-Za-z]{2,10}$/;   // la misma regla estricta del NUC (hasta 50 caracteres)
+/** ¿Tiene el formato que acepta el NUC (una sola dirección, hasta 50 caracteres)? Lo usa también la API para no ofrecer como destinatario un correo registrado que Digifact no aceptaría. */
+export const correoConFormatoNuc = (c: string): boolean => { const x = String(c ?? "").trim(); return x.length > 0 && x.length <= 50 && FORMATO.test(x); };
 
 export function crearPoliticaCorreoDigifactDesdeEntorno(env: Entorno): { politica?: PoliticaCorreoDigifact; motivo: string } {
   if (env("FEL_DIGIFACT_CORREO") !== "habilitado") return { motivo: "El correo de la factura por Digifact no está habilitado (FEL_DIGIFACT_CORREO)." };
@@ -22,7 +24,7 @@ export function crearPoliticaCorreoDigifactDesdeEntorno(env: Entorno): { politic
     empresaId: empresa,
     evaluar(correo: string): VeredictoCorreo {
       const c = String(correo ?? "").trim();
-      if (!c || c.length > 50 || !FORMATO.test(c)) return { ok: false, codigo: "CORREO_INVALIDO", mensaje: "El correo electrónico no es válido (hasta 50 caracteres)." };
+      if (!correoConFormatoNuc(c)) return { ok: false, codigo: "CORREO_INVALIDO", mensaje: "El correo electrónico no es válido (hasta 50 caracteres)." };
       if (!permitido(c.toLowerCase())) return { ok: false, codigo: "DESTINATARIO_NO_AUTORIZADO", mensaje: "En el ambiente de pruebas solo se puede enviar a los correos autorizados." };
       return { ok: true };
     },

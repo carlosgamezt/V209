@@ -12,6 +12,14 @@ El correo sale **solo al certificar**, si el XML trae el correo en el nodo del r
 4. NEXA registra **«envío solicitado a Digifact»** (auditoría `digifact_test.correo_solicitado`, correo enmascarado) y lo muestra con la hora de Guatemala. **Nunca** «entregado»: Digifact no da confirmación.
 5. Si el documento se rechaza o el resultado es incierto, la pantalla lo dice («no se envió» / «resultado incierto»).
 
+## Etapa 1 · el correo del receptor sale del cliente (implementada localmente; sin commit ni despliegue)
+- **De dónde sale:** al abrir el panel, el **servidor** entrega el correo registrado del cliente del documento (`GET /api/documentos/:id/digifact/destinatario`, busca el cliente con la empresa del documento y de la sesión; solo para quien puede certificar y solo con `FEL_DIGIFACT_CORREO` habilitado para esa empresa). Sin correo, o con uno que el NUC no aceptaría, el campo queda **vacío** y se explica. Con Consumidor Final el correo es **opcional**.
+- **Se puede editar.** La casilla sigue **apagada por defecto**; si se marca, hace falta un correo válido (la misma regla del NUC, hasta 50 caracteres). Sin marcarla, el NUC no lleva `Buyer.Contact` aunque el cliente tenga correo.
+- **Cambio de cliente:** si el cliente del documento cambia, se descarta el correo anterior (prellenado o escrito), se apaga la casilla, se descarta la preparación y se avisa. Nunca se arrastra el correo de otro cliente.
+- **El destinatario queda atado a la preparación:** `preparar` devuelve `correoRef`, una huella de (empresa, documento, operación, correo); `certificar` la exige y la compara. Cambiar el correo del cliente, escribir otro o alterar la huella no cambia a quién se envía (409 `correo_distinto` / 400 `correo_sin_preparacion`). La pantalla pide «Actualizar la preparación con este correo» si se marca o cambia el correo después de preparar.
+- **Sin datos de más:** la auditoría guarda solo el correo enmascarado; ninguna respuesta de preparar/certificar trae el correo completo.
+- **No cambia** la lógica fiscal, la huella ni la referencia, las consultas de NIT y CUI, ni el módulo propio (Resend, apagado).
+
 ## Interruptores (todos independientes; apagados por defecto)
 | Variable | Qué habilita |
 |---|---|
