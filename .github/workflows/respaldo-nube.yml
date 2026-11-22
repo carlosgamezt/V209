@@ -59,20 +59,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Cliente PostgreSQL 17 (el servidor de nexa-demo es 17; pg_dump no vuelca un servidor más nuevo que él)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq curl ca-certificates gnupg >/dev/null
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
-          . /etc/os-release
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
-          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
-          /usr/lib/postgresql/17/bin/pg_dump --version
-          test "$(/usr/lib/postgresql/17/bin/pg_dump --version | grep -oE '[0-9]+' | head -1)" = "17" || { echo "El cliente instalado no es PostgreSQL 17"; exit 1; }
-          /usr/lib/postgresql/17/bin/psql --version
+      - name: "Cliente PostgreSQL 17 (instalación verificada: huella de la clave, versión mayor fijada, herramientas comprobadas)"
+        uses: ./.github/actions/postgresql-17
+        with:
+          servidor: "false"
       - name: "Ensayo de respaldo y restauración (origen: solo lectura · destino: PostgreSQL local y efímero)"
         env:
           FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}

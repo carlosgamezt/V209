@@ -4,12 +4,24 @@
 #   · ensayo-respaldo: con PostgreSQL REAL (un servidor temporal) y envoltorios de psql/pg_dump/pg_restore que SOLO redirigen la cadena del pooler de nexa-demo hacia una base local de prueba que hace de origen;
 #     el código del script corre tal cual. Se prueba el camino feliz y cada protección: destino incorrecto, versión del cliente, datos que cambian durante el volcado, restauración que pierde filas, 29 presente, historial distinto,
 #     copia vacía, el origen NO se modifica, la copia temporal y la base efímera no sobreviven, y ningún secreto aparece en la salida.
-# Uso: bash tools/test-respaldo-nexa-demo.sh      (necesita PostgreSQL 16 en /usr/lib/postgresql/16/bin; se levanta uno temporal)
+# Uso: bash tools/test-respaldo-nexa-demo.sh      (detecta el PostgreSQL instalado, ≥ 15, con initdb, pg_ctl, psql, pg_dump y pg_restore; PGBIN lo fija a mano; si no hay ninguno FALLA; levanta dos servidores temporales)
 set -uo pipefail
 R="$(cd "$(dirname "$0")/.." && pwd)"; S="$R/tools/respaldo-nexa-demo.sh"; W="$(mktemp -d)"; fallos=0
 REF=sbmchmknfercbtziwrge; HOST=aws-0-us-west-2.pooler.supabase.com; CLAVE=CLAVE-FALSA-DE-PRUEBA-9; TOKEN=sbp_TOKEN_FALSO_DE_PRUEBA_1234567890
-PGBIN=${PGBIN:-/usr/lib/postgresql/16/bin}; DATA=${FEL_PGDATA:-/tmp/fel-pgdata-respaldo}; PORT=${FEL_PGPORT:-54394}; SOCK=/tmp; DATA2="${DATA}-destino"; PORT2=$((PORT-1))   # el DESTINO es OTRO servidor (como el contenedor de servicio del ejecutor)
+DATA=${FEL_PGDATA:-/tmp/fel-pgdata-respaldo}; PORT=${FEL_PGPORT:-54394}; SOCK=/tmp; DATA2="${DATA}-destino"; PORT2=$((PORT-1))   # el DESTINO es OTRO servidor (como el contenedor de servicio del ejecutor)
 ok() { echo "OK    $1"; }; mal() { echo "FALLO $1"; fallos=$((fallos+1)); }
+# ---- PostgreSQL de prueba: NO depende de una ruta fija. Se detecta el que haya (PGBIN si se indica; si no, pg_config y /usr/lib/postgresql/*/bin), se exige que tenga initdb, pg_ctl, psql, pg_dump y pg_restore de la MISMA versión mayor (≥ 15)
+# y se elige la más nueva. Si no hay ninguno, la prueba FALLA (no se omite): en CI lo instala .github/actions/postgresql-17 y deja PGBIN.
+herramientas_pg() { local c="$1" h v w; for h in initdb pg_ctl psql pg_dump pg_restore; do [ -x "$c/$h" ] || { echo "faltan herramientas en $c: $h"; return 1; }; done
+  v="$("$c/initdb" --version | grep -oE '[0-9]+' | head -1)"; for h in pg_ctl psql pg_dump pg_restore; do w="$("$c/$h" --version | grep -oE '[0-9]+' | head -1)"; [ "$w" = "$v" ] || { echo "$h es de la versión $w y initdb de la $v en $c"; return 1; }; done
+  [ "$v" -ge 15 ] 2>/dev/null || { echo "la versión $v de $c es anterior a la 15"; return 1; }; echo "$v"; }
+detectar_pg() { local c v mejor="" mejorv=0 cands=() d
+  if [ -n "${PGBIN:-}" ]; then v="$(herramientas_pg "$PGBIN")" || { echo "FALLO: PGBIN=$PGBIN no sirve: $v"; return 1; }; PGMAYOR="$v"; return 0; fi
+  cands+=("$(pg_config --bindir 2>/dev/null || true)"); for d in /usr/lib/postgresql/*/bin; do cands+=("$d"); done
+  for c in "${cands[@]}"; do [ -n "$c" ] && [ -d "$c" ] || continue; v="$(herramientas_pg "$c" 2>/dev/null)" || continue; if [ "$v" -gt "$mejorv" ]; then mejor="$c"; mejorv="$v"; fi; done
+  [ -n "$mejor" ] || return 1; PGBIN="$mejor"; PGMAYOR="$mejorv"; }
+detectar_pg || { echo "FALLO: no hay un PostgreSQL (≥ 15) con initdb, pg_ctl, psql, pg_dump y pg_restore en este equipo. Instálalo (en CI: .github/actions/postgresql-17). La prueba NO se omite."; exit 1; }
+echo "PostgreSQL de prueba: $PGBIN (versión $PGMAYOR)"
 as_pg() { if [ "$(id -u)" = 0 ]; then su pgtest -s /bin/bash -c "$*"; else bash -c "$*"; fi; }
 [ "$(id -u)" != 0 ] || id pgtest >/dev/null 2>&1 || useradd -m pgtest
 as_pg "rm -rf '$DATA' && mkdir -p '$DATA' && '$PGBIN/initdb' -D '$DATA' -A trust -U postgres >/dev/null" && as_pg "'$PGBIN/pg_ctl' -D '$DATA' -o '-p $PORT -k $SOCK -c listen_addresses=' -w -l '$DATA/log' start >/dev/null" || { echo "no se pudo levantar PostgreSQL de prueba"; exit 1; }
@@ -27,7 +39,7 @@ exec $PGBIN/psql "\${args[@]}"
 SH
 cat > "$W/bin/pg_dump" <<SH
 #!/usr/bin/env bash
-if [ "\${1:-}" = "--version" ]; then echo "pg_dump (PostgreSQL) \${FAKE_PGDUMP_MAJOR:-16}.1"; exit 0; fi
+if [ "\${1:-}" = "--version" ]; then echo "pg_dump (PostgreSQL) \${FAKE_PGDUMP_MAJOR:-$PGMAYOR}.1"; exit 0; fi
 args=(); for a in "\$@"; do case "\$a" in *pooler.supabase.com*) echo "pg_dump->origen" >> "$REG"; a="host=$SOCK port=$PORT dbname=\${FAKE_ORIGEN:-origen} user=postgres";; esac; args+=("\$a"); done
 echo "pg_dump args=\$(printf '%s ' "\${args[@]}" | sed 's|host=[^ ]*||')" >> "$REG"
 if [ -n "\${FAKE_ESCRIBE_ANTES:-}" ]; then $PGBIN/psql -h $SOCK -p $PORT -U postgres -d origen -X -q -c "insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id) select gen_random_uuid(), 'Extra', 'Extra S.A.', '9999998-9', id from public.regimenes_fiscales limit 1"; fi
@@ -59,6 +71,44 @@ env_base() { export FEL_DEMO_PROYECTO_REF=$REF SUPABASE_ACCESS_TOKEN=$TOKEN FEL_
 sale() { env -i PATH="$PATH" HOME="$W" TMPDIR="$W/tmp" REGISTRO_CURL="$REGISTRO_CURL" FEL_DEMO_PROYECTO_REF="${FEL_DEMO_PROYECTO_REF:-}" SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}" FEL_DEMO_BD_URL="${FEL_DEMO_BD_URL:-}" FEL_ENSAYO_DESTINO_URL="${FEL_ENSAYO_DESTINO_URL:-}" \
   FAKE_CURL_RC="${FAKE_CURL_RC:-}" FAKE_CURL_CUERPO="${FAKE_CURL_CUERPO:-}" FAKE_CURL_CODIGO="${FAKE_CURL_CODIGO:-}" FAKE_PGDUMP_MAJOR="${FAKE_PGDUMP_MAJOR:-}" FAKE_DUMP_VACIO="${FAKE_DUMP_VACIO:-}" FAKE_ESCRIBE_DURANTE="${FAKE_ESCRIBE_DURANTE:-}" FAKE_RESTORE_PIERDE="${FAKE_RESTORE_PIERDE:-}" FAKE_ESCRIBE_ANTES="${FAKE_ESCRIBE_ANTES:-}" FAKE_RESTORE_MUTA="${FAKE_RESTORE_MUTA:-}" FAKE_RESTORE_PRIVS="${FAKE_RESTORE_PRIVS:-}" FAKE_RESTORE_DEFACL="${FAKE_RESTORE_DEFACL:-}" FAKE_ORIGEN="${FAKE_ORIGEN:-}" \
   bash "$S" "$@" > "$W/salida.txt" 2>&1; echo $?; }
+# ============================================================================================================== 0. instalación verificada de PostgreSQL 17 (el workflow manual y el CI usan tools/instalar-postgresql-17.sh)
+echo "== 0. instalación verificada de PostgreSQL 17"
+IN="$R/tools/instalar-postgresql-17.sh"; GH="$W/gpg"; mkdir -p "$GH"; chmod 700 "$GH"
+command -v gpg >/dev/null || mal "falta gpg: no se puede probar la verificación de la clave"
+for n in 1 2; do GNUPGHOME="$GH" gpg --batch --quiet --passphrase '' --quick-generate-key "prueba$n <p$n@invalido.test>" rsa2048 sign never 2>/dev/null; done
+GNUPGHOME="$GH" gpg --batch --list-keys --with-colons 2>/dev/null | awk -F: '$1=="fpr"{print $10}' | grep -v '^$' > "$W/fprs.txt"
+FPR1="$(sed -n 1p "$W/fprs.txt")"; FPR2="$(sed -n 2p "$W/fprs.txt")"
+GNUPGHOME="$GH" gpg --batch --armor --export "$FPR1" > "$W/k1.asc" 2>/dev/null; GNUPGHOME="$GH" gpg --batch --armor --export "$FPR2" > "$W/k2.asc" 2>/dev/null; cat "$W/k1.asc" "$W/k2.asc" > "$W/ambas.asc"; echo "no es una clave" > "$W/basura.asc"; : > "$W/vacia.asc"
+t() { ( set +e; export HUELLA_PRUEBA="$1"; source "$IN"; HUELLA_PGDG="$HUELLA_PRUEBA"; verificar_huella "$2" >/dev/null 2>&1; echo $? ); }
+[ -n "$FPR1" ] && [ -n "$FPR2" ] && [ "$FPR1" != "$FPR2" ] || mal "no se pudieron generar las claves de prueba"
+[ "$(t "$FPR1" "$W/k1.asc")" = 0 ] && ok "una clave con la huella esperada se acepta" || mal "no acepta la huella esperada"
+[ "$(t "$FPR1" "$W/k2.asc")" != 0 ] && ok "una clave con OTRA huella se rechaza" || mal "acepta una clave con otra huella"
+[ "$(t "$FPR1" "$W/ambas.asc")" != 0 ] && ok "un archivo con DOS claves se rechaza aunque una sea la esperada" || mal "acepta un archivo con dos claves"
+[ "$(t "$FPR1" "$W/basura.asc")" != 0 ] && [ "$(t "$FPR1" "$W/vacia.asc")" != 0 ] && ok "un archivo ilegible o vacío se rechaza" || mal "acepta un archivo ilegible"
+r=$(bash "$IN" verificar-clave "$W/k2.asc" >"$W/salida.txt" 2>&1; echo $?); [ "$r" = 1 ] && grep -q "NO es la oficial" "$W/salida.txt" && ok "el instalador, por la línea de órdenes, rechaza una clave que no es la oficial" || mal "el instalador no rechaza una clave ajena"
+OFICIAL="$( ( set +e; source "$IN"; echo "$HUELLA_PGDG" ) )"; [ "$OFICIAL" = "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8" ] && ok "la huella confiada es la oficial de PGDG (B97B 0AFC AA1A 47F0 44F2 44A0 7FCC 7D46 ACCC 4CF8)" || mal "la huella confiada no es la oficial"
+vi() { ( set +e; source "$IN"; BIN="$1"; MAYOR="$2"; verificar_instalacion "$3" >/dev/null 2>&1; echo $? ); }
+mkdir -p "$W/vacio"; [ "$(vi "$W/vacio" "$PGMAYOR" true)" != 0 ] && ok "un directorio sin herramientas se rechaza" || mal "acepta una instalación vacía"
+[ "$(vi "$PGBIN" "$PGMAYOR" true)" = 0 ] && ok "la instalación detectada (initdb, pg_ctl, psql, pg_dump, pg_restore) se acepta" || mal "no acepta la instalación detectada"
+[ "$(vi "$PGBIN" "$((PGMAYOR+1))" true)" != 0 ] && ok "una versión mayor distinta de la esperada se rechaza" || mal "acepta una versión mayor distinta"
+r=$(cd "$W" && PGBIN="$W/vacio" bash -c "set +e; $(declare -f herramientas_pg detectar_pg); detectar_pg; echo \$?" 2>&1 | tail -1); [ "$r" != 0 ] && ok "si PGBIN apunta a algo sin las herramientas, la detección FALLA (no elige otro en silencio)" || mal "la detección acepta un PGBIN inválido"
+# flujo COMPLETO del instalador con sudo, apt-get, curl y dpkg-query SIMULADOS (nada del sistema se toca): orden, firma, versión mayor y paquetes. La huella oficial no se puede falsificar, así que la prueba usa una clave propia SOLO dentro de este subproceso.
+sim_instalar() {   # $1 servidor · $2 clave servida (archivo) · $3 huella confiada · $4 versión que «instalan» las herramientas falsas · $5 «previas» (1 = herramientas ya instaladas)
+  ( set +e; source "$IN"; HUELLA_PGDG="$3"; BIN="$W/bin17"; rm -rf "$BIN"; mkdir -p "$BIN"; LOG="$W/sim.log"; : > "$LOG"; : > "$W/sim.tee"
+    VF="$4"; PREV="$5"
+    falsas() { local h; for h in psql pg_dump pg_restore initdb pg_ctl; do printf '#!/bin/sh\necho "%s (PostgreSQL) %s.1"\n' "$h" "$VF" > "$BIN/$h"; chmod +x "$BIN/$h"; done; }
+    [ "$PREV" != 1 ] || falsas
+    sudo() { echo "sudo $*" >> "$LOG"; [ "$1" != tee ] || cat >> "$W/sim.tee"; case "$*" in *"apt-get install"*postgresql-client-17*) falsas;; esac; return 0; }
+    curl() { local o=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && o="$2"; shift; done; cp "$W/serv.asc" "$o"; echo "curl -> clave" >> "$LOG"; }
+    dpkg-query() { echo "postgresql-client-17 17.99-simulado"; }
+    cp "$2" "$W/serv.asc"; instalar "$1" >"$W/sim.out" 2>&1; echo $? ) ; }
+r=$(sim_instalar false "$W/k1.asc" "$FPR1" 17 0)
+[ "$r" = 0 ] && grep -q "Clave de PGDG verificada" "$W/sim.out" && grep -q "signed-by=/usr/share/keyrings/pgdg.gpg" "$W/sim.tee" && grep -q "bookworm-pgdg\|-pgdg main" "$W/sim.tee" && grep -q "create_main_cluster = false" "$W/sim.tee" && grep -q "apt-get install .*postgresql-client-17" "$W/sim.log" && ! grep -qE "apt-get install .* postgresql-17( |$)" "$W/sim.log" && ok "instalador (solo cliente): verifica la clave, declara el repositorio con signed-by, no crea clúster e instala SOLO postgresql-client-17" || { mal "el flujo del instalador (cliente) no es el esperado"; cat "$W/sim.out" "$W/sim.log" | head -12; }
+[ "$(grep -n 'curl' "$W/sim.log" | head -1 | cut -d: -f1)" -lt "$(grep -n 'apt-get update' "$W/sim.log" | head -1 | cut -d: -f1)" ] && [ "$(grep -n 'install -d' "$W/sim.log" | head -1 | cut -d: -f1)" -lt "$(grep -n 'apt-get update' "$W/sim.log" | head -1 | cut -d: -f1)" ] && grep -q 'Dir::Etc::sourcelist=sources.list.d/pgdg.list' "$W/sim.log" && ok "el orden es: descargar y verificar la clave → declarar el repositorio → actualizar SOLO la lista de PGDG → instalar" || mal "el orden del instalador no es el esperado"
+r=$(sim_instalar true "$W/k1.asc" "$FPR1" 17 0); [ "$r" = 0 ] && grep -qE "apt-get install .*postgresql-client-17 postgresql-17" "$W/sim.log" && [ "$(grep -n 'createcluster' "$W/sim.log" | head -1 | cut -d: -f1)" != "" ] && ok "instalador (con servidor): instala también postgresql-17 y deja el clúster sin crear (initdb y pg_ctl disponibles)" || { mal "el instalador con servidor no instala postgresql-17"; cat "$W/sim.log" | head; }
+r=$(sim_instalar false "$W/k2.asc" "$FPR1" 17 0); [ "$r" != 0 ] && grep -q "NO es la oficial de PostgreSQL" "$W/sim.out" && ! grep -qE "apt-get|install|tee" "$W/sim.log" && ok "con una clave que NO es la oficial: se aborta ANTES de tocar el sistema (ningún sudo, apt-get ni repositorio)" || { mal "una clave ajena no detiene el instalador a tiempo"; cat "$W/sim.log" | head -5; }
+r=$(sim_instalar false "$W/k1.asc" "$FPR1" 16 0); [ "$r" != 0 ] && grep -q "se esperaba 17" "$W/sim.out" && ok "si lo instalado no es de la versión mayor 17, el instalador FALLA (no se acepta otro cliente)" || mal "acepta un cliente de otra versión mayor"
+r=$(sim_instalar true "$W/k1.asc" "$FPR1" 17 1); [ "$r" = 0 ] && grep -q "ya está instalado" "$W/sim.out" && [ ! -s "$W/sim.log" ] && ok "si PostgreSQL 17 ya está completo no se reinstala ni se toca el sistema" || mal "reinstala aunque ya esté completo"
 # ============================================================================================================== A. verificar-respaldo
 echo "== A. verificar-respaldo"
 env_base
@@ -98,7 +148,7 @@ prepara_origen && ok "origen simulado preparado (shim + 28 migraciones + datos)"
 env_base; H0="$(huella_origen)"; : > "$REG"
 r=$(sale ensayo-respaldo)
 [ "$r" = 0 ] && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && ok "camino feliz: el ensayo termina OK" || { mal "el ensayo feliz falló"; cat "$W/salida.txt" | tail -15; }
-for t in "origen en solo lectura: PostgreSQL RECHAZÓ" "cliente compatible: pg_dump 16" "instantánea consistente del origen \\(tomada [0-9/]+ [0-9:]+, hora de Guatemala\\): 68 tablas" "copia lógica generada" "pg_restore --list" "restauración completa en la base efímera" "datos: las 68 tablas, [0-9]+ filas y su contenido \\(huella por tabla\\) coinciden exactamente con la instantánea del origen" "historial restaurado: las 28 migraciones" "la migración 29 sigue ausente" "estructura, propietarios y permisos: [0-9]+ elementos idénticos" "catálogo de la migración 28 sano" "LIMITACIONES de esta validación [(]no son prueba aprobada[)]" "copia temporal sobrescrita y eliminada" "== INFORME [(]sin datos[)]"; do
+for t in "origen en solo lectura: PostgreSQL RECHAZÓ" "cliente compatible: pg_dump $PGMAYOR" "instantánea consistente del origen \\(tomada [0-9/]+ [0-9:]+, hora de Guatemala\\): 68 tablas" "copia lógica generada" "pg_restore --list" "restauración completa en la base efímera" "datos: las 68 tablas, [0-9]+ filas y su contenido \\(huella por tabla\\) coinciden exactamente con la instantánea del origen" "historial restaurado: las 28 migraciones" "la migración 29 sigue ausente" "estructura, propietarios y permisos: [0-9]+ elementos idénticos" "catálogo de la migración 28 sano" "LIMITACIONES de esta validación [(]no son prueba aprobada[)]" "copia temporal sobrescrita y eliminada" "== INFORME [(]sin datos[)]"; do
   grep -qE "$t" "$W/salida.txt" || { mal "falta en la salida: $t"; grep -E "instantánea|datos:" "$W/salida.txt" | head -3 | cut -c1-200; }; done
 grep -qE "SHA-256 [0-9a-f]{64}" "$W/salida.txt" && ok "informe con tamaño y SHA-256 de 64 caracteres" || mal "sin SHA-256"
 grep -q "^pg_dump args=.*--snapshot=[0-9A-F]" "$REG" && ok "pg_dump lee la instantánea EXPORTADA por la sesión de solo lectura (--snapshot): conteos, contenido, estructura y copia salen de la misma instantánea" || mal "pg_dump no recibió --snapshot"
@@ -118,7 +168,7 @@ env_base; : > "$REG"; export FEL_DEMO_BD_URL="postgresql://postgres.otrootrootro
 env_base; export FEL_DEMO_BD_URL="postgresql://postgres.$REF:$CLAVE@evil.example.com:5432/postgres"; r=$(sale ensayo-respaldo); [ "$r" = 2 ] && ok "origen con host que no es el pooler de Supabase → se rechaza" || mal "origen con otro host aceptado"
 env_base; : > "$REG"; mkdir -p "$R/zz-tmp-prueba"; r=$(env -i PATH="$PATH" HOME="$W" TMPDIR="$R/zz-tmp-prueba" FEL_DEMO_PROYECTO_REF=$REF FEL_DEMO_BD_URL="postgresql://postgres.$REF:$CLAVE@$HOST:6543/postgres" FEL_ENSAYO_DESTINO_URL="$DEST" bash "$S" ensayo-respaldo >"$W/salida.txt" 2>&1; echo $?)
 [ "$r" = 1 ] && grep -q "quedó dentro del espacio de trabajo" "$W/salida.txt" && no_dump && [ -z "$(ls -A "$R/zz-tmp-prueba")" ] && ok "si el directorio temporal cayera dentro del espacio de trabajo (donde un artefacto lo recogería), se aborta ANTES de volcar y se borra" || mal "no se protege el espacio de trabajo"; rmdir "$R/zz-tmp-prueba" 2>/dev/null
-env_base; : > "$REG"; export FAKE_PGDUMP_MAJOR=15; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "pg_dump 15 no puede volcar un servidor PostgreSQL 16" "$W/salida.txt" && no_dump && [ "$(sobras)" = "0 0" ] && ok "cliente más viejo que el servidor → falla antes de volcar" || mal "no detecta el cliente incompatible"
+env_base; : > "$REG"; export FAKE_PGDUMP_MAJOR=$((PGMAYOR-1)); r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "pg_dump $((PGMAYOR-1)) no puede volcar un servidor PostgreSQL $PGMAYOR" "$W/salida.txt" && no_dump && [ "$(sobras)" = "0 0" ] && ok "cliente más viejo que el servidor → falla antes de volcar" || mal "no detecta el cliente incompatible"
 for gancho in FAKE_ESCRIBE_ANTES FAKE_ESCRIBE_DURANTE; do
   prepara_origen >/dev/null; env_base; export $gancho=1; r=$(sale ensayo-respaldo)
   [ "$r" = 0 ] && grep -q "INFO  el origen cambió DESPUÉS de la instantánea (modificación legítima)" "$W/salida.txt" && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && [ "$(sobras)" = "0 0" ] && ok "el origen cambia (${gancho#FAKE_ESCRIBE_}: $( [ $gancho = FAKE_ESCRIBE_ANTES ] && echo entre la instantánea y el volcado || echo tras el volcado )): la copia sigue siendo CONSISTENTE con la instantánea, se informa como modificación legítima y no se confunde con una restauración incorrecta" || { mal "un cambio posterior a la instantánea rompe o no se informa ($gancho)"; tail -4 "$W/salida.txt"; }

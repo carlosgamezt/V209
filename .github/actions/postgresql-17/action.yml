@@ -1,0 +1,19 @@
+name: PostgreSQL 17 (instalación verificada)
+description: >
+  Instala PostgreSQL 17 desde el repositorio oficial de PostgreSQL (PGDG) comprobando la huella de su clave de firma, fijando la versión mayor en 17 (la del servidor hospedado) y verificando las herramientas instaladas.
+  No recibe secretos. Deja la ruta de los binarios en PATH y en PGBIN para los pasos siguientes. El repositorio debe estar descargado (actions/checkout) antes.
+inputs:
+  servidor:
+    description: "true = instala también el servidor (initdb, pg_ctl) para pruebas con un PostgreSQL temporal; false = solo el cliente (psql, pg_dump, pg_restore)"
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Instalar y verificar PostgreSQL 17
+      shell: bash
+      env:
+        SERVIDOR: ${{ inputs.servidor }}
+      run: |
+        bash "$GITHUB_WORKSPACE/fel/tools/instalar-postgresql-17.sh" instalar "$SERVIDOR"
+        echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+        echo "PGBIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
