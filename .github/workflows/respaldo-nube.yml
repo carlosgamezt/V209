@@ -1,0 +1,81 @@
+name: NEXA FEL · respaldo de nexa-demo (manual, solo lectura; ensayo de restauración efímera)
+# Este flujo NO aplica migraciones, NO despliega, NO toca Cloudflare, NO escribe en Supabase y NO publica ningún archivo (ni artefactos, ni cachés, ni releases). SOLO se ejecuta cuando TÚ lo lanzas a mano;
+# aun lanzado, el trabajo queda en espera hasta que TÚ lo apruebes en el entorno protegido «demo-privada».
+#  · acción «verificar-respaldo» : UN GET a la API de gestión de Supabase (¿hay copias o PITR?). Distingue RESPALDO CONFIRMADO · SIN RESPALDOS AUTOMÁTICOS · NO VERIFICABLE (que falla). Secretos: DEMO_SUPABASE_PROYECTO_REF y DEMO_SUPABASE_ACCESS_TOKEN.
+#  · acción «ensayo-respaldo»    : FASE 1. pg_dump (solo lectura) de «public» y «supabase_migrations» → SHA-256 → pg_restore --list → restauración en un PostgreSQL 17 EFÍMERO DEL PROPIO EJECUTOR (contenedor de servicio local,
+#      nunca en Supabase) → conteos, historial de 28 migraciones, la 29 ausente y catálogo de la 28 → la copia se sobrescribe y se elimina. El informe solo trae tamaños, SHA-256 y totales. Secretos: DEMO_SUPABASE_PROYECTO_REF y DEMO_BD_URL.
+# El destino de la restauración está FIJO en este archivo (no es una entrada ni un secreto) y el script lo valida: solo un PostgreSQL local.
+# El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en migraciones-nube): está limitado a este mismo archivo y los trabajos se OMITEN siempre que el evento no sea un lanzamiento manual.
+on:
+  push:
+    paths: ['.github/workflows/respaldo-nube.yml']
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: "verificar-respaldo (¿hay respaldos automáticos?) · ensayo-respaldo (copia lógica + restauración efímera; ningún archivo sale del ejecutor)"
+        type: choice
+        options: [verificar-respaldo, ensayo-respaldo]
+        default: verificar-respaldo
+permissions:
+  contents: read
+concurrency:
+  group: publicar-nube
+  cancel-in-progress: false
+jobs:
+  verificar-respaldo:
+    name: Verificar respaldos automáticos (nexa-demo)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fel-proveedores-diseno' && inputs.accion == 'verificar-respaldo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: demo-privada
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: "¿Respaldos automáticos de nexa-demo? (solo lectura: un GET)"
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.DEMO_SUPABASE_ACCESS_TOKEN }}
+        run: bash fel/tools/respaldo-nexa-demo.sh verificar-respaldo
+  ensayo-respaldo:
+    name: Ensayo de respaldo y restauración efímera (nexa-demo)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fel-proveedores-diseno' && inputs.accion == 'ensayo-respaldo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: demo-privada
+    services:
+      destino:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: efimero-sin-valor
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Cliente PostgreSQL 17 (el servidor de nexa-demo es 17; pg_dump no vuelca un servidor más nuevo que él)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl ca-certificates gnupg >/dev/null
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
+          test "$(/usr/lib/postgresql/17/bin/pg_dump --version | grep -oE '[0-9]+' | head -1)" = "17" || { echo "El cliente instalado no es PostgreSQL 17"; exit 1; }
+          /usr/lib/postgresql/17/bin/psql --version
+      - name: "Ensayo de respaldo y restauración (origen: solo lectura · destino: PostgreSQL local y efímero)"
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
+          FEL_ENSAYO_DESTINO_URL: postgresql://postgres:efimero-sin-valor@127.0.0.1:5432/postgres
+        run: bash fel/tools/respaldo-nexa-demo.sh ensayo-respaldo

@@ -56,7 +56,7 @@ else: mal("[digifact-test] el CUI de prueba debe venir solo del secreto DEMO_DIG
 _cnp = open("fel/proveedores/src/consulta_nit_privada.ts", encoding="utf-8").read()
 if "console." not in _cnp and "hacia producción" not in _cnp and 'ambiente: "test"' in _cnp and "esquemaAutorizacion: \"raw\"" in _cnp: ok("[consulta_nit_privada] ambiente fijo TEST, un solo esquema (sin segundo intento) y el módulo no imprime nada")
 else: mal("[consulta_nit_privada] debe fijar TEST, un solo esquema y no imprimir")
-PERMITIDOS = {R, DF, MG}
+RB = ".github/workflows/respaldo-nube.yml"; PERMITIDOS = {R, DF, MG, RB}   # RB: respaldo (solo lectura; guardianes propios más abajo)
 for f in glob.glob(".github/workflows/*.yml"):
     if f not in PERMITIDOS and re.search(r"secrets\.DEMO_", open(f, encoding="utf-8").read()): mal(f"{f} usa secretos DEMO_")
 else: ok("ningún otro flujo de trabajo usa los secretos DEMO_")
@@ -312,4 +312,52 @@ else: mal("[correo] la propuesta del historial de envíos debe vivir en docs/mig
 _pub = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml", "fel/tools/supabase-hospedado.sh") if os.path.exists(f))
 if not re.search(r"RESEND|FEL_CORREO|migracion-correo", _pub): ok("[correo] la publicación (scripts y flujo) no conoce el correo: ni claves de Resend ni la propuesta de migración")
 else: mal("[correo] un script o flujo de publicación menciona el correo: requiere autorización expresa")
+
+# ---- respaldo de nexa-demo (fase 1): ningún archivo de respaldo puede salir del ejecutor y el destino de la restauración no es configurable desde fuera
+RB = ".github/workflows/respaldo-nube.yml"; RS = "fel/tools/respaldo-nexa-demo.sh"
+if os.path.exists(RB) and os.path.exists(RS):
+    _w = yaml.safe_load(open(RB, encoding="utf-8").read()); _d = _w.get(True, _w.get("on")); _t = open(RB, encoding="utf-8").read(); _rs = open(RS, encoding="utf-8").read()
+    _trozos = [l for l in _t.splitlines() if not l.lstrip().startswith("#")]; _sin = "\n".join(_trozos)
+    if set(_d) == {"workflow_dispatch", "push"} and _d["push"].get("paths") == [RB] and not _d["push"].get("branches") and list(_d["workflow_dispatch"]["inputs"]) == ["accion"]: ok("[respaldo] solo manual (el único «push» es de registro, limitado a este archivo) y su única entrada es «accion»: el destino no se elige desde fuera")
+    else: mal("[respaldo] disparadores o entradas no permitidos")
+    if _w.get("permissions") == {"contents": "read"}: ok("[respaldo] permisos mínimos: solo contents: read")
+    else: mal("[respaldo] permisos distintos de contents: read")
+    _jobs = _w["jobs"]
+    if all(j.get("environment") == "demo-privada" and "github.event_name == 'workflow_dispatch'" in str(j.get("if")) and "refs/heads/fel-proveedores-diseno" in str(j.get("if")) for j in _jobs.values()): ok("[respaldo] todos los trabajos exigen el entorno protegido «demo-privada», el lanzamiento manual y la rama fija")
+    else: mal("[respaldo] algún trabajo no exige demo-privada, el lanzamiento manual o la rama")
+    _usos = [s.get("uses") for j in _jobs.values() for s in j["steps"] if s.get("uses")]
+    if _usos and all(u == "actions/checkout@v4" for u in _usos) and all(s.get("with", {}).get("persist-credentials") is False for j in _jobs.values() for s in j["steps"] if s.get("uses")): ok("[respaldo] la única acción es actions/checkout@v4 sin conservar credenciales: no hay upload-artifact, cachés ni releases")
+    else: mal("[respaldo] usa acciones distintas de actions/checkout@v4 (¿artefactos o cachés?): " + str(_usos))
+    if not re.search(r"upload-artifact|actions/cache|gh release|git push|git commit|gh api|aws s3|rclone|curl[^\n]*(-T|--upload-file|--data|-X POST)|wrangler|supabase (db|functions|secrets|link|migration)|db push", _sin + _rs.replace("#", " ")): ok("[respaldo] ni el flujo ni el script publican, suben, empujan ni aplican nada (sin artefactos, cachés, releases, git push, CLI de Supabase ni migraciones)")
+    else: mal("[respaldo] el flujo o el script contienen una operación de publicación o escritura")
+    _sec = {n: [j for j, jb in _jobs.items() if f"secrets.{n}" in str(jb)] for n in set(re.findall(r"secrets\.([A-Za-z0-9_]+)", _t))}
+    if _sec == {"DEMO_SUPABASE_PROYECTO_REF": ["verificar-respaldo", "ensayo-respaldo"], "DEMO_SUPABASE_ACCESS_TOKEN": ["verificar-respaldo"], "DEMO_BD_URL": ["ensayo-respaldo"]}: ok("[respaldo] cada secreto solo en el trabajo que lo necesita: el token de gestión solo para verificar-respaldo; la cadena de la base solo para el ensayo")
+    else: mal(f"[respaldo] secretos mal repartidos: {_sec}")
+    _pasos = [(jn, s.get("name") or s.get("uses")) for jn, jb in _jobs.items() for s in jb["steps"] if "secrets." in str(s.get("env", ""))]
+    if len(_pasos) == 2 and not any("secrets." in str(jb.get("env", "")) for jb in _jobs.values()): ok("[respaldo] los secretos van solo en 2 pasos propios (run), no a nivel de trabajo")
+    else: mal(f"[respaldo] secretos en pasos no permitidos: {_pasos}")
+    _dest = re.findall(r"FEL_ENSAYO_DESTINO_URL: (.+)", _t)
+    if len(_dest) == 1 and re.fullmatch(r"postgresql://postgres:[A-Za-z0-9-]+@127\.0\.0\.1:5432/postgres", _dest[0].strip()) and "secrets." not in _dest[0] and "inputs." not in _dest[0] and "inputs." not in _sin.replace("inputs.accion", ""): ok("[respaldo] el destino de la restauración está FIJO en el archivo: 127.0.0.1 (el contenedor de servicio efímero); ni entrada ni secreto lo cambian")
+    else: mal("[respaldo] el destino de la restauración no está fijo en un PostgreSQL local")
+    if "image: postgres:17" in _t and "127.0.0.1:5432:5432" in _t: ok("[respaldo] el destino efímero es un contenedor de servicio postgres:17, publicado solo en 127.0.0.1 del ejecutor")
+    else: mal("[respaldo] falta el contenedor de servicio efímero o se publica fuera de 127.0.0.1")
+    # el script: solo lectura hacia nexa-demo y restauración solo hacia variables del destino local
+    _lineas = [l for l in _rs.splitlines() if not l.lstrip().startswith("#")]
+    _origen_escribe = [l for l in _lineas if re.search(r"src (pg_restore|createdb|dropdb)|src psql [^|]*\b(insert|update|delete|truncate|grant|revoke|alter|drop)\b", l, re.I)]
+    _restores = [l for l in _lineas if re.search(r"\bpg_restore\b", l) and "--list" not in l and "--version" not in l and "command -v" not in l]
+    _creadrop = [l for l in _lineas if re.search(r"(create|drop) database", l, re.I)]
+    if not _origen_escribe and _restores and all(('"$DEST_DB"' in l) or ('-f "$T/' in l and "-d " not in l and "DEST" not in l and "ORIGEN" not in l) for l in _restores) and all('"$DEST_ADMIN"' in l for l in _creadrop) and not any("$ORIGEN" in l or "$HOST_BD" in l or "$U\"" in l for l in _restores + _creadrop): ok("[respaldo] el script solo restaura y crea/borra bases en el destino local ($DEST_DB / $DEST_ADMIN) y nunca dirige una escritura al origen")
+    else: mal("[respaldo] el script podría restaurar o escribir en un destino que no es el local")
+    if 'begin transaction read only" -c "$1" -c "rollback"' in _rs and "zz_nexa_prueba_escritura" in _rs and "--schema=public --schema=supabase_migrations" in _rs and "falla()" in _rs and "trap limpiar EXIT" in _rs and "shred -u" in _rs and '"${TMPDIR:-/tmp}/nexa-respaldo.XXXXXX"' in _rs and "chmod 700" in _rs: ok("[respaldo] el script lee el origen solo dentro de transacciones de solo lectura (con la escritura de prueba rechazada), falla ante diferencias y borra la copia temporal (fuera del espacio de trabajo, permisos 700) incluso si falla")
+    else: mal("[respaldo] al script le falta la solo lectura demostrable, la falla ante diferencias o el borrado de la copia")
+    if 'isolation level repeatable read read only' in _rs and "pg_export_snapshot()" in _rs and '--snapshot="$SNAP_ID"' in _rs and "cierra_snap" in _rs and _rs.index("pg_export_snapshot()") < _rs.index('--snapshot="$SNAP_ID"') and "SQL_CONTENIDO" in _rs and "SQL_ESTRUCTURA" in _rs and "INFO  el origen cambió DESPUÉS de la instantánea" in _rs: ok("[respaldo] consistencia: los conteos, el contenido, la estructura y el pg_dump leen UNA MISMA instantánea exportada (REPEATABLE READ, solo lectura); un cambio posterior se informa como legítimo y no se confunde con una restauración incorrecta")
+    else: mal("[respaldo] el script no garantiza que conteos, contenido, estructura y pg_dump salgan de la misma instantánea")
+    if all(x in _rs for x in ["'privilegio'", "'acl_defecto'", "'propietario'", "has_table_privilege(r, rel.oid, p)", "has_function_privilege(r, fn.oid, 'EXECUTE')", "has_schema_privilege(r, n.oid, p)", "has_sequence_privilege(r, rel.oid, p)", "'anon'", "'authenticated'", "'service_role'", "estructura, los propietarios o los permisos de lo restaurado NO coinciden", "LIMITACIONES de esta validación"]): ok("[respaldo] la restauración se compara en estructura, propietarios, ACL, privilegios por defecto y privilegios efectivos de anon/authenticated/service_role, y declara sus limitaciones")
+    else: mal("[respaldo] falta la comparación de propietarios, privilegios o la declaración de limitaciones")
+    if ('"hostaddr", "service"' in _rs or '"host", "hostaddr", "service"' in _rs) and 'p.hostname and any(k in q for k in ("host"' in _rs and 'postgresql-client-17' in _t and "= \"17\"" in _t and 'pg_dump $VC no puede volcar un servidor PostgreSQL $VS' in _rs: ok("[respaldo] el destino rechaza parámetros que redirigen la conexión (host, hostaddr, service) y el cliente PostgreSQL 17 se verifica en el flujo y frente al servidor")
+    else: mal("[respaldo] falta endurecer el destino o verificar la versión del cliente PostgreSQL")
+    if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD|FEL_DEMO_BD_URL|TOKEN|SUPABASE_ACCESS_TOKEN)\b', "\n".join(l for l in _lineas if "::add-mask::" not in l and "enmascarar" not in l)): ok("[respaldo] ninguna salida del script imprime la contraseña, la cadena de conexión ni el token")
+    else: mal("[respaldo] una salida del script imprime un secreto")
+else: mal("[respaldo] faltan el flujo o el script de respaldo")
+
 sys.exit(1 if fallos else 0)

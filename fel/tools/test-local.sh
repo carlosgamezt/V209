@@ -27,6 +27,8 @@ echo "prueba:    procedimiento_migracion_29.sh (aplicar dos veces, sin la 28, ve
 PSQL_BIN="$PGBIN/psql" CONN="postgresql://postgres@/{DB}?host=$SOCK&port=$PORT" bash supabase/tests/procedimiento_migracion_29.sh
 echo "prueba:    respaldo_restauracion_29.sh (respaldo lógico con pg_dump, restauración en una base aparte, catálogo de la 28 sano, 29 ausente, reversión rechazada con datos)"
 PSQL_BIN="$PGBIN/psql" CONN="postgresql://postgres@/{DB}?host=$SOCK&port=$PORT" bash supabase/tests/respaldo_restauracion_29.sh
+echo "prueba:    test-respaldo-nexa-demo.sh (verificar-respaldo con curl falso; ensayo de respaldo y restauración efímera con PostgreSQL real y todas sus protecciones)"
+FEL_PGDATA=/tmp/fel-pgdata-respaldo FEL_PGPORT=54394 bash tools/test-respaldo-nexa-demo.sh
 echo "prueba:    test-plataforma-ensure-rls.sh (función real de la plataforma; su propio PostgreSQL temporal)"
 FEL_PGDATA=/tmp/fel-pgdata-ensure FEL_PGPORT=54395 bash tools/test-plataforma-ensure-rls.sh
 echo "TODO OK"
