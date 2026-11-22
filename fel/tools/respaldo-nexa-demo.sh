@@ -115,9 +115,12 @@ PY
   echo "  OK    cliente compatible: pg_dump $VC · servidor PostgreSQL $VS"
   # ---- 5. SQL de comparación (solo SELECT; se ejecuta IGUAL en el origen —dentro de la instantánea— y en lo restaurado)
   FMT="set local datestyle = 'ISO, MDY'; set local timezone = 'UTC'; set local extra_float_digits = 3; set local bytea_output = 'hex'; set local intervalstyle = 'postgres'; set local lc_monetary = 'C'"
+  # ORDEN DETERMINISTA E INDEPENDIENTE DE LA CONFIGURACIÓN: la huella de cada tabla ordena el texto de las filas con la ordenación binaria «C» (collate "C"), que NO depende de la ordenación (collation) de cada base.
+  #   Sin esto, la misma tabla da huellas distintas en dos bases con otra ordenación (p. ej. «C.UTF-8» en el origen y «en_US.utf8» en el PostgreSQL efímero) cuando las filas empiezan por un identificador numérico de distinta longitud ((2,…) frente a (10,…)),
+  #   aunque los datos sean idénticos: fallo real de la corrida 44982292038 en auditoria, bolson_movimientos, documento_estados y monedero_movimientos.
   read -r -d '' SQL_CONTENIDO <<'SQL'
-select table_schema || '.' || table_name || '=' || (xpath('/row/n/text()', query_to_xml(format('select count(*)::text || %L || coalesce(md5(string_agg(t::text, %L order by t::text)), %L) as n from %I.%I t', ':', '|', '-', table_schema, table_name), false, true, '')))[1]::text
-from information_schema.tables where table_schema in ('public', 'supabase_migrations') and table_type = 'BASE TABLE' order by 1;
+select table_schema || '.' || table_name || '=' || (xpath('/row/n/text()', query_to_xml(format('select count(*)::text || %L || coalesce(md5(string_agg(t::text, %L order by t::text collate "C")), %L) as n from %I.%I t', ':', '|', '-', table_schema, table_name), false, true, '')))[1]::text
+from information_schema.tables where table_schema in ('public', 'supabase_migrations') and table_type = 'BASE TABLE' order by table_schema collate "C", table_name collate "C";
 SQL
   read -r -d '' SQL_ESTRUCTURA <<'SQL'
 with rel as (select c.oid, n.nspname, c.relname, c.relkind, c.relowner, c.relacl, c.relrowsecurity, c.relforcerowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname in ('public', 'supabase_migrations') and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')),
@@ -219,6 +222,10 @@ PY
   # ---- 10. verificaciones sobre lo restaurado (todas en solo lectura y con el MISMO SQL que se usó en la instantánea del origen)
   rdq() { psql "$DEST_DB" -X -q -tA -v ON_ERROR_STOP=1 -c "begin transaction read only" -c "$FMT" -c "$(printf '%s' "$1" | tr '\n' ' ')" -c "rollback"; }
   CONT_REST="$(rdq "$SQL_CONTENIDO" 2>/dev/null)" || falla "no se pudo leer el contenido de lo restaurado"
+  # diagnóstico sin datos: la ordenación (collation) de cada base (la huella NO depende de ella: ordena con collate "C")
+  Q_COL="select datcollate || '/' || datctype || '/' || case datlocprovider when 'c' then 'libc' when 'i' then 'icu' else 'otro' end from pg_database where datname = current_database()"
+  COL_O="$(src_ro "$Q_COL" 2>/dev/null | head -1)"; COL_D="$(rdq "$Q_COL" 2>/dev/null | head -1)"
+  echo "  INFO  ordenación (collation/ctype/proveedor) · origen: ${COL_O:-desconocida} · destino efímero: ${COL_D:-desconocida} (la huella de contenido ordena con collate \"C\": no depende de ellas)"
   if [ "$CONT_ORIGEN" != "$CONT_REST" ]; then
     echo "  diferencias por tabla (instantánea del origen vs restaurado; formato tabla=filas:huella):"; diff <(printf '%s\n' "$CONT_ORIGEN") <(printf '%s\n' "$CONT_REST") | grep '^[<>]' | cut -c1-110 | head -10
     [ "$(printf '%s\n' "$CONT_ORIGEN" | cut -d: -f1)" = "$(printf '%s\n' "$CONT_REST" | cut -d: -f1)" ] && falla "el CONTENIDO de lo restaurado no coincide con la instantánea del origen (mismas filas, datos distintos)"

@@ -24,8 +24,12 @@ detectar_pg || { echo "FALLO: no hay un PostgreSQL (≥ 15) con initdb, pg_ctl, 
 echo "PostgreSQL de prueba: $PGBIN (versión $PGMAYOR)"
 as_pg() { if [ "$(id -u)" = 0 ]; then su pgtest -s /bin/bash -c "$*"; else bash -c "$*"; fi; }
 [ "$(id -u)" != 0 ] || id pgtest >/dev/null 2>&1 || useradd -m pgtest
-as_pg "rm -rf '$DATA' && mkdir -p '$DATA' && '$PGBIN/initdb' -D '$DATA' -A trust -U postgres >/dev/null" && as_pg "'$PGBIN/pg_ctl' -D '$DATA' -o '-p $PORT -k $SOCK -c listen_addresses=' -w -l '$DATA/log' start >/dev/null" || { echo "no se pudo levantar PostgreSQL de prueba"; exit 1; }
-as_pg "rm -rf '$DATA2' && mkdir -p '$DATA2' && '$PGBIN/initdb' -D '$DATA2' -A trust -U postgres >/dev/null" && as_pg "'$PGBIN/pg_ctl' -D '$DATA2' -o '-p $PORT2 -k $SOCK -c listen_addresses=' -w -l '$DATA2/log' start >/dev/null" || { echo "no se pudo levantar el servidor de destino"; exit 1; }
+# ORDENACIONES DISTINTAS a propósito (fallo real de la corrida 44982292038): el ORIGEN usa «C» y el DESTINO una ordenación que ignora la puntuación (en_US.utf8 de glibc o, si no existe, ICU «und-u-ka-shifted»).
+#   Con la misma base de datos para ambos, una huella que dependiera de la ordenación pasaría sin que nadie lo notara.
+LOC_ORIGEN="--locale=C --encoding=UTF8"
+if locale -a 2>/dev/null | grep -qix 'en_US.utf-\?8'; then LOC_DESTINO="--locale=en_US.UTF-8"; DESC_LOC="en_US.UTF-8 (glibc)"; else LOC_DESTINO="--locale=C --encoding=UTF8 --locale-provider=icu --icu-locale=und-u-ka-shifted"; DESC_LOC="ICU und-u-ka-shifted"; fi
+as_pg "rm -rf '$DATA' && mkdir -p '$DATA' && '$PGBIN/initdb' -D '$DATA' -A trust -U postgres $LOC_ORIGEN >/dev/null" && as_pg "'$PGBIN/pg_ctl' -D '$DATA' -o '-p $PORT -k $SOCK -c listen_addresses=' -w -l '$DATA/log' start >/dev/null" || { echo "no se pudo levantar PostgreSQL de prueba"; exit 1; }
+as_pg "rm -rf '$DATA2' && mkdir -p '$DATA2' && '$PGBIN/initdb' -D '$DATA2' -A trust -U postgres $LOC_DESTINO >/dev/null" && as_pg "'$PGBIN/pg_ctl' -D '$DATA2' -o '-p $PORT2 -k $SOCK -c listen_addresses=' -w -l '$DATA2/log' start >/dev/null" || { echo "no se pudo levantar el servidor de destino"; exit 1; }
 trap 'as_pg "$PGBIN/pg_ctl -D $DATA -m immediate stop >/dev/null" 2>/dev/null; as_pg "$PGBIN/pg_ctl -D $DATA2 -m immediate stop >/dev/null" 2>/dev/null; rm -rf "$W"' EXIT
 P() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d "${DB:-postgres}" -X -q -v ON_ERROR_STOP=1 "$@"; }
 Pd() { "$PGBIN/psql" -h "$SOCK" -p "$PORT2" -U postgres -d "${DB:-postgres}" -X -q -v ON_ERROR_STOP=1 "$@"; }
@@ -140,11 +144,17 @@ prepara_origen() {   # base «origen» = nexa-demo simulado: shim + las 28 migra
   DB=origen P -c "create schema if not exists supabase_migrations; create table supabase_migrations.schema_migrations (version text primary key, name text, statements text[])" -c "insert into supabase_migrations.schema_migrations (version) values $(ls "$R/supabase/migrations" | grep -v 20261114000100 | sed "s/_.*//; s/.*/('&')/" | paste -sd,)" >/dev/null
   DB=origen P -c "insert into auth.users (id, email, email_confirmed_at) values ('30000000-0000-0000-0000-0000000000a1', 'actor@prueba.local', now())" \
     -c "insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id) select '10000000-0000-0000-0000-0000000000a1', 'Empresa R', 'Empresa R S.A.', '9900001-1', id from public.regimenes_fiscales where codigo = 'general'" \
-    -c "insert into public.documentos (id, empresa_id, numero_borrador, estado_preparacion, creado_por) select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, '10000000-0000-0000-0000-0000000000a1', n, 'borrador', '30000000-0000-0000-0000-0000000000a1' from generate_series(1,5) n" >/dev/null
+    -c "insert into public.documentos (id, empresa_id, numero_borrador, estado_preparacion, creado_por) select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, '10000000-0000-0000-0000-0000000000a1', n, 'borrador', '30000000-0000-0000-0000-0000000000a1' from generate_series(1,5) n" \
+    -c "insert into public.auditoria (accion, entidad, entidad_id, datos) select 'prueba-orden', 'documento', 'id-' || n, jsonb_build_object('n', n, 'texto', 'línea ' || n) from generate_series(1,160) n" >/dev/null
 }
 huella_origen() { DB=origen P -tA -c "select md5(string_agg(t, '|' order by t)) from (select 'e'||count(*) t from public.empresas union all select 'd'||count(*) from public.documentos union all select 'u'||count(*) from auth.users union all select 'm'||count(*) from supabase_migrations.schema_migrations union all select 'tab'||count(*) from information_schema.tables where table_schema in ('public','supabase_migrations')) x"; }
 sobras() { echo "$(DB=postgres Pd -tA -c "select count(*) from pg_database where datname like 'nexa_ensayo_%'") $(ls -d "$W"/tmp/nexa-respaldo.* 2>/dev/null | wc -l)"; }
 prepara_origen && ok "origen simulado preparado (shim + 28 migraciones + datos)" || mal "no se pudo preparar el origen"
+# -- las dos bases NO ordenan igual (si no, esta prueba no detectaría el fallo): la misma consulta de huella con «order by» SIN collate da resultados distintos
+SENS="select md5(string_agg(t::text, '|' order by t::text)) from (select (g::bigint, 'x') t from generate_series(1,25) g) s"
+[ "$(DB=postgres P -tA -c "$SENS")" != "$(DB=postgres Pd -tA -c "$SENS")" ] && ok "el origen (C) y el destino ($DESC_LOC) ordenan DISTINTO: la prueba es sensible al fallo de la ordenación" || mal "las dos bases ordenan igual: la prueba no detectaría el fallo de la ordenación"
+SENS2="select md5(string_agg(t::text, '|' order by t::text collate \"C\")) from (select (g::bigint, 'x') t from generate_series(1,25) g) s"
+[ "$(DB=postgres P -tA -c "$SENS2")" = "$(DB=postgres Pd -tA -c "$SENS2")" ] && ok "con collate \"C\" la huella es idéntica en ambas ordenaciones" || mal "con collate \"C\" la huella sigue dependiendo de la ordenación"
 env_base; H0="$(huella_origen)"; : > "$REG"
 r=$(sale ensayo-respaldo)
 [ "$r" = 0 ] && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && ok "camino feliz: el ensayo termina OK" || { mal "el ensayo feliz falló"; cat "$W/salida.txt" | tail -15; }
@@ -153,6 +163,13 @@ for t in "origen en solo lectura: PostgreSQL RECHAZÓ" "cliente compatible: pg_d
 grep -qE "SHA-256 [0-9a-f]{64}" "$W/salida.txt" && ok "informe con tamaño y SHA-256 de 64 caracteres" || mal "sin SHA-256"
 grep -q "^pg_dump args=.*--snapshot=[0-9A-F]" "$REG" && ok "pg_dump lee la instantánea EXPORTADA por la sesión de solo lectura (--snapshot): conteos, contenido, estructura y copia salen de la misma instantánea" || mal "pg_dump no recibió --snapshot"
 [ "$(sobras)" = "0 0" ] && ok "tras el ensayo no queda ni la base efímera ni la copia temporal" || mal "quedaron restos: $(sobras)"
+grep -q "INFO  ordenación (collation/ctype/proveedor) · origen: C" "$W/salida.txt" && ok "el informe muestra la ordenación de origen y destino (diagnóstico sin datos)" || mal "falta el INFO de ordenación"
+# -- REPRODUCCIÓN EXACTA del fallo de la corrida 44982292038: el algoritmo ANTERIOR (order by t::text SIN collate «C») entre bases con distinta ordenación
+WBASE="$(mktemp -d)"; WREP="$WBASE/fel"; mkdir -p "$WREP/tools"; for f in "$R"/tools/*; do [ "$(basename "$f")" = "respaldo-nexa-demo.sh" ] || ln -s "$f" "$WREP/tools/"; done; for d in docs supabase; do ln -s "$R/$d" "$WREP/$d"; done
+sed 's/ order by t::text collate "C")/ order by t::text)/; s/order by table_schema collate "C", table_name collate "C";/order by 1;/' "$S" > "$WREP/tools/respaldo-nexa-demo.sh"
+! diff -q "$S" "$WREP/tools/respaldo-nexa-demo.sh" >/dev/null && ok "copia del algoritmo ANTERIOR (sin collate \"C\") preparada para reproducir el fallo" || mal "no se pudo preparar el algoritmo anterior"
+S_NUEVO="$S"; S="$WREP/tools/respaldo-nexa-demo.sh"; cp "$REG" "$W/reg.feliz"; env_base; : > "$REG"; r=$(sale ensayo-respaldo); cp "$W/salida.txt" "$W/anterior.txt"; S="$S_NUEVO"; cp "$W/reg.feliz" "$REG"; rm -rf "$WBASE"; env_base
+[ "$r" = 1 ] && grep -q "FALLO: el CONTENIDO de lo restaurado no coincide con la instantánea del origen (mismas filas, datos distintos)" "$W/anterior.txt" && grep -q "public.auditoria=160:" "$W/anterior.txt" && ok "el algoritmo anterior REPRODUCE el fallo real (mismas filas, datos distintos, en public.auditoria) con ordenaciones distintas" || { mal "el algoritmo anterior no reproduce el fallo"; tail -8 "$W/anterior.txt"; }
 [ "$(huella_origen)" = "$H0" ] && ok "el origen quedó EXACTAMENTE igual (sin escrituras)" || mal "el origen cambió"
 ! grep -q "$CLAVE" "$W/salida.txt" && ! grep -qE "actor@prueba|ensayo-.*@invalido|Empresa R" "$W/salida.txt" && ok "ni la contraseña ni datos aparecen en la salida" || mal "la salida contiene la contraseña o datos"
 [ "$(grep -c "^pg_restore dest=postgresql://postgres@/nexa_ensayo_[0-9a-f]*?host=$SOCK&port=$PORT2 " "$REG")" -ge 3 ] && ! grep "^pg_restore" "$REG" | grep -q "pooler\|supabase\|dest=host=" && ! grep "^pg_restore dest=" "$REG" | grep -v "dest=ninguno" | grep -qv "dest=postgresql://postgres@/nexa_ensayo_" && ok "pg_restore solo recibe como destino la base efímera LOCAL (nunca el origen)" || { mal "pg_restore recibió otro destino"; grep "^pg_restore" "$REG" | cut -c1-150 | head -5; }
