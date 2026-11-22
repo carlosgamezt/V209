@@ -325,8 +325,18 @@ print(r)')"
       tab="$(qro "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r','p')")"
       rls="$(qro "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r','p') and c.relrowsecurity")"
       if [ "$tab" = "$rls" ] && [ "$tab" != "0" ]; then echo "  OK    RLS activado en las $rls tablas de public"; else echo "  FALLO RLS: $rls de $tab tablas"; fallo=1; fi
-      local dep; dep="$(qro "select count(*) filter (where not ok) from public.fel_verificar_dependencias_auth()")"
-      if [ "$dep" = "0" ]; then echo "  OK    dependencias de Supabase Auth (fel_verificar_dependencias_auth): sin faltantes"; else echo "  FALLO dependencias de Auth: $dep comprobaciones fallan"; fallo=1; fi
+      # La comprobación «DELETE ... WHERE false sobre auth.sessions se ejecuta» de la función de la migración 6 EJECUTA un DELETE (sin borrar nada), y PostgreSQL rechaza todo DELETE dentro de una transacción de solo lectura
+      # («cannot execute DELETE in a read-only transaction»). Se excluye SOLO esa fila, por su NOMBRE EXACTO (igualdad, no patrón); el privilegio DELETE sobre auth.sessions sigue comprobándose por catálogo (has_table_privilege) y las demás
+      # filas cuentan. Si la fila esperada o la del privilegio DELETE no está exactamente una vez (la función cambió), se FALLA: no se da por verificada una función distinta de la revisada.
+      local dep depx="DELETE ... WHERE false sobre auth.sessions se ejecuta" depf dpres
+      depf="comprobacion <> '$depx'"
+      dpres="$(qro "select count(*) filter (where comprobacion = '$depx') || '/' || count(*) filter (where comprobacion like 'privilegio DELETE sobre auth.sessions%') || '/' || count(*) from public.fel_verificar_dependencias_auth()")"
+      if [ "${dpres%%/*}" != "1" ] || [ "$(printf '%s' "$dpres" | cut -d/ -f2)" != "1" ]; then echo "  FALLO dependencias de Auth: la función fel_verificar_dependencias_auth() cambió: la comprobación «$depx» o la del privilegio DELETE sobre auth.sessions no está exactamente una vez (hallado «filas esperadas/privilegio/total»: $(printf '%s' "$dpres" | cut -c1-60)). No se da por verificada."; fallo=1
+      else
+        dep="$(qro "select count(*) filter (where not ok and $depf) from public.fel_verificar_dependencias_auth()")"
+        if [ "$dep" = "0" ]; then echo "  OK    dependencias de Supabase Auth (fel_verificar_dependencias_auth): sin faltantes ($(printf '%s' "$dpres" | cut -d/ -f3) comprobaciones; 1 excluida)"; echo "  INFO  la prueba «DELETE ... WHERE false» sobre auth.sessions no se ejecuta en solo lectura (PostgreSQL rechaza todo DELETE); el privilegio DELETE se comprueba por catálogo y cuenta"
+        else echo "  FALLO dependencias de Auth: $dep comprobaciones fallan: $(qro "select string_agg(comprobacion || ' [' || left(detalle, 70) || ']', '; ') from public.fel_verificar_dependencias_auth() where not ok and $depf" | cut -c1-400)"; fallo=1; fi
+      fi
       # INFORMATIVO (nunca hace fallar la etapa): ¿está disponible Vault en este proyecto y quién puede usar su esquema? Sirve para cerrar la verificación de Vault sin modificar nada.
       echo "  INFO  extensiones de cifrado: $(qro "select coalesce(string_agg(name || ' (disponible ' || coalesce(default_version, '-') || ', instalada ' || coalesce(installed_version, 'no') || ')', '; '), 'ninguna disponible') from pg_available_extensions where name in ('supabase_vault', 'pgsodium')")"
       echo "  INFO  privilegios sobre el esquema vault (USAGE) anon/authenticated/service_role: $(qro "select case when to_regnamespace('vault') is null then 'el esquema vault no existe' else (select string_agg(r || '=' || has_schema_privilege(r, 'vault', 'USAGE')::text, ' ') from unnest(array['anon','authenticated','service_role']) r) end")"

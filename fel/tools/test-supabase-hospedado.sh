@@ -46,6 +46,7 @@ if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then
       *" -f "*) fe=""; prev=""; for a in "$@"; do [ "$prev" = "-f" ] && fe="$a"; prev="$a"; done; if [ -n "$fe" ] && [ -f "$fe" ]; then echo "default_transaction_read_only=on -f $(sed -n 's/^\\i //p' "$fe") (dentro de begin transaction read only: $(grep -c 'begin transaction read only' "$fe"))" >> "$REG_PSQL"; fi
         if [ "${FAKE_CATALOGO_RC:-0}" != 0 ]; then echo "psql:verificacion-posterior-28.sql:86: ERROR:  service_role puede borrar empresas ($PGPASSWORD)" >&2; exit 3; fi; exit 0;;
       *requisitos_29*) echo "${FAKE_REQ29:-ok}";;
+      *"comprobacion = 'DELETE"*) echo "${FAKE_DEPCHK:-1/1/16}";;   # presencia de la comprobación excluida y de la del privilegio DELETE / total
       *digifact_operaciones*) echo "${FAKE_LIBRE:-t}";;
       *to_regclass*) echo "${FAKE_HIST:-f}";;
       *"string_agg(version"*) echo -n "$vers";;
@@ -298,7 +299,7 @@ base "$REF" validar "$URL_TX"; [ $? = 0 ] && ok "explicación: una cadena correc
 # --- migraciones POR ETAPAS (solo migraciones, con parada) y su verificación de solo lectura
 export FAKE_ETAPAS=1 LISTADO="$W/listado.txt" ESTADO_VERS="$W/estado_vers.txt" ESTADO_TAB="$W/estado_tab.txt"
 V1="$(cd "$R" && for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; [ "$v" -le 20261112001000 ] && echo "$v"; done | sort | tr '\n' ' ')"
-reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE FAKE_REQ29 FAKE_ESCRIBE FAKE_TX FAKE_DEF; }
+reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE FAKE_REQ29 FAKE_ESCRIBE FAKE_TX FAKE_DEF FAKE_DEPCHK; }
 etapa() { # $1 ref, $2 acción, $3 etapa, $4 confirmación (opcional)
   env -u GITHUB_ACTIONS PATH="$W:$PATH" SUPABASE_DB_PASSWORD="$CLAVE" FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${4:+FEL_CONFIRMAR_MIGRACIONES=$4} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" "$2" "$3" >"$W/salida.txt" 2>&1; }
 solo_lectura() { ! grep -v "default_transaction_read_only=on" "$REG_PSQL" | grep -q .; }
@@ -308,6 +309,12 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" ve
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" verificar-etapa 1; grep -q "INFO  extensiones de cifrado: supabase_vault" "$W/salida.txt" && grep -q "INFO  privilegios sobre el esquema vault" "$W/salida.txt" && solo_lectura && ok "verificar-etapa 1: informa (solo lectura) si Vault está disponible y quién tiene USAGE en su esquema; es informativo" || { mal "información de Vault"; cat "$W/salida.txt"; }
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_RLS=60; etapa "$REF" verificar-etapa 1; r=$?
 [ $r = 1 ] && grep -q "FALLO RLS: 60 de 67 tablas" "$W/salida.txt" && ok "verificar-etapa 1: RLS incompleto → FALLA (exit 1)" || mal "verificar-etapa no detecta RLS incompleto"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67; etapa "$REF" verificar-etapa 2; r=$?
+[ $r = 0 ] && grep -q "OK    dependencias de Supabase Auth (fel_verificar_dependencias_auth): sin faltantes (16 comprobaciones; 1 excluida)" "$W/salida.txt" && grep -q "INFO  la prueba «DELETE ... WHERE false» sobre auth.sessions no se ejecuta en solo lectura" "$W/salida.txt" && grep -q "comprobacion <> 'DELETE ... WHERE false sobre auth.sessions se ejecuta'" "$REG_PSQL" && ! grep -q "not like" "$REG_PSQL" && solo_lectura && ok "dependencias de Auth: en solo lectura se excluye SOLO la fila «DELETE ... WHERE false sobre auth.sessions se ejecuta» por igualdad exacta (no por patrón) y se informa" || mal "la exclusión de la prueba de DELETE no es la esperada"
+for caso in "0/1/15:la comprobación excluida desapareció" "2/1/17:la comprobación excluida aparece dos veces" "1/0/15:falta la comprobación del privilegio DELETE"; do
+  reinicia; export FAKE_HIST=t FAKE_VERSIONS="${V1}20261113000100 " FAKE_TABLAS=67 FAKE_DEPCHK="${caso%%:*}"; etapa "$REF" verificar-etapa 2; r=$?
+  [ $r = 1 ] && grep -q "FALLO dependencias de Auth: la función fel_verificar_dependencias_auth() cambió" "$W/salida.txt" && grep -q "No se da por verificada" "$W/salida.txt" && ! grep -q "OK    dependencias de Supabase Auth" "$W/salida.txt" && ok "dependencias de Auth: ${caso#*:} → FALLA y lo dice (no se da por verificada)" || mal "dependencias de Auth no falla cuando ${caso#*:}"
+done
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67 FAKE_DEP=2; etapa "$REF" verificar-etapa 1; [ $? = 1 ] && grep -q "FALLO dependencias de Auth: 2" "$W/salida.txt" && ok "verificar-etapa 1: faltan dependencias de Auth → FALLA" || mal "verificar-etapa no detecta dependencias de Auth"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V1" FAKE_TABLAS=67; etapa "$REF" verificar-etapa 1; r=$?
 [ $r = 0 ] && grep -q "OK    V1 reforzada (etapa 1) (verificacion-posterior-27.sql, solo lectura)" "$W/salida.txt" && grep -q -- "-f docs/migracion-28/verificacion-posterior-27.sql" "$REG_PSQL" && ! grep -q -- "verificacion-posterior-28.sql" "$REG_PSQL" && solo_lectura && ok "verificar-etapa 1: corre la V1 reforzada (67 tablas, políticas, funciones, privilegios, 0 filas) en solo lectura" || { mal "verificar-etapa 1 sin V1 reforzada"; cat "$W/salida.txt"; }
