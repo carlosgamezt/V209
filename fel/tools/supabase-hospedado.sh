@@ -64,6 +64,21 @@ explicar_url() {
 }
 
 # Cadena de conexión → URL del Session Pooler (puerto 5432). Se rechaza todo lo que no sea exactamente el pooler compartido del proyecto fijado.
+# SOLO LECTURA DEMOSTRABLE (no depende de que el pooler respete PGOPTIONS: la sesión del Session Pooler de Supabase mostró default_transaction_read_only=off). Cada consulta y cada archivo de catálogo corre DENTRO de
+# «begin transaction read only … rollback», que PostgreSQL hace cumplir; y antes de verificar nada se intenta una ESCRITURA de prueba que debe ser RECHAZADA (prueba_solo_lectura).
+ro_c() { PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -tA -v ON_ERROR_STOP=1 -c "begin transaction read only" -c "$1" -c "rollback"; }
+ro_f() { local arch="$1" env rc; python3 tools/verificar-sql-solo-lectura.py --catalogo "$arch" >/dev/null || { echo "ERROR: el SQL de verificación contiene escrituras o DDL; no se ejecuta"; return 99; }
+  env="$(mktemp)"; printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\\i $arch" > "$env"
+  PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f "$env"; rc=$?; rm -f -- "$env"; return $rc; }
+prueba_solo_lectura() {   # 0 solo si PostgreSQL RECHAZA una escritura de prueba dentro de la transacción de solo lectura (la evidencia es el rechazo del servidor, no una declaración del script)
+  local sal def
+  def="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -tA -c "show default_transaction_read_only" 2>/dev/null)" || def="?"
+  sal="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -tA -v ON_ERROR_STOP=1 -c "begin transaction read only" -c "select 'tx=' || current_setting('transaction_read_only')" -c "create temp table zz_nexa_prueba_escritura (i int)" -c "rollback" 2>&1)"   # ON_ERROR_STOP: si «begin» fallara, la escritura de prueba NUNCA se intenta fuera de la transacción de solo lectura
+  sal="${sal//"$CLAVE_URL"/***}"
+  echo "  INFO  valor por defecto de la sesión del pooler (default_transaction_read_only): ${def:-?} · por eso NO se confía en él: cada consulta va dentro de una transacción de solo lectura"
+  if printf '%s' "$sal" | grep -q '^tx=on$' && printf '%s' "$sal" | grep -qi 'read-only transaction'; then echo "  OK    prueba de solo lectura: con transaction_read_only=on, PostgreSQL RECHAZÓ una escritura de prueba (cannot execute CREATE TABLE in a read-only transaction)"; return 0; fi
+  echo "  FALLO prueba de solo lectura: la escritura de prueba NO fue rechazada (o no se pudo comprobar). No se verifica nada más. Respuesta: $(printf '%s' "$sal" | head -2 | tr '\n' ' ' | cut -c1-200)"; return 1
+}
 derivar_url_sesion() {
   local u="${FEL_DEMO_BD_URL:-}" re
   [ -n "$u" ] || { echo "Falta FEL_DEMO_BD_URL"; exit 2; }
@@ -123,7 +138,7 @@ case "${1:-}" in
     CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
     if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
     q() {   # una consulta SELECT → su resultado, o «(no se pudo leer)» sin secretos
-      local salida; if salida="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -tA -c "$1" 2>&1)"; then printf '%s' "$salida"; else salida="$(printf '%s' "$salida" | head -1)"; salida="${salida//"$CLAVE_URL"/***}"; echo "(no se pudo leer: $salida)"; fi
+      local salida; if salida="$(ro_c "$1" 2>&1)"; then printf '%s' "$salida"; else salida="$(printf '%s' "$salida" | head -1)"; salida="${salida//"$CLAVE_URL"/***}"; echo "(no se pudo leer: $salida)"; fi
     }
     echo "== Estado de la base de nexa-demo (solo lectura, solo metadatos)"
     echo "  Esquemas (sin los del sistema) .......... $(q "select coalesce(string_agg(nspname, ', ' order by nspname), '—') from pg_namespace where nspname not like 'pg\_%' and nspname <> 'information_schema'")"
@@ -150,7 +165,7 @@ case "${1:-}" in
     CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
     if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
     ANA_ID="00000000-0000-0000-0000-00000000a001"; ESPERADA="10000000-0000-0000-0000-0000000000d0"
-    qro() { PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -tA -c "$1" 2>/dev/null; }
+    qro() { ro_c "$1" 2>/dev/null; }
     EMP="$(qro "select coalesce(string_agg(e.id::text, ',' order by e.id::text), '') from public.empresas e join public.miembros m on m.empresa_id = e.id where m.user_id = '$ANA_ID'")" || { echo "No se pudo leer la empresa de «ana» (conexión o permisos): NO VERIFICADO."; exit 1; }
     TOT="$(qro "select count(*) from public.empresas")" || TOT="?"
     echo "== Empresa de la demostración (solo lectura; solo UUID y conteos)"
@@ -291,7 +306,7 @@ print(r)')"
     CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
     if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
     # TODAS las consultas de esta acción van con la sesión forzada a solo lectura; un fallo devuelve «(no se pudo leer…)» sin secretos
-    qro() { local salida; if salida="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -tA -c "$1" 2>&1)"; then printf '%s' "$salida"; else salida="$(printf '%s' "$salida" | head -1)"; salida="${salida//"$CLAVE_URL"/***}"; echo "(no se pudo leer: $salida)"; fi; }
+    qro() { local salida; if salida="$(ro_c "$1" 2>&1)"; then printf '%s' "$salida"; else salida="$(printf '%s' "$salida" | head -1)"; salida="${salida//"$CLAVE_URL"/***}"; echo "(no se pudo leer: $salida)"; fi; }
     # versiones locales de esta etapa (todas las que no pasan de HASTA) y su cantidad: si el repositorio ya no coincide con la etapa, no se hace nada
     LOCALES_ETAPA="$(for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; if [ "$v" -le "$HASTA" ]; then echo "$v"; fi; done | sort)"
     [ "$(printf '%s\n' "$LOCALES_ETAPA" | grep -c .)" = "$ESPERADAS" ] || { echo "PROHIBIDO: el repositorio no tiene exactamente $ESPERADAS migraciones hasta la versión $HASTA. No se hace nada."; exit 2; }
@@ -304,6 +319,7 @@ print(r)')"
     echo "== NEXA FEL · $DESCRIPCION ($ACCION). Migraciones ya registradas: $NAPL · tablas en public: $NTAB"
     verificacion() {   # SOLO LECTURA: lo que debe cumplirse DESPUÉS de la etapa
       local fallo=0 ap tab rls
+      prueba_solo_lectura || return 1
       ap="$(qro "select count(*) from supabase_migrations.schema_migrations")"
       if [ "$ap" = "$ESPERADAS" ]; then echo "  OK    historial: $ap migraciones registradas"; else echo "  FALLO historial: $ap registradas, se esperaban $ESPERADAS"; fallo=1; fi
       tab="$(qro "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r','p')")"
@@ -325,7 +341,7 @@ print(r)')"
       # catálogo y conteos de solo lectura: etapa 1 = V1 reforzada (67 tablas, 49 políticas, 182 funciones, 57 disparadores, privilegios efectivos, 0 filas de negocio); etapa 2 = catálogo de la 28
       local ARCH="docs/migracion-28/verificacion-posterior-27.sql" NOMBRE="V1 reforzada (etapa 1)"; [ "$ETAPA" = "2" ] && { ARCH="docs/migracion-28/verificacion-posterior-28.sql"; NOMBRE="catálogo de la migración 28"; }; [ "$ETAPA" = "3" ] && { ARCH="docs/migracion-29/verificacion-posterior-29.sql"; NOMBRE="catálogo de la migración 29"; }
       if true; then
-        local sal; if sal="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f "$ARCH" 2>&1)"; then echo "  OK    $NOMBRE ($(basename "$ARCH"), solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO $NOMBRE: ${sal:0:200}"; fallo=1; fi
+        local sal; if sal="$(ro_f "$ARCH" 2>&1)"; then echo "  OK    $NOMBRE ($(basename "$ARCH"), solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO $NOMBRE: ${sal:0:200}"; fallo=1; fi
       fi
       return $fallo
     }
@@ -342,7 +358,7 @@ print(r)')"
         # SOLO LECTURA, ANTES de tocar nada: (a) la 29 no está ya (ni a medias) en la base; (b) el catálogo de la 28 está sano (si no lo está, la 29 no se aplica sobre un esquema dudoso); (c) inventario previo para comparar después
         LIBRE="$(qro "select to_regclass('public.digifact_operaciones') is null and to_regclass('public.digifact_artefactos') is null and not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('fel_digifact_op_guarda', 'fel_digifact_art_guarda', 'fel_sys_digifact_aplicar'))")"
         [ "$LIBRE" = "t" ] || { echo "PROHIBIDO: la base ya tiene objetos de la migración 29 (o no se pudo comprobar). No se hace nada. $LIBRE"; exit 2; }
-        local_ok=1; PREV="$(PGPASSWORD="$CLAVE_URL" PGOPTIONS="-c default_transaction_read_only=on" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 -f docs/migracion-28/verificacion-posterior-28.sql 2>&1)" || local_ok=0
+        local_ok=1; PREV="$(ro_f docs/migracion-28/verificacion-posterior-28.sql 2>&1)" || local_ok=0
         [ "$local_ok" = 1 ] || { PREV="$(printf '%s' "$PREV" | grep -m1 -E 'ERROR|error' || true)"; PREV="${PREV//"$CLAVE_URL"/***}"; echo "PROHIBIDO: el catálogo de la migración 28 NO está sano antes de la 29 (${PREV:-sin detalle}). No se hace nada."; exit 2; }
         echo "  OK    precondiciones de la etapa 3: la 29 no existe, las 28 están registradas y el catálogo de la 28 está sano (solo lectura)"
         echo "  INFO  rol de la conexión (solo lectura): $(qro "select current_user || ' · superusuario=' || r.rolsuper || ' · bypassrls=' || r.rolbypassrls || ' · propietario de public.documentos=' || (pg_get_userbyid(c.relowner) = current_user)::text from pg_roles r, pg_class c where r.rolname = current_user and c.oid = 'public.documentos'::regclass")"

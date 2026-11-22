@@ -117,8 +117,17 @@ if not re.search(r"functions deploy|secrets set|wrangler|--include-all|--project
 else: mal("[etapas] las acciones por etapas contienen una orden no permitida")
 if 'db push --remote="$URL_SESION" --yes --workdir "$SUB"' in me and me.count("db push") == 1 and 'FEL_CONFIRMAR_MIGRACIONES:-}" = "APLICAR-MIGRACIONES"' in me: ok("[etapas] un único «db push», sobre la carpeta temporal con SOLO las migraciones de la etapa, y con la confirmación literal exigida también dentro del script")
 else: mal("[etapas] el «db push» no está acotado a la carpeta de la etapa o falta la confirmación literal")
-if me.count("PGOPTIONS=") >= 2 and not re.search(r"psql [^\n]*(?<!read_only=on)\"? -c \"(insert|update|delete|create|alter|drop|truncate)", me_sin_comentarios, re.I) and all("default_transaction_read_only=on" in l for l in me.splitlines() if "psql \"host=" in l): ok("[etapas] todas las consultas de precondición y verificación usan la sesión forzada a solo lectura")
+# única excepción permitida abajo: la escritura de PRUEBA que debe ser rechazada (zz_nexa_prueba_escritura)
+# Las consultas de las etapas pasan por las ayudas globales ro_c / ro_f / prueba_solo_lectura (definidas antes del «case»): se revisan ellas y el cuerpo de las etapas.
+ayudas = sb[sb.index("ro_c() {"):sb.index("derivar_url_sesion() {")]; ayudas_sin = "\n".join(l for l in ayudas.splitlines() if not l.lstrip().startswith("#")); todo_etapas = ayudas_sin + "\n" + me_sin_comentarios
+# única escritura permitida: la de PRUEBA que PostgreSQL debe RECHAZAR (zz_nexa_prueba_escritura)
+if ayudas.count("PGOPTIONS=") >= 3 and not re.search(r"psql [^\n]*(?<!read_only=on)\"? -c \"(?!create temp table zz_nexa_prueba_escritura )(insert|update|delete|create|alter|drop|truncate)", todo_etapas, re.I) and all("default_transaction_read_only=on" in l for l in todo_etapas.splitlines() if "psql \"host=" in l) and 'psql "host=' not in me_sin_comentarios: ok("[etapas] todas las consultas de precondición y verificación usan la sesión forzada a solo lectura (y la única escritura es la de prueba que debe ser rechazada)")
 else: mal("[etapas] alguna consulta no está forzada a solo lectura")
+if 'begin transaction read only" -c "$1" -c "rollback"' in ayudas and "prueba_solo_lectura || return 1" in me and "create temp table zz_nexa_prueba_escritura" in ayudas and 'ro_f "$ARCH"' in me and me.count('-f "$ARCH"') == 0 and "ro_c " in me: ok("[etapas] cada consulta y cada archivo de catálogo van dentro de «begin transaction read only» y, antes de verificar, una escritura de prueba debe ser RECHAZADA por PostgreSQL (no se confía en PGOPTIONS)")
+else: mal("[etapas] falta la transacción de solo lectura o la prueba de escritura rechazada")
+_l = [l for l in ayudas.splitlines() if "zz_nexa_prueba_escritura" in l and "psql" in l]
+if len(_l) == 1 and "-v ON_ERROR_STOP=1" in _l[0] and _l[0].index('-c "begin transaction read only"') < _l[0].index("current_setting('transaction_read_only')") < _l[0].index("create temp table zz_nexa_prueba_escritura") and _l[0].index("create temp table zz_nexa_prueba_escritura") < _l[0].index('-c "rollback"'): ok("[etapas] la escritura de prueba va DESPUÉS de «begin transaction read only» y de comprobar transaction_read_only=on, con ON_ERROR_STOP: nunca se intenta fuera de la transacción de solo lectura")
+else: mal("[etapas] la escritura de prueba podría ejecutarse fuera de la transacción de solo lectura")
 if not re.search(r'echo[^\n|]*\$\{?(CLAVE_URL|CLAVE_BD|URL_SESION)\b', "\n".join(l for l in me_sin_comentarios.splitlines() if "::add-mask::" not in l)): ok("[etapas] ninguna salida imprime la contraseña ni la URL de conexión")
 else: mal("[etapas] una salida imprime la contraseña o la URL")
 

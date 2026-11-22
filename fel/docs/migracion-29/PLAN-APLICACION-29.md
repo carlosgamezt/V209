@@ -12,6 +12,8 @@ Todo se hace con el flujo manual **«NEXA FEL · solo migraciones (manual, por e
 Lectura del **rol efectivo** y de los **requisitos de la 29** (solo lectura, sin cadena de conexión ni contraseña): `verificar-etapa` etapa 2 muestra «INFO rol efectivo de la conexión» (usuario, superusuario, omite RLS, propietario de `public.documentos`, puede crear en `public`) y «INFO alcance del rol», y comprueba «requisitos de la migración 29» (28 registradas, 29 ausente, `fel__fiscal_cambiar`, `fel_auditar`, unicidad `(id, empresa_id)`, roles y propietario). Si falta algo, **FALLA** y lo nombra: no se aplica la etapa 3.
 
 ## 2. Inventario previo y respaldo
+> Respaldo y recuperación, con el estado real y las condiciones para autorizar la etapa 3: **`RESPALDO-Y-RECUPERACION-29.md`** (lo que sigue es el resumen original).
+
 - El **inventario** (tablas | políticas | funciones | disparadores | empresas | documentos) lo imprime la propia etapa 3 antes de tocar nada (solo lectura). Esperado: `67 | 49 | 182 | 59 | N | M`. Guárdalo.
 - **Respaldo** (lo haces tú; yo no puedo verlo ni confirmar el plan de Supabase del proyecto): panel de Supabase → *Database → Backups* (copia diaria o punto en el tiempo, según el plan) y, además, un volcado lógico del esquema `public` hecho por ti. Anota la **hora de Guatemala** del respaldo. `nexa-demo` solo tiene datos simulados de demostración y los usuarios de Auth se recrean con `aprovisionar` (idempotente).
 
