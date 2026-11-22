@@ -3,12 +3,12 @@
    · Copia nexa/ al destino indicado, escribe version.json (como deploy-nexa.yml) y, SOLO si se da una URL de NEXA FEL,
      añade al objeto de configuración incrustado de index.html una única línea:  window.PA_CONFIG.fel = {url, etiqueta};
    · Sin URL, FEL queda deshabilitado (la copia es idéntica a nexa/ salvo version.json).
-   · La URL debe ser https, sin usuario ni puerto ni ruta, y de *.pages.dev. La etiqueta, texto corto.
+   · La URL debe ser exactamente https://nexa-fel-demo.pages.dev/ (sin usuario, puerto, ruta ni parámetros). La etiqueta, texto corto.
    Uso: python3 preparar.py --origen nexa --destino /ruta/temporal [--fel-url https://xxx.pages.dev/] [--etiqueta Pruebas]"""
 import argparse, json, os, re, shutil, sys
 from urllib.parse import urlsplit
 
-HOST = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.pages\.dev$")
+FEL_HOST = "nexa-fel-demo.pages.dev"   # el ÚNICO destino de NEXA FEL permitido (proyecto de Pages «nexa-fel-demo»); cualquier otro host se rechaza
 ETIQ = re.compile(r"^[\wÁÉÍÓÚÜÑáéíóúüñ .·-]{1,40}$")
 CONF = re.compile(r"(?m)^(window\.PA_CONFIG\s*=\s*\{[^}]*\};)")   # anclado al inicio de línea: index.html trae otro texto igual dentro de una cadena (la descarga de config.js)
 
@@ -23,7 +23,7 @@ def url_valida(u):
     except ValueError: puerto = -1
     if puerto is not None: falla("la URL de NEXA FEL no puede llevar puerto")
     h = (p.hostname or "").lower()
-    if not HOST.match(h): falla("la URL de NEXA FEL debe ser un dominio *.pages.dev")
+    if h != FEL_HOST: falla("la URL de NEXA FEL debe ser exactamente https://" + FEL_HOST + "/ (otro host no está permitido)")
     if p.path not in ("", "/") or p.query or p.fragment: falla("la URL de NEXA FEL no puede llevar ruta, parámetros ni fragmento")
     return "https://" + h + "/"
 

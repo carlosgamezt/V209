@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Verifica, SOLO CON UNA LECTURA a la API de Cloudflare, que el destino de la vista previa es seguro:
 #   · el proyecto de Pages es exactamente «nexacorp» y su rama de PRODUCCIÓN es «main»;
-#   · la rama de la vista previa NO es la de producción (ni main/master): así el despliegue no puede tocar el dominio de producción.
+#   · la rama de la vista previa NO es la de producción (ni main/master) y su dirección de vista previa no coincide con ningún dominio de producción del proyecto.
+#   · (El Worker «nexa» no es un destino posible: este script y el workflow solo usan «pages deploy» hacia el proyecto de Pages «nexacorp».)
 # No escribe nada. El token va por stdin a curl (nunca en argumentos) y no se imprime. Sale con 0 solo si todo coincide.
 #   Uso: CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=… bash verificar-destino.sh nexacorp fel-nexa-acceso
 set -euo pipefail
@@ -24,11 +25,15 @@ nombre, prod = r.get("name"), r.get("production_branch")
 if nombre != sys.argv[2]: print("NOMBRE|" + str(nombre)[:40]); sys.exit(0)
 if prod != "main": print("PRODUCCION_NO_MAIN|" + str(prod)[:40]); sys.exit(0)
 if prod == sys.argv[3]: print("MISMA_RAMA"); sys.exit(0)
-print("OK|" + prod)
+doms = r.get("domains") or []
+if not isinstance(doms, list): print("DOMINIOS_ILEGIBLES"); sys.exit(0)
+alias = sys.argv[3] + "." + nombre + ".pages.dev"
+if any(str(x).lower() in (alias, sys.argv[3]) or str(x).lower().startswith(sys.argv[3] + ".") for x in doms): print("ALIAS_EN_PRODUCCION"); sys.exit(0)
+print("OK|" + prod + "|" + str(len(doms)))
 PY
 )"
 case "$RES" in
-  OK\|main) echo "OK  destino verificado: proyecto $PROYECTO · rama de producción «main» · la vista previa usa la rama «$RAMA» (distinta): no toca el dominio de producción";;
+  OK\|main\|*) echo "OK  destino verificado: proyecto $PROYECTO · rama de producción «main» · la vista previa usa la rama «$RAMA» (distinta) · su dirección de vista previa no coincide con ninguno de los ${RES##*|} dominios de producción: no toca el dominio de producción";;
   ILEGIBLE|SIN_EXITO) echo "NO VERIFICABLE: respuesta ilegible o sin éxito de la API de Cloudflare. No se publica nada."; exit 3;;
   *) echo "PROHIBIDO: el proyecto de destino no cumple lo esperado ($RES). No se publica nada."; exit 2;;
 esac

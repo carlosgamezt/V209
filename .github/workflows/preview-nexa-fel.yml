@@ -2,7 +2,8 @@ name: NEXA · vista previa con acceso a NEXA FEL (manual, rama fel-nexa-acceso)
 # Publica una VISTA PREVIA de NEXA (la carpeta nexa/ de la rama fel-nexa-acceso) como despliegue de VISTA PREVIA del proyecto de Cloudflare Pages «nexacorp».
 # NUNCA publica en producción: la rama del despliegue es siempre «fel-nexa-acceso» (no «main») y, antes de publicar, se LEE la API de Cloudflare para comprobar que la rama de producción del proyecto es «main».
 # NO usa Supabase, migraciones, siembras, secretos DEMO_ ni nada fiscal: solo los dos secretos de Cloudflare que ya usa deploy-nexa.yml. No se ejecuta con push, pull request ni programación: SOLO cuando TÚ la lanzas a mano.
-#  · fel_url (opcional): URL de NEXA FEL (https://<nombre>.pages.dev/). Se añade SOLO a la copia temporal; el código de la rama no cambia. Vacía → NEXA FEL queda deshabilitado en la vista previa.
+#  · fel_url: solo se admite https://nexa-fel-demo.pages.dev/ (valor por defecto). Se añade SOLO a la copia temporal; el código de la rama no cambia y sigue con NEXA FEL deshabilitado. Vacía → NEXA FEL queda deshabilitado en la vista previa.
+# Destinos de producción PROTEGIDOS: no publica en la rama main, ni en el dominio principal, ni en el proyecto Worker «nexa» (solo usa «pages deploy» hacia el proyecto de Pages «nexacorp», con rama de vista previa, y se ejecuta fuera de la carpeta del repositorio para que el wrangler.jsonc de la raíz —del Worker «nexa»— no se use).
 #  · confirmar: escribe VISTA PREVIA.
 # El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en respaldo-nube.yml): está limitado a la rama fel-nexa-acceso y a este mismo archivo, y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual.
 on:
@@ -12,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       fel_url:
-        description: "URL de NEXA FEL para la vista previa (https://<nombre>.pages.dev/). Vacía = NEXA FEL deshabilitado."
+        description: "URL de NEXA FEL para la vista previa. Solo se admite https://nexa-fel-demo.pages.dev/ ; vacía = NEXA FEL deshabilitado en la vista previa."
         type: string
-        default: ""
+        default: "https://nexa-fel-demo.pages.dev/"
       etiqueta:
         description: "Etiqueta que muestra la pantalla de NEXA FEL (texto corto)"
         type: string
@@ -53,7 +54,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy ${{ runner.temp }}/nexa-vista-previa --project-name=nexacorp --branch=fel-nexa-acceso --commit-dirty=true
+          workingDirectory: ${{ runner.temp }}
+          command: pages deploy nexa-vista-previa --project-name=nexacorp --branch=fel-nexa-acceso --commit-dirty=true
       - name: "Resumen"
         run: |
           echo "Vista previa publicada (rama fel-nexa-acceso del proyecto nexacorp). La dirección de la vista previa suele ser https://fel-nexa-acceso.nexacorp.pages.dev (el panel de Cloudflare muestra la exacta)."

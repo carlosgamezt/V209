@@ -45,7 +45,7 @@ for f in ("sw.js", "manifest.webmanifest", "_headers", "config.js", "supabase.js
     prueba(open(os.path.join(d, f), "rb").read() == open(os.path.join(RAIZ, "nexa", f), "rb").read(), f"{f} es idéntico al de nexa/")
 malas = ["http://nexa-fel-demo.pages.dev/", "https://evil.example.com/", "javascript:alert(1)", "https://u:p@nexa-fel-demo.pages.dev/", "https://nexa-fel-demo.pages.dev:8443/",
          "https://nexa-fel-demo.pages.dev.evil.com/", "https://nexa-fel-demo.pages.dev/ruta", "https://nexa-fel-demo.pages.dev/?x=1", "https://nexa-fel-demo.pages.dev/#x", "https://pages.dev/",
-         "https://-malo.pages.dev/", "ftp://x.pages.dev/", "https://nexa fel.pages.dev/", "//nexa-fel-demo.pages.dev/", "https://nexa-fel-demo.pages.dev:443/"]
+         "https://-malo.pages.dev/", "https://otro.pages.dev/", "https://nexacorp.pages.dev/", "https://nexa.pages.dev/", "https://nexa-fel-demo2.pages.dev/", "https://xnexa-fel-demo.pages.dev/", "ftp://x.pages.dev/", "https://nexa fel.pages.dev/", "//nexa-fel-demo.pages.dev/", "https://nexa-fel-demo.pages.dev:443/"]
 for u in malas:
     rc, out, d2 = preparar("--fel-url", u)
     prueba(rc == 2 and "PROHIBIDO" in out and not os.path.exists(d2), f"URL rechazada y sin copia: {u}", out)
@@ -73,8 +73,9 @@ def dest(proyecto="nexacorp", rama="fel-nexa-acceso", cuerpo=None, codigo="200",
     if token: env["CLOUDFLARE_API_TOKEN"] = token
     if cuenta: env["CLOUDFLARE_ACCOUNT_ID"] = cuenta
     open(REG, "w").close(); r, o = sh(["bash", os.path.join(VP, "verificar-destino.sh"), proyecto, rama], env=env); return r, o
-def cuerpo(nombre="nexacorp", prod="main", exito=True): return json.dumps({"success": exito, "result": {"name": nombre, "production_branch": prod}})
+def cuerpo(nombre="nexacorp", prod="main", exito=True, doms=("nexacorp.pages.dev", "app.ejemplo.com")): return json.dumps({"success": exito, "result": {"name": nombre, "production_branch": prod, "domains": list(doms)}})
 r, o = dest(cuerpo=cuerpo()); prueba(r == 0 and "OK" in o and "no toca el dominio de producción" in o, "nexacorp con producción = main y vista previa = fel-nexa-acceso → se acepta", o)
+prueba("2 dominios de producción" in o, "informa cuántos dominios de producción tiene el proyecto y que la vista previa no coincide con ninguno", o)
 prueba(TOKEN not in o and TOKEN not in open(REG).read(), "el token no aparece en la salida ni en los argumentos de curl")
 prueba("-X GET" in open(REG).read() and "pages/projects/nexacorp" in open(REG).read() and not re.search(r"-X (POST|PUT|PATCH|DELETE)", open(REG).read()), "una sola petición, un GET, al proyecto nexacorp (nada se modifica)")
 for desc, kw, esperado in [("la producción del proyecto NO es main (es «master»)", dict(cuerpo=cuerpo(prod="master")), 2), ("la producción ES la rama de la vista previa", dict(cuerpo=cuerpo(prod="fel-nexa-acceso")), 2),
@@ -82,6 +83,7 @@ for desc, kw, esperado in [("la producción del proyecto NO es main (es «master
         ("la API responde 404", dict(cuerpo="{}", codigo="404"), 3), ("la API responde 500", dict(cuerpo="{}", codigo="500"), 3), ("curl falla (red)", dict(rc="7"), 3), ("respuesta ilegible", dict(cuerpo="no es json"), 3),
         ("respuesta sin result", dict(cuerpo=json.dumps({"success": True})), 3), ("sin token", dict(cuerpo=cuerpo(), token=""), 2), ("sin cuenta", dict(cuerpo=cuerpo(), cuenta=""), 2),
         ("cuenta con formato inválido", dict(cuerpo=cuerpo(), cuenta="no-es-hex"), 2), ("proyecto «nexa»", dict(proyecto="nexa", cuerpo=cuerpo(nombre="nexa")), 2), ("proyecto de FEL «nexa-fel-demo»", dict(proyecto="nexa-fel-demo", cuerpo=cuerpo(nombre="nexa-fel-demo")), 2),
+        ("la dirección de la vista previa coincide con un dominio de producción", dict(cuerpo=cuerpo(doms=("nexacorp.pages.dev", "fel-nexa-acceso.nexacorp.pages.dev"))), 2), ("un dominio de producción empieza por la rama de vista previa", dict(cuerpo=cuerpo(doms=("fel-nexa-acceso.ejemplo.com",))), 2), ("los dominios no son una lista", dict(cuerpo=json.dumps({"success": True, "result": {"name": "nexacorp", "production_branch": "main", "domains": "x"}})), 2),
         ("rama de vista previa «main»", dict(rama="main", cuerpo=cuerpo()), 2), ("rama de vista previa distinta de fel-nexa-acceso", dict(rama="otra", cuerpo=cuerpo()), 2)]:
     r, o = dest(**kw); prueba(r == esperado and "OK  destino" not in o and TOKEN not in o, f"{desc} → se rechaza (código {esperado})", o)
 
@@ -108,7 +110,9 @@ def guardian(texto):
     deploy = [s for s in pasos if s.get("uses") == "cloudflare/wrangler-action@v3"]
     if len(deploy) != 1: return p + ["debe haber un único paso de despliegue"]
     cmd = str(deploy[0].get("with", {}).get("command", ""))
-    if not re.fullmatch(r"pages deploy \$\{\{ runner\.temp \}\}/nexa-vista-previa --project-name=nexacorp --branch=fel-nexa-acceso --commit-dirty=true", cmd): p.append("el comando de despliegue debe ser exactamente el de vista previa (rama fel-nexa-acceso, proyecto nexacorp): " + cmd)
+    if cmd != "pages deploy nexa-vista-previa --project-name=nexacorp --branch=fel-nexa-acceso --commit-dirty=true": p.append("el comando de despliegue debe ser exactamente «pages deploy» de vista previa (rama fel-nexa-acceso, proyecto de Pages nexacorp; nunca el Worker «nexa»): " + cmd)
+    if str(deploy[0].get("with", {}).get("workingDirectory", "")) != "${{ runner.temp }}": p.append("wrangler debe ejecutarse fuera del repositorio (workingDirectory = runner.temp) para no usar el wrangler.jsonc del Worker «nexa»")
+    if (on.get("workflow_dispatch") or {}).get("inputs", {}).get("fel_url", {}).get("default") != "https://nexa-fel-demo.pages.dev/": p.append("el valor por defecto de fel_url debe ser https://nexa-fel-demo.pages.dev/")
     if re.search(r"--branch=(main|master|production)|--branch=\$|--project-name=\$|--project-name=nexa\b(?!corp)", textwrap.dedent(texto)): p.append("rama o proyecto de producción / dinámico en un comando")
     nombres = [s.get("name", "") for s in pasos]; orden = [i for i, n in enumerate(nombres) if n.startswith("Verificar el destino")] + [i for i, n in enumerate(nombres) if n.startswith("Preparar")] + [i for i, n in enumerate(nombres) if n.startswith("Publicar")]
     if len(orden) != 3 or orden != sorted(orden): p.append("el orden debe ser: verificar destino → preparar → publicar")
@@ -119,6 +123,7 @@ def guardian(texto):
     sec = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", texto))
     if sec != {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}: p.append("solo pueden usarse los secretos CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID (encontrados: %s)" % sorted(sec))
     ejec = "\n".join(str(s.get("run", "")) + str(s.get("with", "")) + str(s.get("env", "")) for s in pasos)
+    if re.search(r"wrangler[ -]+deploy|--name[= ]|\bdeploy\b(?<!pages deploy)", cmd.replace("pages deploy", "")): p.append("solo se permite «pages deploy» (no el despliegue de Workers)")
     for prohibido in ("supabase", "SUPABASE", "db push", "migra", "aprovisionar", "DEMO_", "digifact", "DIGIFACT", "certific", "publicar-nube", "functions deploy", "secrets set"):
         if prohibido in ejec: p.append("el trabajo no puede mencionar: " + prohibido)
     for s in pasos:
@@ -139,6 +144,10 @@ muts = [("añadir un disparador pull_request", lambda t: t.replace("on:\n  push:
         ("añadir una acción ajena", lambda t: t.replace("      - uses: actions/checkout@v4", "      - uses: actions/cache@v4\n      - uses: actions/checkout@v4", 1)),
         ("saltar la verificación del destino", lambda t: t.replace("run: bash pruebas-fel-nexa/vista-previa/verificar-destino.sh nexacorp fel-nexa-acceso", "run: echo omitido")),
         ("interpolar la entrada en un run", lambda t: t.replace('--fel-url "$FEL_URL"', '--fel-url "${{ inputs.fel_url }}"')),
+        ("desplegar como Worker (wrangler deploy)", lambda t: t.replace("command: pages deploy nexa-vista-previa", "command: deploy nexa-vista-previa")),
+        ("apuntar al Worker con --name=nexa", lambda t: t.replace("--commit-dirty=true\n      - name: \"Resumen\"", "--commit-dirty=true --name=nexa\n      - name: \"Resumen\"")),
+        ("quitar workingDirectory (usaría el wrangler.jsonc del Worker)", lambda t: t.replace("          workingDirectory: ${{ runner.temp }}\n", "")),
+        ("fel_url por defecto de otro host", lambda t: t.replace('default: "https://nexa-fel-demo.pages.dev/"', 'default: "https://otro.pages.dev/"')),
         ("usar un entorno", lambda t: t.replace("    runs-on: ubuntu-latest\n    timeout-minutes: 10", "    runs-on: ubuntu-latest\n    environment: produccion\n    timeout-minutes: 10"))]
 for n, f in muts:
     t2 = f(txt); prueba(t2 != txt and guardian(t2) != [], f"mutación detectada: {n}", "la mutación no cambió el texto" if t2 == txt else "el guardián no la detectó")
