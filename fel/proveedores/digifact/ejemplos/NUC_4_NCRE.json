@@ -1,0 +1,170 @@
+{
+  "Version": "1.00",
+  "CountryCode": "GT",
+  "Header": {
+      "DocType": "NCRE",
+      "IssuedDateTime": "2022-06-29T08:28:00-06:00",
+      "Currency": "GTQ"
+  },
+  "Seller": {
+      "TaxID": "123456",
+      "TaxIDAdditionalInfo": [
+          {
+              "Name": "AfiliacionIVA",
+              "Data": null,
+              "Value": "GEN"
+          }
+      ],
+      "Name": "FEL TEST",
+      "BranchInfo": {
+          "Code": "1",
+          "Name": "ESTABLECIMIENTO DE PRUEBA",
+          "AddressInfo": {
+              "Address": "4 AVENIDA 15-70 ZONA 10 LOCAL 3 EDIFICIO PALADIUM",
+              "City": "01001",
+              "District": "Guatemala",
+              "State": "Guatemala",
+              "Country": "GT"
+          }
+      }
+  },
+  "Buyer": {
+      "TaxID": "77454820",
+      "Name": "DIGIFACT SERVICIOS SOCIEDAD ANONIMA",
+      "AddressInfo": {
+          "Address": "4ta avenida 15-70 zona 10",
+          "City": "01010",
+          "District": "GUATEMALA",
+          "State": "GUATEMALA",
+          "Country": "GT"
+      }
+  },
+  "Items": [
+      {
+          "Number": "1",
+          "Codes": null,
+          "Type": "Bien",
+          "Description": "NARANJA MECANICA",
+          "Qty": "1.0000",
+          "UnitOfMeasure": "CA",
+          "Price": "10.000000",
+          "Discounts": null,
+          "Taxes": {
+              "Tax": [
+                  {
+                      "Code": "1",
+                      "Description": "IVA",
+                      "TaxableAmount": "8.928571",
+                      "Amount": "1.071429"
+                  }
+              ]
+          },
+          "Totals": {
+              "TotalItem": "10.000000"
+          }
+      }
+  ],
+  "Totals": {
+      "TotalTaxes": {
+          "TotalTax": [
+              {
+                  "Description": "IVA",
+                  "Amount": "1.071429"
+              }
+          ]
+      },
+      "GrandTotal": {
+          "InvoiceTotal": "10.000000"
+      }
+  },
+  "AdditionalDocumentInfo": {
+      "AdditionalInfo": [
+          {
+              "Code": "NCRE",
+              "Type": "COMPLEMENTO",
+              "AditionalInfo": [
+                  {
+                      "Name": "NumeroAutorizacionDocumentoOrigen",
+                      "Data": null,
+                      "Value": "62496FB5-75B4-4C75-83FA-DFBEF92DE92D"
+                  },
+                  {
+                      "Name": "FechaEmisionDocumentoOrigen",
+                      "Data": null,
+                      "Value": "2022-06-29"
+                  },
+                  {
+                      "Name": "MotivoAjuste",
+                      "Data": null,
+                      "Value": "Devolucion porque el producto no salio bueno"
+                  },
+                  {
+                      "Name": "NumeroDocumentoOrigen",
+                      "Data": null,
+                      "Value": "1974750325"
+                  },
+                  {
+                      "Name": "SerieDocumentoOrigen",
+                      "Data": null,
+                      "Value": "62496FB5"
+                  }
+              ]
+          },
+          {
+              "Code": "FRONT-263C-444B-89BA-6F87EC1330C0",
+              "Type": "ADENDA",
+              "AditionalData": {
+                  "Data": [
+                      {
+                          "Info": [
+                              {
+                                  "Name": "OBSERVACIONES",
+                                  "Data": null,
+                                  "Value": "-"
+                              },
+                              {
+                                  "Name": "CANTIDAD_LETRAS",
+                                  "Data": null,
+                                  "Value": "CIENTO NOVENTA QUETZALES CON 00/100"
+                              }
+                          ],
+                          "Name": "INFORMACION_ADICIONAL"
+                      },
+                      {
+                          "Info": [
+                              {
+                                  "Name": "NumeroLinea",
+                                  "Data": null,
+                                  "Value": "1"
+                              },
+                              {
+                                  "Name": "Descripcion_Adicional",
+                                  "Data": null,
+                                  "Value": "-"
+                              },
+                              {
+                                  "Name": "CodigoEAN",
+                                  "Data": null,
+                                  "Value": "00015"
+                              },
+                              {
+                                  "Name": "CategoriaAdicional",
+                                  "Data": null,
+                                  "Value": "-"
+                              }
+                          ],
+                          "Name": "DetallesAux_Detalle"
+                      }
+                  ]
+              },
+              "AditionalInfo": [
+                  {
+                      "Name": "VALIDAR_REFERENCIA_INTERNA",
+                      "Data": null,
+                      "Value": "NO_VALIDAR"
+                  }
+              ]
+          }
+      ]
+  }
+}

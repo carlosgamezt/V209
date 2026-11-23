@@ -29,8 +29,8 @@ async function copiar(texto) {
 let alCambiarRuta = null;
 const NAV = [
   { ruta: "/panel", titulo: "Panel", icon: "file", permiso: "borradores.ver", practico: true },
-  { ruta: "/nueva", titulo: "Nueva factura", corto: "Nueva", icon: "plus", permiso: "borradores.crear" },
-  { ruta: "/", titulo: "Facturas", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
+  { ruta: "/nueva", titulo: "Nuevo documento", corto: "Nuevo", icon: "plus", permiso: "borradores.crear" },
+  { ruta: "/", titulo: "Documentos", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
   { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
   { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
   { ruta: "/usuarios", titulo: "Usuarios", icon: "users", permiso: "usuarios.ver", practico: true },

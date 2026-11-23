@@ -1,6 +1,7 @@
 // Funciones de la versión PRÁCTICA de la demostración: inicio de sesión, Digifact SIMULADO (certificar con cobertura, consultar, anular),
 // plan / saldo / consumo de la empresa y panel de la PLATAFORMA (empresas, planes, contratos, pagos simulados y bolsón global).
 // Todo usa las MISMAS funciones SQL y servicios que las pruebas. Nada sale de este equipo: «SIMULADO - SIN VALOR FISCAL».
+import { tipoDte } from "../../proveedores/src/catalogo_dte.ts";
 import { registroSimulado } from "../../proveedores/src/registro.ts";
 import type { ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
@@ -189,6 +190,9 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const aut = String(dc.autorizacion_sat ?? ""), modoPdf = aut && !aut.toUpperCase().startsWith("SIM-") ? "prueba" : "simulado";
         const bytes = pdfDemo({ empresa: String(emp.razon_social), nit: String(emp.nit), receptor: String(dc.cliente_nombre ?? "Sin receptor"), receptorId: `${dc.cliente_tipo ?? ""} ${dc.cliente_numero ?? ""}`.trim(), fecha: f || "—", numeroBorrador: `BR-${String(dc.numero_borrador).padStart(4, "0")}`,
           estado: dc.estado_fiscal === "ninguno" ? (dc.estado_preparacion === "revisado" ? "Revisado" : "Borrador") : ESTADO[String(dc.estado_fiscal)] ?? String(dc.estado_fiscal), serie: dc.serie as string | null, numero: dc.numero_fiscal as string | null, autorizacion: dc.autorizacion_sat as string | null, formato: fmt, modo: modoPdf,
+          tipo: (() => { const t = tipoDte(String(dc.tipo_dte ?? "FACT")); const ro = dc.referencia_origen as Obj | null;
+            return t ? { codigo: t.codigo, titulo: t.tituloDocumento, enPruebas: t.disponibilidad === "en_pruebas",
+              ...(ro ? { origen: { serie: String(ro.serie), numero: String(ro.numero), fecha: String(ro.fecha_emision).split("-").reverse().join("/"), tipo: String(ro.tipo), ...(dc.motivo_ajuste ? { motivo: String(dc.motivo_ajuste) } : {}) } } : {}), ...(dc.tipo_recibo ? { tipoRecibo: String(dc.tipo_recibo) } : {}) } : undefined; })(),
           anulacion: dc.estado_fiscal === "anulado" ? "anulado" : dc.estado_fiscal === "anulacion_solicitada" ? "solicitada" : undefined,
           fechaAnulacion: dc.anulado_en ? new Date(String(dc.anulado_en)).toISOString().slice(0, 10).split("-").reverse().join("/") : undefined,
           lineas: det.lineas.map((l) => ({ descripcion: String(l.descripcion), cantidad: String(l.cantidad), precio: String(l.precio_unitario), neto: String((l.importes as Obj)?.neto ?? "0") })), subtotal: String(dc.subtotal ?? dc.base_imponible), descuento: String(dc.descuento_total ?? "0"), base: String(dc.base_imponible) });

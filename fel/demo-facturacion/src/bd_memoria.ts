@@ -14,6 +14,9 @@ export async function crearBd(): Promise<BdDemo> {
   for (const f of archivos) await db.exec(await Deno.readTextFile(`${RAIZ}supabase/migrations/${f}`));
   // Propuesta (fuera de supabase/migrations): historial de envíos por correo. Solo se aplica cuando se pide el correo (FEL_CORREO); el conjunto de 29 migraciones no cambia.
   if (Deno.env.get("FEL_CORREO")) for (const f of [...Deno.readDirSync(`${RAIZ}docs/migracion-correo`)].map((x) => x.name).filter((n) => /^\d{14}_.+\.sql$/.test(n)).sort()) await db.exec(await Deno.readTextFile(`${RAIZ}docs/migracion-correo/${f}`));   // solo la migración (no la reversión ni la verificación)
+  // Propuesta (fuera de supabase/migrations): TIPOS DE DOCUMENTO. La demostración EN MEMORIA la trae aplicada para poder mostrarlos (se apaga con FEL_TIPOS=0); las bases hospedadas no la reciben
+  // sin autorización y la demostración funciona igual sin ella (solo Factura). El conjunto de 29 migraciones no cambia.
+  if (Deno.env.get("FEL_TIPOS") !== "0") await db.exec(await Deno.readTextFile(`${RAIZ}docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql`));
   const rpc: Rpc = async (fn, args) => {
     if (!/^[a-z_0-9]+$/.test(fn)) throw new Error("nombre de función no válido");
     const claves = Object.keys(args);

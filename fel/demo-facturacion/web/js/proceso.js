@@ -58,8 +58,12 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
   })();
 
   // ------------------------------------------------------------ envío
-  const puedeEnviar = doc.estado_preparacion === "revisado" && ["ninguno", "rechazado"].includes(doc.estado_fiscal) && !abierta && !alertaAbierta;
+  // Solo un tipo con la certificación habilitada (hoy FACT) se puede enviar; los demás se elaboran, validan y previsualizan. El servidor y la base lo imponen también.
+  const tipoDoc = doc.tipo_dte ?? "FACT", infoTipo = ctx.tiposDoc?.tipos?.find((t) => t.codigo === tipoDoc), certifica = tipoDoc === "FACT" || infoTipo?.certificacion_habilitada === true;
+  const puedeEnviar = certifica && doc.estado_preparacion === "revisado" && ["ninguno", "rechazado"].includes(doc.estado_fiscal) && !abierta && !alertaAbierta;
   const envio = (() => {
+    if (!certifica) return h("div", { class: "card", "data-panel": "tipo-sin-certificacion" }, h("h2", { class: "card-t" }, "Envío"),
+      h("p", { class: "aviso" }, icono("lock"), h("span", {}, `${infoTipo?.nombre ?? tipoDoc} está EN PRUEBAS: puedes elaborarlo, revisarlo y verlo en vista previa, pero su certificación aún no está habilitada (ni simulada ni en TEST). ${infoTipo?.motivo_pendiente ?? ""}`.trim())));
     if (!puedeEnviar) {
       const motivo = doc.estado_fiscal === "certificado" ? "Ya está certificado (simulación): no se puede volver a enviar."
         : doc.estado_fiscal === "por_verificar" ? "Bloqueado hasta conciliar el resultado desconocido."
@@ -203,12 +207,12 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
           boton("El proveedor procesa las solicitudes tardías", { tipo: "sec", id: "demo-tardios", onclick: accion(() => api.liberarTardios(), () => avisar("El proveedor simulado procesó las solicitudes tardías")) }),
           boton("Auditar al proveedor (respuestas tardías)", { tipo: "sec", id: "demo-auditar", onclick: accion(() => api.auditar(), (r) => avisar(r.alertas ? `¡Se detectó ${r.alertas} certificación huérfana!` : `Auditoría hecha (${r.revisadas} operaciones revisadas)`, r.alertas ? "error" : "ok")) }),
           boton("Reiniciar y recuperar", { tipo: "sec", id: "demo-recuperar", onclick: accion(() => api.recuperar(), (r) => avisar(`Recuperación: ${r.liberadas_sin_envio} liberadas sin envío, ${r.marcadas_desconocidas} marcadas desconocidas, ${r.resueltas} resueltas, ${r.esperando_humano} esperan a una persona, ${r.artefactos_completados} archivos completados`)) })),
-        puedeEnviar ? h("div", { class: "form" }, campo("Simular que el proceso se cae mientras envía", selCaida), boton("Enviar y simular la caída", { tipo: "peligro", id: "demo-caida", disabled: !ctx.tiene("fiscal.certificar") || sucio(),
+        puedeEnviar && certifica ? h("div", { class: "form" }, campo("Simular que el proceso se cae mientras envía", selCaida), boton("Enviar y simular la caída", { tipo: "peligro", id: "demo-caida", disabled: !ctx.tiene("fiscal.certificar") || sucio(),
           onclick: accion(() => api.caida(doc.id, claveDe(doc.id, operaciones.length), escenario, selCaida.value), (r) => avisar(r.caido ? "El proceso se cayó (simulado). Usa «Reiniciar y recuperar»." : "No hubo caída en ese punto", "error")) }),
           h("small", { class: "campo-ayuda" }, "Usa el comportamiento del proveedor elegido arriba. Tras la caída, el sistema NO reenvía: la recuperación prueba qué ocurrió.")) : null));
   })();
 
-  const digifactReal = practico && ctx.tiene("borradores.ver") ? panelDigifact({ ctx, doc, recargar, mostrarError }) : null;   // Digifact TEST real: solo vía el servidor de NEXA
+  const digifactReal = practico && certifica && ctx.tiene("borradores.ver") ? panelDigifact({ ctx, doc, recargar, mostrarError }) : null;   // Digifact TEST real: solo vía el servidor de NEXA
   const correo = panelCorreo({ ctx, doc, mostrarError, avisar });   // enviar la factura certificada por correo (nuestro servicio; oculto si el servidor no lo habilita)
   return h("div", { class: "proceso-col" }, estadoCard, envio, conciliacion, digifactReal, ...digifact, correo, ...extra, linea, demo);
 }

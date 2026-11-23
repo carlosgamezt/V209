@@ -3,8 +3,9 @@
 import { h, boton, insignia, vacio, cabecera, modal, campo, toast, mensajeError, poner } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
+import { etiquetaDisponibilidad } from "./tipos.js";
 
-const PESTANAS = [["empresa", "Empresa", "building"], ["establecimientos", "Establecimientos", "building"], ["canal", "Canal de emisión", "shield"], ["numeracion", "Numeración", "file"], ["impuestos", "Impuestos", "info"], ["preferencias", "Preferencias", "pencil"]];
+const PESTANAS = [["empresa", "Empresa", "building"], ["establecimientos", "Establecimientos", "building"], ["canal", "Canal de emisión", "shield"], ["tipos", "Tipos de documento", "file"], ["numeracion", "Numeración", "file"], ["impuestos", "Impuestos", "info"], ["preferencias", "Preferencias", "pencil"]];
 const ETIQUETA_PARAM = { espera_conciliacion_manual_min: "Espera mínima antes de una conciliación manual", ventana_tardia_min: "Ventana de respuestas tardías tras una conciliación manual", umbral_recuperacion_min: "Antigüedad para recuperar operaciones tras una caída", ventana_auditoria_min: "Ventana de auditoría de respuestas tardías" };
 
 export function pantallaConfig(ctx) {
@@ -31,6 +32,32 @@ export function pantallaConfig(ctx) {
       campo("Nombre", h("input", { value: f.nombre, maxlength: 120, "aria-label": "Nombre del establecimiento", oninput: (x) => { f.nombre = x.target.value; } })),
       campo("Dirección", h("input", { value: f.direccion, maxlength: 300, "aria-label": "Dirección del establecimiento", oninput: (x) => { f.direccion = x.target.value; } })), err),
       pie: [boton("Cancelar", { tipo: "sec", onclick: () => m.cerrar() }), guardar] });
+  }
+  // ---- Tipos de documento: qué puede emitir la empresa y cuál es el predeterminado. Los pendientes se listan con su motivo y no se pueden habilitar; «en pruebas» no certifica.
+  async function pintarTipos() {
+    poner(cuerpo, h("p", { class: "mut" }, "Cargando…"));
+    let tp; try { tp = await api.tiposDocumento(); } catch (x) { return poner(cuerpo, h("p", { class: "err", role: "alert" }, mensajeError(x))); }
+    if (pestana !== "tipos") return;
+    const puede = !!tp.puede_configurar, err = h("p", { class: "err", role: "alert" });
+    const guardarTipo = async (t, cambios) => { err.textContent = ""; try { await api.guardarTipoEmpresa({ tipo: t.codigo, habilitado: t.habilitado, base_habilitacion: t.base_habilitacion ?? undefined, predeterminado: t.predeterminado, ...cambios }); toast("Configuración guardada"); await ctx.recargarEstado?.(); await pintarTipos(); } catch (x) { err.textContent = mensajeError(x); } };
+    const fila = (t) => {
+      const esFact = t.codigo === "FACT", pendiente = t.disponibilidad === "pendiente", base = h("input", { value: t.base_habilitacion ?? "", maxlength: 300, placeholder: "Base que habilita a la empresa (obligatoria)", "aria-label": `Base de habilitación de ${t.nombre}`, disabled: !puede });
+      return h("div", { class: "card tipo-cfg", "data-tipo-cfg": t.codigo },
+        h("div", { class: "tipo-cfg-cab" }, h("strong", {}, `${t.nombre} · ${t.codigo}`), h("span", { class: `tag ${t.disponibilidad === "implementado" ? "" : t.disponibilidad === "en_pruebas" ? "tag-test" : "tag-sim"}` }, etiquetaDisponibilidad(t.disponibilidad)),
+          t.predeterminado ? h("span", { class: "tag" }, "Predeterminado") : null),
+        h("small", { class: "mut" }, t.regimen + (t.regimen_verificado ? "" : " (sin confirmar con la SAT)")),
+        pendiente ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, `No disponible: ${t.motivo_pendiente ?? ""}`))
+          : h("div", { class: "tipo-cfg-ctl" }, esFact ? h("small", { class: "mut" }, "Factura está siempre habilitada.") : [
+              h("label", { class: "check" }, h("input", { type: "checkbox", checked: t.habilitado, disabled: !puede, "aria-label": `Habilitar ${t.nombre}`, onchange: (e) => guardarTipo(t, { habilitado: e.target.checked, predeterminado: e.target.checked ? t.predeterminado : false, base_habilitacion: base.value }) }), h("span", {}, "Habilitado para esta empresa")),
+              t.familia === "recibo" ? base : null],
+            h("label", { class: "check" }, h("input", { type: "radio", name: "tipo-predeterminado", checked: t.predeterminado || (esFact && tp.predeterminado === "FACT"), disabled: !puede || !t.habilitado && !esFact, "aria-label": `${t.nombre} como tipo predeterminado`, onchange: () => guardarTipo(t, { habilitado: true, predeterminado: true, base_habilitacion: base.value }) }), h("span", {}, "Predeterminado"))),
+        t.disponibilidad === "en_pruebas" ? h("small", { class: "mut" }, "En pruebas: se elabora, valida y previsualiza; la certificación aún no está habilitada.") : null,
+        t.pendientes_verificar?.length && !pendiente ? h("details", {}, h("summary", {}, "Qué falta confirmar antes de certificar"), h("ul", {}, ...t.pendientes_verificar.map((x) => h("li", {}, x)))) : null);
+    };
+    poner(cuerpo, h("p", { class: "mut" }, "Elige qué documentos puede emitir la empresa y cuál se propone por defecto. Un tipo se habilita fiscalmente solo cuando sus reglas están verificadas; los pendientes no se pueden habilitar."),
+      puede ? null : h("p", { class: "aviso" }, icono("lock"), h("span", {}, "Tu rol solo permite consultar esta configuración.")), err,
+      h("div", { class: "tipos-cfg-lista" }, ...tp.tipos.filter((t) => t.disponibilidad !== "pendiente").map(fila)),
+      h("h3", { class: "card-t" }, "Pendientes de habilitar"), h("div", { class: "tipos-cfg-lista" }, ...tp.tipos.filter((t) => t.disponibilidad === "pendiente").map(fila)));
   }
   function pintarCuerpo() {
     if (!cfg) return poner(cuerpo, h("p", { class: "mut" }, "Cargando…"));
@@ -76,6 +103,7 @@ export function pantallaConfig(ctx) {
             h("button", { type: "button", class: "btn btn-sec", id: "activar-canal-real", disabled: true, title: "Bloqueado: ningún canal real puede activarse en esta fase" }, icono("lock"), h("span", {}, "Activar canal real"))),
           h("p", { class: "mut" }, "El agente local aún no existe; no hay conexión real ni simulada. Los demás estados se añadirán cuando se implemente.")));
     }
+    if (pestana === "tipos") return pintarTipos();
     if (pestana === "numeracion") return poner(cuerpo, h("div", { class: "card" }, h("h2", { class: "card-t" }, "Numeración"), h("div", { class: "datos" }, dato("Último número de borrador", String(cfg.ultimo_borrador)), dato("Serie y número fiscales", "Los asigna el proveedor al certificar (en simulación: serie SIMA, autorización SIM-…)")),
       solo("El número de borrador es interno y no es un número fiscal.")));
     if (pestana === "impuestos") return poner(cuerpo, h("div", { class: "card" }, h("h2", { class: "card-t" }, "Impuestos"), solo("Pendiente: IVA y otros impuestos se calcularán cuando exista un régimen fiscal verificado con un contador. Hoy no se aplica ninguna fórmula fiscal y por eso solo se muestra la base imponible.")));

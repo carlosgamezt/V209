@@ -56,6 +56,8 @@ jobs:
         run: |
           deno check mod.ts pruebas/*.ts
           deno test -A pruebas/
+      - name: "Tipos de documento (propuesta de migración, fuera de supabase/migrations): prueba SQL, verificación posterior, reversión segura y reaplicación en un PostgreSQL temporal (sin Supabase, sin red)"
+        run: bash fel/tools/test-tipos-documento.sh
       # Respaldo de nexa-demo: va al FINAL del trabajo a propósito (un fallo aquí no puede dejar sin ejecutar los pasos de arriba). PostgreSQL 17 se instala con la acción verificada (huella de la clave, versión mayor fijada,
       # herramientas comprobadas) en lugar de suponer una ruta fija del ejecutor; la prueba detecta lo instalado y NO se omite si falta.
       - name: PostgreSQL 17 con servidor (instalación verificada) para la prueba del respaldo
@@ -121,6 +123,10 @@ jobs:
           node fel/demo-facturacion/tests/e2e_digifact_panel.cjs
       - name: Rediseño móvil de Nueva factura, etapas 1 y 2 (encabezado y navegación, menú de la cuenta, receptor inteligente NIT/CUI/CF/Otro, «Marcar revisado» sin certificar, 320–430 px con importes grandes)
         run: node fel/demo-facturacion/tests/e2e_rediseno.cjs
+      - name: "Tipos de documento (DTE): catálogo = base, notas con origen certificado, recibo, habilitación por empresa, certificación de tipos nuevos BLOQUEADA, selector compacto y configuración (teléfono y PC; simulado y local)"
+        run: |
+          deno test -A fel/demo-facturacion/tests/catalogo_migracion_test.ts fel/demo-facturacion/tests/tipos_documento_api_test.ts
+          node fel/demo-facturacion/tests/e2e_tipos.cjs
       - name: Versión práctica · inicio de sesión (unidad), API real (Digifact simulado, plan y saldo, plataforma, aislamiento) y navegador en PC y teléfono (PWA); simulado y local
         run: |
           deno test -A fel/demo-facturacion/tests/sesiones_test.ts fel/demo-facturacion/tests/practico_api_test.ts

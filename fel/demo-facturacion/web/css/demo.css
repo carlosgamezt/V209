@@ -219,14 +219,14 @@ body{min-height:100vh}
 /* ================= rediseño móvil de la factura: UNA pantalla, filas compactas, editor en hoja, «Más acciones», impresión ticket/carta ================= */
 :root{--nav-movil-h:64px}
 .doc-cab{align-items:center;margin:0 0 10px;gap:8px}.doc-cab h1{font-size:20px}
-.doc-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-areas:"datos side" "items side" "msg side" "proceso side";grid-template-rows:auto auto auto 1fr;gap:12px 18px;align-items:start}
-.doc-grid>.card-datos{grid-area:datos}.doc-grid>.card-items{grid-area:items}.doc-grid>.totales{grid-area:side;position:sticky;top:76px}.doc-grid>.area-msg{grid-area:msg;margin:0}.doc-grid>.area-proceso{grid-area:proceso;min-width:0}
+.doc-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-areas:"tipo side" "datos side" "items side" "msg side" "proceso side";grid-template-rows:auto auto auto auto 1fr;gap:12px 18px;align-items:start}
+.doc-grid>.tipo-card-cont{grid-area:tipo}.doc-grid>.card-datos{grid-area:datos}.doc-grid>.card-items{grid-area:items}.doc-grid>.totales{grid-area:side;position:sticky;top:76px}.doc-grid>.area-msg{grid-area:msg;margin:0}.doc-grid>.area-proceso{grid-area:proceso;min-width:0}
 .area-msg:empty{display:none}
 .card{padding:14px;gap:10px;border-radius:14px}
 .totales{padding:14px;gap:6px;border-radius:14px}
 .tot{padding:2px 0;font-size:14px}.tot-base{font-size:15px;padding-top:8px}.tot-base strong{font-size:18px}
 .tot-nota{display:block;line-height:1.35;margin-top:2px;font-size:12px}
-@media(max-width:1000px){.doc-grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"datos" "items" "side" "msg" "proceso"}.doc-grid>.totales{position:static}}
+@media(max-width:1000px){.doc-grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"tipo" "datos" "items" "side" "msg" "proceso"}.doc-grid>.totales{position:static}}
 /* ítems: filas compactas (se editan en una hoja) */
 .card-fila{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.card-fila .sel-concepto{flex:1 1 150px;max-width:260px;min-height:36px;font-size:13px}
 .lineas-d{display:flex;flex-direction:column;gap:6px}
@@ -403,7 +403,7 @@ input[readonly]{background:var(--soft);color:var(--mut)}
   /* datos del receptor e ítems forman UN solo panel (sin tarjetas separadas); el resumen y lo demás conservan su espacio */
   .doc-grid{row-gap:0}.doc-grid>.card-datos{border-radius:16px 16px 0 0;padding-bottom:6px}
   .doc-grid>.card-items{border-radius:0 0 16px 16px;border-top:1px solid var(--line);box-shadow:none}
-  .doc-grid>.totales,.doc-grid>.area-msg,.doc-grid>.area-proceso{margin-top:12px}
+  .doc-grid>.totales,.doc-grid>.area-msg,.doc-grid>.area-proceso{margin-top:12px}.doc-grid>.tipo-card-cont:not(:empty){margin-bottom:12px}
 }
 @media(max-width:360px){.rc-emision{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr)}}
 @media(max-width:340px){.rc-emision{grid-template-columns:minmax(0,1fr) minmax(0,1.32fr)}}
@@ -452,3 +452,23 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .chk-correo b{display:block;font-size:14px}.chk-correo small{display:block;color:var(--mut);font-size:12.5px;line-height:1.4}
 .correo-dg input[type=email]{min-height:44px;font-size:16px;width:100%}
 .correo-dg [hidden]{display:none}
+
+/* ---- tipos de documento (DTE): selector compacto, campos del tipo, avisos y configuración por empresa ---- */
+.tipo-fila:empty{display:none}
+.tipo-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 2px}
+.tipo-et{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.tipo-chip{font-size:15px}
+.tipo-sel{height:40px;min-height:40px;width:auto;min-width:190px;max-width:100%;font-size:16px;font-weight:700;border-radius:12px}
+.card-tipo{display:flex;flex-direction:column;gap:10px}.tipo-card-cont:empty{display:none}
+.tipo-origen{display:flex;flex-direction:column;gap:8px}.tipo-origen select,.tipo-origen input{width:100%;min-height:44px;font-size:16px}
+.origen-datos{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;padding:8px 10px;border:1px dashed var(--borde,#cbd5e1);border-radius:10px}
+.tipo-nota{font-size:12px;margin:0}
+.tag-tipo{font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid var(--borde,#cbd5e1);margin-left:6px}
+.pp-tipo-bloque{display:flex;flex-direction:column;gap:4px;margin:6px 0;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px}
+.pp-en-pruebas{font-weight:700;letter-spacing:.04em;color:#92400e}.tk-tipo{display:block;text-align:center;font-size:12px}
+.tipos-cfg-lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.tipo-cfg{display:flex;flex-direction:column;gap:8px}.tipo-cfg-cab{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tipo-cfg-ctl{display:flex;flex-direction:column;gap:8px}.tipo-cfg-ctl input[type=text],.tipo-cfg-ctl input:not([type]){width:100%;min-height:44px;font-size:16px}
+.check{display:flex;align-items:center;gap:8px;min-height:44px}
+@media (max-width:640px){.tipo-bar{padding:4px 0}.tipo-sel{flex:1 1 100%}.tipos-cfg-lista{grid-template-columns:1fr}}
+@media print{.tipo-fila,.tipo-card-cont{display:none!important}}

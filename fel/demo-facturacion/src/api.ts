@@ -5,6 +5,8 @@ import { OrquestadorDb, ProcesoCaido } from "../../proveedores/src/orquestador_d
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import { aInterno, calcular, type LineaEntrada } from "../../supabase/functions/fel-api/lib/calculo.ts";
 import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
+import { tiposDisponibles } from "./tipos_disponibles.ts";
+import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
 import type { Autorizador } from "../../proveedores/src/autorizacion_humana.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -99,7 +101,37 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     return { documento: d, lineas, operaciones, eventos, conciliaciones, alertas, artefactos, instantanea, escenario: mock.escenarioDeDocumento(docId), nombresUsuario, ...(pr ? await pr.detalleExtra(docId) : {}) };
   }
 
+  /** Tipo de documento pedido por el formulario (Factura por defecto). Valida lo que se puede validar ANTES de crear nada, para no dejar un borrador a medias: tipo conocido y disponible,
+   *  habilitado para la empresa, origen certificado entre los candidatos, motivo y tipo de recibo. La base y el servicio lo vuelven a comprobar (el guardián del documento es el definitivo). */
+  async function prevalidarTipo(a: { id: string }, b: Obj): Promise<{ tipo: string; origen: string | null; motivo: string | null; recibo: string | null; mantener?: boolean }> {
+    if (!(await tiposDisponibles(bd))) {   // base sin la propuesta de tipos: la demostración sigue como antes (solo Factura); no se consulta ninguna columna ni función nuevas
+      if (b.tipo_dte === undefined || b.tipo_dte === null || b.tipo_dte === "" || b.tipo_dte === "FACT") return { tipo: "FACT", origen: null, motivo: null, recibo: null, mantener: true };
+      throw new ErrorHttp(422, "Los tipos de documento aún no están habilitados en esta base de datos.", "regla");
+    }
+    // un cliente que no manda el tipo (versiones anteriores del formulario) NO cambia el tipo de un documento existente
+    if ((b.tipo_dte === undefined || b.tipo_dte === null) && uuidOk(b.id)) { const [d] = await bd.filas<{ tipo_dte: string }>("select tipo_dte from public.documentos where id = $1 and empresa_id = $2", [b.id, emp()]); return { tipo: d?.tipo_dte ?? "FACT", origen: null, motivo: null, recibo: null, mantener: true }; }
+    const tipo = b.tipo_dte === undefined || b.tipo_dte === null || b.tipo_dte === "" ? "FACT" : b.tipo_dte;
+    if (!esCodigoDte(tipo)) throw new ErrorHttp(400, "Tipo de documento no válido", "entrada_invalida");
+    const t = tipoDte(tipo)!;
+    if (t.disponibilidad === "pendiente") throw new ErrorHttp(422, `${t.nombre} aún no está disponible: ${t.motivoPendiente ?? "pendiente"}`, "regla");
+    const cfg = await bd.rpc("fel_tipos_empresa", { p_actor: a.id, p_empresa: emp() }) as { tipos: { codigo: string; habilitado: boolean; motivo: string | null }[] };
+    const h = cfg.tipos.find((x) => x.codigo === tipo);
+    if (!h?.habilitado) throw new ErrorHttp(422, h?.motivo ?? `${t.nombre} no está habilitado para esta empresa`, "regla");
+    const opc = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : null);
+    let origen: string | null = null, motivo: string | null = null, recibo: string | null = null;
+    if (t.requiereOrigen) {
+      if (!uuidOk(b.documento_origen_id)) throw new ErrorHttp(400, `${t.nombre}: elige el documento certificado al que hace referencia`, "entrada_invalida");
+      const cand = await bd.rpc("fel_op_documento_origenes", { p_actor: a.id, p_empresa: emp(), p_tipo: tipo, p_cliente: null, p_buscar: null }) as { id: string }[];
+      if (!cand.some((x) => x.id === b.documento_origen_id)) throw new ErrorHttp(422, "El documento de origen no existe, no está certificado o no es de un tipo permitido", "regla");
+      origen = b.documento_origen_id; motivo = opc(b.motivo_ajuste, 50);
+      if (!motivo || motivo.length < 3) throw new ErrorHttp(400, "Indica el motivo del ajuste (3 a 50 caracteres)", "entrada_invalida");
+    }
+    if (tipo === "RECI") { recibo = opc(b.tipo_recibo, 20); if (!recibo || !(TIPOS_RECIBO as readonly string[]).includes(recibo)) throw new ErrorHttp(400, `El recibo exige su tipo: ${TIPOS_RECIBO.join(", ")}`, "entrada_invalida"); }
+    return { tipo, origen, motivo, recibo };
+  }
+
   async function guardar(a: { id: string }, b: Obj) {
+    const tp = await prevalidarTipo(a, b);   // antes de tocar nada
     const lineasEntrada = b.lineas; if (!Array.isArray(lineasEntrada) || lineasEntrada.length < 1 || lineasEntrada.length > 50) throw new ErrorHttp(400, "Debe haber de 1 a 50 líneas", "entrada_invalida");
     const lineas = lineasEntrada.map((x: unknown, i: number) => {
       const l = x as Obj; const d = texto(l.descripcion, 1, 300, `Línea ${i + 1}: descripción`);
@@ -116,7 +148,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     // SAT: «CF» solo se admite en facturas por montos MENORES a Q2,500.00 (Reglamento de la Ley del IVA, art. 30 núm. 9, reformado por el Acuerdo Gubernativo 12-2023, según las preguntas frecuentes del portal SAT; el texto oficial se contrastará con un contador antes de la emisión real).
     // Aquí el monto es la base de este documento (los precios incluyen IVA; los impuestos finales siguen pendientes). Es una regla de la DEMO; no habilita la emisión real, que sigue bloqueada.
     const esReceptorCF = nuevo && !clienteId ? tipoNuevo === "CF" : clienteId && uuidOk(clienteId) ? (await bd.filas<{ t: string }>("select tipo_identificacion as t from public.clientes where id = $1 and empresa_id = $2", [clienteId, emp()]))[0]?.t === "CF" : false;
-    if (esReceptorCF && aInterno(c.base_imponible) >= aInterno("2500")) throw new ErrorHttp(422, "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).", "regla");
+    if (esReceptorCF && tp.tipo === "FACT" && aInterno(c.base_imponible) >= aInterno("2500")) throw new ErrorHttp(422, "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).", "regla");
     if (!clienteId && nuevo) {
       const tipo = tipoNuevo!; let num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
       if (tipo === "CUI") { num = normalizarCui(num); if (!RE_CUI.test(num)) throw new ErrorHttp(400, "El CUI debe tener exactamente 13 dígitos (sin letras).", "entrada_invalida"); }
@@ -128,6 +160,11 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     const doc = await bd.rpc("fel_op_documento_guardar", { p_actor: a.id, p_empresa: emp(), p_id: b.id ?? null, p_cliente: clienteId ?? null, p_fecha: fecha, p_observaciones: typeof b.observaciones === "string" && b.observaciones.trim() ? b.observaciones.trim().slice(0, 500) : null,
       p_lineas: lineas.map((l, i) => ({ orden: i + 1, ...l, importes: c.lineas[i] })), p_subtotal: c.subtotal, p_descuento_total: c.descuento_total, p_base: c.base_imponible, p_calculo: c.meta, p_version: b.id ? Number(b.version) : null }) as Obj;
     if (uuidOk(b.establecimiento_id)) await bd.rpc("fel_op_documento_establecimiento", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_est: b.establecimiento_id });
+    // el tipo se asigna DESPUÉS (la base copia el receptor y la referencia fiscal del origen y valida habilitación, origen certificado, tope y duplicados)
+    if (!tp.mantener) {
+      const [ver] = await bd.filas<{ version: number; tipo_dte: string }>("select version, tipo_dte from public.documentos where id = $1 and empresa_id = $2", [doc.id, emp()]);
+      if (tp.tipo !== "FACT" || ver.tipo_dte !== "FACT") await bd.rpc("fel_op_documento_tipo", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_tipo: tp.tipo, p_origen: tp.origen, p_motivo: tp.motivo, p_tipo_recibo: tp.recibo, p_version: ver.version });
+    }
     return doc.id as string;
   }
 
@@ -212,8 +249,34 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       if (!(await permisosDe(a)).includes("canales.ver")) throw new ErrorHttp(403, "No tienes permiso", "no_autorizado");
       return json(extras.supervisor?.salud() ?? { ok: false, en_marcha: false });
     }
+    // ---- tipos de documento: catálogo (código), habilitación y predeterminado por empresa (base), origen de las notas
+    if (m === "GET" && ruta === "/api/tipos-documento" && !(await tiposDisponibles(bd))) {   // sin la propuesta aplicada: el catálogo se ve, pero solo Factura está habilitada
+      return json({ predeterminado: "FACT", puede_configurar: false, sin_migracion: true, tipos: CATALOGO_DTE.map((t) => ({ codigo: t.codigo, nombre: t.nombre, corto: t.corto, familia: t.familia, titulo: t.tituloDocumento, disponibilidad: t.disponibilidad, certificacion_habilitada: t.certificacionHabilitada,
+        requiere_origen: t.requiereOrigen, origenes_permitidos: t.origenesPermitidos, campos_obligatorios: t.camposObligatorios, complementos: t.complementos, regimen: t.regimen.condicion, regimen_verificado: t.regimen.verificado, motivo_pendiente: t.motivoPendiente ?? null, pendientes_verificar: t.pendientesVerificar,
+        habilitado: t.codigo === "FACT", motivo_no_habilitado: t.codigo === "FACT" ? null : "Falta aplicar la migración de tipos de documento en esta base de datos", base_habilitacion: null, predeterminado: t.codigo === "FACT" })) });
+    }
+    if (((ruta === "/api/tipos-documento" && m === "POST") || (ruta === "/api/documentos/origenes" && m === "GET")) && !(await tiposDisponibles(bd))) throw new ErrorHttp(422, "Los tipos de documento aún no están habilitados en esta base de datos.", "regla");
+    if (m === "GET" && ruta === "/api/tipos-documento") {
+      const permisos = await permisosDe(a), cfg = await bd.rpc("fel_tipos_empresa", { p_actor: a.id, p_empresa: emp() }) as { tipos: { codigo: string; habilitado: boolean; motivo: string | null; base_habilitacion: string | null; predeterminado: boolean }[]; predeterminado: string };
+      return json({ predeterminado: cfg.predeterminado, puede_configurar: permisos.includes("empresa.editar"), tipos: CATALOGO_DTE.map((t) => {
+        const h = cfg.tipos.find((x) => x.codigo === t.codigo);
+        return { codigo: t.codigo, nombre: t.nombre, corto: t.corto, familia: t.familia, titulo: t.tituloDocumento, disponibilidad: t.disponibilidad, certificacion_habilitada: t.certificacionHabilitada, requiere_origen: t.requiereOrigen, origenes_permitidos: t.origenesPermitidos,
+          campos_obligatorios: t.camposObligatorios, complementos: t.complementos, regimen: t.regimen.condicion, regimen_verificado: t.regimen.verificado, motivo_pendiente: t.motivoPendiente ?? null, pendientes_verificar: t.pendientesVerificar,
+          habilitado: !!h?.habilitado, motivo_no_habilitado: h?.motivo ?? null, base_habilitacion: h?.base_habilitacion ?? null, predeterminado: !!h?.predeterminado };
+      }) });
+    }
+    if (m === "POST" && ruta === "/api/tipos-documento") {
+      const b = await cuerpo(); if (!esCodigoDte(b.tipo)) throw new ErrorHttp(400, "Tipo de documento no válido", "entrada_invalida");
+      await bd.rpc("fel_op_tipos_empresa_guardar", { p_actor: a.id, p_empresa: emp(), p_tipo: b.tipo, p_habilitado: b.habilitado === true, p_base: typeof b.base_habilitacion === "string" ? b.base_habilitacion.slice(0, 300) : null, p_predeterminado: b.predeterminado === true });
+      return json({ ok: true });
+    }
+    if (m === "GET" && ruta === "/api/documentos/origenes") {
+      const tipo = url.searchParams.get("tipo") ?? ""; if (!esCodigoDte(tipo)) throw new ErrorHttp(400, "Tipo de documento no válido", "entrada_invalida");
+      const cli = url.searchParams.get("cliente"), q = url.searchParams.get("q");
+      return json(await bd.rpc("fel_op_documento_origenes", { p_actor: a.id, p_empresa: emp(), p_tipo: tipo, p_cliente: cli && uuidOk(cli) ? cli : null, p_buscar: q ? q.slice(0, 40) : null }));
+    }
     if (m === "GET" && ruta === "/api/documentos") {
-      return json(await bd.filas("select d.id, d.numero_borrador, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [emp()]));
+      return json(await bd.filas("select d.id, d.numero_borrador, " + ((await tiposDisponibles(bd)) ? "d.tipo_dte, d.documento_origen_id, d.referencia_origen->>'serie' as origen_serie, d.referencia_origen->>'numero' as origen_numero, " : "") + "d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [emp()]));
     }
     if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)$/.exec(ruta))) return json(await detalle(id(r[1])));
     if (m === "GET" && (r = /^\/api\/artefactos\/([^/]+)$/.exec(ruta))) {

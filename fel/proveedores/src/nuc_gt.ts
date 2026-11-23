@@ -3,11 +3,13 @@
 // REGLAS DE ESTE ARCHIVO
 //  · NO calcula impuestos ni redondeos: NEXA no aplica reglas fiscales sin verificar (V1/V2). Recibe los montos YA calculados, los da con 6 decimales y solo COMPRUEBA que sean coherentes entre sí.
 //  · Todo importe viaja como TEXTO decimal (nunca float). Aritmética con enteros escalados a 10^6 (BigInt).
-//  · Solo el tipo de documento FACT está habilitado; los demás exigen complementos propios (FCAM, NCRE…) y se habilitarán uno por uno tras validarlos con Digifact.
+//  · Tipos: el catálogo central (catalogo_dte.ts) decide cuáles se pueden CONSTRUIR (FACT implementado; NCRE, NDEB y RECI en pruebas: se construyen y validan, pero NO se certifican: eso lo impide el servicio y la base). Los pendientes (FCAM, FPEQ…) se rechazan aquí.
+//    El NUC de FACT es idéntico byte a byte al de siempre; los complementos nuevos solo se añaden cuando el tipo los exige.
 //  · Los nombres de campo son EXACTOS y distinguen mayúsculas (la API es case-sensitive); «AdditionlInfo» y «AditionalData/AditionalInfo» llevan la errata del esquema oficial a propósito.
 //  · No decide si el documento «es válido» para la SAT: la API valida además reglas de negocio (identificaciones, catálogos, totales). Esto evita enviar lo que ya se sabe incorrecto.
 
-export type TipoDocGt = "FACT";
+import { tipoDte, validarReglasTipo, type ReferenciaOrigen } from "./catalogo_dte.ts";
+export type TipoDocGt = "FACT" | "NCRE" | "NDEB" | "RECI";
 export type AfiliacionIva = "GEN" | "PEQ" | "PEE" | "EXE" | "PRI" | "PEC";
 const AFILIACIONES: AfiliacionIva[] = ["GEN", "PEQ", "PEE", "EXE", "PRI", "PEC"];
 
@@ -31,6 +33,10 @@ export interface FacturaGt {
   /** Referencia interna única de la operación (GUID de 36 caracteres): va en la Adenda y permite CONCILIAR por ella (reporte diario de acuses). */
   referenciaInterna: string;
   validarReferenciaInterna?: boolean;            // VALIDAR | NO_VALIDAR (su efecto exacto está pendiente de confirmar con Digifact)
+  /** Solo NCRE/NDEB: referencia al DTE certificado de origen (copiada del documento certificado, nunca escrita a mano) y motivo del ajuste. */
+  origen?: Pick<ReferenciaOrigen, "tipo" | "autorizacion" | "fechaEmision" | "serie" | "numero" | "receptorId">; motivoAjuste?: string;
+  /** Solo RECI: Universidad | Colegio | Inmobiliaria (Adenda «Tipo», campo FA13 del NUC). */
+  tipoRecibo?: string;
 }
 export interface ErrorNuc { campo: string; mensaje: string }
 export class NucInvalido extends Error { constructor(public errores: ErrorNuc[]) { super("El documento no cumple el NUC: " + errores.map((e) => `${e.campo}: ${e.mensaje}`).join(" · ")); this.name = "NucInvalido"; } }
@@ -64,7 +70,10 @@ function validarDireccion(d: DireccionGt | undefined, base: string, e: ErrorNuc[
 
 export function validarFactura(f: FacturaGt): ErrorNuc[] {
   const e: ErrorNuc[] = [];
-  if (f.tipoDoc !== "FACT") e.push({ campo: "tipoDoc", mensaje: "solo FACT está habilitado; los demás tipos se habilitarán tras validarlos con Digifact" });
+  const td = tipoDte(f.tipoDoc);
+  if (!td || td.disponibilidad === "pendiente" || !["FACT", "NCRE", "NDEB", "RECI"].includes(f.tipoDoc)) e.push({ campo: "tipoDoc", mensaje: `el tipo «${f.tipoDoc}» no está disponible: solo FACT (implementado) y NCRE, NDEB y RECI (en pruebas) se construyen; los demás se habilitarán tras validarlos con Digifact` });
+  else for (const x of validarReglasTipo({ tipo: f.tipoDoc, fechaEmision: String(f.fechaEmision ?? ""), receptorId: f.receptor.id, esConsumidorFinal: f.receptor.tipoId === "CF",
+    origen: f.origen ? { documentoId: "", total: "0", ...f.origen } : null, motivoAjuste: f.motivoAjuste ?? null, tipoRecibo: f.tipoRecibo ?? null })) e.push(x);
   if (!FECHA.test(f.fechaEmision)) e.push({ campo: "fechaEmision", mensaje: "formato AAAA-MM-DDThh:mm:ss±hh:mm (ej. 2026-11-14T10:30:00-06:00)" });
   if (!/^[A-Z]{3}$/.test(f.moneda)) e.push({ campo: "moneda", mensaje: "código ISO 4217 de 3 letras" });
   if (!GUID.test(f.referenciaInterna)) e.push({ campo: "referenciaInterna", mensaje: "GUID de 36 caracteres (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)" });
@@ -78,7 +87,7 @@ export function validarFactura(f: FacturaGt): ErrorNuc[] {
     if (!Number.isInteger(fr.tipo) || fr.tipo < 1 || fr.tipo > 9) e.push({ campo: `emisor.frases[${i}].tipo`, mensaje: "entero de 1 a 9" });
     if (!Number.isInteger(fr.escenario) || fr.escenario < 1 || fr.escenario > 99) e.push({ campo: `emisor.frases[${i}].escenario`, mensaje: "entero de 1 a 99" });
   });
-  if (!s.frases.some((fr) => fr.tipo === 1)) e.push({ campo: "emisor.frases", mensaje: "una factura exige la frase tipo 1 (la SAT rechaza el documento sin ella)" });
+  if ((td?.exigeFraseTipo1 ?? true) && !s.frases.some((fr) => fr.tipo === 1)) e.push({ campo: "emisor.frases", mensaje: "una factura exige la frase tipo 1 (la SAT rechaza el documento sin ella)" });
   const b = s.establecimiento;
   if (!Number.isInteger(b.codigo) || b.codigo < 1 || b.codigo > 9999) e.push({ campo: "emisor.establecimiento.codigo", mensaje: "entero de 1 a 9999" });
   validarDireccion(b.direccion, "emisor.establecimiento.direccion", e, true);
@@ -127,6 +136,19 @@ export function totalIva(f: FacturaGt): string { return deMicro(f.items.reduce((
 const dir = (d: DireccionGt, paisObligatorio: boolean) => ({ Address: d.direccion, City: d.codigoPostal, District: d.municipio, State: d.departamento, ...(paisObligatorio || d.pais ? { Country: d.pais ?? "GT" } : {}) });
 const seisDec = (v: string) => deMicro(aMicro(v) ?? 0n);
 
+/** Complementos fiscales del tipo (NUC V2.0.3 §4.7.2). Vacío en FACT y RECI. NCRE/NDEB: la estructura y el orden de campos siguen el ejemplo oficial «NUC 4 - NCRE.json». */
+function complementos(f: FacturaGt): Array<Record<string, unknown>> {
+  if (f.tipoDoc !== "NCRE" && f.tipoDoc !== "NDEB") return [];
+  const o = f.origen!;
+  return [{ Code: f.tipoDoc, Type: "COMPLEMENTO", AditionalInfo: [
+    { Name: "NumeroAutorizacionDocumentoOrigen", Data: null, Value: o.autorizacion },
+    { Name: "FechaEmisionDocumentoOrigen", Data: null, Value: o.fechaEmision },
+    { Name: "MotivoAjuste", Data: null, Value: f.motivoAjuste!.trim() },
+    { Name: "NumeroDocumentoOrigen", Data: null, Value: o.numero },
+    { Name: "SerieDocumentoOrigen", Data: null, Value: o.serie },
+  ] }];
+}
+
 /** Construye el NUC JSON. Lanza NucInvalido (con la lista completa de errores) si algo no cumple. */
 export function construirNuc(f: FacturaGt): Record<string, unknown> {
   const errores = validarFactura(f); if (errores.length) throw new NucInvalido(errores);
@@ -159,6 +181,6 @@ export function construirNuc(f: FacturaGt): Record<string, unknown> {
     })),
     Totals: { TotalTaxes: { TotalTax: [{ Description: "IVA", Amount: totalIva(f) }] }, GrandTotal: { InvoiceTotal: totalFactura(f) } },
     // «AdditionalDocumentInfo» es OBLIGATORIO siempre (la API lo exige aunque el PDF no lo diga): Adenda mínima cuyo «Code» es nuestra referencia interna.
-    AdditionalDocumentInfo: { AdditionalInfo: [{ Code: f.referenciaInterna, Type: "ADENDA", AditionalInfo: [{ Name: "VALIDAR_REFERENCIA_INTERNA", Data: null, Value: f.validarReferenciaInterna ? "VALIDAR" : "NO_VALIDAR" }] }] },
+    AdditionalDocumentInfo: { AdditionalInfo: [...complementos(f), { Code: f.referenciaInterna, Type: "ADENDA", AditionalInfo: [{ Name: "VALIDAR_REFERENCIA_INTERNA", Data: null, Value: f.validarReferenciaInterna ? "VALIDAR" : "NO_VALIDAR" }, ...(f.tipoDoc === "RECI" ? [{ Name: "Tipo", Data: null, Value: f.tipoRecibo! }] : [])] }] },
   };
 }

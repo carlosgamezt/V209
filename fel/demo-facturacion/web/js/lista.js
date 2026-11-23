@@ -24,24 +24,30 @@ export function etiquetasEstado(d) {
 }
 
 export function pantallaLista(ctx) {
-  let filtro = "todas", busqueda = "", todos = [];
+  let filtro = "todas", busqueda = "", todos = [], filtroTipo = "todos", tiposDoc = null;
   const lista = h("div", { class: "lista", "aria-live": "polite" }), resumen = h("span", { class: "mut resumen-lista" });
   const puedeCrear = ctx.tiene("borradores.crear");
-  const selFiltro = h("select", { "aria-label": "Estado de las facturas", class: "sel-tipo", onchange: (e) => { filtro = e.target.value; pintar(); } });
+  const selFiltro = h("select", { "aria-label": "Estado de los documentos", class: "sel-tipo", onchange: (e) => { filtro = e.target.value; pintar(); } });
+  const selTipo = h("select", { "aria-label": "Tipo de documento", class: "sel-tipo", id: "filtro-tipo", onchange: (e) => { filtroTipo = e.target.value; pintar(); } });
+  const nombreTipo = (c) => tiposDoc?.tipos?.find((t) => t.codigo === c)?.corto ?? c;
+  function pintarFiltroTipo() {
+    const presentes = [...new Set(todos.map((d) => d.tipo_dte ?? "FACT"))];
+    poner(selTipo, h("option", { value: "todos" }, `Todos los tipos (${todos.length})`), ...presentes.map((c) => h("option", { value: c }, `${nombreTipo(c)} (${todos.filter((d) => (d.tipo_dte ?? "FACT") === c).length})`))); selTipo.value = presentes.includes(filtroTipo) ? filtroTipo : "todos"; filtroTipo = selTipo.value; selTipo.hidden = presentes.length <= 1;
+  }
   function pintarFiltro() {
     poner(selFiltro, ...FILTROS.map(([v, t]) => h("option", { value: v, selected: v === filtro }, `${t} (${todos.filter((d) => coincide(d, v)).length})`)));
     selFiltro.value = filtro;
   }
   async function cargar() {
-    try { todos = await api.documentos(); pintarFiltro(); pintar(); } catch (e) { poner(lista, h("p", { class: "err", role: "alert" }, mensajeError(e))); }
+    try { [todos, tiposDoc] = await Promise.all([api.documentos(), api.tiposDocumento().catch(() => null)]); pintarFiltro(); pintarFiltroTipo(); pintar(); } catch (e) { poner(lista, h("p", { class: "err", role: "alert" }, mensajeError(e))); }
   }
-  const visibles = () => todos.filter((d) => coincide(d, filtro) && (!busqueda || `${codigoBorrador(d.numero_borrador)} ${d.cliente_nombre ?? ""}`.toLowerCase().includes(busqueda.toLowerCase())));
+  const visibles = () => todos.filter((d) => coincide(d, filtro) && (filtroTipo === "todos" || (d.tipo_dte ?? "FACT") === filtroTipo) && (!busqueda || `${codigoBorrador(d.numero_borrador)} ${d.cliente_nombre ?? ""}`.toLowerCase().includes(busqueda.toLowerCase())));
   function pintar() {
     const datos = visibles();
-    poner(resumen, `${datos.length} de ${todos.length} facturas`);
-    poner(lista, ...(datos.length ? [h("div", { class: "fila fila-fac-cab fila-cab", "aria-hidden": "true" }, ...["Factura / Cliente", "Fecha", "Importe", "Estado", "Canal de emisión", "Acciones"].map((t, i) => h("span", { class: i === 2 ? "der" : "" }, t))), ...datos.map(fila)]
-      : [vacio("file", "No hay facturas", filtro === "todas" && !busqueda ? "Crea una factura para recorrer el proceso completo en simulación." : "Ninguna factura coincide con los filtros.",
-        puedeCrear && filtro === "todas" && !busqueda ? boton("Nueva factura", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null)]));
+    poner(resumen, `${datos.length} de ${todos.length} documentos`);
+    poner(lista, ...(datos.length ? [h("div", { class: "fila fila-fac-cab fila-cab", "aria-hidden": "true" }, ...["Documento / Cliente", "Fecha", "Importe", "Estado", "Canal de emisión", "Acciones"].map((t, i) => h("span", { class: i === 2 ? "der" : "" }, t))), ...datos.map(fila)]
+      : [vacio("file", "No hay documentos", filtro === "todas" && !busqueda ? "Crea un documento para recorrer el proceso completo en simulación." : "Ningún documento coincide con los filtros.",
+        puedeCrear && filtro === "todas" && !busqueda ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null)]));
   }
   async function revisar(d) {
     let m;
@@ -63,7 +69,7 @@ export function pantallaLista(ctx) {
     return a;
   };
   const fila = (d) => h("div", { class: "fila fila-fac", "data-factura": codigoBorrador(d.numero_borrador) },
-    h("div", { class: "celda celda-main", "data-et": "Factura" }, h("strong", { class: "mono" }, codigoBorrador(d.numero_borrador)), h("span", {}, d.cliente_nombre ?? "Sin receptor"), d.autorizacion_sat ? h("small", { class: "mono" }, d.autorizacion_sat) : h("small", {}, d.establecimiento_nombre ?? "Sin establecimiento")),
+    h("div", { class: "celda celda-main", "data-et": "Documento" }, h("strong", { class: "mono" }, codigoBorrador(d.numero_borrador)), (d.tipo_dte ?? "FACT") !== "FACT" ? h("span", { class: "tag tag-tipo", "data-tipo": d.tipo_dte, title: d.origen_serie ? `Hace referencia a la serie ${d.origen_serie}, número ${d.origen_numero}` : null }, nombreTipo(d.tipo_dte)) : null, h("span", {}, d.cliente_nombre ?? "Sin receptor"), d.autorizacion_sat ? h("small", { class: "mono" }, d.autorizacion_sat) : h("small", {}, d.establecimiento_nombre ?? "Sin establecimiento")),
     h("div", { class: "celda", "data-et": "Fecha" }, fechaLarga(String(d.fecha_emision_prevista ?? "").slice(0, 10))),
     h("div", { class: "celda der num", "data-et": "Importe" }, h("strong", {}, quetzales(d.base_imponible)), h("small", {}, "base imponible")),
     h("div", { class: "celda celda-tags", "data-et": "Estado" }, ...etiquetasEstado(d)),
@@ -72,8 +78,8 @@ export function pantallaLista(ctx) {
 
   cargar();
   return h("section", { class: "pantalla" },
-    cabecera({ icon: "file", titulo: "Facturas", subtitulo: "Facturación individual en simulación: borrador → validación → revisión → envío simulado → resultado.",
-      accion: puedeCrear ? boton("Nueva factura", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null }),
-    h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar por número o cliente…", "aria-label": "Buscar facturas", oninput: (e) => { busqueda = e.target.value.trim(); pintar(); } })), selFiltro, resumen),
+    cabecera({ icon: "file", titulo: "Documentos", subtitulo: "Facturas, notas y recibos en simulación: borrador → validación → revisión → envío simulado → resultado.",
+      accion: puedeCrear ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null }),
+    h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar por número o cliente…", "aria-label": "Buscar documentos", oninput: (e) => { busqueda = e.target.value.trim(); pintar(); } })), selFiltro, selTipo, resumen),
     lista);
 }

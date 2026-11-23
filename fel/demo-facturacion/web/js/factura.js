@@ -8,6 +8,7 @@ import { api } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
 import { panelProceso } from "./proceso.js";
 import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
+import { selectorTipo, panelTipo, problemasTipo, tipoInicial, aplicarTipo, tipoPorCodigo, tituloDocumento } from "./tipos.js";
 import { crearAutollenado, textoEstado, ETIQUETAS, RE_CUI, RE_NIT, normalizarCui, normalizarId } from "./receptor_nit.js";
 /** Etiqueta del origen del nombre (Digifact TEST / simulado / manual / consumidor final). */
 const pintarEtiqueta = (el, t) => { if (!el) return; el.hidden = !t; el.textContent = t ? ETIQUETAS[t] : ""; el.className = `nit-etiqueta${t ? ` nit-et-${t}` : ""}`; };
@@ -18,21 +19,23 @@ const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
-    try { poner(raiz, construir(id ? await api.documento(id) : null)); }
+    try { const tipos = await api.tiposDocumento(); ctx.tiposDoc = tipos; poner(raiz, construir(id ? await api.documento(id) : null, tipos)); }
     catch (e) { poner(raiz, h("p", { class: "err", role: "alert" }, mensajeError(e)), boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") })); }
   })();
   return raiz;
 
-  function construir(det) {
+  function construir(det, tipos) {
     const est = ctx.estado;
     let d = det, doc = det?.documento ?? { id: null, version: null, estado_preparacion: "borrador", estado_fiscal: "ninguno" };
     const inicial = () => ({
       cliente_id: doc.cliente_id ?? "", nuevo: false, tipo: "NIT", numero: "", nombre: "", establecimiento_id: doc.establecimiento_id ?? "",
       fecha: doc.fecha_emision_prevista ? String(doc.fecha_emision_prevista).slice(0, 10) : new Date().toISOString().slice(0, 10), observaciones: doc.observaciones ?? "",
+      ...tipoInicial(tipos, det?.documento),
       lineas: d?.lineas?.length ? d.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) })) : [],
     });
     let f = inicial(), sucio = !doc.id, intentoGuardar = false;
     let ctrl = null, ctrlModelo = null; const nit = {};   // autollenado del receptor nuevo (un controlador por modelo) y referencias vivas a sus campos
+    const tipoActual = () => tipoPorCodigo(tipos, f.tipo_dte), esNota = () => !!tipoActual()?.requiere_origen;
     const editable = () => doc.estado_preparacion === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene(doc.id ? "borradores.editar" : "borradores.crear");
 
     const cardDatos = h("div", { class: "card card-datos" }), cardItems = h("div", { class: "card card-items" });
@@ -42,7 +45,8 @@ export function pantallaFactura(ctx, id) {
     // ---------------------------------------------------------------- validación local (vista previa; el servidor y la base vuelven a validar)
     function problemas() {
       const p = [];
-      if (!f.nuevo && !f.cliente_id) p.push("Indica el receptor: escribe su NIT o CUI, o elige CF.");
+      p.push(...problemasTipo(f, tipos, { receptorCF: f.nuevo ? f.tipo === "CF" : est.clientes.find((x) => x.id === f.cliente_id)?.tipo_identificacion === "CF", base: (() => { const c0 = calcularSeguro(); return c0.ok ? c0.r.base_imponible : null; })() }));
+      if (!f.nuevo && !f.cliente_id) p.push(esNota() ? "Elige el documento de origen: la nota se dirige a su mismo receptor." : "Indica el receptor: escribe su NIT o CUI, o elige CF.");
       if (f.nuevo && f.tipo !== "CF" && !f.numero.trim()) p.push("Escribe la identificación del receptor.");
       if (f.nuevo && f.tipo !== "CF" && !f.nombre.trim()) p.push("Escribe el nombre del receptor.");
       if (f.nuevo && f.tipo !== "CF" && !/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) p.push("La identificación solo admite letras, números y guion (máximo 30).");
@@ -53,7 +57,7 @@ export function pantallaFactura(ctx, id) {
       f.lineas.forEach((l, i) => { const x = problemaLinea(l, i + 1); if (x) p.push(x.msg); });
       const c = calcularSeguro(); if (!c.ok && c.msg && !p.length) p.push(c.msg);
       const esCf = f.nuevo ? f.tipo === "CF" : est.clientes.find((x) => x.id === f.cliente_id)?.tipo_identificacion === "CF";
-      if (esCf && c.ok && aInterno(c.r.base_imponible) >= aInterno(TOPE_CF)) p.push(MENSAJE_TOPE_CF);
+      if (esCf && f.tipo_dte === "FACT" && c.ok && aInterno(c.r.base_imponible) >= aInterno(TOPE_CF)) p.push(MENSAJE_TOPE_CF);
       return p;
     }
     function calcularSeguro() {
@@ -62,14 +66,14 @@ export function pantallaFactura(ctx, id) {
       try { return { ok: true, r: calcular(f.lineas) }; } catch (e) { return { ok: false, msg: e.message }; }
     }
 
-    const abrirPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio });
+    const abrirPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio, tipos });
 
     // ---------------------------------------------------------------- pintado
     function pintarCab() {
       const [pt, ptono] = PREPARACION[doc.estado_preparacion];
       const sim = insignia("SIMULADO", "ambar"); sim.classList.add("tag-solo-pc");   // en el teléfono la franja de simulación ya lo dice
-      poner(cab, h("div", { class: "doc-tit" }, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nueva factura"),
-        h("div", { class: "celda-tags" }, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, sim)),
+      poner(cab, h("div", { class: "doc-tit" }, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nuevo documento"),
+        h("div", { class: "celda-tags" }, doc.numero_borrador && f.tipo_dte !== "FACT" ? insignia(tituloDocumento(tipos, f), "gris") : null, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, sim)),
         h("button", { type: "button", class: "btn btn-sec btn-previa", id: "previa-titulo", "aria-label": "Vista previa", title: "Vista previa e impresión", onclick: abrirPrevia }, icono("eye"), h("span", { class: "bp-txt" }, "Vista previa")));
     }
     // Q0.00 se acepta SOLO en la demostración simulada (decisión de DEMO); nunca para certificar de verdad
@@ -81,7 +85,7 @@ export function pantallaFactura(ctx, id) {
     const textoDe = (t) => (t === "CUI" ? "CUI (13 dígitos)" : t === "CF" ? "CF" : t === "EXT" ? "Identificación del extranjero" : "NIT del receptor");
     let verObs = false;
     function pintarReceptor() {
-      const ed = editable(); nit.render = null;
+      const ed = editable() && !esNota(); nit.render = null;   // en una nota el receptor es el del documento de origen
       const cambio = () => { sucio = true; pintarBarra(); pintarTotales(); };
       const asegurarCtrl = () => {
         if (ctrl && ctrlModelo === f) return; ctrlModelo = f;
@@ -277,7 +281,7 @@ export function pantallaFactura(ctx, id) {
       if (puedeRevisar && principal.id !== "revisar") items.push({ t: "Marcar como revisado", i: "circleCheck", id: "mi-revisar", f: () => cambiar("revisado"), off: sucio, tip: "Guarda los cambios antes de revisar" });
       if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) items.push({ t: "Volver a borrador", i: "undo", id: "mi-borrador", f: () => cambiar("borrador") });
       if (doc.id && prep !== "archivado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.archivar")) items.push({ t: "Archivar", i: "archive", id: "mi-archivar", f: archivar, peligro: true });
-      items.push({ t: "Volver a facturas", i: "undo", id: "mi-volver", f: () => ctx.ir("/") });
+      items.push({ t: "Volver a documentos", i: "undo", id: "mi-volver", f: () => ctx.ir("/") });
       const menu = h("div", { class: "menu-mas", role: "menu", "aria-label": "Más acciones", hidden: true },
         ...items.map((x) => h("button", { type: "button", role: "menuitem", class: `mi${x.peligro ? " mi-peligro" : ""}`, id: x.id, disabled: !!x.off, title: x.off ? x.tip : null, onclick: () => { cerrar(); x.f(); } }, icono(x.i), h("span", {}, x.t))));
       const bMas = h("button", { type: "button", class: "btn btn-sec btn-mas", id: "mas-acciones", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "Más acciones", onclick: (e) => { e.stopPropagation(); menu.hidden ? abrir() : cerrar(); } }, h("span", {}, "Más"), h("span", { class: "mas-largo" }, " acciones"), h("span", { "aria-hidden": "true", class: "mas-flecha" }, "▴"));
@@ -304,6 +308,7 @@ export function pantallaFactura(ctx, id) {
       try {
         const nuevo = !doc.id;
         const cuerpo = { id: doc.id, version: doc.version, establecimiento_id: f.establecimiento_id, fecha: f.fecha, observaciones: f.observaciones, lineas: f.lineas,
+          tipo_dte: f.tipo_dte, documento_origen_id: f.documento_origen_id || undefined, motivo_ajuste: f.motivo_ajuste || undefined, tipo_recibo: f.tipo_recibo || undefined,
           ...(f.nuevo ? { cliente_nuevo: { tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre } } : { cliente_id: f.cliente_id }) };
         const r = await api.guardar(cuerpo); await ctx.recargarEstado(); toast(`Borrador ${codigoBorrador(r.documento.numero_borrador)} guardado`);
         if (nuevo) { ctx.ir(`/f/${r.documento.id}`, { reemplazar: true }); return; }
@@ -312,7 +317,7 @@ export function pantallaFactura(ctx, id) {
     }
     async function validar() {
       err.textContent = "";
-      try { const r = await api.validar(doc.id); r.ok ? toast("El proveedor simulado valida el documento") : (err.textContent = `El proveedor no valida el documento: ${r.errores.map((x) => x.mensaje).join(" · ")}`); } catch (e) { err.textContent = mensajeError(e); }
+      try { const r = await api.validar(doc.id); r.ok ? toast(f.tipo_dte === "FACT" ? "El proveedor simulado valida el documento" : `El proveedor simulado valida el documento (${tipoActual()?.nombre ?? ""}: en pruebas, aún no se certifica)`) : (err.textContent = `El proveedor no valida el documento: ${r.errores.map((x) => x.mensaje).join(" · ")}`); } catch (e) { err.textContent = mensajeError(e); }
     }
     async function cambiar(estado, motivo) {
       err.textContent = "";
@@ -320,10 +325,16 @@ export function pantallaFactura(ctx, id) {
     }
     async function archivar() { const m = await pedirMotivo({ titulo: "Archivar factura", texto: "Archivar es una decisión interna: no es una anulación fiscal.", confirmar: "Archivar" }); if (m) cambiar("archivado", m); }
 
+    const barraTipo = h("div", { class: "tipo-fila" }), cardTipo = h("div", { class: "tipo-card-cont" });
+    function pintarTipo() {
+      poner(barraTipo, selectorTipo({ tipos, f, editable: editable(), alCambiar: (c) => { aplicarTipo(f, tipos, c); if (!tipoPorCodigo(tipos, c)?.requiere_origen) nit.render = null; sucio = true; todo(); } }));
+      poner(cardTipo, panelTipo({ tipos, f, editable: editable(), ctx, cambio: () => { sucio = true; pintarBarra(); pintarTotales(); },
+        aplicarOrigen: (c) => { if (c) { f.cliente_id = c.cliente_id; f.nuevo = false; } nit.render = null; pintarReceptor(); poner(cardDatos, cuerpoReceptor); } }));
+    }
     const avisoDoc = h("div", { class: "aviso-doc" });   // se vuelve a pintar con cada cambio de estado (anulación, conciliación…)
     function pintarAviso() { poner(avisoDoc, !editable() && doc.id ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, doc.estado_fiscal === "anulado" ? "Documento ANULADO (simulación): es definitivo y no se puede editar ni volver a emitir." : doc.estado_fiscal === "anulacion_solicitada" ? "Anulación solicitada: queda pendiente de conciliar con el proveedor. El documento no se puede editar." : doc.estado_fiscal !== "ninguno" ? "Este documento tiene vida fiscal (simulada) y su contenido ya no se puede editar." : doc.estado_preparacion === "borrador" ? "Tu rol no permite editar este borrador." : "El contenido está congelado porque fue revisado. Vuelve a borrador para editarlo.")) : null); }
     function todo() {
-      pintarAviso(); pintarCab(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
+      pintarAviso(); pintarCab(); pintarTipo(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
       poner(cardDatos, cuerpoReceptor);
       poner(cardItems, h("div", { class: "card-fila" }, h("h2", { class: "card-t" }, "Ítems"), cuerpoCatalogo()), cuerpoLineas);
     }
@@ -331,8 +342,8 @@ export function pantallaFactura(ctx, id) {
     // no perder lo escrito por un cierre o una recarga accidental de la página
     const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", avisoSalir);
-    return h("div", { class: "pf" }, cab,
+    return h("div", { class: "pf" }, cab, barraTipo,
       avisoDoc,
-      h("div", { class: "doc-grid" }, cardDatos, cardItems, totales, err, proceso), barra);
+      h("div", { class: "doc-grid" }, cardTipo, cardDatos, cardItems, totales, err, proceso), barra);
   }
 }

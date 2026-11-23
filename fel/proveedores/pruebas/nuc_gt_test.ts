@@ -78,7 +78,7 @@ Deno.test("NUC: rechaza lo que ya se sabe incorrecto y reporta TODOS los errores
   assert.ok(cam((f) => { f.emisor.afiliacionIva = "XXX" as never; }).includes("emisor.afiliacionIva"));
   assert.ok(cam((f) => { f.fechaEmision = "2026-11-14"; }).includes("fechaEmision"));
   assert.ok(cam((f) => { f.referenciaInterna = "corta"; }).includes("referenciaInterna"));
-  assert.ok(cam((f) => { f.tipoDoc = "NCRE" as never; }).includes("tipoDoc"));
+  assert.ok(cam((f) => { f.tipoDoc = "FCAM" as never; }).includes("tipoDoc"));
   assert.ok(cam((f) => { f.items = []; }).includes("items"));
   assert.ok(cam((f) => { f.emisor.establecimiento.direccion.codigoPostal = ""; }).includes("emisor.establecimiento.direccion.codigoPostal"));
   assert.ok(cam((f) => { f.receptor = { tipoId: "CUI", id: "123", nombre: "X Y" }; }).includes("receptor.id"));

@@ -12,10 +12,11 @@
 //  · Una certificación válida se APLICA al documento (estado fiscal, serie, número y autorización del certificador; nunca inventados) de forma atómica e idempotente, y los XML/PDF REALES se guardan y se sirven solo a su empresa.
 //  · Nada de credenciales, tokens ni cuerpos crudos en los resultados ni en la auditoría.
 import { ErrorDigifact, type ArtefactosB64, type DigifactGt } from "./digifact_gt.ts";
+import { puedeCertificar, tipoDte } from "./catalogo_dte.ts";
 import { construirNuc, aMicro, deMicro, validarFactura, totalFactura, type EmisorGt, type FacturaGt, type ItemGt, type ReceptorGt } from "./nuc_gt.ts";
 
-export type CodigoFelGt = "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO" | "PREVUELO";
-const STATUS: Record<CodigoFelGt, number> = { NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502, PREVUELO: 503 };
+export type CodigoFelGt = "TIPO_NO_HABILITADO" | "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO" | "PREVUELO";
+const STATUS: Record<CodigoFelGt, number> = { TIPO_NO_HABILITADO: 422, NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502, PREVUELO: 503 };
 export class ErrorFelGt extends Error {
   constructor(public codigo: CodigoFelGt, mensaje: string, public errores?: { campo: string; mensaje: string }[]) { super(mensaje); this.name = "ErrorFelGt"; }
   get status(): number { return STATUS[this.codigo]; }
@@ -28,6 +29,10 @@ export interface ContextoFel { empresaId: string; actorId: string; permisos: rea
 export interface DocumentoFel {
   id: string; empresaId: string; estadoPreparacion: string; estadoFiscal: string;
   receptor: ReceptorGt;
+  /** Tipo de DTE del documento (catálogo central). Ausente = «FACT» (documentos de antes de existir el selector). */
+  tipoDte?: "FACT" | "NCRE" | "NDEB" | "RECI" | string;
+  /** Solo notas: referencia al documento CERTIFICADO de origen (leída de la base, no escrita por el usuario) y motivo del ajuste. Solo recibos: su tipo. */
+  origen?: FacturaGt["origen"]; motivoAjuste?: string; tipoRecibo?: string;
   lineas: { tipo: "Bien" | "Servicio"; descripcion: string; cantidad: string; precioUnitario: string; descuento: string; unidad?: string }[];
 }
 
@@ -214,15 +219,22 @@ export class ServicioFelGt {
     try { factura = this.#factura(doc, e.emisor, referencia, o.fechaEmision ?? fechaGt(this.#ahora()), correoVal); }
     catch (x) { if (x instanceof ErrorFelGt && x.errores) errores.push(...x.errores); else throw x; }
     if (factura) errores.push(...validarFactura(factura));
-    return { ok: errores.length === 0, errores, total: factura ? totalFactura(factura) : null, huellaEmisor: e.huella };
+    const tipo = doc.tipoDte ?? "FACT";
+    return { ok: errores.length === 0, errores, total: factura ? totalFactura(factura) : null, huellaEmisor: e.huella, tipo, certificable: puedeCertificar(tipo),
+      ...(puedeCertificar(tipo) ? {} : { aviso: `${tipoDte(tipo)?.nombre ?? tipo}: solo validación y vista previa; la certificación de este tipo aún no está habilitada (${tipoDte(tipo)?.motivoPendiente ?? "pendiente"})` }) };
   }
 
   /** ¿Pasó la vigencia de la preparación? Se cuenta desde la última renovación (o la creación). */
   #vencida(op: OperacionGt, ahoraMs: number): boolean { return ahoraMs - op.actualizada > (this.d.preparadaCaducaMs ?? 30 * 60_000); }
 
   /* ---------------------------------------------------------------- 3. preparación (guarda la operación; NO envía) */
+  /** Un tipo que no está «implementado» NO se prepara ni se certifica (ni TEST ni real): solo se valida y se previsualiza. La base repite este bloqueo (fel_tipos_dte.certificacion_habilitada). */
+  #exigirTipoCertificable(doc: DocumentoFel) {
+    const t = doc.tipoDte ?? "FACT";
+    if (!puedeCertificar(t)) throw new ErrorFelGt("TIPO_NO_HABILITADO", `${tipoDte(t)?.nombre ?? t}: la certificación de este tipo de documento aún no está habilitada (solo validación y vista previa)`);
+  }
   async preparar(ctx: ContextoFel, doc: DocumentoFel, o: { correo?: unknown } = {}): Promise<ResumenPreparacion> {
-    this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc);
+    this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc); this.#exigirTipoCertificable(doc);
     const correo = this.#correo(o.correo);   // solo se valida y se repite enmascarado: el correo NO entra en la huella, así que la referencia y la operación preparada no cambian
     const { emisor } = this.#canal(ctx);
     const previas = await this.d.almacen.deDocumento(ctx.empresaId, doc.id);
@@ -262,7 +274,7 @@ export class ServicioFelGt {
 
   /* ---------------------------------------------------------------- 4. certificación en TEST (confirmación manual) */
   async certificar(ctx: ContextoFel, doc: DocumentoFel, c: { operacionId: unknown; confirmacion: unknown; referencia: unknown; huellaEmisor: unknown; correo?: unknown }) {
-    this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc);
+    this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc); this.#exigirTipoCertificable(doc);
     if (typeof c.operacionId !== "string") throw new ErrorFelGt("ENTRADA", "Falta la operación preparada");
     const op0 = await this.d.almacen.obtener(ctx.empresaId, c.operacionId); if (!op0 || op0.documentoId !== doc.id) throw new ErrorFelGt("NO_ENCONTRADO", "Operación no encontrada");
     // reutilización: lo que ya se envió NO se vuelve a enviar nunca
@@ -450,6 +462,8 @@ export class ServicioFelGt {
       if (total < 0n) throw new ErrorFelGt("VALIDACION", `Línea ${i + 1}: el descuento supera el importe`, [{ campo: `lineas[${i}].descuento`, mensaje: "supera el importe de la línea" }]);
       return { tipo: l.tipo, descripcion: l.descripcion, cantidad: l.cantidad, ...(l.unidad ? { unidad: l.unidad } : {}), precioUnitario: l.precioUnitario, descuento: l.descuento || "0", impuestos: politica(total, emisor), totalItem: deMicro(total) };
     });
-    return { tipoDoc: "FACT", fechaEmision, moneda: "GTQ", emisor, receptor: correo ? { ...doc.receptor, correo } : doc.receptor, items, referenciaInterna: referencia };
+    const tipo = (doc.tipoDte ?? "FACT") as FacturaGt["tipoDoc"];
+    return { tipoDoc: tipo, fechaEmision, moneda: "GTQ", emisor, receptor: correo ? { ...doc.receptor, correo } : doc.receptor, items, referenciaInterna: referencia,
+      ...(doc.origen ? { origen: doc.origen } : {}), ...(doc.motivoAjuste ? { motivoAjuste: doc.motivoAjuste } : {}), ...(doc.tipoRecibo ? { tipoRecibo: doc.tipoRecibo } : {}) };
   }
 }

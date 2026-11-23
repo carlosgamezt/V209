@@ -5,6 +5,7 @@ import { h, boton, modal, quetzales, fechaLarga } from "/app/js/ui.js";
 import { descargarArchivo } from "./descarga.js";
 import { calcular } from "/app/js/calculo.js";
 import { codigoBorrador } from "/app/js/formato.js";
+import { tipoPorCodigo } from "./tipos.js";
 
 export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
   const est = ctx.estado, emp = est.empresa;
@@ -22,6 +23,15 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
     lineas = det.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) }));
     try { c = calcular(lineas); } catch { c = null; }
   }
+  // tipo de documento: título (Factura por defecto), referencia de las notas y aviso del recibo
+  const codTipo = f?.tipo_dte ?? doc.tipo_dte ?? "FACT", tp = tipoPorCodigo(ctx.tiposDoc, codTipo), tit = tp?.titulo ?? "Factura", distinto = codTipo !== "FACT";
+  const ro = f ? (f.origen ? { serie: f.origen.serie, numero: f.origen.numero, fecha: f.origen.fecha_emision, tipo: f.origen.tipo ?? "FACT" } : null)
+    : doc.referencia_origen ? { serie: doc.referencia_origen.serie, numero: doc.referencia_origen.numero, fecha: doc.referencia_origen.fecha_emision, tipo: doc.referencia_origen.tipo } : null;
+  const motivoAj = f ? f.motivo_ajuste : doc.motivo_ajuste, tipoRec = f ? f.tipo_recibo : doc.tipo_recibo;
+  const bloqueTipo = distinto ? h("div", { class: "pp-tipo-bloque", "data-tipo-doc": codTipo },
+    ro ? h("div", { class: "pp-ref-origen" }, h("strong", {}, `${tit} · hace referencia a `), `${ro.tipo} serie ${ro.serie} · número ${ro.numero}${ro.fecha ? ` · ${ro.fecha}` : ""}`, motivoAj ? ` · Motivo: ${motivoAj}` : "") : null,
+    codTipo === "RECI" ? h("div", { class: "pp-ref-origen" }, h("strong", {}, `Recibo${tipoRec ? " " + tipoRec : ""} · `), "este documento NO es una factura") : null,
+    tp?.disponibilidad === "en_pruebas" ? h("div", { class: "pp-en-pruebas" }, "EN PRUEBAS · no certificable todavía") : null) : null;
   const anu = doc.estado_fiscal === "anulado" ? "anulado" : doc.estado_fiscal === "anulacion_solicitada" ? "solicitada" : null;   // marca visible de anulación (hecho confirmado / pendiente de conciliar)
   const certificado = ["certificado", "anulacion_solicitada", "anulado"].includes(doc.estado_fiscal) && doc.autorizacion_sat;
   const textoAnu = anu === "anulado" ? "DOCUMENTO ANULADO" : "ANULACIÓN SOLICITADA · PENDIENTE";
@@ -35,7 +45,7 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
     return h("div", { class: `papel papel-ticket${anu ? " papel-" + anu : ""}`, "data-vista": "previa", "data-formato": "ticket" }, bandaAnu, selloAnu,
       h("div", { class: "tk-banda" }, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, certificado ? (sim ? "Certificado en SIMULACIÓN" : "Certificado en PRUEBAS (TEST)") + (anu === "anulado" ? " · ANULADO" : anu ? " · anulación pendiente" : "") : "Vista previa NO certificada")),
       h("strong", { class: "tk-razon" }, emp.nombre), h("small", {}, `NIT ${emp.nit} (ficticio)`), h("small", {}, establecimiento?.direccion ?? emp.direccion ?? ""),
-      h("div", { class: "tk-meta" }, h("strong", { class: "pp-ref" }, referencia), h("small", {}, fecha ? fechaLarga(fecha) : "—")),
+      h("div", { class: "tk-meta" }, h("strong", { class: "pp-ref" }, referencia), h("small", {}, fecha ? fechaLarga(fecha) : "—")), distinto ? h("strong", { class: "tk-tipo" }, tit.toUpperCase()) : null, bloqueTipo,
       certificado ? h("small", { class: "mono" }, `Serie ${doc.serie} · Número ${doc.numero_fiscal}`) : null, certificado ? h("small", { class: "mono" }, `${sim ? "Autorización simulada" : "Autorización (pruebas)"} ${doc.autorizacion_sat}`) : null,
       h("hr", {}), h("small", { class: "mut" }, "Receptor"), h("strong", {}, cliente ? cliente.nombre : "— sin receptor —"), cliente ? h("small", {}, cliente.id) : null, h("hr", {}),
       ...lineas.map((l, i) => h("div", { class: "tk-it" }, h("strong", {}, l.descripcion || "—"), h("div", { class: "tk-nn" }, h("span", {}, `${String(l.cantidad).replace(/\.?0+$/, "") || "0"} × ${l.precio_unitario ? quetzales(l.precio_unitario) : "—"}${l.descuento_tipo === "ninguno" ? "" : l.descuento_tipo === "porcentaje" ? ` · −${l.descuento_valor}%` : ` · −${quetzales(l.descuento_valor)}`}`), h("strong", { class: "num" }, c ? quetzales(c.lineas[i]?.neto) : "—")))),
@@ -48,11 +58,12 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
       h("div", { class: "pp-emisor" }, h("span", { class: "pp-logo", "aria-hidden": "true" }, "N"),
         h("div", {}, h("strong", { class: "pp-razon" }, emp.nombre), dato("NIT", `${emp.nit} (ficticio)`), dato("Dirección", establecimiento?.direccion ?? emp.direccion), dato("Teléfono", emp.telefono), dato("Correo", emp.correo),
           dato("Establecimiento", establecimiento ? `${establecimiento.codigo_sat} · ${establecimiento.nombre}` : "Sin establecimiento"))),
-      h("div", { class: "papel-tipo" }, h("span", { class: "pp-tipo" }, anu === "anulado" ? "Factura · ANULADA (simulación)" : anu ? "Factura · anulación pendiente (simulación)" : certificado ? "Factura · certificada en SIMULACIÓN" : "Factura · vista previa NO certificada"),
+      h("div", { class: "papel-tipo" }, h("span", { class: "pp-tipo" }, anu === "anulado" ? `${tit} · ANULADA (simulación)` : anu ? `${tit} · anulación pendiente (simulación)` : certificado ? `${tit} · certificada en SIMULACIÓN` : `${tit} · vista previa NO certificada`),
         h("strong", { class: "pp-ref" }, referencia), h("small", {}, "Número interno de borrador"),
         dato("Fecha de emisión", fecha ? fechaLarga(fecha) : "—"), dato("Moneda", "GTQ – Quetzal"),
         certificado ? h("small", { class: "mono" }, `Serie ${doc.serie} · Número ${doc.numero_fiscal}`) : h("small", {}, "Sin serie, número ni autorización oficiales"),
         certificado ? h("small", { class: "mono" }, `Autorización ${doc.autorizacion_sat}`) : null)),
+    bloqueTipo,
     h("div", { class: "pp-banda" }, "Datos del comprador"),
     h("div", { class: "papel-rec" }, cliente ? [dato("Identificación", cliente.id), dato("Nombre / Razón social", cliente.nombre), dato("Dirección", cliente.direccion || "—")] : h("p", { class: "mut" }, "— sin receptor —")),
     h("div", { class: "papel-scroll" }, h("table", { class: "papel-tabla" }, h("thead", {}, h("tr", {}, ...["No.", "Descripción", "Cantidad", "Precio unitario (Q)", "Descuento", "Total (Q)"].map((t, i) => h("th", { class: i > 1 ? "der" : "" }, t)))),

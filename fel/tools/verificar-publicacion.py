@@ -309,7 +309,18 @@ else: mal("[migración 29] falta la etapa 3 o sus precondiciones en supabase-hos
 # ---- correo de facturas (propio, con Resend): la propuesta del historial vive fuera de supabase/migrations y NINGUNA etapa de publicación lo conoce todavía (nada de correo real se publica sin autorización)
 if os.path.exists("fel/docs/migracion-correo/20261121000100_fel_correo_envios.sql") and not any("correo" in m for m in _mig): ok("[correo] la propuesta del historial de envíos está en docs/migracion-correo, fuera de supabase/migrations")
 else: mal("[correo] la propuesta del historial de envíos debe vivir en docs/migracion-correo y no en supabase/migrations")
+# ---- tipos de documento (DTE): igual que el correo, la PROPUESTA de migración vive fuera de supabase/migrations, NINGUNA etapa de publicación la conoce y no habilita certificar nada nuevo
+_pt = "fel/docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql"
+if os.path.exists(_pt) and not any("tipos_documento" in m for m in _mig): ok("[tipos] la propuesta de tipos de documento está en docs/migracion-tipos-documento, fuera de supabase/migrations (el conjunto de 29 no cambia)")
+else: mal("[tipos] la propuesta de tipos de documento debe vivir en docs/migracion-tipos-documento y no en supabase/migrations")
+_ptc = open(_pt, encoding="utf-8").read() if os.path.exists(_pt) else ""
+if _ptc and re.findall(r"\('(?:FACT|[A-Z]{4})',[^\n]*?'(?:implementado|en_pruebas|pendiente)',\s*true", _ptc) == ["('FACT', 'Factura', 'factura', 'implementado', true"] and "certificacion_habilitada or disponibilidad = 'implementado'" in _ptc: ok("[tipos] en la propuesta solo FACT tiene la certificación habilitada y la tabla impide habilitar un tipo que no esté implementado")
+else: mal("[tipos] la propuesta habilita certificar un tipo distinto de FACT o perdió su restricción")
+if _ptc and not re.search(r"digifact_operaciones[^;]*\b(alter|drop|delete|update|truncate)\b", _ptc, re.I) and not re.search(r"\bgrant\b[^;]*\bto\b[^;]*\b(anon|authenticated)\b[^;]*function|grant execute on function[^;]*\bto\b[^;]*(anon|authenticated)", _ptc, re.I): ok("[tipos] la propuesta no toca la tabla de la migración 29 ni abre funciones a anon/authenticated")
+else: mal("[tipos] la propuesta toca la tabla de la 29 o abre funciones a la API")
 _pub = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml", "fel/tools/supabase-hospedado.sh") if os.path.exists(f))
+if not re.search(r"migracion-tipos-documento|fel_tipos_dte|FEL_TIPOS", _pub): ok("[tipos] la publicación (scripts y flujo) no conoce la propuesta de tipos de documento")
+else: mal("[tipos] la publicación menciona la propuesta de tipos de documento")
 if not re.search(r"RESEND|FEL_CORREO|migracion-correo", _pub): ok("[correo] la publicación (scripts y flujo) no conoce el correo: ni claves de Resend ni la propuesta de migración")
 else: mal("[correo] un script o flujo de publicación menciona el correo: requiere autorización expresa")
 

@@ -1,7 +1,7 @@
-// Ayudas de las pruebas de navegador para el receptor INTELIGENTE de «Nueva factura»: tipo con control segmentado, un solo campo de identificación y sugerencias de clientes guardados.
+// Ayudas de las pruebas de navegador para el receptor INTELIGENTE de «Nuevo documento»: tipo con control segmentado, un solo campo de identificación y sugerencias de clientes guardados.
 const ID = 'input[aria-label="Identificación del receptor"]', NOMBRE = '[aria-label="Nombre del receptor"]';
 const SEG = (t) => `.seg-tipo [role="radio"][data-tipo="${t}"]`;
-/** Espera a que cargue «Nueva factura» (el campo de identificación del receptor). */
+/** Espera a que cargue «Nuevo documento» (el campo de identificación del receptor). */
 const esperarNueva = (p) => p.waitForSelector(ID);
 /** Tipo de identificación seleccionado en el control segmentado («NIT», «CUI», «CF» o «EXT»). */
 const tipoActual = (p) => p.locator('.seg-tipo [role="radio"][aria-checked="true"]').getAttribute("data-tipo");

@@ -425,3 +425,38 @@ Deno.test("renovación: una operación «enviando», «certificada» o «descono
     assert.equal(m.llamadas.length, 0);
   }
 });
+
+/* ---------------------------------------------------------------- tipos de documento (catálogo): solo FACT certifica; los demás se validan y se previsualizan */
+const ORIGEN_NOTA = { tipo: "FACT", autorizacion: AUT, fechaEmision: "2026-11-01", serie: "BDE0DEC2", numero: "5", receptorId: "CF" };
+const docTipo = (tipoDte: string, extra: Partial<DocumentoFel> = {}) => doc(EMPRESA_A, "dt-" + tipoDte, { tipoDte, ...extra });
+
+Deno.test("tipos: un documento sin tipo es FACT y su validación sigue igual (certificable, sin aviso)", async () => {
+  const m = mundo(); const r = await m.s.validar(ctx(), doc());
+  assert.equal(r.ok, true); assert.equal(r.tipo, "FACT"); assert.equal(r.certificable, true); assert.equal("aviso" in r, false);
+  const r2 = await m.s.validar(ctx(), docTipo("FACT")); assert.deepEqual({ ...r2 }, { ...r }, "FACT explícito = FACT implícito");
+});
+Deno.test("tipos: NCRE/NDEB/RECI se validan con sus reglas propias sin tocar la red, y avisan que aún no certifican", async () => {
+  const m = mundo();
+  for (const d of [docTipo("NCRE", { origen: ORIGEN_NOTA, motivoAjuste: "Devolución de mercadería" }), docTipo("NDEB", { origen: ORIGEN_NOTA, motivoAjuste: "Cargo adicional" }),
+    docTipo("RECI", { tipoRecibo: "Colegio", receptor: { tipoId: "NIT", id: "44653948", nombre: "RECEPTOR" } })]) {
+    const r = await m.s.validar(ctx(), d); assert.equal(r.ok, true, d.tipoDte + " " + JSON.stringify(r.errores)); assert.equal(r.certificable, false); assert.match(String(r.aviso), /solo validación y vista previa/);
+  }
+  assert.equal(m.llamadas.length, 0, "validar no llama a Digifact"); assert.equal(m.envios(), 0);
+  // reglas propias: una nota sin origen o un recibo sin tipo NO son válidos
+  assert.equal((await m.s.validar(ctx(), docTipo("NCRE"))).ok, false);
+  assert.ok((await m.s.validar(ctx(), docTipo("NCRE", { origen: ORIGEN_NOTA }))).errores.some((e) => e.campo === "motivo_ajuste"));
+  assert.ok((await m.s.validar(ctx(), docTipo("RECI", { receptor: { tipoId: "NIT", id: "44653948", nombre: "R" } }))).errores.some((e) => e.campo === "tipo_recibo"));
+  assert.ok((await m.s.validar(ctx(), docTipo("FCAM"))).errores.some((e) => e.campo === "tipoDoc"), "un tipo pendiente no es válido");
+});
+Deno.test("tipos: preparar y certificar un tipo no implementado se RECHAZAN antes de guardar o enviar nada (ni TEST ni real)", async () => {
+  const m = mundo();
+  for (const t of ["NCRE", "NDEB", "RECI", "FCAM", "FPEQ"]) {
+    const d = docTipo(t, { origen: ORIGEN_NOTA, motivoAjuste: "Devolución", tipoRecibo: "Colegio" });
+    await rechaza(m.s.preparar(ctx(), d), "TIPO_NO_HABILITADO");
+    await rechaza(m.s.certificar(ctx(), d, { operacionId: "x", confirmacion: CONFIRMACION_TEST, referencia: "y", huellaEmisor: HUELLA }), "TIPO_NO_HABILITADO");
+    assert.deepEqual(await m.almacen.deDocumento(EMPRESA_A, d.id), [], "no se guardó ninguna operación");
+  }
+  assert.equal(m.llamadas.length, 0); assert.equal(m.envios(), 0, "no se envió nada a Digifact");
+  // FACT sigue pudiendo prepararse
+  const p = await m.s.preparar(ctx(), doc()); assert.ok(p.operacionId);
+});

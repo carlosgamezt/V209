@@ -10,7 +10,11 @@ export interface DatosPdf { empresa: string; nit: string; receptor: string; rece
   lineas: { descripcion: string; cantidad: string; precio: string; neto: string }[]; subtotal: string; descuento: string; base: string;
   formato?: FormatoPdf; modo?: ModoPdf; impuestos?: string; total?: string;
   /** Marca de anulación: «anulado» (hecho confirmado, definitivo) o «solicitada» (pendiente de conciliar). `fechaAnulacion` ya viene formateada dd/mm/aaaa. */
-  anulacion?: "anulado" | "solicitada"; fechaAnulacion?: string }
+  anulacion?: "anulado" | "solicitada"; fechaAnulacion?: string;
+  /** Tipo de documento (catálogo central). Sin él se rotula «Factura» como siempre. `enPruebas`: el tipo se puede elaborar y ver, pero NO se certifica todavía. */
+  tipo?: { codigo: string; titulo: string; enPruebas?: boolean;
+    /** Solo notas: referencia al documento certificado de origen (copiada por la base) y motivo del ajuste. */ origen?: { serie: string; numero: string; fecha: string; tipo: string; motivo?: string };
+    /** Solo recibos. */ tipoRecibo?: string } }
 
 export const ANCHO_TICKET = 226;   // 80 mm ≈ 226,8 pt
 export const CARTA = { w: 612, h: 792 };
@@ -81,6 +85,12 @@ function carta(d: DatosPdf, modo: ModoPdf, sim: boolean): Uint8Array {
   }
   c.push(T(48, 77, d.empresa, 14, true), T(48, 92, `NIT ${d.nit}`, 10), T(380, 77, oficial ? "Documento tributario electrónico" : `Borrador ${d.numeroBorrador}`, 10, true), T(380, 92, `Fecha: ${d.fecha}`, 10));
   c.push(T(48, 120, "Receptor", 9, true, 0.4), T(48, 134, d.receptor, 11, true), T(48, 148, d.receptorId, 10), T(380, 120, "Estado", 9, true, 0.4), T(380, 134, d.estado, 11, true));
+  if (d.tipo && d.tipo.codigo !== "FACT") {   // tipo distinto de Factura: se rotula con claridad (nota, recibo) y, en una nota, la referencia al documento de origen
+    c.push(T(380, 106, d.tipo.titulo.toUpperCase(), 10, true));
+    if (d.tipo.origen) { c.push(T(48, 162, `Hace referencia a ${d.tipo.origen.tipo} · Serie ${d.tipo.origen.serie} · Número ${d.tipo.origen.numero} · ${d.tipo.origen.fecha}`, 8.5, true, 0.3)); if (d.tipo.origen.motivo) c.push(T(48, 174, `Motivo: ${d.tipo.origen.motivo}`, 8.5, false, 0.3)); }
+    if (d.tipo.tipoRecibo) c.push(T(48, 162, `Recibo ${d.tipo.tipoRecibo} · este documento NO es una factura`, 8.5, true, 0.3));
+    if (d.tipo.enPruebas) c.push(T(380, 162, "EN PRUEBAS · no certificable", 8.5, true, 0.3));
+  }
   if (d.serie || d.numero) c.push(T(380, 148, `Serie ${d.serie ?? "-"} · Número ${d.numero ?? "-"}`, 10));
   if (d.autorizacion) c.push(T(380, 162, `${ROT_AUT(modo, sim)}: ${d.autorizacion.slice(0, 40)}`, 8, false, 0.3));
   let t = 206; c.push(L(40, 555, 188), T(48, 180, "Descripción", 9, true, 0.4), T(330, 180, "Cant.", 9, true, 0.4), T(400, 180, "Precio", 9, true, 0.4), T(490, 180, "Neto", 9, true, 0.4));
@@ -112,6 +122,12 @@ function ticket(d: DatosPdf, modo: ModoPdf, sim: boolean): Uint8Array {
     if (d.fechaAnulacion && d.anulacion === "anulado") { c.push(T(M, t + 4, `Anulado el ${d.fechaAnulacion} (simulación)`, 8, true, 0.3)); t += 14; } }
   lineas(d.empresa, 34, 10, true, 0, 13); lineas(`NIT ${d.nit}`, N); lineas(oficial ? "Documento tributario electrónico" : `Borrador ${d.numeroBorrador}`, N, 8, true); lineas(`Fecha: ${d.fecha}`, N);
   lineas(`Estado: ${d.estado}`, N);
+  if (d.tipo && d.tipo.codigo !== "FACT") {
+    lineas(d.tipo.titulo.toUpperCase(), N, 9, true);
+    if (d.tipo.origen) { lineas(`Referencia: ${d.tipo.origen.tipo} serie ${d.tipo.origen.serie} no. ${d.tipo.origen.numero} (${d.tipo.origen.fecha})`, 40, 7, false, 0.3, 9); if (d.tipo.origen.motivo) lineas(`Motivo: ${d.tipo.origen.motivo}`, 40, 7, false, 0.3, 9); }
+    if (d.tipo.tipoRecibo) lineas(`Recibo ${d.tipo.tipoRecibo}: NO es una factura`, 40, 7, true, 0.3, 9);
+    if (d.tipo.enPruebas) lineas("EN PRUEBAS · no certificable", 40, 7, true, 0.3, 9);
+  }
   if (d.serie || d.numero) lineas(`Serie ${d.serie ?? "-"} · Número ${d.numero ?? "-"}`, N);
   if (d.autorizacion) lineas(`${ROT_AUT(modo, sim)}: ${d.autorizacion}`, 36, 7, false, 0.3, 9);
   t += 2; c.push(L(M, X2, t, 0.6)); t += 8;

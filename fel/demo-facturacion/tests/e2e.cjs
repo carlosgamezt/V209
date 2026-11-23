@@ -54,7 +54,7 @@ async function arrancar() {
   const enviar = async (escenario) => { await p.selectOption('select[aria-label="Comportamiento del proveedor simulado"]', escenario); await p.click("#enviar"); };
 
   // ============ 1. inicio, aviso permanente, usuario sin permisos
-  await p.goto(srv.url); await p.waitForSelector(".cab-demo"); await banda(); await p.waitForSelector("text=No hay facturas");
+  await p.goto(srv.url); await p.waitForSelector(".cab-demo"); await banda(); await p.waitForSelector("text=No hay documentos");
   await foto("01-lista-vacia.png");
   assert.equal(await p.locator('select[aria-label="Persona de la demostración"] option').count(), 4);
 
@@ -173,7 +173,7 @@ async function arrancar() {
   await p.click('[data-tab="canal"]'); const canales = await p.locator(".tab-cuerpo").innerText(); assert.match(canales, /Habilitado · simulado/); assert.match(canales, /Bloqueado en esta fase/); assert.equal(await p.locator("input[type=password], input[aria-label*=Contraseña i], button:has-text('Probar conexión')").count(), 0, "sin campos de credenciales de SAT ni «Probar conexión»"); await foto("11-config-canal.png");
   await p.click('[data-tab="establecimientos"]'); await p.click("#nuevo-establecimiento"); await p.fill('input[aria-label="Código del establecimiento"]', "3"); await p.fill('input[aria-label="Nombre del establecimiento"]', "Bodega ficticia"); await p.click("#guardar-establecimiento"); await toast("Establecimiento creado"); await p.waitForSelector(`[data-establecimiento="3"]`);
   await como("pedro"); await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores"); assert.equal(await p.locator("#nuevo-cliente").count(), 0, "el lector no crea clientes");
-  assert.equal(await p.locator('a.nv:has-text("Nueva factura")').count(), 0, "el lector no ve «Nueva factura»");
+  assert.equal(await p.locator('a.nv:has-text("Nuevo documento")').count(), 0, "el lector no ve «Nuevo documento»");
   await p.goto(`${srv.url}/#/config`); await p.click('[data-tab="establecimientos"]'); assert.equal(await p.locator("#nuevo-establecimiento").count(), 0, "el lector no crea establecimientos");
   await como("ana");
 
@@ -182,8 +182,8 @@ async function arrancar() {
   const idB = await crear("Borrador para la lista", "1", "5"); await p.goto(`${srv.url}/#/`); await p.waitForSelector(".fila-fac");
   assert.ok(await p.locator(".fila-fac").count() >= 9);
   const cert = p.locator('.fila-fac:has([data-simulado])').first(); assert.match(await cert.innerText(), /SIM · Certificado/); assert.match(await cert.innerText(), /Proveedor simulado/); assert.match(await cert.innerText(), /Q\s?[\d,]+\.\d\d/);
-  await p.selectOption('select[aria-label="Estado de las facturas"]', "certificado"); const nCert = await p.locator(".fila-fac").count(); assert.ok(nCert >= 5 && await p.locator(".fila-fac:not(:has([data-simulado]))").count() === 0, "todas las certificadas se marcan como simuladas");
-  await p.selectOption('select[aria-label="Estado de las facturas"]', "todas"); await p.fill('input[aria-label="Buscar facturas"]', "zzzz-no-existe"); await p.waitForSelector("text=Ninguna factura coincide"); await p.fill('input[aria-label="Buscar facturas"]', "Cliente del catálogo"); await p.fill('input[aria-label="Buscar facturas"]', "");
+  await p.selectOption('select[aria-label="Estado de los documentos"]', "certificado"); const nCert = await p.locator(".fila-fac").count(); assert.ok(nCert >= 5 && await p.locator(".fila-fac:not(:has([data-simulado]))").count() === 0, "todas las certificadas se marcan como simuladas");
+  await p.selectOption('select[aria-label="Estado de los documentos"]', "todas"); await p.fill('input[aria-label="Buscar documentos"]', "zzzz-no-existe"); await p.waitForSelector("text=Ningún documento coincide"); await p.fill('input[aria-label="Buscar documentos"]', "Cliente del catálogo"); await p.fill('input[aria-label="Buscar documentos"]', "");
   const filaB = p.locator(".fila-fac", { hasText: "Borrador para la lista" }).first().or(p.locator(".fila-fac", { has: p.locator('[data-accion="revisar"]') }).first());
   assert.equal(await filaB.locator('[data-accion="continuar"]').count(), 1); assert.equal(await filaB.locator('[data-accion="revisar"]').count(), 1); assert.equal(await filaB.locator('[data-accion="consultar"]').count(), 1);
   assert.match(await filaB.innerText(), /Sin enviar/, "un borrador aún no tiene canal"); { const cajas = await p.evaluate(() => [...document.querySelectorAll(".fila-fac")].flatMap((f) => [...f.querySelectorAll(".acciones-fac > *")].map((b) => { const r = b.getBoundingClientRect(); return { slot: b.className.match(/slot-(\d)/)?.[1], w: Math.round(r.width), h: Math.round(r.height), izq: Math.round(r.left) }; })));
