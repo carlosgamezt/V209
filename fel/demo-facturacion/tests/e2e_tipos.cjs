@@ -66,16 +66,16 @@ async function arrancar() {
       await p.keyboard.press("Escape"); await p.waitForSelector(".previa-modal", { state: "detached" }).catch(() => {});
       await sinDesborde(p, `recibo ${donde}`);
       // cambiar el tipo mientras es editable: a Factura (se quita el panel del recibo) y de nuevo a Recibo
-      await p.selectOption("#tipo-documento", "FACT"); await p.waitForFunction(() => !document.querySelector(".card-tipo")); await p.selectOption("#tipo-documento", "RECI"); await p.waitForSelector('.card-tipo[data-tipo="RECI"]');
+      await p.selectOption("#tipo-documento", "FACT"); await p.locator(".card-tipo").waitFor({ state: "detached" }); await p.selectOption("#tipo-documento", "RECI"); await p.waitForSelector('.card-tipo[data-tipo="RECI"]');
       assert.equal(await p.inputValue("#tipo-recibo"), "", "al cambiar de tipo se limpia lo que no corresponde");
       await p.selectOption("#tipo-recibo", "Universidad"); await p.click("#guardar"); await toast(p, "guardado"); assert.equal(await p.inputValue("#tipo-recibo"), "Universidad");
       // ================= 4. nota de crédito: exige un documento de origen certificado
       await p.goto(srv.url + "/#/nueva"); await p.reload(); await esperarNueva(p); await p.selectOption("#tipo-documento", "NCRE"); await p.waitForSelector("#origen-lista");
-      await p.waitForFunction(() => /No hay documentos certificados/.test(document.querySelector("#origen-lista")?.innerText ?? ""), null, { timeout: 15000 });
+      await p.locator("#origen-lista option", { hasText: "No hay documentos certificados" }).waitFor({ state: "attached", timeout: 15000 });
       assert.ok(await p.locator('input[aria-label="Identificación del receptor"]').isDisabled(), "en una nota el receptor no se escribe: es el del origen");
       await agregarConcepto(p); await p.fill("#motivo-ajuste", "Devolución de mercadería"); await p.click("#guardar"); assert.match(await p.locator(".area-msg, .validacion").first().innerText(), /origen/i, "sin origen no se guarda");
       const o = await certificado(p, "a"); await p.goto(srv.url + "/#/nueva"); await p.reload(); await esperarNueva(p); await p.selectOption("#tipo-documento", "NCRE"); await p.waitForSelector("#origen-lista");
-      await p.waitForFunction((s) => [...document.querySelectorAll("#origen-lista option")].some((x) => x.textContent.includes(s)), o.serie, { timeout: 8000 });
+      await p.locator("#origen-lista option", { hasText: o.serie }).first().waitFor({ state: "attached", timeout: 8000 });
       await p.selectOption("#origen-lista", o.id); await p.waitForSelector('[data-origen="1"]'); assert.match(await p.locator('[data-origen="1"]').innerText(), new RegExp(o.serie));
       assert.match(await p.locator(".rc-card").innerText(), new RegExp(o.cliente.slice(0, 8)), "el receptor se toma del documento de origen");
       await agregarConcepto(p); await p.fill("#motivo-ajuste", "Devolución de mercadería"); await p.click("#guardar"); await toast(p, "guardado"); await p.waitForSelector(".doc-tit h1.mono");
@@ -88,10 +88,10 @@ async function arrancar() {
       assert.equal(pdf.status, 200); assert.match(pdf.texto, /^%PDF/); assert.match(pdf.texto, /NOTA DE CR/); assert.match(pdf.texto, /Hace referencia a FACT/); assert.match(pdf.texto, /EN PRUEBAS/);
       await sinDesborde(p, `nota ${donde}`);
       // volver a Factura mientras es borrador: se limpian el origen y el motivo y el receptor vuelve a ser editable
-      await p.selectOption("#tipo-documento", "FACT"); await p.waitForFunction(() => !document.querySelector(".card-tipo")); assert.equal(await p.locator('input[aria-label="Identificación del receptor"]').isDisabled(), false);
+      await p.selectOption("#tipo-documento", "FACT"); await p.locator(".card-tipo").waitFor({ state: "detached" }); assert.equal(await p.locator('input[aria-label="Identificación del receptor"]').isDisabled(), false);
       await p.click("#guardar"); await toast(p, "guardado"); assert.equal(await p.inputValue("#tipo-documento"), "FACT");
       // ================= 5. historial: tipo en cada fila y filtro por tipo
-      await p.goto(srv.url + "/#/"); await p.waitForFunction(() => document.querySelectorAll("#filtro-tipo option").length > 1 && !document.querySelector("#filtro-tipo").hidden);
+      await p.goto(srv.url + "/#/"); await p.locator("#filtro-tipo option").nth(1).waitFor({ state: "attached" }); await p.locator("#filtro-tipo").waitFor({ state: "visible" });
       const opts = (await p.locator("#filtro-tipo option").allInnerTexts()).map((t) => t.trim().replace(/\s*\(\d+\)$/, "")); assert.ok(opts.includes("Recibo") && opts.includes("Factura"), JSON.stringify(opts));
       await p.selectOption("#filtro-tipo", "RECI"); assert.ok((await p.locator('.fila-fac [data-tipo="RECI"]').count()) >= 1); assert.equal(await p.locator('.fila-fac:not(:has([data-tipo="RECI"]))').count(), 0, "el filtro solo deja recibos");
       assert.match(await p.locator("h1, .ph-t").first().innerText(), /Documentos/); await sinDesborde(p, `historial ${donde}`);
@@ -104,7 +104,7 @@ async function arrancar() {
       await p.check('input[aria-label="Nota de crédito como tipo predeterminado"]'); await toast(p, "Configuración guardada");
       await sinDesborde(p, `configuración de tipos ${donde}`);
       await p.goto(srv.url + "/#/nueva"); await p.reload(); await esperarNueva(p); await p.waitForSelector("#tipo-documento"); assert.equal(await p.inputValue("#tipo-documento"), "NCRE", "el predeterminado de la empresa se propone al crear");
-      await p.selectOption("#tipo-documento", "FACT"); await p.waitForFunction(() => !document.querySelector(".card-tipo"));
+      await p.selectOption("#tipo-documento", "FACT"); await p.locator(".card-tipo").waitFor({ state: "detached" });
     }
     // ================= 7. móvil con selector y panel: sin desborde
     { const p = await ctxPag(390); await entrar(p); await p.goto(srv.url + "/#/nueva"); await esperarNueva(p); await p.waitForSelector("#tipo-documento");
