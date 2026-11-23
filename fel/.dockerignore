@@ -4,7 +4,9 @@ app/capturas
 demo-facturacion/capturas
 poc-sat
 revision
-docs
+docs/*
+!docs/migracion-tipos-documento/
+!docs/migracion-tipos-documento/**
 agente-local
 supabase/.temp
 supabase/.branches
