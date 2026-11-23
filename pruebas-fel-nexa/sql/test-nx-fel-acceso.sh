@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Prueba REAL de PostgreSQL (servidor temporal, sin red ni Supabase hospedado) de supabase/nx_fel_acceso.sql.
+# Prueba REAL de PostgreSQL (servidor temporal, sin red ni Supabase hospedado) del script único supabase/nx_fel_acceso.sql.
 # Se monta lo mínimo de Supabase (roles anon/authenticated/service_role, esquema auth con auth.users y auth.uid() leyendo el token, privilegios por defecto como en Supabase,
 # y el PEOR CASO: los roles de la API pueden crear objetos en public) y se comprueba:
 #   · la cuenta registrada recibe true; otra cuenta —también una con rol «admin» en la app—, una sesión sin UUID y un UUID desconocido reciben false (nunca null ni error);
 #   · anon no puede ejecutar la función; nadie de la API puede leer, insertar, modificar ni borrar la tabla (ni siquiera la cuenta autorizada);
 #   · SECURITY DEFINER, propietario, search_path vacío y permisos de ejecución exactos; RLS activado y sin políticas;
 #   · ataques de search_path/objetos suplantados (tabla temporal, operador = en public) no cambian el resultado;
-#   · borrar la cuenta de auth.users retira la autorización; el archivo es idempotente y no contiene UUID ni correos reales.
+#   · borrar la cuenta de auth.users retira la autorización; el script es el ÚNICO procedimiento de instalación: falla sin tocar nada con el marcador sin reemplazar, con un UUID inexistente, en otro proyecto o si ya existen objetos; el ensayo no deja nada; un defecto deshace todo; no contiene UUID ni correos reales.
 #   Uso: bash pruebas-fel-nexa/sql/test-nx-fel-acceso.sh   (desde la raíz del repositorio)
 set -uo pipefail
 R="$(cd "$(dirname "$0")/../.." && pwd)"; SQLF="${NXFEL_SQL:-$R/supabase/nx_fel_acceso.sql}"
@@ -20,23 +20,39 @@ trap 'as_pg "$PGBIN/pg_ctl -D $DATA -m immediate stop >/dev/null" 2>/dev/null; r
 as_pg "rm -rf '$DATA' && mkdir -p '$DATA' && '$PGBIN/initdb' -D '$DATA' -A trust -U postgres --locale=C --encoding=UTF8 >/dev/null" && as_pg "'$PGBIN/pg_ctl' -D '$DATA' -o '-p $PORT -k $SOCK -c listen_addresses=' -w -l '$DATA/log' start >/dev/null" || { echo "FALLO no se pudo levantar PostgreSQL de prueba"; exit 1; }
 echo "PostgreSQL de prueba: $PGBIN ($("$PGBIN/postgres" --version | grep -oE '[0-9]+(\.[0-9]+)?' | head -1))"
 Q() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -X -q -tA -v ON_ERROR_STOP=0 "$@" 2>&1; }
-# --- entorno mínimo de Supabase
-Q -c "create role anon nologin" -c "create role authenticated nologin" -c "create role service_role nologin bypassrls" \
-  -c "create schema auth" -c "create table auth.users (id uuid primary key, email text)" \
-  -c "create function auth.uid() returns uuid language sql stable as \$\$ select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'))::uuid \$\$" \
-  -c "grant usage on schema auth to anon, authenticated, service_role" -c "grant execute on function auth.uid() to anon, authenticated, service_role" \
-  -c "grant usage, create on schema public to anon, authenticated, service_role" \
-  -c "alter default privileges in schema public grant all on tables to anon, authenticated, service_role" -c "alter default privileges in schema public grant execute on functions to anon, authenticated, service_role" \
-  -c "create table public.pa_profiles (auth_id uuid primary key, role text not null)" >/dev/null
+# --- entorno mínimo de Supabase (se aplica a cada base de prueba)
+QD() { local d="$1"; shift; "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d "$d" -X -q -tA -v ON_ERROR_STOP=0 "$@" 2>&1; }
+Q() { QD postgres "$@"; }
+Q -c "create role anon nologin" -c "create role authenticated nologin" -c "create role service_role nologin bypassrls" >/dev/null
+entorno() { # $1 = base; $2 = «nexa» (con las tablas de NEXA principal) · «sinpa» (sin pa_docs) · «fel» (con public.empresas, como NEXA FEL)
+  [ "$1" = postgres ] || Q -c "create database $1" >/dev/null
+  QD "$1" -c "create schema auth" -c "create table auth.users (id uuid primary key, email text)" \
+    -c "create function auth.uid() returns uuid language sql stable as \$\$ select coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''), (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'))::uuid \$\$" \
+    -c "grant usage on schema auth to anon, authenticated, service_role" -c "grant execute on function auth.uid() to anon, authenticated, service_role" \
+    -c "grant usage, create on schema public to anon, authenticated, service_role" \
+    -c "alter default privileges in schema public grant all on tables to anon, authenticated, service_role" -c "alter default privileges in schema public grant execute on functions to anon, authenticated, service_role" \
+    -c "insert into auth.users values ('$U_AUT','autorizada@prueba.invalid'), ('$U_ADM2','otro-admin@prueba.invalid'), ('$U_SUP','supervisor@prueba.invalid')" >/dev/null
+  if [ "$2" != sinpa ]; then QD "$1" -c "create table public.pa_docs (col text, id text, data jsonb)" -c "create table public.pa_profiles (auth_id uuid primary key, role text not null)" -c "create function public.pa_next_seq() returns int language sql as 'select 1'" \
+    -c "insert into public.pa_profiles values ('$U_AUT','admin'), ('$U_ADM2','admin'), ('$U_SUP','supervisor')" >/dev/null; fi
+  [ "$2" != fel ] || QD "$1" -c "create table public.empresas (id int)" >/dev/null
+}
 U_AUT=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa; U_ADM2=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb; U_SUP=cccccccc-cccc-4ccc-8ccc-cccccccccccc; U_DESC=dddddddd-dddd-4ddd-8ddd-dddddddddddd
-Q -c "insert into auth.users values ('$U_AUT','autorizada@prueba.invalid'), ('$U_ADM2','otro-admin@prueba.invalid'), ('$U_SUP','supervisor@prueba.invalid')" \
-  -c "insert into public.pa_profiles values ('$U_AUT','admin'), ('$U_ADM2','admin'), ('$U_SUP','supervisor')" >/dev/null
-# --- el archivo bajo prueba, dos veces (idempotente)
-S1="$(Q -v ON_ERROR_STOP=1 -f "$SQLF")"; echo "$S1" | grep -qiE 'error' && mal "el archivo SQL falla al ejecutarse: $(echo "$S1" | grep -i error | head -2)" || ok "el archivo SQL se ejecuta sin errores"
-# --- registro de la cuenta autorizada con el PASO 2 (correo de PRUEBA inexistente fuera de este servidor temporal)
-Q -c "insert into public.nx_fel_cuentas_autorizadas (auth_id) select id from auth.users where lower(email) = lower('autorizada@prueba.invalid')" >/dev/null
-[ "$(Q -c "select count(*) from public.nx_fel_cuentas_autorizadas")" = "1" ] && ok "el PASO 2 (por correo) registra exactamente 1 cuenta" || mal "el PASO 2 no registró exactamente 1 cuenta"
-S2="$(Q -v ON_ERROR_STOP=1 -f "$SQLF")"; echo "$S2" | grep -qiE 'error' && mal "repetir el archivo falla" || { [ "$(Q -c "select count(*) from public.nx_fel_cuentas_autorizadas")" = "1" ] && ok "repetir el archivo es idempotente y conserva la cuenta registrada" || mal "repetir el archivo borró la cuenta"; }
+entorno postgres nexa; entorno sinpa sinpa; entorno fel fel
+# --- el SCRIPT ÚNICO (el archivo bajo prueba) es el procedimiento oficial: se reemplaza el marcador por un UUID de PRUEBA y v_ensayo según el caso
+INST() { sed "s/PEGA-AQUI-TU-UUID/$1/;s/v_ensayo boolean := true;/v_ensayo boolean := ${2:-false};/" "$SQLF"; }
+nuevos() { QD "${1:-postgres}" -c "select (select count(*) from pg_class where relname ilike 'nx\_fel%') + (select count(*) from pg_proc where proname ilike 'nx\_fel%')"; }
+R="$(Q -c "$(cat "$SQLF")")"; echo "$R" | grep -q 'invalid input syntax for type uuid' && [ "$(nuevos)" = 0 ] && ok "con el marcador PEGA-AQUI-TU-UUID sin reemplazar el script falla de inmediato y no crea nada" || mal "el marcador sin reemplazar no detiene el script: $R"
+R="$(Q -c "$(INST cccccccc-0000-4ccc-8ccc-cccccccccccc false)")"; echo "$R" | grep -q '^ERROR:  PARE: ese UUID no existe' && [ "$(nuevos)" = 0 ] && ok "un UUID que no existe en Authentication detiene el script sin crear nada" || mal "UUID inexistente no detiene el script: $R"
+R="$(QD sinpa -c "$(INST $U_AUT false)")"; echo "$R" | grep -q '^ERROR:  PARE: no parece el proyecto de NEXA principal' && [ "$(nuevos sinpa)" = 0 ] && ok "un proyecto que no tiene las tablas de NEXA principal detiene el script sin crear nada" || mal "proyecto sin pa_docs no detiene el script: $R"
+R="$(QD fel -c "$(INST $U_AUT false)")"; echo "$R" | grep -q '^ERROR:  PARE: este proyecto tiene tablas de NEXA FEL' && [ "$(nuevos fel)" = 0 ] && ok "un proyecto con tablas de NEXA FEL (public.empresas) detiene el script sin crear nada" || mal "proyecto de FEL no detiene el script: $R"
+Q -c "create table public.nx_fel_otra (x int)" >/dev/null; R="$(Q -c "$(INST $U_AUT false)")"; echo "$R" | grep -q '^ERROR:  PARE: ya existen objetos con nombre nx_fel_' && ok "si ya existe un objeto nx_fel_* el script se detiene y no sobrescribe nada" || mal "objeto previo no detiene el script: $R"; Q -c "drop table public.nx_fel_otra" >/dev/null
+R="$(Q -c "$(INST $U_AUT true)")"; echo "$R" | grep -q '^ERROR:  ENSAYO TERMINADO' && [ "$(nuevos)" = 0 ] && ok "el ENSAYO (v_ensayo = true) pasa todos los controles y no deja nada instalado" || mal "el ensayo falla o deja objetos: $R"
+R="$(Q -c "$(INST $U_AUT false | sed '/enable row level security/d')")"; echo "$R" | grep -q '^ERROR:  PARE: controles fallidos' && [ "$(nuevos)" = 0 ] && ok "un defecto (sin RLS) hace fallar los controles y se deshace todo" || mal "defecto sin RLS no detectado: $R"
+R="$(Q -c "$(INST $U_AUT false | sed 's/to authenticated;/to authenticated, anon;/')")"; echo "$R" | grep -q '^ERROR:  PARE: controles fallidos' && [ "$(nuevos)" = 0 ] && ok "un defecto (EXECUTE para anon) hace fallar los controles y se deshace todo" || mal "defecto de EXECUTE no detectado: $R"
+R="$(Q -c "$(INST $U_AUT false | sed "s/security definer/security invoker/")")"; echo "$R" | grep -q '^ERROR:  PARE: controles fallidos' && [ "$(nuevos)" = 0 ] && ok "un defecto (sin SECURITY DEFINER) hace fallar los controles y se deshace todo" || mal "defecto de SECURITY DEFINER no detectado: $R"
+R="$(Q -c "$(INST $U_AUT false)")"; echo "$R" | tr '\n' ' ' | grep -q 'cuentas registradas|1|1|t' && ! echo "$R" | grep -q '|f$' && ok "la INSTALACIÓN real (una sola petición) termina bien y la tabla de resultados trae todo en true" || mal "la instalación falla: $R"
+[ "$(Q -c "select count(*) from public.nx_fel_cuentas_autorizadas")" = "1" ] && [ "$(Q -c "select auth_id::text from public.nx_fel_cuentas_autorizadas")" = "$U_AUT" ] && ok "queda registrada exactamente 1 cuenta: la indicada" || mal "la cuenta registrada no es exactamente la indicada"
+R="$(Q -c "$(INST $U_AUT false)")"; echo "$R" | grep -q '^ERROR:  PARE: ya existen objetos con nombre nx_fel_' && [ "$(Q -c "select count(*) from public.nx_fel_cuentas_autorizadas")" = "1" ] && ok "una segunda ejecución se detiene sin tocar nada y conserva la cuenta registrada" || mal "la segunda ejecución no se detiene: $R"
 fn() { Q -c "begin" -c "set local role $1" -c "select set_config('request.jwt.claim.sub', '$2', true) is not null" -c "select public.nx_fel_autorizado()" -c "rollback" | tail -1; }
 # --- 1. resultados de la función
 [ "$(fn authenticated $U_AUT)" = "t" ] && ok "la cuenta registrada recibe true" || mal "la cuenta registrada no recibe true ($(fn authenticated $U_AUT))"
@@ -82,5 +98,6 @@ grep -qiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "$SQLF"
 grep -qE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$SQLF" && mal "el archivo SQL contiene un correo" || ok "el archivo SQL no contiene ningún correo"
 grep -qiE 'grant[^;]*(to|,)[^;]*\banon\b|grant[^;]*to[^;]*\bpublic\b|row level security[^;]*(force|disable)' "$SQLF" && mal "el archivo SQL concede permisos a anon/public o debilita RLS" || ok "el archivo SQL no concede permisos a anon ni a public ni debilita RLS"
 grep -qiE "security definer" "$SQLF" && grep -qE "set search_path = ''" "$SQLF" && ok "el archivo declara SECURITY DEFINER con search_path vacío" || mal "falta SECURITY DEFINER o search_path vacío en el archivo"
-grep -qiE "role\s*=\s*'admin'|rol\s*=\s*'admin'|pa_profiles" "$SQLF" && mal "el archivo SQL depende del rol admin o de pa_profiles" || ok "el archivo SQL no depende del rol admin ni de ninguna tabla de la aplicación"
+CUERPO="$(awk '/as \$fn\$/{f=1;next} /^[[:space:]]*\$fn\$;/{f=0} f' "$SQLF")"
+[ -n "$CUERPO" ] && ! echo "$CUERPO" | grep -qiE "pa_profiles|admin|role" && ok "la función no depende del rol admin ni de ninguna tabla de la aplicación (solo de la tabla de cuentas autorizadas)" || mal "la función depende del rol admin o de una tabla de la aplicación (o no se pudo extraer): $CUERPO"
 echo "$fallos fallo(s)"; [ "$fallos" = 0 ] && echo "NEXA FEL · ACCESO POR UUID (POSTGRESQL REAL): OK"; exit $((fallos>0))
