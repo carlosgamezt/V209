@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Pruebas locales (sin red, sin credenciales) de la vista previa de NEXA con acceso a NEXA FEL.
    Uso:  python3 pruebas-fel-nexa/vista-previa/test.py      (desde la raíz del repositorio; necesita PyYAML, bash, node y Playwright)
-   A. preparar.py: URL válidas e inválidas, etiqueta, inserción de UNA línea, nexa/ intacto, FEL apagado sin URL.
+   A. preparar.py: copia idéntica (sin inyectar nada), se niega a preparar versiones con la regla anterior o con otra URL de FEL, nexa/ intacto.
    B. verificar-destino.sh con un «curl» falso: solo pasa si el proyecto es nexacorp, la producción es main y la vista previa es otra rama; el token no se imprime.
    C. Guardianes del workflow (con mutaciones: cada una debe hacer fallar el guardián).
-   D. La copia preparada, cargada en un navegador: con URL, felCfg() la acepta; sin URL, FEL queda deshabilitado."""
+   D. La copia preparada, cargada en un navegador: URL de FEL de la aplicación, sin configuración inyectada, y FEL oculto sin sesión."""
 import copy, json, os, re, shutil, subprocess, sys, tempfile, textwrap
 import yaml
 
@@ -21,40 +21,36 @@ def sh(args, env=None, cwd=None):
 
 # ------------------------------------------------------------------------------------------------ A. preparar.py
 print("== A. preparar.py")
-T = tempfile.mkdtemp(prefix="vp-");
-def preparar(*a, nombre="d"):
+T = tempfile.mkdtemp(prefix="vp-"); FEL = "https://nexa-fel-demo.pages.dev/"
+def preparar(origen=None, nombre="d"):
     destino = os.path.join(T, nombre + str(len(os.listdir(T))))
-    rc, out = sh([sys.executable, os.path.join(VP, "preparar.py"), "--origen", os.path.join(RAIZ, "nexa"), "--destino", destino, *a]); return rc, out, destino
+    rc, out = sh([sys.executable, os.path.join(VP, "preparar.py"), "--origen", origen or os.path.join(RAIZ, "nexa"), "--destino", destino]); return rc, out, destino
 orig_html = open(os.path.join(RAIZ, "nexa", "index.html"), encoding="utf-8").read()
-orig_hash = subprocess.run(["git", "-C", RAIZ, "status", "--porcelain", "--", "nexa"], capture_output=True, text=True).stdout
+estado_git = subprocess.run(["git", "-C", RAIZ, "status", "--porcelain", "--", "nexa"], capture_output=True, text=True).stdout
 rc, out, d = preparar()
-prueba(rc == 0 and "DESHABILITADO" in out, "sin URL: FEL queda DESHABILITADO", out)
-h0 = open(os.path.join(d, "index.html"), encoding="utf-8").read()
-prueba(h0 == orig_html and "\nwindow.PA_CONFIG.fel = " not in h0, "sin URL: index.html es idéntico al de nexa/ (no se añade nada)")
+prueba(rc == 0 and "sin cambios" in out, "la versión actual de nexa/ se prepara correctamente", out)
+prueba(open(os.path.join(d, "index.html"), encoding="utf-8").read() == orig_html, "index.html de la copia es IDÉNTICO al de nexa/ (ya no se inyecta nada)")
 prueba(json.load(open(os.path.join(d, "version.json"))) == {"v": re.search(r"APP_VER='(v\d+)'", orig_html).group(1)}, "version.json se genera desde APP_VER (como deploy-nexa.yml)")
-FEL = "https://nexa-fel-demo.pages.dev/"
-rc, out, d = preparar("--fel-url", FEL, "--etiqueta", "Pruebas")
-h1 = open(os.path.join(d, "index.html"), encoding="utf-8").read()
-prueba(rc == 0 and "HABILITADO" in out and h1.count("\nwindow.PA_CONFIG.fel = ") == 1, "con URL válida: se añade UNA sola línea de configuración", out)
-linea = re.search(r"\nwindow\.PA_CONFIG\.fel = (\{.*?\});", h1)
-prueba(linea and json.loads(linea.group(1)) == {"url": FEL, "etiqueta": "Pruebas"}, "la línea contiene exactamente la URL y la etiqueta indicadas")
-prueba(h1.replace(linea.group(0), "", 1) == orig_html, "quitando esa línea, index.html es idéntico al de nexa/")
-cfg_ori = re.search(r"window\.PA_CONFIG\s*=\s*\{[^}]*\};", orig_html).group(0); prueba(cfg_ori in h1, "el objeto PA_CONFIG original (Supabase de NEXA) no se altera")
-prueba(subprocess.run(["git", "-C", RAIZ, "status", "--porcelain", "--", "nexa"], capture_output=True, text=True).stdout == orig_hash, "nexa/ del repositorio NO se modificó")
 for f in ("sw.js", "manifest.webmanifest", "_headers", "config.js", "supabase.js"):
     prueba(open(os.path.join(d, f), "rb").read() == open(os.path.join(RAIZ, "nexa", f), "rb").read(), f"{f} es idéntico al de nexa/")
-malas = ["http://nexa-fel-demo.pages.dev/", "https://evil.example.com/", "javascript:alert(1)", "https://u:p@nexa-fel-demo.pages.dev/", "https://nexa-fel-demo.pages.dev:8443/",
-         "https://nexa-fel-demo.pages.dev.evil.com/", "https://nexa-fel-demo.pages.dev/ruta", "https://nexa-fel-demo.pages.dev/?x=1", "https://nexa-fel-demo.pages.dev/#x", "https://pages.dev/",
-         "https://-malo.pages.dev/", "https://otro.pages.dev/", "https://nexacorp.pages.dev/", "https://nexa.pages.dev/", "https://nexa-fel-demo2.pages.dev/", "https://xnexa-fel-demo.pages.dev/", "ftp://x.pages.dev/", "https://nexa fel.pages.dev/", "//nexa-fel-demo.pages.dev/", "https://nexa-fel-demo.pages.dev:443/"]
-for u in malas:
-    rc, out, d2 = preparar("--fel-url", u)
-    prueba(rc == 2 and "PROHIBIDO" in out and not os.path.exists(d2), f"URL rechazada y sin copia: {u}", out)
-for e in ["", "x" * 41, "<b>", 'a"b', "a;b"]:
-    rc, out, d2 = preparar("--fel-url", FEL, "--etiqueta", e); prueba(rc == 2, f"etiqueta rechazada: {e[:12]!r}", out)
+prueba(subprocess.run(["git", "-C", RAIZ, "status", "--porcelain", "--", "nexa"], capture_output=True, text=True).stdout == estado_git, "nexa/ del repositorio NO se modificó")
+prueba("PA_CONFIG.fel =" not in open(os.path.join(d, "index.html"), encoding="utf-8").read(), "la copia no lleva ninguna línea PA_CONFIG.fel inyectada")
+# se niega a preparar versiones con la regla anterior o con otro destino de FEL
+def variante(f):
+    carpeta = os.path.join(T, "var" + str(len(os.listdir(T)))); shutil.copytree(os.path.join(RAIZ, "nexa"), carpeta)
+    h = open(os.path.join(carpeta, "index.html"), encoding="utf-8").read(); h2 = f(h); assert h2 != h; open(os.path.join(carpeta, "index.html"), "w", encoding="utf-8").write(h2); return carpeta
+for desc, f in [("sin la consulta nx_fel_autorizado (versión anterior)", lambda h: h.replace("nx_fel_autorizado", "nx_otra_cosa")),
+                ("con la regla anterior que lee PA_CONFIG.fel", lambda h: h.replace("function felCfg(){", "function felCfg(){var _x=window.PA_CONFIG&&PA_CONFIG.fel&&PA_CONFIG.fel.url;", 1)),
+                ("con felVis() dependiente del rol", lambda h: h.replace("function felVis(){const u=felUid();", "function felVis(){const u=felUid();if(me.role==='admin')return true;", 1)),
+                ("con otra URL de FEL", lambda h: h.replace("url:'https://nexa-fel-demo.pages.dev/'", "url:'https://otro.pages.dev/'")),
+                ("con la URL de FEL duplicada", lambda h: h.replace("const FEL_CFG=", "const FEL_X={url:'https://nexa-fel-demo.pages.dev/'};const FEL_CFG=", 1))]:
+    rc, out, d2 = preparar(variante(f)); prueba(rc == 2 and "PROHIBIDO" in out and not os.path.exists(d2), f"se niega a preparar una versión {desc}", out)
+rc, out, d3 = preparar(os.path.join(T, "no-existe")); prueba(rc == 2, "un origen sin index.html se rechaza", out)
 rc, _ = sh([sys.executable, os.path.join(VP, "preparar.py"), "--origen", os.path.join(RAIZ, "nexa"), "--destino", os.path.join(RAIZ, "nexa", "dentro")])
 prueba(rc == 2 and not os.path.exists(os.path.join(RAIZ, "nexa", "dentro")), "un destino dentro de nexa/ se rechaza")
 rc, out = sh([sys.executable, os.path.join(VP, "preparar.py"), "--origen", os.path.join(RAIZ, "nexa"), "--destino", d]); prueba(rc == 2, "un destino que ya existe se rechaza", out)
-rc, out, d4 = preparar("--fel-url", "https://Nexa-Fel-Demo.PAGES.dev", "--etiqueta", "Demostración"); prueba(rc == 0 and FEL in open(os.path.join(d4, "index.html"), encoding="utf-8").read(), "mayúsculas y sin barra final se normalizan a la URL canónica", out)
+rc, out = sh([sys.executable, os.path.join(VP, "preparar.py"), "--origen", os.path.join(RAIZ, "nexa"), "--destino", os.path.join(T, "x"), "--fel-url", "https://nexa-fel-demo.pages.dev/"])
+prueba(rc != 0, "ya no existe la opción --fel-url (no se puede inyectar una URL de FEL)", out)
 
 # ------------------------------------------------------------------------------------------------ B. verificar-destino.sh con curl falso
 print("== B. verificar-destino.sh")
@@ -112,14 +108,14 @@ def guardian(texto):
     cmd = str(deploy[0].get("with", {}).get("command", ""))
     if cmd != "pages deploy nexa-vista-previa --project-name=nexacorp --branch=fel-nexa-acceso --commit-dirty=true": p.append("el comando de despliegue debe ser exactamente «pages deploy» de vista previa (rama fel-nexa-acceso, proyecto de Pages nexacorp; nunca el Worker «nexa»): " + cmd)
     if str(deploy[0].get("with", {}).get("workingDirectory", "")) != "${{ runner.temp }}": p.append("wrangler debe ejecutarse fuera del repositorio (workingDirectory = runner.temp) para no usar el wrangler.jsonc del Worker «nexa»")
-    if (on.get("workflow_dispatch") or {}).get("inputs", {}).get("fel_url", {}).get("default") != "https://nexa-fel-demo.pages.dev/": p.append("el valor por defecto de fel_url debe ser https://nexa-fel-demo.pages.dev/")
+    if list(((on.get("workflow_dispatch") or {}).get("inputs") or {})) != ["confirmar"]: p.append("el único dato de entrada debe ser «confirmar» (ya no se pasa ninguna URL de FEL ni configuración)")
     if re.search(r"--branch=(main|master|production)|--branch=\$|--project-name=\$|--project-name=nexa\b(?!corp)", textwrap.dedent(texto)): p.append("rama o proyecto de producción / dinámico en un comando")
     nombres = [s.get("name", "") for s in pasos]; orden = [i for i, n in enumerate(nombres) if n.startswith("Verificar el destino")] + [i for i, n in enumerate(nombres) if n.startswith("Preparar")] + [i for i, n in enumerate(nombres) if n.startswith("Publicar")]
     if len(orden) != 3 or orden != sorted(orden): p.append("el orden debe ser: verificar destino → preparar → publicar")
     vd = [s for s in pasos if s.get("name", "").startswith("Verificar el destino")]
     if len(vd) != 1 or str(vd[0].get("run", "")).strip() != "bash pruebas-fel-nexa/vista-previa/verificar-destino.sh nexacorp fel-nexa-acceso": p.append("el paso «Verificar el destino» debe ejecutar exactamente verificar-destino.sh nexacorp fel-nexa-acceso")
     pp = [s for s in pasos if s.get("name", "").startswith("Preparar")]
-    if len(pp) != 1 or not str(pp[0].get("run", "")).startswith("python3 pruebas-fel-nexa/vista-previa/preparar.py --origen nexa --destino"): p.append("el paso «Preparar» debe ejecutar preparar.py con origen nexa")
+    if len(pp) != 1 or str(pp[0].get("run", "")).strip() != 'python3 pruebas-fel-nexa/vista-previa/preparar.py --origen nexa --destino "$RUNNER_TEMP/nexa-vista-previa"' or pp[0].get("env"): p.append("el paso «Preparar» debe ejecutar exactamente preparar.py con origen nexa, sin entradas ni variables")
     sec = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", texto))
     if sec != {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}: p.append("solo pueden usarse los secretos CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID (encontrados: %s)" % sorted(sec))
     ejec = "\n".join(str(s.get("run", "")) + str(s.get("with", "")) + str(s.get("env", "")) for s in pasos)
@@ -131,7 +127,9 @@ def guardian(texto):
     return p
 txt = open(WF, encoding="utf-8").read()
 prueba(guardian(txt) == [], "el workflow cumple todos los guardianes", "; ".join(guardian(txt)))
-muts = [("añadir un disparador pull_request", lambda t: t.replace("on:\n  push:", "on:\n  pull_request:\n  push:")),
+muts = [("volver a pasar la URL de FEL al preparar", lambda t: t.replace('--destino "$RUNNER_TEMP/nexa-vista-previa"\n', '--destino "$RUNNER_TEMP/nexa-vista-previa" --fel-url "https://nexa-fel-demo.pages.dev/"\n', 1)),
+        ("volver a añadir la entrada fel_url", lambda t: t.replace("      confirmar:\n", "      fel_url:\n        type: string\n        default: ''\n      confirmar:\n", 1)),
+        ("añadir un disparador pull_request", lambda t: t.replace("on:\n  push:", "on:\n  pull_request:\n  push:")),
         ("el push de registro sin limitar a la rama", lambda t: t.replace("    branches: [fel-nexa-acceso]\n", "")),
         ("el push de registro desde main", lambda t: t.replace("branches: [fel-nexa-acceso]", "branches: [main]")),
         ("desplegar con --branch=main", lambda t: t.replace("--branch=fel-nexa-acceso --commit-dirty", "--branch=main --commit-dirty")),
@@ -143,40 +141,36 @@ muts = [("añadir un disparador pull_request", lambda t: t.replace("on:\n  push:
         ("mencionar supabase en un paso", lambda t: t.replace('        run: |\n          echo "Vista previa publicada', '        run: |\n          supabase db push\n          echo "Vista previa publicada')),
         ("añadir una acción ajena", lambda t: t.replace("      - uses: actions/checkout@v4", "      - uses: actions/cache@v4\n      - uses: actions/checkout@v4", 1)),
         ("saltar la verificación del destino", lambda t: t.replace("run: bash pruebas-fel-nexa/vista-previa/verificar-destino.sh nexacorp fel-nexa-acceso", "run: echo omitido")),
-        ("interpolar la entrada en un run", lambda t: t.replace('--fel-url "$FEL_URL"', '--fel-url "${{ inputs.fel_url }}"')),
+        ("interpolar una entrada en un run", lambda t: t.replace("run: echo omitido", "run: echo omitido") if False else t.replace('run: python3 pruebas-fel-nexa/vista-previa/preparar.py', 'run: echo "${{ inputs.confirmar }}" && python3 pruebas-fel-nexa/vista-previa/preparar.py')),
         ("desplegar como Worker (wrangler deploy)", lambda t: t.replace("command: pages deploy nexa-vista-previa", "command: deploy nexa-vista-previa")),
         ("apuntar al Worker con --name=nexa", lambda t: t.replace("--commit-dirty=true\n      - name: \"Resumen\"", "--commit-dirty=true --name=nexa\n      - name: \"Resumen\"")),
         ("quitar workingDirectory (usaría el wrangler.jsonc del Worker)", lambda t: t.replace("          workingDirectory: ${{ runner.temp }}\n", "")),
-        ("fel_url por defecto de otro host", lambda t: t.replace('default: "https://nexa-fel-demo.pages.dev/"', 'default: "https://otro.pages.dev/"')),
         ("usar un entorno", lambda t: t.replace("    runs-on: ubuntu-latest\n    timeout-minutes: 10", "    runs-on: ubuntu-latest\n    environment: produccion\n    timeout-minutes: 10"))]
 for n, f in muts:
     t2 = f(txt); prueba(t2 != txt and guardian(t2) != [], f"mutación detectada: {n}", "la mutación no cambió el texto" if t2 == txt else "el guardián no la detectó")
 
 # ------------------------------------------------------------------------------------------------ D. la copia preparada en un navegador
-print("== D. la copia preparada en un navegador (felCfg)")
+print("== D. la copia preparada en un navegador")
 E2E = r"""
 const { chromium } = require('playwright'); const http = require('http'), fs = require('fs'), path = require('path');
-const [conUrl, sinUrl] = process.argv.slice(2);
-const srv = (root) => new Promise((res) => { const s = http.createServer((q, r) => { let u = decodeURIComponent(q.url.split('?')[0]); if (u === '/') u = '/index.html'; const f = path.join(root, u);
+const root = process.argv[2];
+const srv = new Promise((res) => { const s = http.createServer((q, r) => { let u = decodeURIComponent(q.url.split('?')[0]); if (u === '/') u = '/index.html'; const f = path.join(root, u);
   if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); return r.end(); }
-  r.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' }[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }).listen(0, '127.0.0.1', () => res({ s, url: 'http://127.0.0.1:' + s.address().port + '/' })); });
-(async () => { const b = await chromium.launch(); const out = {};
-  for (const [k, root] of [['con', conUrl], ['sin', sinUrl]]) { const s = await srv(root); const ctx = await b.newContext(); await ctx.route((u) => !['127.0.0.1'].includes(u.hostname), (r) => r.abort());
-    const pg = await ctx.newPage(); await pg.goto(s.url); await pg.waitForTimeout(1500);
-    out[k] = await pg.evaluate(() => ({ cfg: typeof felCfg === 'function' ? felCfg() : 'sin función', fel: (window.PA_CONFIG || {}).fel || null, supa: !!((window.PA_CONFIG || {}).url) }));
-    await ctx.close(); s.s.close(); }
-  await b.close(); console.log(JSON.stringify(out)); })();
+  r.writeHead(200, { 'content-type': { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' }[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }).listen(0, '127.0.0.1', () => res(s)); });
+(async () => { const s = await srv; const b = await chromium.launch(); const ctx = await b.newContext(); await ctx.route((u) => u.hostname !== '127.0.0.1', (r) => r.abort());
+  const pg = await ctx.newPage(); await pg.goto('http://127.0.0.1:' + s.address().port + '/'); await pg.waitForTimeout(1500);
+  const o = await pg.evaluate(() => ({ cfg: felCfg(), vis: felVis(), fel: (window.PA_CONFIG || {}).fel || null, supa: !!((window.PA_CONFIG || {}).url), estado: FELACC.estado, titulo: document.title }));
+  await b.close(); s.close(); console.log(JSON.stringify(o)); })();
 """
-rc, o, dcon = preparar("--fel-url", FEL, "--etiqueta", "Pruebas"); rc2, o2, dsin = preparar()
 open(os.path.join(T, "e2e.cjs"), "w").write(E2E)
 env = dict(os.environ); env["NODE_PATH"] = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True).stdout.strip() + os.pathsep + os.path.join(RAIZ, "node_modules")
-r = subprocess.run(["node", os.path.join(T, "e2e.cjs"), dcon, dsin], capture_output=True, text=True, env=env, cwd=RAIZ)
+r = subprocess.run(["node", os.path.join(T, "e2e.cjs"), d], capture_output=True, text=True, env=env, cwd=RAIZ)
 try: res = json.loads(r.stdout.strip().splitlines()[-1])
 except Exception: res = None; mal("no se pudo ejecutar la comprobación en el navegador", (r.stdout + r.stderr)[-300:])
 if res:
-    prueba(res["con"]["cfg"] == {"url": FEL, "et": "Pruebas"}, "con URL: felCfg() de la página acepta la URL y la etiqueta", json.dumps(res["con"]))
-    prueba(res["sin"]["cfg"] is None and res["sin"]["fel"] is None, "sin URL: NEXA FEL queda deshabilitado (felCfg() es nulo)", json.dumps(res["sin"]))
-    prueba(res["con"]["supa"] and res["sin"]["supa"], "la configuración de Supabase de NEXA sigue intacta en ambas copias")
+    prueba(res["cfg"] == {"url": FEL, "et": "Pruebas"} and res["fel"] is None, "la copia preparada: la URL de FEL es la de la aplicación y no hay configuración inyectada", json.dumps(res))
+    prueba(res["vis"] is False and res["estado"] == "idle", "la copia preparada, sin sesión: NEXA FEL permanece oculto (la decisión es del servidor)", json.dumps(res))
+    prueba(res["supa"], "la configuración de Supabase de NEXA sigue intacta")
 
 shutil.rmtree(T, ignore_errors=True)
 print(f"{fallos} fallo(s)" if fallos else "VISTA PREVIA DE NEXA CON ACCESO A NEXA FEL: OK")

@@ -2,7 +2,7 @@ name: NEXA · vista previa con acceso a NEXA FEL (manual, rama fel-nexa-acceso)
 # Publica una VISTA PREVIA de NEXA (la carpeta nexa/ de la rama fel-nexa-acceso) como despliegue de VISTA PREVIA del proyecto de Cloudflare Pages «nexacorp».
 # NUNCA publica en producción: la rama del despliegue es siempre «fel-nexa-acceso» (no «main») y, antes de publicar, se LEE la API de Cloudflare para comprobar que la rama de producción del proyecto es «main».
 # NO usa Supabase, migraciones, siembras, secretos DEMO_ ni nada fiscal: solo los dos secretos de Cloudflare que ya usa deploy-nexa.yml. No se ejecuta con push, pull request ni programación: SOLO cuando TÚ la lanzas a mano.
-#  · fel_url: solo se admite https://nexa-fel-demo.pages.dev/ (valor por defecto). Se añade SOLO a la copia temporal; el código de la rama no cambia y sigue con NEXA FEL deshabilitado. Vacía → NEXA FEL queda deshabilitado en la vista previa.
+#  · NEXA FEL: la copia publicada NO lleva ninguna configuración inyectada. Quién ve el acceso «NEXA FEL» lo decide el SERVIDOR de NEXA (función nx_fel_autorizado() por UUID de Supabase Auth; ver supabase/nx_fel_acceso.sql): solo una cuenta registrada allí lo ve, aunque sea otro administrador no. La URL de FEL es configuración de la aplicación (https://nexa-fel-demo.pages.dev/). preparar.py se niega a publicar una versión con la regla anterior (rol admin / PA_CONFIG.fel).
 # Destinos de producción PROTEGIDOS: no publica en la rama main, ni en el dominio principal, ni en el proyecto Worker «nexa» (solo usa «pages deploy» hacia el proyecto de Pages «nexacorp», con rama de vista previa, y se ejecuta fuera de la carpeta del repositorio para que el wrangler.jsonc de la raíz —del Worker «nexa»— no se use).
 #  · confirmar: escribe VISTA PREVIA.
 # El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en respaldo-nube.yml): está limitado a la rama fel-nexa-acceso y a este mismo archivo, y el trabajo se OMITE siempre que el evento no sea un lanzamiento manual.
@@ -12,14 +12,6 @@ on:
     paths: ['.github/workflows/preview-nexa-fel.yml']
   workflow_dispatch:
     inputs:
-      fel_url:
-        description: "URL de NEXA FEL para la vista previa. Solo se admite https://nexa-fel-demo.pages.dev/ ; vacía = NEXA FEL deshabilitado en la vista previa."
-        type: string
-        default: "https://nexa-fel-demo.pages.dev/"
-      etiqueta:
-        description: "Etiqueta que muestra la pantalla de NEXA FEL (texto corto)"
-        type: string
-        default: "Pruebas"
       confirmar:
         description: "Escribe VISTA PREVIA para confirmar"
         type: string
@@ -44,11 +36,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bash pruebas-fel-nexa/vista-previa/verificar-destino.sh nexacorp fel-nexa-acceso
-      - name: "Preparar la copia temporal de nexa/ (con la URL de NEXA FEL solo si se indicó)"
-        env:
-          FEL_URL: ${{ inputs.fel_url }}
-          ETIQUETA: ${{ inputs.etiqueta }}
-        run: python3 pruebas-fel-nexa/vista-previa/preparar.py --origen nexa --destino "$RUNNER_TEMP/nexa-vista-previa" --fel-url "$FEL_URL" --etiqueta "$ETIQUETA"
+      - name: "Preparar la copia temporal de nexa/ (sin cambios en index.html; se niega si falta el acceso por cuenta o sigue la regla anterior)"
+        run: python3 pruebas-fel-nexa/vista-previa/preparar.py --origen nexa --destino "$RUNNER_TEMP/nexa-vista-previa"
       - name: "Publicar como VISTA PREVIA (rama fel-nexa-acceso; nunca main)"
         uses: cloudflare/wrangler-action@v3
         with:
@@ -59,6 +48,4 @@ jobs:
       - name: "Resumen"
         run: |
           echo "Vista previa publicada (rama fel-nexa-acceso del proyecto nexacorp). La dirección de la vista previa suele ser https://fel-nexa-acceso.nexacorp.pages.dev (el panel de Cloudflare muestra la exacta)."
-          echo "Producción (rama main) no se tocó. NEXA FEL: ${FEL_URL:-deshabilitado}"
-        env:
-          FEL_URL: ${{ inputs.fel_url }}
+          echo "Producción (rama main) no se tocó. El acceso a NEXA FEL lo decide el servidor: solo lo ve la cuenta registrada en nx_fel_cuentas_autorizadas."
