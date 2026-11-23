@@ -4,6 +4,9 @@ on:
   push:
     branches: [fel-proveedores-diseno]
     paths: ["fel/tools/test-demo-pg.sh", "fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/tools/test-nube-local.sh", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
+  pull_request:
+    branches: [fel-proveedores-diseno]
+    paths: ["fel/tools/test-demo-pg.sh", "fel/.dockerignore", "fel/demo-facturacion/**", "fel/proveedores/src/**", "fel/tools/test-nube-local.sh", "fel/supabase/migrations/**", "fel/app/**", "fel/tools/shim_supabase.sql", ".github/workflows/fel-paquete.yml"]
   workflow_dispatch:
 permissions:
   contents: read
