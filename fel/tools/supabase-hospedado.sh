@@ -264,7 +264,7 @@ print(r)')"
       echo "DIAGNÓSTICO: no se pudo ejecutar: ${PRIMERA:0:240}"; exit 1
     fi
     SALIDA="${SALIDA//"$CLAVE_URL"/***}"
-    printf '%s\n' "$SALIDA" | grep -qx '00 sesión | transaction_read_only | on' || { echo "DIAGNÓSTICO: la sesión NO está confirmada como de solo lectura. Se descarta el resultado."; exit 1; }
+    grep -Fxq '00 sesión | transaction_read_only | on' <<< "$SALIDA" || { echo "DIAGNÓSTICO: la sesión NO está confirmada como de solo lectura. Se descarta el resultado."; exit 1; }
     printf '%s\n' "$SALIDA" | grep -E '^[0-9A-Z]{2} [^|]+ \| '
     echo "DIAGNÓSTICO: OK (solo lectura). Nada se modificó."; exit 0;;
   verificar-inicial)
@@ -289,7 +289,7 @@ print(r)')"
     SALIDA="${SALIDA//"$CLAVE_URL"/***}"
     printf '%s\n' "$SALIDA" | grep -E ' \| (OK|REVISAR|INFO)$' || true
     # capa 4: la propia consulta debe confirmar que la sesión es de solo lectura; si no, la acción falla
-    printf '%s\n' "$SALIDA" | grep -qx 'sesión de solo lectura | on | on | OK' || { echo "VERIFICACIÓN INICIAL: la sesión NO está confirmada como de solo lectura. Se descarta el resultado."; exit 1; }
+    grep -Fxq 'sesión de solo lectura | on | on | OK' <<< "$SALIDA" || { echo "VERIFICACIÓN INICIAL: la sesión NO está confirmada como de solo lectura. Se descarta el resultado."; exit 1; }
     NREV="$(printf '%s\n' "$SALIDA" | grep -c ' | REVISAR$' || true)"
     if [ "$NREV" != "0" ]; then echo "VERIFICACIÓN INICIAL: $NREV comprobación(es) para REVISAR. No se debe aplicar la etapa 1 hasta resolverlas."; exit 1; fi
     echo "VERIFICACIÓN INICIAL: OK (solo lectura). Nada se modificó."; exit 0;;
