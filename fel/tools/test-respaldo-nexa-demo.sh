@@ -71,9 +71,10 @@ printf '%s' "${FAKE_CURL_CUERPO:-}" > "$out"; printf '%s' "${FAKE_CURL_CODIGO:-2
 SH
 chmod +x "$W/bin/"*; export REGISTRO_CURL="$W/regcurl.txt"; : > "$REGISTRO_CURL"
 export PATH="$W/bin:$PATH"
-env_base() { export FEL_DEMO_PROYECTO_REF=$REF SUPABASE_ACCESS_TOKEN=$TOKEN FEL_DEMO_BD_URL="postgresql://postgres.$REF:$CLAVE@$HOST:6543/postgres" FEL_ENSAYO_DESTINO_URL="$DEST" TMPDIR="$W/tmp"; mkdir -p "$W/tmp"; unset FAKE_CURL_RC FAKE_CURL_CUERPO FAKE_CURL_CODIGO FAKE_PGDUMP_MAJOR FAKE_DUMP_VACIO FAKE_ESCRIBE_DURANTE FAKE_ESCRIBE_ANTES FAKE_RESTORE_MUTA FAKE_RESTORE_PRIVS FAKE_RESTORE_DEFACL FAKE_RESTORE_PIERDE FAKE_ORIGEN; }
+env_base() { export FEL_DEMO_PROYECTO_REF=$REF SUPABASE_ACCESS_TOKEN=$TOKEN FEL_DEMO_BD_URL="postgresql://postgres.$REF:$CLAVE@$HOST:6543/postgres" FEL_ENSAYO_DESTINO_URL="$DEST" TMPDIR="$W/tmp"; mkdir -p "$W/tmp"; unset FAKE_CURL_RC FAKE_CURL_CUERPO FAKE_CURL_CODIGO FAKE_PGDUMP_MAJOR FAKE_DUMP_VACIO FAKE_ESCRIBE_DURANTE FAKE_ESCRIBE_ANTES FAKE_RESTORE_MUTA FAKE_RESTORE_PRIVS FAKE_RESTORE_DEFACL FAKE_RESTORE_PIERDE FAKE_ORIGEN R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET AGE_PUBLIC_KEY FEL_R2_ENDPOINT_PRUEBA; }
 sale() { env -i PATH="$PATH" HOME="$W" TMPDIR="$W/tmp" REGISTRO_CURL="$REGISTRO_CURL" FEL_DEMO_PROYECTO_REF="${FEL_DEMO_PROYECTO_REF:-}" SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}" FEL_DEMO_BD_URL="${FEL_DEMO_BD_URL:-}" FEL_ENSAYO_DESTINO_URL="${FEL_ENSAYO_DESTINO_URL:-}" \
   FAKE_CURL_RC="${FAKE_CURL_RC:-}" FAKE_CURL_CUERPO="${FAKE_CURL_CUERPO:-}" FAKE_CURL_CODIGO="${FAKE_CURL_CODIGO:-}" FAKE_PGDUMP_MAJOR="${FAKE_PGDUMP_MAJOR:-}" FAKE_DUMP_VACIO="${FAKE_DUMP_VACIO:-}" FAKE_ESCRIBE_DURANTE="${FAKE_ESCRIBE_DURANTE:-}" FAKE_RESTORE_PIERDE="${FAKE_RESTORE_PIERDE:-}" FAKE_ESCRIBE_ANTES="${FAKE_ESCRIBE_ANTES:-}" FAKE_RESTORE_MUTA="${FAKE_RESTORE_MUTA:-}" FAKE_RESTORE_PRIVS="${FAKE_RESTORE_PRIVS:-}" FAKE_RESTORE_DEFACL="${FAKE_RESTORE_DEFACL:-}" FAKE_ORIGEN="${FAKE_ORIGEN:-}" \
+  R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" R2_BUCKET="${R2_BUCKET:-}" AGE_PUBLIC_KEY="${AGE_PUBLIC_KEY:-}" FEL_R2_ENDPOINT_PRUEBA="${FEL_R2_ENDPOINT_PRUEBA:-}" \
   bash "$S" "$@" > "$W/salida.txt" 2>&1; echo $?; }
 # ============================================================================================================== 0. instalación verificada de PostgreSQL 17 (el workflow manual y el CI usan tools/instalar-postgresql-17.sh)
 echo "== 0. instalación verificada de PostgreSQL 17"
@@ -256,6 +257,65 @@ acl_caso "tabla: un privilegio de más (DELETE)" "grant select on public.t_acl t
 acl_caso "tabla: falta un rol" "grant select on public.t_acl to anon, authenticated" "grant select on public.t_acl to anon" distinto "$REL"
 acl_caso "tabla: misma concesión con OPCIÓN GRANT" "grant select on public.t_acl to anon" "grant select on public.t_acl to anon with grant option" distinto "$REL"
 DB=postgres P -c "drop database if exists zz_acl_a with (force)" -c "drop database if exists zz_acl_b with (force)" >/dev/null
+# ============================================================================================================== C. respaldo-persistente (cifrado con age + subida a un R2 FALSO local; sin red ni credenciales reales)
+echo "== C. respaldo-persistente"
+command -v age >/dev/null && command -v age-keygen >/dev/null || mal "falta age/age-keygen en este equipo (la prueba del respaldo persistente NO se omite)"
+R2D="$W/r2"; R2REG="$W/r2reg.txt"; mkdir -p "$R2D"; : > "$R2REG"; R2PORT=$((PORT-5)); R2ID=0123456789abcdef0123456789abcdef; R2KID=AKIAFALSOPRUEBA000; R2SEC=SECRETO-R2-FALSO-DE-PRUEBA-77; BUCKET=bucket-de-prueba
+age-keygen -o "$W/age-privada.txt" >/dev/null 2>&1; AGEPUB="$(age-keygen -y "$W/age-privada.txt")"
+age-keygen -o "$W/age-otra.txt" >/dev/null 2>&1
+python3 "$R/tools/test-r2-servidor-falso.py" "$R2PORT" "$R2D" "$R2KID" "$R2SEC" "$R2REG" & R2PID=$!; sleep 1
+trap 'kill $R2PID 2>/dev/null; as_pg "$PGBIN/pg_ctl -D $DATA -m immediate stop >/dev/null" 2>/dev/null; as_pg "$PGBIN/pg_ctl -D $DATA2 -m immediate stop >/dev/null" 2>/dev/null; rm -rf "$W"' EXIT
+env_r2() { export R2_ACCOUNT_ID=$R2ID R2_ACCESS_KEY_ID=$R2KID R2_SECRET_ACCESS_KEY=$R2SEC R2_BUCKET=$BUCKET AGE_PUBLIC_KEY=$AGEPUB FEL_R2_ENDPOINT_PRUEBA="http://127.0.0.1:$R2PORT"; }
+vacia_r2() { rm -rf "$R2D/objetos" "$R2D/RECHAZA"; : > "$R2REG"; }
+# -- camino feliz (origen en estado 29)
+prepara_origen29; env_base; env_r2; vacia_r2; r=$(sale respaldo-persistente)
+[ "$r" = 0 ] && grep -q "RESPALDO PERSISTENTE: CONSERVADO EN R2" "$W/salida.txt" && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && ok "respaldo-persistente: el ensayo pasa y el respaldo se conserva" || { mal "respaldo-persistente no termina OK"; tail -12 "$W/salida.txt"; }
+N_AGE=$(ls "$R2D/objetos" 2>/dev/null | grep -c '\.dump\.age$'); N_SHA=$(ls "$R2D/objetos" 2>/dev/null | grep -c '\.dump\.sha256$'); N_INF=$(ls "$R2D/objetos" 2>/dev/null | grep -c '\.informe\.txt$'); N_TOT=$(ls "$R2D/objetos" 2>/dev/null | wc -l)
+[ "$N_AGE$N_SHA$N_INF$N_TOT" = 1113 ] && ok "se suben exactamente tres objetos: .dump.age, .dump.sha256 e .informe.txt (nada más)" || mal "objetos subidos distintos de los tres esperados ($N_AGE/$N_SHA/$N_INF de $N_TOT)"
+OBJ_AGE="$(ls "$R2D/objetos"/*.dump.age 2>/dev/null | head -1)"; BASEN="$(basename "$OBJ_AGE" .dump.age)"
+echo "$BASEN" | grep -qE '^bucket-de-prueba__nexa-demo__[0-9]{8}-[0-9]{6}-[0-9a-f]{8}$' && ok "el nombre del objeto es nexa-demo/AAAAMMDD-HHMMSS-<sha8>.dump.age dentro del bucket configurado" || mal "nombre de objeto inesperado: $BASEN"
+if [ -f "$OBJ_AGE" ]; then
+  head -c 22 "$OBJ_AGE" | grep -q 'age-encryption.org/v1' && ! grep -q PGDMP "$OBJ_AGE" && ok "lo subido es un archivo age y no contiene el volcado en claro (sin la firma PGDMP)" || mal "lo subido no es un cifrado válido de age"
+  age -d -i "$W/age-privada.txt" -o "$W/descifrado.dump" "$OBJ_AGE" 2>/dev/null && [ -s "$W/descifrado.dump" ] && ok "con la clave PRIVADA se descifra" || mal "no se pudo descifrar con la clave privada"
+  age -d -i "$W/age-otra.txt" -o "$W/otra.dump" "$OBJ_AGE" >/dev/null 2>&1 && mal "una clave ajena descifró la copia" || ok "una clave privada ajena NO descifra la copia"
+  SHA_CLARO="$(sha256sum "$W/descifrado.dump" | cut -d' ' -f1)"; ARCH_SHA="$R2D/objetos/${BASEN}.dump.sha256"
+  [ "$(cut -d' ' -f1 "$ARCH_SHA")" = "$SHA_CLARO" ] && ok "el .sha256 coincide con el SHA-256 del volcado descifrado" || mal "el .sha256 no coincide con el volcado descifrado"
+  LISTA="$("$PGBIN/pg_restore" --list "$W/descifrado.dump" 2>/dev/null)"; grep -q "TABLE DATA public empresas" <<<"$LISTA" && grep -q "schema_migrations" <<<"$LISTA" && ok "el volcado descifrado se lista con pg_restore (datos de public e historial)" || mal "el volcado descifrado no es válido"
+  # restauración REAL de lo descifrado en una base aparte: mismo recuento de filas que el origen
+  DB=postgres Pd -c "drop database if exists desde_r2 with (force)" -c "create database desde_r2" >/dev/null; DB=desde_r2 Pd -f "$R/tools/shim_supabase.sql" >/dev/null 2>&1
+  "$PGBIN/pg_restore" --no-owner -d "host=$SOCK port=$PORT2 dbname=desde_r2 user=postgres" "$W/descifrado.dump" >/dev/null 2>&1
+  [ "$(DB=desde_r2 Pd -tA -c "select count(*) from public.documentos")" = "$(DB=origen P -tA -c "select count(*) from public.documentos")" ] && ok "restaurar lo descifrado en una base aparte devuelve las mismas filas que el origen" || mal "la restauración desde el cifrado no devuelve los mismos datos"
+  rm -f "$W/descifrado.dump" "$W/otra.dump"
+  INF="$R2D/objetos/${BASEN}.informe.txt"
+  ! grep -qiE "Empresa R|actor@prueba|9900001-1|línea [0-9]|$CLAVE|$R2SEC|$R2KID|$TOKEN" "$INF" && grep -q "SHA-256 del volcado en claro" "$INF" && grep -q "migraciones registradas" "$INF" && ok "el informe subido no contiene datos del contenido ni credenciales (solo tamaños, huellas y totales)" || mal "el informe contiene datos o credenciales"
+fi
+! grep -qE "$R2SEC|$R2KID|$R2ID|$CLAVE|$TOKEN" "$W/salida.txt" && ok "ninguna credencial (R2, base, token) aparece en la salida" || mal "alguna credencial apareció en la salida"
+grep -c '^PUT ' "$R2REG" | grep -qx 3 && grep -q '^PUT .* 200 ' "$R2REG" && ! grep -qE '403|400' "$R2REG" && ok "las tres subidas llevaron firma SigV4 válida y If-None-Match (sin sobrescribir)" || mal "las subidas no fueron las esperadas"
+L_AGE="$(grep -n 'dump.age' "$R2REG" | head -1 | cut -d: -f1)"; L_SHA="$(grep -n 'dump.sha256' "$R2REG" | head -1 | cut -d: -f1)"; [ -n "$L_AGE" ] && [ -n "$L_SHA" ] && [ "$L_SHA" -lt "$L_AGE" ] && ok "el cifrado se sube al FINAL (si existe, existen su huella y su informe)" || mal "el orden de subida no deja el cifrado al final"
+[ -z "$(find "$W/tmp" -mindepth 1 2>/dev/null | head -1)" ] && ok "el directorio temporal (volcado en claro y cifrado locales) no sobrevive" || mal "quedaron archivos temporales"
+! find "$R" -name '*.dump' -o -name '*.dump.age' 2>/dev/null | grep -q . && ok "ningún volcado quedó dentro del repositorio" || mal "hay un volcado dentro del repositorio"
+# -- una segunda corrida con el mismo contenido NO sobrescribe nada (nombre con fecha: objeto nuevo) y no toca los anteriores
+sleep 1; env_base; env_r2; r=$(sale respaldo-persistente); [ "$r" = 0 ] && [ "$(ls "$R2D/objetos" | wc -l)" = 6 ] && ok "una segunda corrida crea objetos NUEVOS (6 en total) sin tocar los anteriores" || mal "la segunda corrida no creó objetos nuevos"
+# -- protecciones
+for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET AGE_PUBLIC_KEY; do prepara_origen29; env_base; env_r2; vacia_r2; export "$v="; r=$(sale respaldo-persistente); [ "$r" = 2 ] && grep -q "falta $v" "$W/salida.txt" && [ ! -d "$R2D/objetos" ] && ok "sin $v → se niega antes de hacer nada" || mal "sin $v no se niega"; done
+env_base; env_r2; export AGE_PUBLIC_KEY="$(grep -o 'AGE-SECRET-KEY-[A-Z0-9]*' "$W/age-privada.txt")"; r=$(sale respaldo-persistente); [ "$r" = 2 ] && grep -q "clave PÚBLICA" "$W/salida.txt" && ! grep -q "AGE-SECRET-KEY" "$W/salida.txt" && ok "una clave PRIVADA de age como destinatario se rechaza (y no se imprime)" || mal "se aceptó una clave privada de age"
+env_base; env_r2; export AGE_PUBLIC_KEY="age1corta"; r=$(sale respaldo-persistente); [ "$r" = 2 ] && ok "un destinatario con formato inválido se rechaza" || mal "formato de destinatario inválido aceptado"
+env_base; env_r2; export R2_BUCKET="../otro"; r=$(sale respaldo-persistente); [ "$r" = 2 ] && ok "un nombre de bucket inválido se rechaza" || mal "bucket inválido aceptado"
+# R2 rechaza (403) → falla y NO declara el respaldo conservado
+prepara_origen29; env_base; env_r2; vacia_r2; : > "$R2D/RECHAZA"; r=$(sale respaldo-persistente); [ "$r" = 1 ] && ! grep -q "CONSERVADO EN R2" "$W/salida.txt" && grep -q "la subida a R2" "$W/salida.txt" && ok "si R2 rechaza la subida → falla y no se da el respaldo por conservado" || mal "R2 rechaza pero el flujo no falla"
+! grep -qE "$R2SEC|$R2KID" "$W/salida.txt" && ok "el fallo de R2 tampoco imprime credenciales" || mal "el fallo de R2 imprimió credenciales"
+# credenciales equivocadas → 403 por firma
+prepara_origen29; env_base; env_r2; vacia_r2; export R2_SECRET_ACCESS_KEY=otro-secreto; r=$(sale respaldo-persistente); [ "$r" = 1 ] && grep -q "403-firma" "$R2REG" && ok "una firma con secreto equivocado es rechazada por R2 y el flujo falla" || mal "firma equivocada no falla"
+# el ensayo FALLA → no se sube NADA (una copia que no se pudo restaurar no se conserva)
+prepara_origen29; env_base; env_r2; vacia_r2; FAKE_RESTORE_PIERDE=1 r=$(sale respaldo-persistente); [ "$r" = 1 ] && [ ! -d "$R2D/objetos" ] && ! grep -q '^PUT' "$R2REG" && ok "si la restauración efímera falla, NO se sube ningún objeto" || mal "se subió algo pese a fallar el ensayo"
+prepara_origen29; env_base; env_r2; vacia_r2; FAKE_RESTORE_MUTA=1 r=$(sale respaldo-persistente); [ "$r" = 1 ] && [ ! -d "$R2D/objetos" ] && ok "si lo restaurado difiere del origen, NO se sube nada" || mal "se subió pese a datos distintos"
+# ensayo-respaldo normal (y verificar) NO sube nada aunque haya variables R2 en el entorno
+prepara_origen29; env_base; env_r2; vacia_r2; r=$(sale ensayo-respaldo); [ "$r" = 0 ] && [ ! -d "$R2D/objetos" ] && ! grep -q '^PUT' "$R2REG" && ok "ensayo-respaldo no conserva nada en R2 (solo respaldo-persistente lo hace)" || mal "ensayo-respaldo tocó R2"
+# subir sin sobrescribir: el mismo objeto dos veces → 412
+env_r2; : > "$W/x.bin"; echo hola > "$W/x.bin"; KEY=nexa-demo/20260101-000000-abcdef12.informe.txt; vacia_r2
+python3 "$R/tools/r2_subir.py" poner $BUCKET $KEY "$W/x.bin" >/dev/null 2>&1 && ! python3 "$R/tools/r2_subir.py" poner $BUCKET $KEY "$W/x.bin" 2>"$W/e.txt" >/dev/null && grep -q "YA EXISTE" "$W/e.txt" && ok "subir dos veces la misma clave falla: nunca se sobrescribe" || mal "se pudo sobrescribir un objeto"
+! FEL_R2_ENDPOINT_PRUEBA="http://example.com:80" python3 "$R/tools/r2_subir.py" poner $BUCKET $KEY "$W/x.bin" >/dev/null 2>&1 && ! python3 "$R/tools/r2_subir.py" poner $BUCKET "otra/clave.txt" "$W/x.bin" >/dev/null 2>&1 && ok "el destino de prueba solo admite 127.0.0.1 y las claves de objeto fuera del patrón se rechazan" || mal "r2_subir aceptó un destino o una clave no permitidos"
+kill $R2PID 2>/dev/null
 # -- el origen: ninguna orden de escritura/restauración se le dirige (revisión del propio script)
 echo "== revisión estática"
 ! grep -nE 'src (pg_restore|createdb|dropdb)|src psql [^|]*(create|drop|alter|insert|update|delete|truncate|grant)' "$S" | grep -v "zz_nexa_prueba_escritura" | grep -q . && ok "el script nunca dirige restauraciones ni escrituras al origen" || mal "el script dirige una escritura al origen"

@@ -4,6 +4,9 @@ name: NEXA FEL · respaldo de nexa-demo (manual, solo lectura; ensayo de restaur
 #  · acción «verificar-respaldo» : UN GET a la API de gestión de Supabase (¿hay copias o PITR?). Distingue RESPALDO CONFIRMADO · SIN RESPALDOS AUTOMÁTICOS · NO VERIFICABLE (que falla). Secretos: DEMO_SUPABASE_PROYECTO_REF y DEMO_SUPABASE_ACCESS_TOKEN.
 #  · acción «ensayo-respaldo»    : FASE 1. pg_dump (solo lectura) de «public» y «supabase_migrations» → SHA-256 → pg_restore --list → restauración en un PostgreSQL 17 EFÍMERO DEL PROPIO EJECUTOR (contenedor de servicio local,
 #      nunca en Supabase) → conteos, historial de 28 migraciones, la 29 ausente y catálogo de la 28 → la copia se sobrescribe y se elimina. El informe solo trae tamaños, SHA-256 y totales. Secretos: DEMO_SUPABASE_PROYECTO_REF y DEMO_BD_URL.
+#  · acción «respaldo-persistente»: FASE 2. Hace TODO lo del ensayo (pg_dump con instantánea consistente, restauración efímera y comprobaciones) y, SOLO si pasó, cifra el volcado con la clave PÚBLICA de age y lo sube a un bucket PRIVADO
+#      de Cloudflare R2 como «nexa-demo/AAAAMMDD-HHMMSS-<sha8>.dump.age» (hora UTC), más «.dump.sha256» (SHA-256 del volcado en claro) e «.informe.txt» (sin datos); nunca sobrescribe. El volcado en claro y el cifrado local se borran del ejecutor.
+#      Sin artefactos, cachés ni releases. La clave privada de age NO está en GitHub: quien conserva la copia es R2 y solo tú puedes descifrarla. Secretos: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY; variables: R2_BUCKET, AGE_PUBLIC_KEY (entorno demo-privada), más los dos del ensayo.
 # El destino de la restauración está FIJO en este archivo (no es una entrada ni un secreto) y el script lo valida: solo un PostgreSQL local.
 # El «push» de abajo existe SOLO para que GitHub REGISTRE este flujo (como en migraciones-nube): está limitado a este mismo archivo y los trabajos se OMITEN siempre que el evento no sea un lanzamiento manual.
 on:
@@ -12,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       accion:
-        description: "verificar-respaldo (¿hay respaldos automáticos?) · ensayo-respaldo (copia lógica + restauración efímera; ningún archivo sale del ejecutor)"
+        description: "verificar-respaldo (¿hay respaldos automáticos?) · ensayo-respaldo (copia lógica + restauración efímera; ningún archivo sale del ejecutor) · respaldo-persistente (ensayo + copia CIFRADA con age conservada en R2)"
         type: choice
-        options: [verificar-respaldo, ensayo-respaldo]
+        options: [verificar-respaldo, ensayo-respaldo, respaldo-persistente]
         default: verificar-respaldo
 permissions:
   contents: read
@@ -69,3 +72,46 @@ jobs:
           FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
           FEL_ENSAYO_DESTINO_URL: postgresql://postgres:efimero-sin-valor@127.0.0.1:5432/postgres
         run: bash fel/tools/respaldo-nexa-demo.sh ensayo-respaldo
+  respaldo-persistente:
+    name: Respaldo persistente cifrado en R2 (nexa-demo)
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fel-proveedores-diseno' && inputs.accion == 'respaldo-persistente'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: demo-privada
+    services:
+      destino:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: efimero-sin-valor
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: "Cliente PostgreSQL 17 (instalación verificada: huella de la clave, versión mayor fijada, herramientas comprobadas)"
+        uses: ./.github/actions/postgresql-17
+        with:
+          servidor: "false"
+      - name: "age (paquete firmado del archivo de Ubuntu; se comprueba que age y age-keygen respondan)"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+          age --version
+          command -v age
+      - name: "Respaldo persistente (origen: solo lectura · ensayo de restauración efímera · cifrado con la clave pública · subida a R2)"
+        env:
+          FEL_DEMO_PROYECTO_REF: ${{ secrets.DEMO_SUPABASE_PROYECTO_REF }}
+          FEL_DEMO_BD_URL: ${{ secrets.DEMO_BD_URL }}
+          FEL_ENSAYO_DESTINO_URL: postgresql://postgres:efimero-sin-valor@127.0.0.1:5432/postgres
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          AGE_PUBLIC_KEY: ${{ vars.AGE_PUBLIC_KEY }}
+        run: bash fel/tools/respaldo-nexa-demo.sh respaldo-persistente

@@ -60,9 +60,19 @@ PY
   echo "RESULTADO: SIN RESPALDOS AUTOMÁTICOS (la API responde correctamente y no lista copias ni PITR; coherente con el plan Free). Hace falta una copia lógica propia."; exit 0;;
 
 # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-ensayo-respaldo)
+ensayo-respaldo|respaldo-persistente)
   falla() { echo "FALLO: $1"; echo "ENSAYO DE RESPALDO Y RESTAURACIÓN: FALLÓ"; exit 1; }
   for h in psql pg_dump pg_restore python3 sha256sum; do command -v "$h" >/dev/null || falla "falta la herramienta $h en este ejecutor"; done
+  PERSISTENTE=0
+  if [ "$ACCION" = "respaldo-persistente" ]; then
+    PERSISTENTE=1
+    command -v age >/dev/null || falla "falta la herramienta age en este ejecutor"
+    for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET AGE_PUBLIC_KEY; do [ -n "${!v:-}" ] || { echo "PROHIBIDO: falta $v (entorno demo-privada). No se hace nada."; exit 2; }; done
+    enmascarar "$R2_ACCESS_KEY_ID"; enmascarar "$R2_SECRET_ACCESS_KEY"; enmascarar "$R2_ACCOUNT_ID"
+    [[ "$AGE_PUBLIC_KEY" =~ ^age1[a-z0-9]{58}$ ]] || { echo "PROHIBIDO: AGE_PUBLIC_KEY no es una clave PÚBLICA de age (age1…). Nunca se acepta una clave privada ni otro formato. No se hace nada."; exit 2; }
+    [[ "$R2_BUCKET" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]] || { echo "PROHIBIDO: R2_BUCKET no es un nombre de bucket válido. No se hace nada."; exit 2; }
+    [[ "$R2_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]] || { echo "PROHIBIDO: R2_ACCOUNT_ID no tiene el formato esperado. No se hace nada."; exit 2; }
+  fi
   # ---- 1. origen: la cadena del pooler COMPARTIDO de nexa-demo (solo se usa para leer)
   U="${FEL_DEMO_BD_URL:-}"; [ -n "$U" ] || { echo "PROHIBIDO: falta FEL_DEMO_BD_URL. No se hace nada."; exit 2; }
   RE="^postgres(ql)?://postgres\.${REF}:([^@/:?#[:space:]]+)@([a-z0-9-]+\.pooler\.supabase\.com):(6543|5432)/postgres$"
@@ -293,8 +303,35 @@ PY
     echo "  OK    catálogo de la migración 29 sano en lo restaurado (69 tablas con RLS, políticas, funciones —con la excepción estricta de rls_auto_enable()—, disparadores y privilegios; transacción de solo lectura)"
   fi
   echo "  LIMITACIONES de esta validación (no son prueba aprobada): las expresiones CHECK y de políticas se comparan sin paréntesis (el volcado puede aplanarlos); atributos y membresías de roles; extensiones y su configuración; disparadores de evento de la plataforma; todo lo que está fuera de public y supabase_migrations (auth, storage, vault); los usuarios de Auth se sustituyen por usuarios de prueba"
+  # ---- 12. SOLO «respaldo-persistente» y SOLO si todo lo anterior pasó (cada «falla» sale antes): cifrar con la clave PÚBLICA de age y subir a R2 (bucket privado). El volcado en claro nunca sale del directorio temporal.
+  if [ "$PERSISTENTE" = 1 ]; then
+    AHORA_UTC="$(date -u +%Y%m%d-%H%M%S)"; BASE="nexa-demo/${AHORA_UTC}-${SHA:0:8}"
+    age -r "$AGE_PUBLIC_KEY" -o "$T/respaldo.dump.age" "$T/respaldo.dump" 2>"$T/age.err" || falla "age no pudo cifrar la copia: $(head -c 150 "$T/age.err" | tr '\n' ' ')"
+    [ -s "$T/respaldo.dump.age" ] || falla "el archivo cifrado quedó vacío"
+    head -c 5 "$T/respaldo.dump.age" | grep -q 'PGDMP' && falla "el archivo a subir NO está cifrado"
+    head -c 21 "$T/respaldo.dump.age" | grep -q '^age-encryption.org/v1' || falla "el archivo a subir no tiene el formato de age"
+    TAM_AGE="$(stat -c %s "$T/respaldo.dump.age")"; SHA_AGE="$(sha256sum "$T/respaldo.dump.age" | cut -d' ' -f1)"
+    printf '%s  respaldo.dump\n' "$SHA" > "$T/respaldo.dump.sha256"
+    {
+      echo "NEXA FEL · respaldo persistente de nexa-demo (informe SIN datos)"
+      echo "objeto cifrado: ${BASE}.dump.age · $TAM_AGE bytes · SHA-256 del cifrado $SHA_AGE"
+      echo "SHA-256 del volcado en claro (el que debe salir tras descifrar): $SHA · $TAM bytes"
+      echo "instantánea del origen: $HORA_SNAP (hora de Guatemala) · nombre del objeto en UTC: $AHORA_UTC"
+      echo "contenido: $NTAB tablas · $TOTAL filas · $N_MIG migraciones registradas · estructura: $NELEM elementos"
+      echo "cliente pg_dump $VC · servidor PostgreSQL $VS · ensayo de restauración efímera: OK (misma ejecución, antes de subir)"
+      echo "ejecución de GitHub: ${GITHUB_RUN_ID:-local} · commit ${GITHUB_SHA:-local}"
+      echo "restauración: descifrar con age y la clave privada, comparar el SHA-256, pg_restore --list y restaurar en una base APARTE (nunca sobre nexa-demo)"
+      echo "limitaciones: roles, extensiones, disparadores de evento de la plataforma, auth/storage/vault y expresiones CHECK/políticas (ver el ensayo)"
+    } > "$T/respaldo.informe.txt"
+    for par in "respaldo.dump.sha256:${BASE}.dump.sha256" "respaldo.informe.txt:${BASE}.informe.txt" "respaldo.dump.age:${BASE}.dump.age"; do   # el cifrado va ÚLTIMO: si existe, existen su huella y su informe
+      python3 tools/r2_subir.py poner "$R2_BUCKET" "${par#*:}" "$T/${par%%:*}" || falla "la subida a R2 de ${par#*:} falló (no se da el respaldo por conservado)"
+    done
+    echo "  OK    respaldo persistente conservado en R2 (bucket privado): ${BASE}.dump.age (+ .dump.sha256 e .informe.txt) · cifrado con age (clave pública) · $TAM_AGE bytes · SHA-256 del cifrado $SHA_AGE"
+    echo "  INFO  el volcado en claro y el cifrado local se sobrescriben y borran al terminar; la prueba de recuperación DESDE R2 con la clave privada sigue pendiente (la haces tú)"
+  fi
   echo "== INFORME (sin datos): tablas $NTAB · filas $TOTAL · elementos de estructura $NELEM · tamaño de la copia $TAM bytes · SHA-256 $SHA · instantánea $HORA_SNAP · cliente pg_dump $VC · servidor $VS · destino: local y efímero · la copia se elimina"
   echo "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK"
+  [ "$PERSISTENTE" != 1 ] || echo "RESPALDO PERSISTENTE: CONSERVADO EN R2 (cifrado)"
   exit 0;;
-*) echo "Uso: bash tools/respaldo-nexa-demo.sh verificar-respaldo|ensayo-respaldo"; exit 2;;
+*) echo "Uso: bash tools/respaldo-nexa-demo.sh verificar-respaldo|ensayo-respaldo|respaldo-persistente"; exit 2;;
 esac

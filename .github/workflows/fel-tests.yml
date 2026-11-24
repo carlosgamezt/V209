@@ -60,6 +60,11 @@ jobs:
         run: bash fel/tools/test-tipos-documento.sh
       # Respaldo de nexa-demo: va al FINAL del trabajo a propósito (un fallo aquí no puede dejar sin ejecutar los pasos de arriba). PostgreSQL 17 se instala con la acción verificada (huella de la clave, versión mayor fijada,
       # herramientas comprobadas) en lugar de suponer una ruta fija del ejecutor; la prueba detecta lo instalado y NO se omite si falta.
+      - name: age (cifrado del respaldo persistente; la prueba lo exige y NO se omite si falta)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+          age --version && age-keygen --version
       - name: PostgreSQL 17 con servidor (instalación verificada) para la prueba del respaldo
         uses: ./.github/actions/postgresql-17
         with:
