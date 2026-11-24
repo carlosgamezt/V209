@@ -294,6 +294,42 @@ grep -c '^PUT ' "$R2REG" | grep -qx 3 && grep -q '^PUT .* 200 ' "$R2REG" && ! gr
 L_AGE="$(grep -n 'dump.age' "$R2REG" | head -1 | cut -d: -f1)"; L_SHA="$(grep -n 'dump.sha256' "$R2REG" | head -1 | cut -d: -f1)"; [ -n "$L_AGE" ] && [ -n "$L_SHA" ] && [ "$L_SHA" -lt "$L_AGE" ] && ok "el cifrado se sube al FINAL (si existe, existen su huella y su informe)" || mal "el orden de subida no deja el cifrado al final"
 [ -z "$(find "$W/tmp" -mindepth 1 2>/dev/null | head -1)" ] && ok "el directorio temporal (volcado en claro y cifrado locales) no sobrevive" || mal "quedaron archivos temporales"
 ! find "$R" -name '*.dump' -o -name '*.dump.age' 2>/dev/null | grep -q . && ok "ningún volcado quedó dentro del repositorio" || mal "hay un volcado dentro del repositorio"
+# ---- recuperación (paso 6) con el MISMO respaldo que acaba de subirse: descarga firmada del R2 falso, descifrado con la clave privada, restauración en un PostgreSQL NUEVO y verificaciones (tools/recuperar-respaldo.py)
+echo "== C2. recuperar-respaldo (descarga + descifrado + restauración + verificaciones)"
+RECDIR="/tmp/fel-recuperacion-test"; [ -n "$RECDIR" ] && rm -rf "$RECDIR"; mkdir -p "$RECDIR"; chmod 777 "$RECDIR"; cp "$W/age-privada.txt" "$RECDIR/clave.txt"; cp "$W/age-otra.txt" "$RECDIR/otra.txt"; chmod 644 "$RECDIR/clave.txt" "$RECDIR/otra.txt"
+BASE_R="nexa-demo/${BASEN#*__nexa-demo__}"; PORT_R=$((PORT-7)); BN_R="$(basename "$BASE_R")"
+cat > "$RECDIR/rec.sh" <<SH
+#!/usr/bin/env bash
+export TMPDIR="$RECDIR" R2_ACCOUNT_ID=$R2ID R2_ACCESS_KEY_ID=$R2KID R2_SECRET_ACCESS_KEY=$R2SEC FEL_R2_ENDPOINT_PRUEBA="http://127.0.0.1:$R2PORT"
+exec python3 "$R/tools/recuperar-respaldo.py" --pgbin "\${REC_PGBIN:-$PGBIN}" --repo "$R" --puerto $PORT_R --pg-mayor $PGMAYOR "\$@"
+SH
+chmod 755 "$RECDIR/rec.sh"
+rec() { as_pg "'$RECDIR/rec.sh' $* > '$RECDIR/salida.txt' 2>&1; echo \$?"; }
+sin_restos() { ! ls "$RECDIR" | grep -q '^nexa-recuperacion-' && ! "$PGBIN/pg_isready" -h 127.0.0.1 -p $PORT_R -q 2>/dev/null; }
+r=$(rec --base "$BASE_R" --bucket $BUCKET --clave "$RECDIR/clave.txt" --descargar --sha-esperado "$SHA_CLARO")
+[ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$RECDIR/salida.txt" && grep -q "= valor esperado independiente" "$RECDIR/salida.txt" && grep -q "RLS: las" "$RECDIR/salida.txt" && grep -q "catálogo de la migración 29 sano" "$RECDIR/salida.txt" && grep -q "historial de migraciones: 29 versiones, idénticas" "$RECDIR/salida.txt" && ok "recuperar-respaldo: descarga, descifra, restaura en un PostgreSQL 17 nuevo y verifica tablas, filas, migraciones, RLS y catálogo de la 29" || { mal "la recuperación no termina OK"; tail -15 "$RECDIR/salida.txt"; }
+grep -E "tablas y registros|RLS: las" "$RECDIR/salida.txt" | cut -c1-150
+! grep -qE "$R2SEC|$R2KID|AGE-SECRET-KEY|$CLAVE" "$RECDIR/salida.txt" && ok "la salida no contiene credenciales ni la clave privada" || mal "la salida de la recuperación contiene credenciales"
+sin_restos && ok "no quedan archivos temporales ni el PostgreSQL temporal en marcha" || mal "quedaron restos de la recuperación"
+grep -q "pooler.supabase.com\|FEL_DEMO_BD_URL\|DEMO_BD_URL" "$R/tools/recuperar-respaldo.py" && mal "recuperar-respaldo.py menciona la base alojada" || ok "recuperar-respaldo.py no conoce ninguna cadena de nexa-demo (no puede tocarla)"
+# modo carpeta (descarga manual desde el panel de Cloudflare)
+CARP="$RECDIR/carpeta"; mkdir -p "$CARP"; for e in dump.age dump.sha256 informe.txt; do cp "$R2D/objetos/${BASEN}.$e" "$CARP/$BN_R.$e"; done; chmod -R a+rX "$CARP"
+r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP"); [ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$RECDIR/salida.txt" && sin_restos && ok "modo --carpeta (objetos descargados a mano) → recuperación OK" || { mal "el modo carpeta no termina OK"; tail -8 "$RECDIR/salida.txt"; }
+# protecciones
+r=$(rec --base "$BASE_R" --clave "$RECDIR/otra.txt" --carpeta "$CARP"); [ "$r" = 1 ] && grep -q "age no pudo descifrar" "$RECDIR/salida.txt" && ! grep -q "temporal e independiente" "$RECDIR/salida.txt" && sin_restos && ok "con una clave privada equivocada → falla al descifrar y no restaura nada" || mal "clave equivocada no se detecta"
+CARP2="$RECDIR/carpeta2"; cp -r "$CARP" "$CARP2"; python3 -c "
+import sys; p=sys.argv[1]; b=bytearray(open(p,'rb').read()); b[len(b)//2]^=1; open(p,'wb').write(b)" "$CARP2/$BN_R.dump.age"; chmod -R a+rX "$CARP2"
+r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP2"); [ "$r" = 1 ] && grep -q "archivo CIFRADO no coincide" "$RECDIR/salida.txt" && ! grep -q "descifrado con tu clave" "$RECDIR/salida.txt" && ok "un archivo cifrado alterado se detecta ANTES de descifrar" || mal "un cifrado alterado no se detecta"
+CARP3="$RECDIR/carpeta3"; cp -r "$CARP" "$CARP3"; printf '%064d  respaldo.dump\n' 0 > "$CARP3/$BN_R.dump.sha256"; chmod -R a+rX "$CARP3"
+r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP3"); [ "$r" = 1 ] && grep -q "no coincide con el .sha256" "$RECDIR/salida.txt" && ! grep -q "temporal e independiente" "$RECDIR/salida.txt" && ok "un .sha256 distinto del volcado descifrado se detecta antes de restaurar" || mal "un .sha256 alterado no se detecta"
+r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP" --sha-esperado "$(printf '%064d' 1)"); [ "$r" = 1 ] && grep -q "valor esperado que indicaste" "$RECDIR/salida.txt" && ok "un SHA-256 esperado distinto → falla" || mal "el SHA esperado erróneo no se detecta"
+CARP4="$RECDIR/carpeta4"; mkdir -p "$CARP4"; cp "$CARP/$BN_R.dump.age" "$CARP/$BN_R.dump.sha256" "$CARP4/"; chmod -R a+rX "$CARP4"
+r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP4"); [ "$r" = 1 ] && grep -q "falta en la carpeta" "$RECDIR/salida.txt" && ok "un objeto que falta (informe) → falla" || mal "un objeto ausente no se detecta"
+CARP5="$RECDIR/carpeta5"; cp -r "$CARP" "$CARP5"; sed -i -E 's/(contenido: [0-9]+ tablas) · [0-9]+ filas/\1 · 99999 filas/' "$CARP5/$BN_R.informe.txt"; chmod -R a+rX "$CARP5"
+r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP5"); [ "$r" = 1 ] && grep -q "distintas de las del informe" "$RECDIR/salida.txt" && sin_restos && ok "si las filas restauradas difieren de las del informe → falla (y se limpia)" || mal "una diferencia de filas no se detecta"
+: > "$R2REG"; r=$(rec --base "nexa-demo/20200101-000000-00000000" --bucket $BUCKET --clave "$RECDIR/clave.txt" --descargar); [ "$r" = 1 ] && grep -q "no se pudo descargar" "$RECDIR/salida.txt" && grep -q "GET .* 404" "$R2REG" && ok "un respaldo inexistente en R2 → falla con claridad" || mal "un objeto inexistente no se detecta"
+r=$(as_pg "REC_PGBIN=/no/existe '$RECDIR/rec.sh' --base '$BASE_R' --clave '$RECDIR/clave.txt' --descargar --bucket $BUCKET > '$RECDIR/salida.txt' 2>&1; echo \$?"); [ "$r" = 2 ] && grep -q "falta initdb" "$RECDIR/salida.txt" && ok "sin PostgreSQL 17 en --pgbin → se niega con un requisito claro" || mal "un --pgbin inválido no se rechaza"
+[ -n "$RECDIR" ] && rm -rf "$RECDIR"
 # -- una segunda corrida con el mismo contenido NO sobrescribe nada (nombre con fecha: objeto nuevo) y no toca los anteriores
 sleep 1; env_base; env_r2; r=$(sale respaldo-persistente); [ "$r" = 0 ] && [ "$(ls "$R2D/objetos" | wc -l)" = 6 ] && ok "una segunda corrida crea objetos NUEVOS (6 en total) sin tocar los anteriores" || mal "la segunda corrida no creó objetos nuevos"
 # -- protecciones

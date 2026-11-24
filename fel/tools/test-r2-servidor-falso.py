@@ -36,6 +36,11 @@ class H(http.server.BaseHTTPRequestHandler):
         os.makedirs(os.path.join(DIR, "objetos"), exist_ok=True); f = self._archivo()
         if os.path.exists(f): self._reg(f"PUT {self.path} 412"); return self._resp(412, b"<Error><Code>PreconditionFailed</Code></Error>")
         open(f, "wb").write(cuerpo); self._reg(f"PUT {self.path} 200 {len(cuerpo)}"); self._resp(200, b"", {"ETag": '"' + hashlib.md5(cuerpo).hexdigest() + '"'})
+    def do_GET(self):
+        if os.path.exists(os.path.join(DIR, "RECHAZA")) or not self._firma_ok(hashlib.sha256(b"").hexdigest()): self._reg(f"GET {self.path} 403"); return self._resp(403, b"<Error><Code>AccessDenied</Code></Error>")
+        f = self._archivo()
+        if not os.path.exists(f): self._reg(f"GET {self.path} 404"); return self._resp(404, b"<Error><Code>NoSuchKey</Code></Error>")
+        c = open(f, "rb").read(); self._reg(f"GET {self.path} 200"); self._resp(200, c, {"ETag": '"' + hashlib.md5(c).hexdigest() + '"'})
     def do_HEAD(self):
         if os.path.exists(os.path.join(DIR, "RECHAZA")) or not self._firma_ok(hashlib.sha256(b"").hexdigest()): self._reg(f"HEAD {self.path} 403"); return self._resp(403)
         f = self._archivo()

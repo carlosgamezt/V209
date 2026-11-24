@@ -3,6 +3,7 @@
 
 Uso:  r2_subir.py poner <bucket> <clave-del-objeto> <archivo>     PUT sin sobrescribir (If-None-Match: *) + HEAD de verificación (tamaño y ETag = MD5)
       r2_subir.py cabecera <bucket> <clave-del-objeto>            HEAD (existe y qué tamaño tiene)
+      r2_subir.py bajar <bucket> <clave-del-objeto> <destino>     GET firmado a un archivo NUEVO (no sobrescribe) y comprobación del tamaño anunciado
 Entorno obligatorio: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY.  Nada de esto se imprime nunca.
 Solo para pruebas locales: FEL_R2_ENDPOINT_PRUEBA=http://127.0.0.1:<puerto> (se rechaza cualquier otro anfitrión).
 Salida: 0 = hecho · 1 = falló (el motivo va a stderr, sin credenciales) · 2 = uso o entorno inválido.
@@ -89,6 +90,37 @@ def peticion(metodo, bucket, clave, archivo=None, sin_sobrescribir=False):
         con.close()
 
 
+def descargar(bucket, clave, destino):
+    cuenta, kid, secreto, (esquema, host, puerto) = entorno()
+    ruta = "/" + urllib.parse.quote(f"{bucket}/{clave}", safe="/-_.~")
+    h = firma(secreto, kid, "GET", ruta, host if puerto in (80, 443) else f"{host}:{puerto}", {}, hashlib.sha256(b"").hexdigest(), datetime.datetime.now(datetime.timezone.utc))
+    con = (http.client.HTTPSConnection if esquema == "https" else http.client.HTTPConnection)(host, puerto, timeout=60)
+    try:
+        con.putrequest("GET", ruta, skip_host=True, skip_accept_encoding=True)
+        for k, v in h.items():
+            con.putheader(k, v)
+        con.endheaders()
+        r = con.getresponse()
+        if r.status != 200:
+            sale(1, f"R2: la descarga fue rechazada (HTTP {r.status}): {limpia(r.read(400).decode('utf-8', 'replace'))}")
+        esperado = int(r.getheader("content-length", "-1"))
+        try:
+            f = open(destino, "xb")
+        except FileExistsError:
+            sale(1, "R2: el archivo de destino ya existe; no se sobrescribe")
+        total = 0
+        with f:
+            for bloque in iter(lambda: r.read(1 << 20), b""):
+                f.write(bloque); total += len(bloque)
+        if total != esperado or total == 0:
+            sale(1, f"R2: descarga incompleta ({total} de {esperado} bytes)")
+        return total
+    except OSError as e:
+        sale(1, f"R2: error de red ({type(e).__name__})")
+    finally:
+        con.close()
+
+
 def limpia(texto):
     for k in ("R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
         v = os.environ.get(k, "")
@@ -123,6 +155,11 @@ def main(a):
         if est != 200:
             sale(1, f"R2: HEAD respondió HTTP {est}")
         print(f"R2 OK: {clave} · {cab.get('content-length')} bytes")
+        return 0
+    if len(a) == 5 and a[1] == "bajar":
+        _, _, bucket, clave, destino = a
+        validar(bucket, clave)
+        print(f"R2 OK: {clave} · {descargar(bucket, clave, destino)} bytes descargados")
         return 0
     sale(2, __doc__)
 

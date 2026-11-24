@@ -390,6 +390,22 @@ if os.path.exists(RB) and os.path.exists(RS):
     _ft2 = open(".github/workflows/fel-tests.yml", encoding="utf-8").read()
     if "apt-get install -y -qq age" in _ft2 and _ft2.index("apt-get install -y -qq age") < _ft2.index("test-respaldo-nexa-demo.sh"): ok("[respaldo-persistente] el CI instala age antes de la prueba (que exige age y NO se omite)")
     else: mal("[respaldo-persistente] el CI no instala age antes de la prueba del respaldo")
+    # ---- recuperación desde R2 (paso 6): se ejecuta en el equipo del propietario, jamás toca nexa-demo y nunca lee ni imprime la clave privada
+    _rr = open("fel/tools/recuperar-respaldo.py", encoding="utf-8").read() if os.path.exists("fel/tools/recuperar-respaldo.py") else ""
+    _ps = open("fel/tools/recuperar-respaldo.ps1", encoding="utf-8").read() if os.path.exists("fel/tools/recuperar-respaldo.ps1") else ""
+    _dc = open("fel/docs/migracion-29/PROCEDIMIENTO-RECUPERACION-DESDE-R2.md", encoding="utf-8").read() if os.path.exists("fel/docs/migracion-29/PROCEDIMIENTO-RECUPERACION-DESDE-R2.md") else ""
+    if _rr and not re.search(r"pooler\.supabase|supabase\.co|DEMO_BD_URL|FEL_DEMO|postgres\.[a-z0-9]{20}", _rr) and '"-h", "127.0.0.1"' in _rr and "listen_addresses=127.0.0.1" in _rr and "token_urlsafe" in _rr and "scram-sha-256" in _rr and "geteuid() == 0" in _rr: ok("[recuperación] el programa no conoce ninguna cadena de nexa-demo ni de Supabase: solo restaura en un PostgreSQL propio, en 127.0.0.1, con contraseña aleatoria y sin permitir administrador")
+    else: mal("[recuperación] recuperar-respaldo.py podría tocar una base alojada o no aísla su PostgreSQL")
+    if _rr and "open(a.clave" not in _rr and "a.clave" in _rr and '"-i", a.clave' in _rr and not re.search(r"print\([^\n]*(a\.clave|environ|R2_SECRET)", _rr) and 'AGE-SECRET-KEY-\\S+", "***"' in _rr: ok("[recuperación] la clave privada de age solo se pasa por RUTA a «age -i»: no se lee, no se imprime y los mensajes de age se depuran")
+    else: mal("[recuperación] recuperar-respaldo.py podría leer o imprimir la clave privada o las credenciales")
+    if _rr and "sha256(arch[\"age\"]) != m_cif[1]" in _rr and _rr.index("sha256(arch[\"age\"]) != m_cif[1]") < _rr.index("\"-d\", \"-i\"") < _rr.index("pg.inicia()") and "s != decl or s != m_cla[1]" in _rr and _rr.index("s != decl or s != m_cla[1]") < _rr.index("pg.inicia()") and "No se descifra" in _rr: ok("[recuperación] el orden es huella del cifrado → descifrado → huella del volcado → PostgreSQL temporal: nada se descifra ni restaura si una huella no coincide")
+    else: mal("[recuperación] el orden de verificación (huellas antes de descifrar y de restaurar) no es el previsto")
+    if _rr and all(x in _rr for x in ("relrowsecurity", "pg_policies", "verificacion-posterior-29.sql", "schema_migrations", "tablas/filas restauradas", "shutil.rmtree(trabajo", "b\"\\0\" * n")): ok("[recuperación] verifica tablas, filas, historial de migraciones, RLS y políticas y el catálogo de la 29, y al terminar sobrescribe y borra el volcado descifrado")
+    else: mal("[recuperación] faltan verificaciones (tablas, filas, migraciones, RLS, catálogo de la 29) o el borrado seguro")
+    if _ps and "AsSecureString" in _ps and "ZeroFreeBSTR" in _ps and "finally" in _ps and 'Remove-Item "Env:$v"' in _ps and not re.search(r"Write-(Host|Output)[^\n]*(\$env:R2|\$Clave\b|\$seguro)|Get-Content[^\n]*\$Clave|AGE-SECRET-KEY", _ps): ok("[recuperación] el envoltorio de PowerShell pide el secreto sin mostrarlo, lo borra de la sesión al terminar y no lee ni imprime la clave privada")
+    else: mal("[recuperación] el envoltorio de PowerShell podría exponer credenciales o la clave privada")
+    if "\"xb\"" in _ru and "no se sobrescribe" in _ru and all(x in _dc for x in ("20261124-120509-b0bd6343", "Opción A", "Opción B", "recuperar-respaldo.ps1", "RECUPERACIÓN VERIFICADA: OK", "sin probar")): ok("[recuperación] la descarga nunca sobrescribe un archivo y el procedimiento documenta ambas opciones, el resultado esperado y lo que NO demuestra")
+    else: mal("[recuperación] falta la descarga sin sobrescritura o el procedimiento documentado")
     # el script: solo lectura hacia nexa-demo y restauración solo hacia variables del destino local
     _lineas = [l for l in _rs.splitlines() if not l.lstrip().startswith("#")]
     _origen_escribe = [l for l in _lineas if re.search(r"src (pg_restore|createdb|dropdb)|src psql [^|]*\b(insert|update|delete|truncate|grant|revoke|alter|drop)\b", l, re.I)]
