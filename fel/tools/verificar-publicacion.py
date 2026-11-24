@@ -111,7 +111,11 @@ if not re.search(r"wrangler|cloudflare|pages|functions deploy|secrets set|public
 else: mal("[migraciones-nube] el flujo menciona algo que despliega o que no necesita")
 if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and 'verificar-inicial' in cuerpo_mg and 'diagnostico-inicial' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones|conexion|estado|diagnostico|validar)\b(?![-\w])", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones verificar-inicial, diagnostico-inicial, verificar-etapa y migraciones-etapa del script (no «migraciones» completa ni «funcion»)")
 else: mal("[migraciones-nube] invoca acciones del script no permitidas")
-me = sb[sb.index("  migraciones-etapa|verificar-etapa)"):sb.index("  funcion)")]
+me_completo = sb[sb.index("  migraciones-etapa|verificar-etapa)"):sb.index("  funcion)")]
+# La etapa 4 (tipos de documento) es la ÚNICA que escribe sin la CLI: un solo psql en una transacción, con sus propias guardias más abajo ([tipos]). Las guardias de las etapas 1–3 se evalúan sin ese bloque.
+_i4 = me_completo.index('    if [ "$ETAPA" = "4" ]; then'); _j4 = me_completo.index('    if [ "$ETAPA" = "1" ]; then')
+bloque_etapa4 = me_completo[_i4:_j4]
+me = me_completo[:_i4] + me_completo[_j4:]
 me_sin_comentarios = "\n".join(l for l in me.splitlines() if not l.lstrip().startswith("#"))
 if not re.search(r"functions deploy|secrets set|wrangler|--include-all|--project-ref=|\bdb reset\b|\bdb remote\b", me_sin_comentarios): ok("[etapas] las acciones por etapas no despliegan función, no cargan secretos, no usan --include-all y no reinician la base")
 else: mal("[etapas] las acciones por etapas contienen una orden no permitida")
@@ -319,8 +323,16 @@ else: mal("[tipos] la propuesta habilita certificar un tipo distinto de FACT o p
 if _ptc and not re.search(r"digifact_operaciones[^;]*\b(alter|drop|delete|update|truncate)\b", _ptc, re.I) and not re.search(r"\bgrant\b[^;]*\bto\b[^;]*\b(anon|authenticated)\b[^;]*function|grant execute on function[^;]*\bto\b[^;]*(anon|authenticated)", _ptc, re.I): ok("[tipos] la propuesta no toca la tabla de la migración 29 ni abre funciones a anon/authenticated")
 else: mal("[tipos] la propuesta toca la tabla de la 29 o abre funciones a la API")
 _pub = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml", "fel/tools/supabase-hospedado.sh") if os.path.exists(f))
-if not re.search(r"migracion-tipos-documento|fel_tipos_dte|FEL_TIPOS", _pub): ok("[tipos] la publicación (scripts y flujo) no conoce la propuesta de tipos de documento")
-else: mal("[tipos] la publicación menciona la propuesta de tipos de documento")
+_pub_directa = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml") if os.path.exists(f))
+if not re.search(r"migracion-tipos-documento|fel_tipos_dte|FEL_TIPOS", _pub_directa): ok("[tipos] «publicar» (script y flujo) NO conoce la propuesta de tipos: no la aplica ni la menciona; solo la etapa 4 de migraciones-nube, con confirmación literal")
+else: mal("[tipos] «publicar» menciona la propuesta de tipos de documento")
+_sh4 = bloque_etapa4
+_sh4_sc = "\n".join(l for l in _sh4.splitlines() if not l.lstrip().startswith("#"))
+if "--single-transaction" in _sh4_sc and "db push" not in _sh4 and _sh4_sc.count('psql "host=') == 1 and "-f \"$ARCHIVO_TIPOS\"" in _sh4_sc and 'EXACTAMENTE las 29' in _sh4_sc and "fel_tipos_dte') is null" in _sh4_sc and "verificacion &&" in _sh4_sc and "functions deploy" not in _sh4_sc and "secrets set" not in _sh4_sc: ok("[tipos] la etapa 4 exige las 29 registradas y la propuesta ausente, aplica en UNA transacción con un único psql y sin la CLI de migraciones, y verifica después (la confirmación literal APLICAR-MIGRACIONES se exige antes, como en las demás etapas)")
+else: mal("[tipos] la etapa 4 no tiene sus precondiciones, su transacción única o su verificación posterior")
+_mn = open(".github/workflows/migraciones-nube.yml", encoding="utf-8").read()
+if 'options: ["1", "2", "3", "4"]' in _mn and "case \"$ETAPA\" in 1|2|3|4)" in _mn and "inputs.accion == 'migraciones-etapa' && inputs.confirmar != 'APLICAR-MIGRACIONES'" in _mn and "environment: demo-privada" in _mn: ok("[tipos] migraciones-nube admite la etapa 4 con el mismo entorno protegido y la misma confirmación literal")
+else: mal("[tipos] migraciones-nube no admite la etapa 4 con su protección")
 if not re.search(r"RESEND|FEL_CORREO|migracion-correo", _pub): ok("[correo] la publicación (scripts y flujo) no conoce el correo: ni claves de Resend ni la propuesta de migración")
 else: mal("[correo] un script o flujo de publicación menciona el correo: requiere autorización expresa")
 

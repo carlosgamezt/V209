@@ -14,7 +14,18 @@ D=docs/migracion-tipos-documento
 "${PSQL[@]}" -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f" >/dev/null; done
 echo "migraciones aprobadas: $(ls supabase/migrations/*.sql | wc -l) (el conjunto no cambia)"
-"${PSQL[@]}" -f $D/20261115000100_fel_tipos_documento.sql >/dev/null; echo "propuesta aplicada"
+Q() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -X -At -c "$1"; }
+# precondiciones de la ETAPA 4 del procedimiento hospedado (mismas consultas que supabase-hospedado.sh): propuesta ausente y dependencias presentes
+[ "$(Q "select to_regclass('public.fel_tipos_dte') is null and to_regclass('public.empresa_tipos_documento') is null and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'documentos' and column_name in ('tipo_dte','documento_origen_id','referencia_origen','motivo_ajuste','tipo_recibo'))")" = t ] && echo "OK    etapa 4: propuesta ausente antes de aplicar"
+[ "$(Q "select to_regclass('public.documentos') is not null and to_regprocedure('public.fel_auditar(uuid,uuid,text,text,text,jsonb,text)') is not null and to_regclass('public.digifact_operaciones') is not null")" = t ] && echo "OK    etapa 4: dependencias presentes (documentos, fel_auditar, tabla de la 29)"
+# aplicación como la etapa 4: UNA transacción
+"${PSQL[@]}" --single-transaction -f $D/20261115000100_fel_tipos_documento.sql >/dev/null; echo "propuesta aplicada (una transacción)"
+# verificación como la etapa 4: transacción de solo lectura + tabla alineada; ninguna fila con ok = f
+printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\i $D/verificacion-tipos.sql" > /tmp/ver4_$$.sql
+SAL=$("$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -f /tmp/ver4_$$.sql); rm -f /tmp/ver4_$$.sql
+if grep -Eq '\| +f *$' <<< "$SAL"; then echo "FALLO: verificación de la etapa 4 con filas ok = f"; exit 1; fi; grep -Eq '\| +t *$' <<< "$SAL" && echo "OK    etapa 4: verificación en solo lectura sin filas ok = f"
+# una segunda aplicación debe fallar sin cambiar nada (la propuesta ya existe)
+if "${PSQL[@]}" --single-transaction -f $D/20261115000100_fel_tipos_documento.sql >/dev/null 2>&1; then echo "FALLO: la propuesta se aplicó dos veces"; exit 1; else echo "OK    etapa 4: reaplicar sobre una base que ya la tiene falla y no cambia nada"; fi
 echo "prueba: $D/prueba-tipos-documento.sql"; "${PSQL[@]}" -f $D/prueba-tipos-documento.sql | tail -1
 V=$("$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -X -At -F '|' -f $D/verificacion-tipos.sql); echo "$V" | awk -F'|' '{print "  " ($4=="t"?"OK   ":"FALLO") " " $1}'
 echo "$V" | awk -F'|' '$4!="t"{bad=1} END{exit bad}' || { echo "verificación posterior FALLÓ"; exit 1; }
