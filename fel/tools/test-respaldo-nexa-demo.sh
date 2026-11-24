@@ -145,6 +145,7 @@ prepara_origen() {   # base «origen» = nexa-demo simulado: shim + las 28 migra
   DB=origen P -c "insert into auth.users (id, email, email_confirmed_at) values ('30000000-0000-0000-0000-0000000000a1', 'actor@prueba.local', now())" \
     -c "insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id) select '10000000-0000-0000-0000-0000000000a1', 'Empresa R', 'Empresa R S.A.', '9900001-1', id from public.regimenes_fiscales where codigo = 'general'" \
     -c "insert into public.documentos (id, empresa_id, numero_borrador, estado_preparacion, creado_por) select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, '10000000-0000-0000-0000-0000000000a1', n, 'borrador', '30000000-0000-0000-0000-0000000000a1' from generate_series(1,5) n" \
+    -c "revoke usage on schema public from anon, authenticated, service_role" -c "grant usage on schema public to postgres, anon, authenticated, service_role" \
     -c "insert into public.auditoria (accion, entidad, entidad_id, datos) select 'prueba-orden', 'documento', 'id-' || n, jsonb_build_object('n', n, 'texto', 'línea ' || n) from generate_series(1,160) n" >/dev/null
 }
 huella_origen() { DB=origen P -tA -c "select md5(string_agg(t, '|' order by t)) from (select 'e'||count(*) t from public.empresas union all select 'd'||count(*) from public.documentos union all select 'u'||count(*) from auth.users union all select 'm'||count(*) from supabase_migrations.schema_migrations union all select 'tab'||count(*) from information_schema.tables where table_schema in ('public','supabase_migrations')) x"; }
@@ -207,6 +208,38 @@ env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "la migración 29 y
 prepara_origen >/dev/null; DB=origen P -c "grant select on public.empresas to anon" >/dev/null
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "NO pasa el catálogo de la migración 28" "$W/salida.txt" && ok "un origen con un permiso de más (anon puede leer empresas) → la copia restaurada no pasa el catálogo de la 28 y el ensayo FALLA" || { mal "un origen con permisos de más no hace fallar"; tail -3 "$W/salida.txt"; }
 [ "$(sobras)" = "0 0" ] && ok "tras todos los casos no quedan bases efímeras ni copias temporales" || mal "quedaron restos: $(sobras)"
+echo "== C. las listas de privilegios (ACL) se comparan como CONJUNTO: el orden no cuenta; todo lo demás (rol, privilegio, concedente, opción GRANT) sí"
+# Se ejecuta el SQL de estructura REAL del script (extraído tal cual) sobre dos bases que solo se diferencian en las ACL, y se compara la línea de «esquema public» y de la tabla de prueba.
+SQL_E="$(sed -n "/^  read -r -d '' SQL_ESTRUCTURA <<'SQL'$/,/^SQL$/p" "$S" | sed '1d;$d')"
+[ -n "$SQL_E" ] && ok "se extrajo el SQL de estructura real del script para probar las ACL" || mal "no se pudo extraer el SQL de estructura del script"
+DB=postgres P -c "do \$\$ begin if not exists (select 1 from pg_roles where rolname = 'zz_g') then create role zz_g nologin; end if; end \$\$" >/dev/null
+acl_linea() {   # $1 = base, $2 = patrón de la línea; imprime la línea de estructura correspondiente
+  DB="$1" P -tA -c "begin transaction read only" -c "$(printf '%s' "$SQL_E" | tr '\n' ' ')" -c "rollback" 2>&1 | grep -F -- "$2" | head -1; }
+acl_base() {    # $1 = base, $2 = sentencias sobre el esquema public y la tabla t_acl
+  DB=postgres P -c "drop database if exists $1 with (force)" -c "create database $1" >/dev/null
+  DB="$1" P -c "create table public.t_acl (id int)" -c "revoke all on schema public from public, postgres, anon, authenticated, service_role" -c "$2" >/dev/null; }
+acl_caso() {    # $1 = descripción, $2 = ACL de A, $3 = ACL de B, $4 = igual|distinto, $5 = patrón de la línea
+  acl_base zz_acl_a "$2"; acl_base zz_acl_b "$3"
+  local la lb; la="$(acl_linea zz_acl_a "$5")"; lb="$(acl_linea zz_acl_b "$5")"
+  if [ -z "$la" ] || [ -z "$lb" ]; then mal "ACL · $1: no se pudo leer la línea de estructura"; return; fi
+  if [ "$4" = igual ]; then [ "$la" = "$lb" ] && ok "ACL · $1 → se consideran IGUALES" || { mal "ACL · $1 debería ser igual"; echo "  A: $la"; echo "  B: $lb"; }
+  else [ "$la" != "$lb" ] && ok "ACL · $1 → se detecta la DIFERENCIA" || { mal "ACL · $1 NO se detectó"; echo "  A: $la"; }; fi
+}
+SCH='esquema|public|'; REL='relacion|public.t_acl|'
+acl_caso "esquema: mismos privilegios en otro orden" "grant usage on schema public to postgres, anon, authenticated, service_role" "grant usage on schema public to service_role, authenticated, anon, postgres" igual "$SCH"
+acl_caso "esquema: mismos privilegios, concedidos en dos pasos y en otro orden" "grant usage on schema public to anon; grant usage on schema public to postgres" "grant usage on schema public to postgres; grant usage on schema public to anon" igual "$SCH"
+acl_caso "esquema: falta un rol (service_role)" "grant usage on schema public to postgres, anon, authenticated, service_role" "grant usage on schema public to postgres, anon, authenticated" distinto "$SCH"
+acl_caso "esquema: un rol de más (zz_g)" "grant usage on schema public to postgres, anon" "grant usage on schema public to postgres, anon, zz_g" distinto "$SCH"
+acl_caso "esquema: un privilegio de más (CREATE para anon)" "grant usage on schema public to anon" "grant usage, create on schema public to anon" distinto "$SCH"
+acl_caso "esquema: un privilegio de menos (anon pierde USAGE y queda sin nada)" "grant usage on schema public to anon, authenticated" "grant usage on schema public to authenticated" distinto "$SCH"
+acl_caso "esquema: privilegio distinto para el mismo rol (USAGE frente a CREATE)" "grant usage on schema public to anon" "grant create on schema public to anon" distinto "$SCH"
+acl_caso "esquema: misma concesión pero con OPCIÓN GRANT" "grant usage on schema public to anon" "grant usage on schema public to anon with grant option" distinto "$SCH"
+acl_caso "esquema: el mismo privilegio con otro CONCEDENTE (zz_g en vez del propietario)" "grant usage on schema public to zz_g with grant option; grant usage on schema public to anon" "grant usage on schema public to zz_g with grant option; set role zz_g; grant usage on schema public to anon; reset role; revoke usage on schema public from anon" distinto "$SCH"
+acl_caso "tabla: mismos privilegios en otro orden" "grant select on public.t_acl to anon; grant insert on public.t_acl to authenticated" "grant insert on public.t_acl to authenticated; grant select on public.t_acl to anon" igual "$REL"
+acl_caso "tabla: un privilegio de más (DELETE)" "grant select on public.t_acl to anon" "grant select, delete on public.t_acl to anon" distinto "$REL"
+acl_caso "tabla: falta un rol" "grant select on public.t_acl to anon, authenticated" "grant select on public.t_acl to anon" distinto "$REL"
+acl_caso "tabla: misma concesión con OPCIÓN GRANT" "grant select on public.t_acl to anon" "grant select on public.t_acl to anon with grant option" distinto "$REL"
+DB=postgres P -c "drop database if exists zz_acl_a with (force)" -c "drop database if exists zz_acl_b with (force)" >/dev/null
 # -- el origen: ninguna orden de escritura/restauración se le dirige (revisión del propio script)
 echo "== revisión estática"
 ! grep -nE 'src (pg_restore|createdb|dropdb)|src psql [^|]*(create|drop|alter|insert|update|delete|truncate|grant)' "$S" | grep -v "zz_nexa_prueba_escritura" | grep -q . && ok "el script nunca dirige restauraciones ni escrituras al origen" || mal "el script dirige una escritura al origen"
