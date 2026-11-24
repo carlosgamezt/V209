@@ -2,7 +2,11 @@
 
 Objetivo: demostrar que el respaldo `nexa-demo/20261124-120509-b0bd6343` se puede **descargar, descifrar y restaurar**. Hasta que este procedimiento termine con «RECUPERACIÓN VERIFICADA: OK» en tu equipo, el respaldo NO se considera recuperable.
 
-Todo ocurre en tu computadora. No se toca `nexa-demo` ni ningún Supabase: se levanta un PostgreSQL 17 temporal (puerto 54417, solo 127.0.0.1, contraseña aleatoria) y se borra al terminar. Tu clave privada de age no sale de tu equipo: el programa solo le pasa su **ruta** a `age`.
+Todo ocurre en tu computadora. No se toca `nexa-demo`, ni ningún Supabase, ni una base local que ya tengas: se crea un PostgreSQL 17 **nuevo** y se elimina al terminar.
+- **Modo Docker (recomendado, el que usa el envoltorio si Docker está en marcha):** contenedor `postgres:17` con nombre único y **sin puertos publicados** (solo se entra con `docker exec`); se elimina solo.
+- **Modo nativo (si no hay Docker):** un clúster nuevo con las herramientas de PostgreSQL 17 instaladas, en un directorio temporal, solo 127.0.0.1, puerto libre y contraseña aleatoria.
+
+Tu clave privada de age no sale de tu equipo: el programa solo le pasa su **ruta** a `age`. Nada se descarga ni se descifra en servicios externos: solo se descarga el objeto cifrado de R2 (y, en modo Docker, la imagen pública `postgres:17`, que no contiene datos tuyos).
 
 ## Objetos
 | Objeto (bucket `nexa-fel-backups`) | Tamaño |
@@ -19,10 +23,10 @@ En PowerShell:
 ```powershell
 winget install Python.Python.3.12
 winget install FiloSottile.age
-winget install PostgreSQL.PostgreSQL.17
+winget install Docker.DockerDesktop
 ```
-Cierra y vuelve a abrir PowerShell. De PostgreSQL solo se usan sus herramientas (`initdb`, `pg_ctl`, `psql`, `pg_restore`); el servicio que instala no se utiliza.
-Necesitas además: un clon actualizado del repositorio (`git pull` en la rama `fel-proveedores-diseno`) y, para descargar, una credencial de R2 (Account ID, Access Key ID, Secret Access Key). **Recomendado:** crea un token de R2 de *solo lectura* limitado al bucket `nexa-fel-backups`; el programa solo hace GET.
+Cierra y vuelve a abrir PowerShell, y abre **Docker Desktop** hasta que diga «running». (Si prefieres no usar Docker: `winget install PostgreSQL.PostgreSQL.17`; de él solo se usan sus herramientas y el servicio que instala no se utiliza.)
+Necesitas además: un clon actualizado del repositorio (`git pull` en la rama `fel-proveedores-diseno`) y, para descargar, una credencial de R2 (Account ID, Access Key ID, Secret Access Key). **Recomendado:** un token de R2 de *solo lectura* limitado al bucket `nexa-fel-backups`; el programa solo hace GET.
 
 ## Opción A — descarga automática (recomendada)
 ```powershell
@@ -40,6 +44,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\recuperar-respaldo.ps1 -Carpeta
 ```
 (En esta opción no se piden credenciales de R2.)
 
+Opciones del envoltorio: `-Modo auto|docker|nativo` (por defecto `auto`: Docker si está en marcha), `-PgBin` (solo modo nativo) e `-Informe` (ruta del informe; por defecto `Documentos\informe-recuperacion-nexa-AAAAMMDD-HHMMSS.txt`; nunca se sobrescribe uno existente).
+
 ## Qué resultado debes ver
 Al final, estas líneas (todas con `OK`):
 ```
@@ -48,7 +54,7 @@ Al final, estas líneas (todas con `OK`):
   OK    descifrado con tu clave privada: 808535 bytes
   OK    SHA-256 del volcado descifrado = .sha256 = informe = valor esperado independiente: b0bd634320e97dc9…
   OK    pg_restore --list: el volcado contiene los datos de public y el historial de migraciones
-  OK    PostgreSQL 17 temporal e independiente (127.0.0.1:54417, …)
+  OK    PostgreSQL 17 temporal e independiente (contenedor nexa-recuperacion-…, sin puertos publicados)
   OK    restauración completa en la base temporal …
   OK    tablas y registros: 70 tablas · 565 filas, exactamente las del informe
   OK    historial de migraciones: 29 versiones, idénticas a supabase/migrations del repositorio (última 20261114000100)
@@ -56,7 +62,9 @@ Al final, estas líneas (todas con `OK`):
   OK    catálogo de la migración 29 sano en lo restaurado …
   OK    PostgreSQL temporal apagado y archivos temporales (volcado descifrado incluido) sobrescritos y borrados
 RECUPERACIÓN VERIFICADA: OK
+  INFO  informe guardado en …\Documentos\informe-recuperacion-nexa-….txt
 ```
+El **informe de recuperación** es ese archivo: contiene las mismas líneas, sin datos del contenido ni claves. Pégamelo para cerrar el paso 6.
 Si ves `FALLO`, copia ese mensaje y no sigas. Los fallos comunes: clave privada equivocada (`age no pudo descifrar`), archivo alterado (`SHA-256 … no coincide`), falta una herramienta (`REQUISITO`).
 
 ## Qué demuestra y qué no

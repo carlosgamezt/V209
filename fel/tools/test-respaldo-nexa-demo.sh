@@ -301,11 +301,11 @@ BASE_R="nexa-demo/${BASEN#*__nexa-demo__}"; PORT_R=$((PORT-7)); BN_R="$(basename
 cat > "$RECDIR/rec.sh" <<SH
 #!/usr/bin/env bash
 export TMPDIR="$RECDIR" R2_ACCOUNT_ID=$R2ID R2_ACCESS_KEY_ID=$R2KID R2_SECRET_ACCESS_KEY=$R2SEC FEL_R2_ENDPOINT_PRUEBA="http://127.0.0.1:$R2PORT"
-exec python3 "$R/tools/recuperar-respaldo.py" --pgbin "\${REC_PGBIN:-$PGBIN}" --repo "$R" --puerto $PORT_R --pg-mayor $PGMAYOR "\$@"
+exec python3 "$R/tools/recuperar-respaldo.py" \${REC_PG:---pgbin "$PGBIN"} --repo "$R" --pg-mayor \${REC_MAYOR:-$PGMAYOR} "\$@"
 SH
 chmod 755 "$RECDIR/rec.sh"
 rec() { as_pg "'$RECDIR/rec.sh' $* > '$RECDIR/salida.txt' 2>&1; echo \$?"; }
-sin_restos() { ! ls "$RECDIR" | grep -q '^nexa-recuperacion-' && ! "$PGBIN/pg_isready" -h 127.0.0.1 -p $PORT_R -q 2>/dev/null; }
+sin_restos() { ! ls "$RECDIR" | grep -q '^nexa-recuperacion-' && ! pgrep -f 'nexa-recuperacion-' >/dev/null 2>&1; }
 r=$(rec --base "$BASE_R" --bucket $BUCKET --clave "$RECDIR/clave.txt" --descargar --sha-esperado "$SHA_CLARO")
 [ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$RECDIR/salida.txt" && grep -q "= valor esperado independiente" "$RECDIR/salida.txt" && grep -q "RLS: las" "$RECDIR/salida.txt" && grep -q "catálogo de la migración 29 sano" "$RECDIR/salida.txt" && grep -q "historial de migraciones: 29 versiones, idénticas" "$RECDIR/salida.txt" && ok "recuperar-respaldo: descarga, descifra, restaura en un PostgreSQL 17 nuevo y verifica tablas, filas, migraciones, RLS y catálogo de la 29" || { mal "la recuperación no termina OK"; tail -15 "$RECDIR/salida.txt"; }
 grep -E "tablas y registros|RLS: las" "$RECDIR/salida.txt" | cut -c1-150
@@ -328,7 +328,19 @@ r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP4"); [ "$r"
 CARP5="$RECDIR/carpeta5"; cp -r "$CARP" "$CARP5"; sed -i -E 's/(contenido: [0-9]+ tablas) · [0-9]+ filas/\1 · 99999 filas/' "$CARP5/$BN_R.informe.txt"; chmod -R a+rX "$CARP5"
 r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP5"); [ "$r" = 1 ] && grep -q "distintas de las del informe" "$RECDIR/salida.txt" && sin_restos && ok "si las filas restauradas difieren de las del informe → falla (y se limpia)" || mal "una diferencia de filas no se detecta"
 : > "$R2REG"; r=$(rec --base "nexa-demo/20200101-000000-00000000" --bucket $BUCKET --clave "$RECDIR/clave.txt" --descargar); [ "$r" = 1 ] && grep -q "no se pudo descargar" "$RECDIR/salida.txt" && grep -q "GET .* 404" "$R2REG" && ok "un respaldo inexistente en R2 → falla con claridad" || mal "un objeto inexistente no se detecta"
-r=$(as_pg "REC_PGBIN=/no/existe '$RECDIR/rec.sh' --base '$BASE_R' --clave '$RECDIR/clave.txt' --descargar --bucket $BUCKET > '$RECDIR/salida.txt' 2>&1; echo \$?"); [ "$r" = 2 ] && grep -q "falta initdb" "$RECDIR/salida.txt" && ok "sin PostgreSQL 17 en --pgbin → se niega con un requisito claro" || mal "un --pgbin inválido no se rechaza"
+r=$(as_pg "REC_PG='--pgbin /no/existe' '$RECDIR/rec.sh' --base '$BASE_R' --clave '$RECDIR/clave.txt' --descargar --bucket $BUCKET > '$RECDIR/salida.txt' 2>&1; echo \$?"); [ "$r" = 2 ] && grep -q "falta initdb" "$RECDIR/salida.txt" && ok "sin PostgreSQL 17 en --pgbin → se niega con un requisito claro" || mal "un --pgbin inválido no se rechaza"
+# informe de recuperación en archivo (sin datos ni claves) y nunca sobrescribe uno existente
+INFR="$RECDIR/informe-recuperacion.txt"; r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP" --informe "$INFR")
+[ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$INFR" && grep -q "tablas y registros" "$INFR" && grep -q "RLS: las" "$INFR" && ! grep -qE "$R2SEC|$R2KID|AGE-SECRET-KEY|$CLAVE|$AGEPUB" "$INFR" && ok "el informe de recuperación se guarda en un archivo sin credenciales ni claves" || mal "el informe en archivo falta o contiene secretos"
+cp "$INFR" "$RECDIR/inf-previo.txt"; r=$(rec --base "$BASE_R" --clave "$RECDIR/clave.txt" --carpeta "$CARP" --informe "$INFR"); [ "$r" = 2 ] && grep -q "no se sobrescribe" "$RECDIR/salida.txt" && cmp -s "$INFR" "$RECDIR/inf-previo.txt" && ok "un informe existente no se sobrescribe" || mal "se sobrescribió un informe existente"
+INFF="$RECDIR/informe-fallo.txt"; r=$(rec --base "$BASE_R" --clave "$RECDIR/otra.txt" --carpeta "$CARP" --informe "$INFF"); [ "$r" = 1 ] && grep -q "RECUPERACIÓN VERIFICADA: FALLÓ" "$INFF" && ok "un fallo también deja su informe en archivo" || mal "el fallo no dejó informe"
+# modo Docker (contenedor postgres:17 sin puertos publicados): obligatorio en CI; en un equipo sin Docker en marcha se informa y se omite
+if docker info >/dev/null 2>&1; then
+  r=$(as_pg "REC_PG=--docker REC_MAYOR=17 '$RECDIR/rec.sh' --base '$BASE_R' --clave '$RECDIR/clave.txt' --carpeta '$CARP' > '$RECDIR/salida.txt' 2>&1; echo \$?")
+  [ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$RECDIR/salida.txt" && grep -q "contenedor nexa-recuperacion-.*sin puertos publicados" "$RECDIR/salida.txt" && grep -q "tablas y registros" "$RECDIR/salida.txt" && grep -q "RLS: las" "$RECDIR/salida.txt" && [ -z "$(docker ps -a -q --filter name=nexa-recuperacion-)" ] && ok "modo --docker: restaura en un contenedor postgres:17 sin puertos publicados, verifica todo y lo elimina" || { mal "el modo Docker no termina OK"; tail -12 "$RECDIR/salida.txt"; }
+  r=$(as_pg "REC_PG=--docker REC_MAYOR=17 '$RECDIR/rec.sh' --base '$BASE_R' --clave '$RECDIR/otra.txt' --carpeta '$CARP' > '$RECDIR/salida.txt' 2>&1; echo \$?"); [ "$r" = 1 ] && [ -z "$(docker ps -a -q --filter name=nexa-recuperacion-)" ] && ok "modo --docker con clave equivocada: falla sin crear ningún contenedor" || mal "el modo Docker con clave equivocada dejó contenedores o no falló"
+elif [ -n "${GITHUB_ACTIONS:-}" ]; then mal "en CI Docker debe estar disponible para probar el modo --docker"
+else echo "INFO  Docker no está en marcha en este equipo: el modo --docker se prueba en el CI (donde es obligatorio)"; fi
 [ -n "$RECDIR" ] && rm -rf "$RECDIR"
 # -- una segunda corrida con el mismo contenido NO sobrescribe nada (nombre con fecha: objeto nuevo) y no toca los anteriores
 sleep 1; env_base; env_r2; r=$(sale respaldo-persistente); [ "$r" = 0 ] && [ "$(ls "$R2D/objetos" | wc -l)" = 6 ] && ok "una segunda corrida crea objetos NUEVOS (6 en total) sin tocar los anteriores" || mal "la segunda corrida no creó objetos nuevos"

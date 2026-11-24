@@ -402,9 +402,16 @@ if os.path.exists(RB) and os.path.exists(RS):
     else: mal("[recuperación] el orden de verificación (huellas antes de descifrar y de restaurar) no es el previsto")
     if _rr and all(x in _rr for x in ("relrowsecurity", "pg_policies", "verificacion-posterior-29.sql", "schema_migrations", "tablas/filas restauradas", "shutil.rmtree(trabajo", "b\"\\0\" * n")): ok("[recuperación] verifica tablas, filas, historial de migraciones, RLS y políticas y el catálogo de la 29, y al terminar sobrescribe y borra el volcado descifrado")
     else: mal("[recuperación] faltan verificaciones (tablas, filas, migraciones, RLS, catálogo de la 29) o el borrado seguro")
+    _dk = [l for l in _rr.splitlines() if '"docker", "run"' in l]
+    if len(_dk) == 1 and '"-p"' not in _dk[0] and "--rm" in _dk[0] and "secrets.token_hex" in _rr and "docker rm" not in _rr.replace('"docker", "rm"', "") and '"docker", "rm", "-f", s.nombre' in _rr and "el nombre del contenedor ya existe" in _rr and "el archivo de informe ya existe; no se sobrescribe" in _rr and "postgres:17" in _rr: ok("[recuperación] el modo Docker crea un contenedor postgres:17 NUEVO (nombre único, --rm) sin publicar puertos, no reutiliza nada existente, lo elimina al terminar y el informe en archivo nunca sobrescribe otro")
+    else: mal("[recuperación] el modo Docker podría publicar puertos, reutilizar un contenedor o sobrescribir un informe")
+    _ft3 = open(".github/workflows/fel-tests.yml", encoding="utf-8").read() if os.path.exists(".github/workflows/fel-tests.yml") else ""
+    _tt = open("fel/tools/test-respaldo-nexa-demo.sh", encoding="utf-8").read()
+    if 'REC_PG=--docker' in _tt and 'en CI Docker debe estar disponible' in _tt and "test-respaldo-nexa-demo.sh" in _ft3: ok("[recuperación] el modo Docker se prueba de verdad en el CI (donde Docker es obligatorio) con el servidor R2 falso y datos de prueba")
+    else: mal("[recuperación] el modo Docker no se prueba en el CI")
     if _ps and "AsSecureString" in _ps and "ZeroFreeBSTR" in _ps and "finally" in _ps and 'Remove-Item "Env:$v"' in _ps and not re.search(r"Write-(Host|Output)[^\n]*(\$env:R2|\$Clave\b|\$seguro)|Get-Content[^\n]*\$Clave|AGE-SECRET-KEY", _ps): ok("[recuperación] el envoltorio de PowerShell pide el secreto sin mostrarlo, lo borra de la sesión al terminar y no lee ni imprime la clave privada")
     else: mal("[recuperación] el envoltorio de PowerShell podría exponer credenciales o la clave privada")
-    if "\"xb\"" in _ru and "no se sobrescribe" in _ru and all(x in _dc for x in ("20261124-120509-b0bd6343", "Opción A", "Opción B", "recuperar-respaldo.ps1", "RECUPERACIÓN VERIFICADA: OK", "sin probar")): ok("[recuperación] la descarga nunca sobrescribe un archivo y el procedimiento documenta ambas opciones, el resultado esperado y lo que NO demuestra")
+    if "\"xb\"" in _ru and "no se sobrescribe" in _ru and all(x in _dc for x in ("20261124-120509-b0bd6343", "Opción A", "Opción B", "recuperar-respaldo.ps1", "RECUPERACIÓN VERIFICADA: OK", "sin probar", "Docker Desktop", "informe de recuperación")): ok("[recuperación] la descarga nunca sobrescribe un archivo y el procedimiento documenta ambas opciones, el resultado esperado y lo que NO demuestra")
     else: mal("[recuperación] falta la descarga sin sobrescritura o el procedimiento documentado")
     # el script: solo lectura hacia nexa-demo y restauración solo hacia variables del destino local
     _lineas = [l for l in _rs.splitlines() if not l.lstrip().startswith("#")]
