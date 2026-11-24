@@ -159,15 +159,18 @@ SQL
   SNAP_ID="$(snap_q "select pg_export_snapshot();")"; [[ "$SNAP_ID" =~ ^[0-9A-F]+(-[0-9A-F]+)+$ ]] || falla "no se pudo exportar una instantánea consistente del origen: no se puede garantizar la consistencia de la copia"
   snap_q "$FMT;" >/dev/null || falla "no se pudo fijar el formato de comparación"
   HORA_SNAP="$(snap_q "select to_char(now() at time zone 'America/Guatemala', 'DD/MM/YYYY HH24:MI:SS');")"
-  N_MIG="$(snap_q "select count(*) from supabase_migrations.schema_migrations;")"; [ "$N_MIG" = "28" ] || falla "el origen NO tiene exactamente 28 migraciones registradas"
-  [ "$(snap_q "select to_regclass('public.digifact_operaciones') is null;")" = "t" ] || falla "la migración 29 ya existe en el origen: este ensayo es previo a la 29"
+  N_MIG="$(snap_q "select count(*) from supabase_migrations.schema_migrations;")"
+  # El ensayo vale para DOS estados del origen: las 28 migraciones (la 29 ausente) o las 29 (la 29 aplicada, con sus dos tablas). Cualquier otro estado se rechaza.
+  case "$N_MIG" in 28) CON29=0; HASTA_V=20261113000100;; 29) CON29=1; HASTA_V=20261114000100;; *) falla "el origen NO tiene exactamente 28 migraciones registradas (ni las 29, con la migración 29 aplicada)";; esac
+  if [ "$CON29" = 0 ]; then [ "$(snap_q "select to_regclass('public.digifact_operaciones') is null;")" = "t" ] || falla "la migración 29 ya existe en el origen: con 28 migraciones registradas, este ensayo es previo a la 29"
+  else [ "$(snap_q "select to_regclass('public.digifact_operaciones') is not null and to_regclass('public.digifact_artefactos') is not null;")" = "t" ] || falla "el origen registra 29 migraciones pero le faltan las tablas de la migración 29"; fi
   VER_ORIGEN="$(snap_q "select string_agg(version, ' ' order by version) from supabase_migrations.schema_migrations;")"
-  VER_REPO="$(for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; [ "$v" -le 20261113000100 ] && echo "$v"; done | sort | tr '\n' ' ' | sed 's/ $//')"
-  [ "$VER_ORIGEN" = "$VER_REPO" ] || falla "las 28 migraciones registradas en el origen no coinciden con las del repositorio"
+  VER_REPO="$(for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; [ "$v" -le "$HASTA_V" ] && echo "$v"; done | sort | tr '\n' ' ' | sed 's/ $//')"
+  [ "$VER_ORIGEN" = "$VER_REPO" ] || falla "las $N_MIG migraciones registradas en el origen no coinciden con las del repositorio"
   CONT_ORIGEN="$(snap_q "$SQL_CONTENIDO")" || falla "no se pudo leer el contenido del origen en la instantánea"; [ -n "$CONT_ORIGEN" ] || falla "el origen no tiene tablas en public"
   ESTR_ORIGEN="$(snap_q "$SQL_ESTRUCTURA")" || falla "no se pudo leer la estructura del origen en la instantánea"; [ -n "$ESTR_ORIGEN" ] || falla "no se pudo leer la estructura del origen"
   NTAB="$(printf '%s\n' "$CONT_ORIGEN" | grep -c .)"; TOTAL="$(printf '%s\n' "$CONT_ORIGEN" | awk -F'[=:]' '{s+=$2} END{print s+0}')"
-  echo "  OK    instantánea consistente del origen (tomada $HORA_SNAP, hora de Guatemala): $NTAB tablas · $TOTAL filas · 28 migraciones iguales a las del repositorio · la 29 ausente"
+  echo "  OK    instantánea consistente del origen (tomada $HORA_SNAP, hora de Guatemala): $NTAB tablas · $TOTAL filas · $N_MIG migraciones iguales a las del repositorio · la 29 $([ "$CON29" = 1 ] && echo presente || echo ausente)"
   # ---- 7. copia lógica LEÍDA DE ESA MISMA INSTANTÁNEA (pg_dump es de solo lectura) · sin propietarios (--no-owner), con los permisos (ACL)
   src pg_dump "$ORIGEN" -Fc --schema=public --schema=supabase_migrations --no-owner --snapshot="$SNAP_ID" -f "$T/respaldo.dump" 2>"$T/dump.err" || { cierra_snap; falla "pg_dump falló: $(head -c 200 "$T/dump.err" | tr '\n' ' ' | sed "s|$CLAVE_URL|***|g")"; }
   [ -s "$T/respaldo.dump" ] || { cierra_snap; falla "pg_dump no generó contenido"; }
@@ -234,10 +237,15 @@ PY
     falla "los conteos de filas de lo restaurado NO coinciden con la instantánea del origen: la restauración es incorrecta"
   fi
   echo "  OK    datos: las $NTAB tablas, $TOTAL filas y su contenido (huella por tabla) coinciden exactamente con la instantánea del origen"
-  [ "$(rdq "select count(*) from supabase_migrations.schema_migrations;")" = "28" ] && [ "$(rdq "select string_agg(version, ' ' order by version) from supabase_migrations.schema_migrations;")" = "$VER_ORIGEN" ] || falla "el historial de migraciones restaurado no son las 28 del origen"
-  echo "  OK    historial restaurado: las 28 migraciones"
-  [ "$(rdq "select to_regclass('public.digifact_operaciones') is null and to_regclass('public.digifact_artefactos') is null;")" = "t" ] || falla "lo restaurado ya tiene la migración 29"
-  echo "  OK    la migración 29 sigue ausente en lo restaurado"
+  [ "$(rdq "select count(*) from supabase_migrations.schema_migrations;")" = "$N_MIG" ] && [ "$(rdq "select string_agg(version, ' ' order by version) from supabase_migrations.schema_migrations;")" = "$VER_ORIGEN" ] || falla "el historial de migraciones restaurado no son las $N_MIG del origen"
+  echo "  OK    historial restaurado: las $N_MIG migraciones"
+  if [ "$CON29" = 0 ]; then
+    [ "$(rdq "select to_regclass('public.digifact_operaciones') is null and to_regclass('public.digifact_artefactos') is null;")" = "t" ] || falla "lo restaurado ya tiene la migración 29"
+    echo "  OK    la migración 29 sigue ausente en lo restaurado"
+  else
+    [ "$(rdq "select to_regclass('public.digifact_operaciones') is not null and to_regclass('public.digifact_artefactos') is not null;")" = "t" ] || falla "lo restaurado no tiene las tablas de la migración 29"
+    echo "  OK    la migración 29 está presente en lo restaurado (sus dos tablas)"
+  fi
   ESTR_REST="$(rdq "$SQL_ESTRUCTURA" 2>/dev/null)" || falla "no se pudo leer la estructura de lo restaurado"
   printf '%s\n' "$ESTR_ORIGEN" > "$T/estr_origen.txt"; printf '%s\n' "$ESTR_REST" > "$T/estr_rest.txt"
   INFORME="$(python3 - "$T/estr_origen.txt" "$T/estr_rest.txt" <<'PY'
@@ -268,10 +276,22 @@ PY
   echo "  OK    estructura, propietarios y permisos: $NELEM elementos idénticos (columnas, restricciones, índices, disparadores, políticas, funciones, ACL de objetos, privilegios por defecto y privilegios efectivos de anon, authenticated y service_role)"
   [ -z "$ROLES_CREADOS" ] || echo "  LIMITACIÓN: la copia menciona roles que el destino no tenía (${ROLES_CREADOS# }); se crearon vacíos: sus atributos y membresías NO se reproducen"
   [ "${NLIM:-0}" = "0" ] || echo "  LIMITACIÓN: $NLIM objeto(s) tienen un propietario distinto de postgres en el origen; el volcado usa --no-owner y en lo restaurado son de postgres: NO validado de forma equivalente"
-  printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\\i docs/migracion-28/verificacion-posterior-28.sql" > "$T/ro28.sql"
-  SC="$(psql "$DEST_DB" -X -q -v ON_ERROR_STOP=1 -f "$T/ro28.sql" 2>&1)" || { echo "$SC" | grep -m1 ERROR | head -c 200; falla "lo restaurado NO pasa el catálogo de la migración 28"; }
-  echo "$SC" | grep -q "VERIFICACION POSTERIOR 28 OK" || falla "el catálogo de la migración 28 no confirmó OK"
-  echo "  OK    catálogo de la migración 28 sano en lo restaurado (67 tablas, políticas, funciones y privilegios; transacción de solo lectura)"
+  if [ "$CON29" = 0 ]; then
+    printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\\i docs/migracion-28/verificacion-posterior-28.sql" > "$T/ro28.sql"
+    SC="$(psql "$DEST_DB" -X -q -v ON_ERROR_STOP=1 -f "$T/ro28.sql" 2>&1)" || { echo "$SC" | grep -m1 ERROR | head -c 200; falla "lo restaurado NO pasa el catálogo de la migración 28"; }
+    echo "$SC" | grep -q "VERIFICACION POSTERIOR 28 OK" || falla "el catálogo de la migración 28 no confirmó OK"
+    echo "  OK    catálogo de la migración 28 sano en lo restaurado (67 tablas, políticas, funciones y privilegios; transacción de solo lectura)"
+  else
+    # El disparador de evento «ensure_rls» de la plataforma NO viaja en el volcado de «public»: si el origen trae la función public.rls_auto_enable(), se recrea EN EL DESTINO EFÍMERO (nunca en el origen) para evaluar el catálogo
+    # con la misma regla estricta que en el origen. La estructura (incluida esa función) ya se comparó idéntica arriba.
+    if [ "$(psql "$DEST_DB" -X -q -tA -c "select to_regprocedure('public.rls_auto_enable()') is not null")" = "t" ]; then
+      psql "$DEST_DB" -X -q -v ON_ERROR_STOP=1 -c "drop event trigger if exists ensure_rls" -c "create event trigger ensure_rls on ddl_command_end when tag in ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO') execute function public.rls_auto_enable()" >/dev/null 2>&1 || falla "no se pudo recrear el disparador de evento de la plataforma en el destino efímero"
+    fi
+    printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\\i docs/migracion-29/verificacion-posterior-29.sql" > "$T/ro29.sql"
+    SC="$(psql "$DEST_DB" -X -q -v ON_ERROR_STOP=1 -f "$T/ro29.sql" 2>&1)" || { echo "$SC" | grep -m1 ERROR | head -c 200; falla "lo restaurado NO pasa el catálogo de la migración 29"; }
+    echo "$SC" | grep -q "VERIFICACION POSTERIOR 29 OK" || falla "el catálogo de la migración 29 no confirmó OK"
+    echo "  OK    catálogo de la migración 29 sano en lo restaurado (69 tablas con RLS, políticas, funciones —con la excepción estricta de rls_auto_enable()—, disparadores y privilegios; transacción de solo lectura)"
+  fi
   echo "  LIMITACIONES de esta validación (no son prueba aprobada): las expresiones CHECK y de políticas se comparan sin paréntesis (el volcado puede aplanarlos); atributos y membresías de roles; extensiones y su configuración; disparadores de evento de la plataforma; todo lo que está fuera de public y supabase_migrations (auth, storage, vault); los usuarios de Auth se sustituyen por usuarios de prueba"
   echo "== INFORME (sin datos): tablas $NTAB · filas $TOTAL · elementos de estructura $NELEM · tamaño de la copia $TAM bytes · SHA-256 $SHA · instantánea $HORA_SNAP · cliente pg_dump $VC · servidor $VS · destino: local y efímero · la copia se elimina"
   echo "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK"

@@ -205,6 +205,22 @@ DB=origen P -c "delete from supabase_migrations.schema_migrations where version 
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "NO tiene exactamente 28 migraciones" "$W/salida.txt" && ok "historial con 27 migraciones → falla" || mal "historial incompleto no hace fallar"
 prepara_origen >/dev/null; DB=origen P -f "$R/supabase/migrations/20261114000100_fel_digifact_operaciones.sql" >/dev/null 2>&1
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "la migración 29 ya existe en el origen" "$W/salida.txt" && ok "la 29 ya aplicada en el origen → falla (el ensayo es previo a la 29)" || mal "la 29 presente no hace fallar"
+# -- origen con las 29 migraciones (la 29 aplicada Y registrada): el ensayo vale para ese estado, con el catálogo de la 29 sobre lo restaurado
+prepara_origen29() { prepara_origen >/dev/null; DB=origen P -f "$R/supabase/migrations/20261114000100_fel_digifact_operaciones.sql" >/dev/null 2>&1 && DB=origen P -c "insert into supabase_migrations.schema_migrations (version) values ('20261114000100')" >/dev/null; }
+prepara_origen29; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 0 ] && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && grep -q "29 migraciones iguales a las del repositorio · la 29 presente" "$W/salida.txt" && grep -q "historial restaurado: las 29 migraciones" "$W/salida.txt" && grep -q "la migración 29 está presente en lo restaurado" "$W/salida.txt" && grep -q "catálogo de la migración 29 sano en lo restaurado" "$W/salida.txt" && ok "origen con las 29 migraciones → el ensayo termina OK (historial, 29 presente y catálogo de la 29 en lo restaurado)" || { mal "el ensayo con la 29 aplicada no termina OK"; tail -12 "$W/salida.txt"; }
+# -- con la función de plataforma rls_auto_enable() (y su disparador de evento) en el origen: 185 + 1 funciones; el disparador se recrea SOLO en el destino efímero
+prepara_origen29; DB=origen P -f "$R/supabase/tests/plataforma/rls_auto_enable_real.sql" >/dev/null 2>&1; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 0 ] && grep -q "catálogo de la migración 29 sano en lo restaurado" "$W/salida.txt" && ok "origen con las 29 y la función de la plataforma rls_auto_enable() → OK (excepción estricta, disparador recreado solo en el destino)" || { mal "la función de la plataforma rompe el ensayo con la 29"; tail -12 "$W/salida.txt"; }
+# -- una función de más que NO es la de la plataforma sigue haciendo fallar el catálogo de la 29 en lo restaurado
+prepara_origen29; DB=origen P -c "create function public.zz_funcion_ajena() returns int language sql as 'select 1'" >/dev/null; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -q "NO pasa el catálogo de la migración 29" "$W/salida.txt" && ok "una función ajena de más → el catálogo de la 29 falla (la excepción es estricta)" || mal "una función ajena no hace fallar el catálogo de la 29"
+# -- 29 registradas pero sin las tablas de la 29 → falla; 30 registradas → falla
+prepara_origen29; DB=origen P -c "drop table public.digifact_artefactos" >/dev/null 2>&1; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -q "faltan las tablas de la migración 29" "$W/salida.txt" && ok "29 registradas sin las tablas de la 29 → falla" || mal "29 sin tablas no hace fallar"
+prepara_origen29; DB=origen P -c "insert into supabase_migrations.schema_migrations (version) values ('20261115000100')" >/dev/null; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -q "NO tiene exactamente 28 migraciones" "$W/salida.txt" && ok "30 migraciones registradas → falla (solo valen 28 o 29)" || mal "30 migraciones no hacen fallar"
+prepara_origen >/dev/null
 prepara_origen >/dev/null; DB=origen P -c "grant select on public.empresas to anon" >/dev/null
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "NO pasa el catálogo de la migración 28" "$W/salida.txt" && ok "un origen con un permiso de más (anon puede leer empresas) → la copia restaurada no pasa el catálogo de la 28 y el ensayo FALLA" || { mal "un origen con permisos de más no hace fallar"; tail -3 "$W/salida.txt"; }
 [ "$(sobras)" = "0 0" ] && ok "tras todos los casos no quedan bases efímeras ni copias temporales" || mal "quedaron restos: $(sobras)"
