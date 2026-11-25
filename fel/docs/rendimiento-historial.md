@@ -47,3 +47,20 @@ Medido contra la infraestructura publicada (Cloudflare → Supabase Edge Functio
 Causas: (1) cada consulta remota cuesta 108–250 ms y cada petición hacía decenas, una tras otra (7 solo para identificar a la persona, 2 veces la sesión y 4 el usuario); (2) toda escritura entraba en la sección crítica de los simuladores (≈10 viajes) aunque no usara simuladores; (3) el detalle del documento hacía 11 lecturas seguidas; (4) la función corre en us-east-2 y la base en us-west-2 (`select 1` = 54 ms); (5) el chequeo previo de Digifact (`#prevuelo`) hacía hasta 8 consultas de solo lectura una tras otra (≈3 s) y no se contaba como tiempo de Digifact.
 
 Correcciones: sesión+persona en una consulta y una vez por petición; sin sección crítica en escrituras de negocio; `BdDemo.lote` (lecturas independientes en un solo viaje, verificado con 140 ms simulados: 8 consultas 1158 → 217 ms); permisos 5 s, tipos de prueba 60 s, nombres de personas 30 s; chequeo previo en paralelo (sigue sin enviar si cualquiera de los 8 días lo encuentra o no se puede comprobar); `x-region` hacia la región de la base.
+
+### Resultado de la publicación #45 (commit 1c9660a): función en la región de la base + chequeo previo en paralelo
+
+`select 1` dentro de la función: 54 ms → 4 ms (función y base en us-west-2). Mediana de 3 ciclos medidos desde el ejecutor de CI contra la nube:
+
+| Llamada | #42 | #44 | #45 |
+|---|---|---|---|
+| `GET /api/fecha-emision` | 972 ms | 174 ms | 88 ms |
+| `GET /api/estado` | 2254 ms | 890 ms | 218 ms |
+| `GET /api/documentos` | 1379 ms | 514 ms | 144 ms |
+| Guardar | 3878 ms | 1926 ms | 224–450 ms |
+| Revisar | 3270 ms | 1593 ms | 188–261 ms |
+| Preparar | 2615 ms | 844 ms | 122–167 ms |
+| Ciclo completo (guardar+revisar+preparar+certificar) | 17 571 ms | 10 207 ms | 2 567 ms (primer ciclo en frío 6 072 ms) |
+| Tiempo atribuible a NEXA + red | ≈17 000 ms | ≈9 700 ms | ≈940 ms |
+
+El resto del ciclo es Digifact TEST (chequeo previo ≈1,1–1,3 s con las 8 consultas a la vez, envío ≈0,35 s; en frío el chequeo tardó 4,9 s). En la prueba de certificación completa (con descarga de XML/PDF) Digifact respondió entre 2,6 s y 13,5 s según el documento: esa variación es de Digifact, no de NEXA.
