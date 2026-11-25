@@ -525,3 +525,7 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 /* documento emitido: el resultado va primero (las áreas con nombre ignoran «order») */
 .doc-grid:has(>.proceso-emitido){grid-template-areas:"proceso side" "tipo side" "datos side" "items side" "msg side";grid-template-rows:auto auto auto auto 1fr}
 @media(max-width:1000px){.doc-grid:has(>.proceso-emitido){grid-template-areas:"proceso" "tipo" "datos" "items" "side" "msg"}}
+
+/* Buscador del historial: el campo no lleva marco propio (lo da la caja) y la barra de acciones secundarias es más baja para no tapar el contenido. */
+.barra-compacta .buscador input[type=search]{border:0!important;box-shadow:none!important;padding:0!important;background:transparent!important;min-height:0;height:100%;border-radius:0}
+.barra-acciones .acciones-sec .btn{min-height:40px}
