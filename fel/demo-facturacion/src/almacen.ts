@@ -13,6 +13,8 @@ export interface Almacen {
   cuenta(usuario: string): Promise<Cuenta | null>;
   cuentas(): Promise<Cuenta[]>;
   cuentaPorId(userId: string): Promise<Cuenta | null>;
+  /** Opcional: sesión y su cuenta en UNA sola consulta (un viaje a la base en vez de dos). */
+  obtenerSesionConCuenta?(id: string): Promise<{ sesion: SesionAlmacen; cuenta: Cuenta } | null>;
   /** Crea la cuenta o, si existe, cambia su sal y hash (no toca la persona). */
   guardar(c: Cuenta): Promise<void>;
   cambiarHash(usuario: string, sal: string, hash: string): Promise<void>;
@@ -71,6 +73,10 @@ export class AlmacenPg implements Almacen {
   async obtenerSesion(id: string) {
     const [f] = await this.bd.filas<{ usuario: string; creada_en: Date; ultima_en: Date; recordar: boolean }>("select usuario, creada_en, ultima_en, recordar from public.demo_sesiones where token_hash = $1", [await sha256(id)]);
     return f ? { id, usuario: f.usuario, creada: new Date(f.creada_en).getTime(), ultima: new Date(f.ultima_en).getTime(), recordar: f.recordar } : null;
+  }
+  async obtenerSesionConCuenta(id: string) {
+    const [f] = await this.bd.filas<Fila & { creada_en: Date; ultima_en: Date; recordar: boolean }>(`select c.*, s.creada_en, s.ultima_en, s.recordar from public.demo_sesiones s join (${SEL_CUENTA}) c on c.usuario = s.usuario where s.token_hash = $1`, [await sha256(id)]);
+    return f ? { sesion: { id, usuario: f.usuario, creada: new Date(f.creada_en).getTime(), ultima: new Date(f.ultima_en).getTime(), recordar: f.recordar }, cuenta: aCuenta(f) } : null;
   }
   async tocarSesion(id: string, ultima: number) { await this.bd.ejecutar("update public.demo_sesiones set ultima_en = $2 where token_hash = $1", [await sha256(id), new Date(ultima)]); }
   async borrarSesion(id: string) { await this.bd.ejecutar("delete from public.demo_sesiones where token_hash = $1", [await sha256(id)]); }

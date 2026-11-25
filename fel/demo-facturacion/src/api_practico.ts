@@ -7,6 +7,7 @@ import type { ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
 import type { ConsultorCui } from "./digifact_cui_entorno.ts";
 import { rutasDigifact } from "./api_digifact.ts";
+import { leerLote } from "./lote.ts";
 import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
@@ -78,9 +79,15 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     registro, sincronizar,
     async estadoExtra() { return { certificadores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, soportaAnulacion: x.soportaAnulacion, escenarios: x.escenarios, escenariosAnulacion: x.escenariosAnulacion })), canales: (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.empresa_canales where empresa_id = $1 and ambiente = 'simulado' and habilitado", [d.emp()])).map((c) => c.proveedor_id) }; },
     async detalleExtra(docId: string) {
-      const cobertura = await bd.filas<Obj>(`select c.id, c.evento_tipo, c.estado, c.unidades_reservadas::text as reservadas, c.unidades_consumidas::text as consumidas, c.operacion_id,
-          (select coalesce(sum(g.monto), 0)::text from public.cargos g where g.consumo_id = c.id) as cargado from public.consumos c where c.documento_id = $1 and c.empresa_id = $2 order by c.reservado_en`, [docId, d.emp()]);
-      return { cobertura, escenarioCertificador: registro.listar().map((x) => x.simulacion.escenarioDe(docId)).find((e) => e) ?? null, anulable: !!(await certOp(docId, d.emp())) };
+      const E = d.emp();   // cobertura, operación certificada y autorización en UN solo viaje a la base (antes eran tres, uno tras otro)
+      const [cobertura, [o], [doc]] = await leerLote(bd, [
+        [`select c.id, c.evento_tipo, c.estado, c.unidades_reservadas::text as reservadas, c.unidades_consumidas::text as consumidas, c.operacion_id,
+          (select coalesce(sum(g.monto), 0)::text from public.cargos g where g.consumo_id = c.id) as cargado from public.consumos c where c.documento_id = $1 and c.empresa_id = $2 order by c.reservado_en`, [docId, E]],
+        ["select clave_idempotencia, proveedor from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' and proveedor = any($3::text[]) and ambiente = 'simulado' order by iniciada_en desc limit 1", [docId, E, ids]],
+        ["select autorizacion_sat from public.documentos where id = $1 and empresa_id = $2", [docId, E]],
+      ]) as [Obj[], { clave_idempotencia: string; proveedor: string }[], { autorizacion_sat: string | null }[]];
+      const anulable = !!(o && doc?.autorizacion_sat && registro.obtener(o.proveedor)?.soportaAnulacion);
+      return { cobertura, escenarioCertificador: registro.listar().map((x) => x.simulacion.escenarioDe(docId)).find((e) => e) ?? null, anulable };
     },
     async certificar(a: { id: string }, docId: string, b: Obj, canal: string) {
       const cert = registro.obtener(String(b.proveedor)); if (!cert) throw new ErrorPr(400, "Certificador no válido", "entrada_invalida");

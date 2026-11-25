@@ -31,6 +31,8 @@ for (const ruta of ["/", "/web/js/main.js", "/web/js/factura.js", "/web/js/proce
 }
 // ---- sesión
 const ent = await ll("POST", "/api/sesion/entrar", { usuario: "ana", clave: claves.ana }); console.log(fila("POST /api/sesion/entrar (login)", ent)); if (ent.status !== 200) { console.error("No se pudo iniciar sesión."); Deno.exit(1); }
+// ---- diagnóstico de la conexión función → base (solo números y regiones)
+{ const d = await ll("GET", "/api/diag/latencia"); console.log(`diag latencia: HTTP ${d.status}${d.status === 200 ? ` · select 1 ×4 dentro de la función (ms): ${JSON.stringify(d.json.selectUnoMs)} · región de la función: ${d.json.regionFuncion} · región de la base: ${d.json.regionBd} · puerto ${d.json.puertoBd}` : " (no disponible en esta versión)"} · total visto ${f(d.ms)} ms`); }
 // ---- lecturas (3 veces cada una; se muestra la mediana por columna y la primera, que puede incluir arranque en frío)
 const lecturas: [string, string][] = [["GET /api/sesion", "/api/sesion"], ["GET /api/estado", "/api/estado"], ["GET /api/documentos (lista)", "/api/documentos?pagina=1&tam=25&categoria=emitidos"], ["GET /api/tipos-documento", "/api/tipos-documento"], ["GET /api/digifact/estado", "/api/digifact/estado"], ["GET /api/fecha-emision", "/api/fecha-emision"]];
 let est: J = {};

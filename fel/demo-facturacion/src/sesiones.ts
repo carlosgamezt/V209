@@ -7,7 +7,11 @@ export interface Sesion { id: string; usuario: string; creada: number; ultima: n
 const NOMBRE = "fel_sid";
 const IDLE_NORMAL = 30 * 60_000, IDLE_RECORDAR = 7 * 86_400_000, MAXIMO_RECORDAR = 14 * 86_400_000, MAXIMO_NORMAL = 12 * 3_600_000;
 const MAX_FALLOS = 5, BLOQUEO_MS = 60_000;
+// Rendimiento: cada consulta a la base remota cuesta un viaje de red completo (≈140 ms medidos en la nube). Dentro de UNA petición la sesión y la persona se consultan una sola vez (antes 3 veces cada una; no se guarda nada
+// entre peticiones, así que cerrar sesión o cambiar de rol surte efecto de inmediato en todas las instancias) y la marca de actividad se escribe como mucho una vez por minuto.
+const TOCAR_CADA_MS = 60_000;
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { AlmacenMemoria, type Almacen, type Persona } from "./almacen.ts";
 const deHex = (s: string) => Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16));
 const hex = (b: ArrayBuffer | Uint8Array) => Array.from(new Uint8Array(b as ArrayBuffer), (x) => x.toString(16).padStart(2, "0")).join("");
@@ -25,11 +29,18 @@ export class Sesiones {
   /** Registro de auditoría de los eventos de autenticación (inicio, fallo, bloqueo, cierre, cambio de contraseña); lo conecta el servidor. Nunca recibe contraseñas ni códigos. */
   auditar: (evento: string, usuario: string, detalle?: Record<string, unknown>) => Promise<void> = async () => {};
   constructor(private ahora: () => number = () => Date.now(), readonly almacen: Almacen = new AlmacenMemoria()) {}
+  static #ambito = new AsyncLocalStorage<{ v: Map<string, Promise<Sesion | null>>; p: Map<string, Promise<Persona | undefined>> }>();
+  /** Ejecuta la atención de UNA petición con su propia memoria de sesión/persona (desaparece al terminar). */
+  static enPeticion<T>(f: () => Promise<T>): Promise<T> { return Sesiones.#ambito.run({ v: new Map(), p: new Map() }, f); }
+  /** Olvida lo memorizado de la petición en curso (tras cerrar sesión o cambiar una cuenta). */
+  olvidar() { const a = Sesiones.#ambito.getStore(); a?.v.clear(); a?.p.clear(); }
+  olvidarPersonas() { Sesiones.#ambito.getStore()?.p.clear(); }
 
   /** Registra (o cambia) la contraseña de una cuenta. `persona` solo hace falta si la cuenta no existía todavía. */
   async registrar(usuario: string, clave: string, persona?: Persona) {
     const sal = hex(crypto.getRandomValues(new Uint8Array(16))), hash = await derivar(clave, deHex(sal)), previa = await this.almacen.cuenta(usuario);
     if (previa) await this.almacen.cambiarHash(usuario, sal, hash); else await this.almacen.guardar({ usuario, persona: persona as Persona, sal, hash });
+    this.olvidar();
   }
   /** Comprueba la contraseña actual (cuenta como intento fallido si es errónea; respeta el bloqueo). */
   async verificar(usuario: string, clave: string): Promise<boolean> {
@@ -38,7 +49,7 @@ export class Sesiones {
     if (!ok) await this.almacen.ponerFallos(usuario, { n: (f && f.hasta > this.ahora() ? f.n : 0) + 1, hasta: this.ahora() + BLOQUEO_MS }); else if (f) await this.almacen.ponerFallos(usuario, null);
     return ok;
   }
-  async cambiarClave(usuario: string, clave: string) { await this.registrar(usuario, clave); await this.almacen.borrarSesionesDe(usuario); await this.auditar("clave_cambiada", usuario); }
+  async cambiarClave(usuario: string, clave: string) { await this.registrar(usuario, clave); await this.almacen.borrarSesionesDe(usuario); this.olvidar(); await this.auditar("clave_cambiada", usuario); }
 
   /** Devuelve la sesión nueva o null. El mismo mensaje para usuario inexistente y contraseña errónea. */
   async entrar(usuario: string, clave: string, recordar: boolean, segundo?: (u: string) => Promise<"ok" | "falta" | "mal">): Promise<{ sesion: Sesion | null; bloqueado: boolean; mfa?: "falta" | "mal" }> {
@@ -56,15 +67,27 @@ export class Sesiones {
     await this.almacen.crearSesion(s); await this.auditar("inicio_correcto", usuario, { recordar }); return { sesion: s, bloqueado: false };
   }
   /** Sesión vigente (y renueva su actividad) o null. */
-  async validar(id: string | null | undefined): Promise<Sesion | null> {
-    if (!id) return null; const s = await this.almacen.obtenerSesion(id); if (!s) return null; const t = this.ahora();
+  validar(id: string | null | undefined): Promise<Sesion | null> {
+    if (!id) return Promise.resolve(null); const m = Sesiones.#ambito.getStore()?.v; const previa = m?.get(id); if (previa) return previa;
+    const p = this.#validar(id); m?.set(id, p); return p;
+  }
+  async #validar(id: string): Promise<Sesion | null> {
+    let s;
+    if (this.almacen.obtenerSesionConCuenta) {   // un solo viaje a la base: sesión y persona juntas (la persona queda memorizada para el resto de la petición)
+      const x = await this.almacen.obtenerSesionConCuenta(id); if (!x) return null; s = x.sesion; Sesiones.#ambito.getStore()?.p.set(s.usuario, Promise.resolve(x.cuenta.persona));
+    } else { s = await this.almacen.obtenerSesion(id); if (!s) return null; }
+    const t = this.ahora();
     const ocioso = t - s.ultima > (s.recordar ? IDLE_RECORDAR : IDLE_NORMAL), vencida = t - s.creada > (s.recordar ? MAXIMO_RECORDAR : MAXIMO_NORMAL);
     if (ocioso || vencida) { await this.almacen.borrarSesion(id); return null; }
-    await this.almacen.tocarSesion(id, t); return { ...s, ultima: t };
+    if (t - s.ultima > TOCAR_CADA_MS) await this.almacen.tocarSesion(id, t);   // la actividad se anota como mucho una vez por minuto (el vencimiento por inactividad es de 30 min o más)
+    return { ...s, ultima: t };
   }
-  async salir(id: string | null | undefined) { if (!id) return; const s = await this.almacen.obtenerSesion(id); await this.almacen.borrarSesion(id); if (s) await this.auditar("sesion_cerrada", s.usuario); }
+  async salir(id: string | null | undefined) { if (!id) return; this.olvidar(); const s = await this.almacen.obtenerSesion(id); await this.almacen.borrarSesion(id); if (s) await this.auditar("sesion_cerrada", s.usuario); }
   async cantidad() { return await this.almacen.contarSesiones(); }
-  async persona(usuario: string): Promise<Persona | undefined> { return (await this.almacen.cuenta(usuario))?.persona; }
+  persona(usuario: string): Promise<Persona | undefined> {
+    const m = Sesiones.#ambito.getStore()?.p, previa = m?.get(usuario); if (previa) return previa;
+    const p = this.almacen.cuenta(usuario).then((x) => x?.persona); m?.set(usuario, p); return p;
+  }
 
   static idDeCookie(req: Request): string | null { const m = new RegExp(`(?:^|;\\s*)${NOMBRE}=([0-9a-f]{64})(?=;|\\s*$)`).exec(req.headers.get("cookie") ?? ""); return m ? m[1] : null; }
   static cookie(s: Sesion | null, seguro: boolean): string {

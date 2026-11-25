@@ -12,6 +12,8 @@ export interface BdDemo {
   /** Ejecuta una sentencia sin devolver filas. */ ejecutar: (sql: string, params?: unknown[]) => Promise<void>; cerrar: () => Promise<void>;
   /** Solo PostgreSQL real: ejecuta `fn` dentro de una transacción (con una conexión propia). */
   transaccion?: <T>(fn: (tx: { filas: BdDemo["filas"]; ejecutar: BdDemo["ejecutar"] }) => Promise<T>) => Promise<T>;
+  /** Solo PostgreSQL real: varias LECTURAS independientes en UN solo viaje de red (se envían juntas por una única conexión). Cada consulta remota cuesta ≈140 ms medidos en la nube. */
+  lote?: (consultas: [string, unknown[]?][]) => Promise<Record<string, unknown>[][]>;
   /** Alta de un usuario en Supabase Auth (en local, fila en auth.users; en un proyecto hospedado, la API de administración). */
   crearUsuario: (id: string, email: string) => Promise<void>;
   db?: PGlite;   // solo en modo memoria
@@ -23,6 +25,7 @@ export function crearBdPg(url: string, o: { usuarios?: CreadorUsuarios } = {}): 
   const ejecutarSql = async (sql: string, params: unknown[] = []) => { await c.sql.unsafe(sql, params.map((v) => valorPg(c.sql, v))); };
   return { tipo: "pg", crearUsuario: (id, email) => (o.usuarios ?? creadorSql(ejecutarSql)).crear(id, email), rpc: c.rpc, filas: async <T,>(sql: string, params: unknown[] = []) => [...await c.sql.unsafe(sql, params.map((v) => valorPg(c.sql, v)))] as unknown as T[],
     ejecutar: async (sql: string, params: unknown[] = []) => { await c.sql.unsafe(sql, params.map((v) => valorPg(c.sql, v))); }, cerrar: () => c.cerrar(),
+    lote: async (qs: [string, unknown[]?][]) => { const r = await c.sql.reserve(); try { return (await Promise.all(qs.map(([q, p]) => r.unsafe(q, (p ?? []).map((v) => valorPg(c.sql, v)) as never)))).map((x) => [...x] as Record<string, unknown>[]); } finally { r.release(); } },
     // deno-lint-ignore no-explicit-any
     transaccion: <T,>(fn: (tx: any) => Promise<T>) => c.sql.begin(async (q) => await fn({ filas: async (sql: string, params: unknown[] = []) => [...await q.unsafe(sql, params.map((v) => valorPg(c.sql, v)) as never)], ejecutar: async (sql: string, params: unknown[] = []) => { await q.unsafe(sql, params.map((v) => valorPg(c.sql, v)) as never); } })) as Promise<T> };
 }

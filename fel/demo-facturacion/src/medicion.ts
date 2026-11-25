@@ -15,7 +15,7 @@ export function envolverBd<T extends BdDemo>(bd: T): T {
     const c = als.getStore(), t0 = performance.now();
     try { return await v.apply(t, a); } finally { if (c) { c.dbN++; c.dbMs += performance.now() - t0; } }
   };
-  return new Proxy(bd, { get(t, k) { const v = (t as unknown as Record<string, unknown>)[k as string]; return ["filas", "ejecutar", "rpc", "transaccion"].includes(String(k)) && typeof v === "function" ? medir(v as (...a: unknown[]) => Promise<unknown>, t) : v; } });
+  return new Proxy(bd, { get(t, k) { const v = (t as unknown as Record<string, unknown>)[k as string]; return ["filas", "ejecutar", "rpc", "transaccion", "lote"].includes(String(k)) && typeof v === "function" ? medir(v as (...a: unknown[]) => Promise<unknown>, t) : v; } });
 }
 
 /** `fetch` que cronometra las llamadas a Digifact por tipo (inicio de sesión, envío del documento, otras). No registra direcciones completas, cabeceras ni cuerpos. */

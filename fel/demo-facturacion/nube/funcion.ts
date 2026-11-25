@@ -25,7 +25,7 @@ const generico = (s: number, m: string) => new Response(JSON.stringify({ codigo:
 export interface EntornoFuncion { get(k: string): string | undefined }
 export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: Request) => Promise<Response> {
   const secreto = env.get("FEL_PROXY_SECRETO") ?? "", url = env.get("FEL_DEMO_BD_URL");
-  let listo: Promise<{ api: (r: Request) => Promise<Response>; endurecer: ReturnType<typeof crearEndurecimiento> }> | null = null;
+  let listo: Promise<{ api: (r: Request) => Promise<Response>; endurecer: ReturnType<typeof crearEndurecimiento>; bd: BdDemo }> | null = null;
   const iniciar = () => listo ??= (async () => {
     const cfg = leerConfigPublicada((k) => env.get(k), Object.keys(PERSONAS), { exigirClaves: false });
     const t0Inicio = performance.now();
@@ -48,7 +48,7 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo
       limiteApi: new LimiteTasa(Number(env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });
     marcar("arranque", performance.now() - t0Inicio);   // solo la primera petición de una instancia nueva paga este tiempo
-    return { api, endurecer };
+    return { api, endurecer, bd };
   })();
   const atender = async (req: Request): Promise<Response> => {
     if (secreto.length < 32 || (!url && !bdExterna)) return generico(503, "Servicio no configurado");
@@ -58,6 +58,11 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     let app; try { app = await iniciar(); } catch (e) { listo = null; console.error("inicio de la función:", (e as Error).message.slice(0, 200)); return generico(503, "Servicio no disponible"); }
     const interna = new Request(new URL(ruta + u.search, u.origin), req);
     const previo = await app.endurecer.previo(interna); if (previo) return previo;
+    if (ruta === "/api/diag/latencia" && req.method === "GET") {   // diagnóstico de rendimiento: SOLO números y nombres de región (nunca direcciones, usuarios ni contraseñas)
+      const rtt: number[] = []; for (let i = 0; i < 4; i++) { const t0 = performance.now(); await app.bd.filas("select 1"); rtt.push(Math.round(performance.now() - t0)); }
+      const bdUrl = env.get("FEL_DEMO_BD_URL") ?? "", reg = /aws-\d+-([a-z0-9-]+)\.pooler\.supabase\.com/.exec(bdUrl)?.[1] ?? (/db\.[a-z0-9]+\.supabase\.co/.test(bdUrl) ? "conexion-directa" : "desconocida"), puerto = /:(\d{4,5})\//.exec(bdUrl)?.[1] ?? "?";
+      return new Response(JSON.stringify({ selectUnoMs: rtt, regionFuncion: Deno.env.get("SB_REGION") ?? Deno.env.get("DENO_REGION") ?? "desconocida", regionBd: reg, puertoBd: puerto }), { headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+    }
     return app.endurecer.asegurar(await app.api(interna));
   };
   return (req: Request) => conMedicion(() => atender(req));

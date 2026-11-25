@@ -1,3 +1,5 @@
+import { tiposCertificablesTest } from "./tipos_prueba.ts";
+import { leerLote } from "./lote.ts";
 // API HTTP de la demostración. Cada endpoint llama a las MISMAS funciones SQL y al MISMO orquestador que las pruebas; no hay lógica fiscal aquí.
 // Todo es simulado: el único proveedor es el simulado y nada sale de este equipo.
 import { MockProvider, type Escenario } from "../../proveedores/src/mock.ts";
@@ -70,7 +72,10 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
   const canalBase = async () => (pr ? await canalDe("mock") : mundo.canal);   // sin la versión práctica (pruebas del agente) el canal es el sembrado; con ella, el de la empresa de la petición
   /** Persona de una cuenta: con inicio de sesión sale del almacén (memoria o base de datos); en el modo de pruebas, del mundo sembrado. */
   const personaDe = async (clave: string): Promise<Persona | undefined> => extras.sesiones ? await extras.sesiones.persona(clave) : PERSONAS[clave];
-  const todasPersonas = async (): Promise<Record<string, Persona>> => extras.sesiones ? Object.fromEntries((await extras.sesiones.almacen.cuentas()).map((c) => [c.usuario, c.persona])) : personas();
+  const todasPersonasLeer = async (): Promise<Record<string, Persona>> => extras.sesiones ? Object.fromEntries((await extras.sesiones.almacen.cuentas()).map((c) => [c.usuario, c.persona])) : personas();
+  // Los nombres de las personas (para «Registrado por…») casi no cambian: se reutilizan 30 s en lugar de leer todas las cuentas en cada detalle de documento.
+  let todasCache: { hasta: number; p: Promise<Record<string, Persona>> } | null = null;
+  const todasPersonas = (): Promise<Record<string, Persona>> => { const t = Date.now(); if (todasCache && todasCache.hasta > t) return todasCache.p; const p = todasPersonasLeer(); todasCache = { hasta: t + 30_000, p }; p.catch(() => { todasCache = null; }); return p; };
   const actor = async (req: Request): Promise<{ clave: string; id: string }> => {
     if (extras.sesiones) {
       const s = await extras.sesiones.validar(Sesiones.idDeCookie(req)); if (!s) throw new ErrorHttp(401, "Inicia sesión para continuar", "no_sesion");
@@ -85,20 +90,29 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     const [e] = await bd.filas<Obj>("select id, razon_social as nombre, nombre_comercial, nit, direccion_fiscal as direccion, telefono, correo_facturacion as correo from public.empresas where id = $1", [emp()]);
     return e;
   }
-  const permisosDe = async (a: { id: string }) => await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[];
+  // Los permisos se reutilizan unos segundos (cada consulta a la base remota cuesta un viaje de red, ≈140 ms medidos); cualquier escritura que no sea de datos de negocio (usuarios, roles, empresas…) los olvida.
+  const permisosCache = new Map<string, { hasta: number; p: Promise<string[]> }>();
+  const permisosDe = (a: { id: string }): Promise<string[]> => {
+    const k = `${emp()}|${a.id}`, t = Date.now(), c = permisosCache.get(k); if (c && c.hasta > t) return c.p;
+    const p = Promise.resolve(bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as Promise<string[]>); permisosCache.set(k, { hasta: t + 5000, p }); p.catch(() => permisosCache.delete(k)); return p;
+  };
+  // Escrituras de datos de NEGOCIO: no cambian roles ni permisos ni el estado de los simuladores, así que no vacían lo reutilizado ni necesitan la sección crítica de los simuladores.
+  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
+  const LECTURA_SIN_SIM = /^\/api\/(estado|sesion|fecha-emision|tipos-documento|clientes|conceptos|correo\/estado|digifact\/estado)$|^\/api\/documentos$|^\/api\/documentos\/[^/]+\/correos$/;
 
   async function detalle(docId: string) {
-    const [d] = await bd.filas<Obj>("select d.*, d.fecha_emision_prevista::text as fecha_emision_txt, c.nombre as cliente_nombre, c.email as cliente_email, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]);
+    const [[d], lineas, operaciones, eventos, conciliaciones, alertas, artefactos] = await leerLote(bd, [   // siete lecturas independientes en UN solo viaje a la base
+      ["select d.*, d.fecha_emision_prevista::text as fecha_emision_txt, c.nombre as cliente_nombre, c.email as cliente_email, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]],
+      ["select orden, descripcion, cantidad::text as cantidad, precio_unitario::text as precio_unitario, descuento_tipo, descuento_valor::text as descuento_valor, importes from public.documento_lineas where documento_id = $1 order by orden", [docId]],
+      ["select id, tipo, estado, proveedor, ambiente, enviada_en, orden_externa, resolucion, motivo_desconocido, reintento_desde, iniciada_en, resuelta_en, clave_idempotencia from public.operaciones_fiscales where documento_id = $1 order by iniciada_en, id", [docId]],
+      ["select id, operacion_id, tipo, resultado, motivo, serie, numero, autorizacion, creado_en from public.eventos_proveedor where operacion_id in (select id from public.operaciones_fiscales where documento_id = $1) order by id", [docId]],
+      ["select id, operacion_id, tipo, estado, evidencia, propuesta_por, propuesta_en, decidida_por, decidida_en, nota from public.conciliaciones where operacion_id in (select id from public.operaciones_fiscales where documento_id = $1) order by propuesta_en", [docId]],
+      ["select id, operacion_id, tipo, detalle, creada_en, resuelta_en, nota from public.alertas_fiscales where documento_id = $1 order by creada_en", [docId]],
+      ["select id, operacion_id, tipo, nombre, mime, sha256, tamano from public.artefactos_documento where documento_id = $1 order by tipo", [docId]],
+    ]) as [Obj[], Obj[], Obj[], Obj[], Obj[], Obj[], Obj[]];
     if (!d) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado");
     // la fecha de emisión SIEMPRE como texto AAAA-MM-DD, tal cual está en la base (un objeto Date dependería de la zona horaria del servidor y el PDF mostraba «Sat Nov 21»)
     d.fecha_emision_prevista = d.fecha_emision_txt ?? null; delete d.fecha_emision_txt;
-    const lineas = await bd.filas("select orden, descripcion, cantidad::text as cantidad, precio_unitario::text as precio_unitario, descuento_tipo, descuento_valor::text as descuento_valor, importes from public.documento_lineas where documento_id = $1 order by orden", [docId]);
-    const operaciones = await bd.filas("select id, tipo, estado, proveedor, ambiente, enviada_en, orden_externa, resolucion, motivo_desconocido, reintento_desde, iniciada_en, resuelta_en, clave_idempotencia from public.operaciones_fiscales where documento_id = $1 order by iniciada_en, id", [docId]);
-    const ids = operaciones.map((o) => o.id);
-    const eventos = ids.length ? await bd.filas("select id, operacion_id, tipo, resultado, motivo, serie, numero, autorizacion, creado_en from public.eventos_proveedor where operacion_id = any($1::uuid[]) order by id", [ids]) : [];
-    const conciliaciones = ids.length ? await bd.filas("select id, operacion_id, tipo, estado, evidencia, propuesta_por, propuesta_en, decidida_por, decidida_en, nota from public.conciliaciones where operacion_id = any($1::uuid[]) order by propuesta_en", [ids]) : [];
-    const alertas = await bd.filas("select id, operacion_id, tipo, detalle, creada_en, resuelta_en, nota from public.alertas_fiscales where documento_id = $1 order by creada_en", [docId]);
-    const artefactos = await bd.filas("select id, operacion_id, tipo, nombre, mime, sha256, tamano from public.artefactos_documento where documento_id = $1 order by tipo", [docId]);
     let instantanea: unknown = null;
     if (d.establecimiento_id) { try { instantanea = await bd.rpc("fel_sys_documento_instantanea", { p_empresa: emp(), p_doc: docId }); } catch { instantanea = null; } }
     const nombresUsuario = Object.fromEntries(Object.values(await todasPersonas()).map((u) => [u.id, u.nombre]));
@@ -211,11 +225,13 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     const a = await actor(req); let r: RegExpExecArray | null;
 
     if (m === "GET" && ruta === "/api/estado") {
-      const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[];
-      const establecimientos = await bd.filas("select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]);
-      const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]);
-      const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]);
-      const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
+      const permisos = await permisosDe(a);
+      const [establecimientos, clientes, conceptos, parametros] = await leerLote(bd, [   // cuatro lecturas independientes en UN solo viaje a la base
+      ["select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]],
+      ["select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]],
+      ["select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]],
+      ["select clave, valor::text as valor from public.plataforma_parametros order by clave"],
+      ]);
       return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, persistente: bd.tipo === "pg", practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
         permisos, establecimientos, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
@@ -293,7 +309,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     }
     if (((ruta === "/api/tipos-documento" && m === "POST") || (ruta === "/api/documentos/origenes" && m === "GET")) && !(await tiposDisponibles(bd))) throw new ErrorHttp(422, "Los tipos de documento aún no están habilitados en esta base de datos.", "regla");
     if (m === "GET" && ruta === "/api/tipos-documento") {
-      let tiposTest: string[] = []; try { const [f] = await bd.filas<{ ok: boolean }>("select to_regprocedure('public.fel_tipos_certificacion_test()') is not null as ok"); if (f?.ok) tiposTest = ((await bd.filas<{ t: string[] }>("select public.fel_tipos_certificacion_test() as t"))[0]?.t) ?? []; } catch { /* sin la migración 31 */ }
+      const tiposTest = await tiposCertificablesTest(bd);
       const permisos = await permisosDe(a), cfg = await bd.rpc("fel_tipos_empresa", { p_actor: a.id, p_empresa: emp() }) as { tipos: { codigo: string; habilitado: boolean; motivo: string | null; base_habilitacion: string | null; predeterminado: boolean }[]; predeterminado: string };
       return json({ predeterminado: cfg.predeterminado, puede_configurar: permisos.includes("empresa.editar"), tipos: CATALOGO_DTE.map((t) => {
         const h = cfg.tipos.find((x) => x.codigo === t.codigo);
@@ -320,7 +336,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     if (m === "GET" && (r = /^\/api\/artefactos\/([^/]+)$/.exec(ruta))) {
       const [x] = await bd.filas<{ nombre: string; mime: string; contenido: Uint8Array; tipo: string }>("select nombre, mime, contenido, tipo from public.artefactos_documento where id = $1 and empresa_id = $2", [id(r[1]), emp()]);
       if (!x) throw new ErrorHttp(404, "Archivo no encontrado", "no_encontrado");
-      const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[]; if (!permisos.includes("artefactos.descargar")) throw new ErrorHttp(403, "No tienes permiso para descargar", "no_autorizado");
+      const permisos = await permisosDe(a); if (!permisos.includes("artefactos.descargar")) throw new ErrorHttp(403, "No tienes permiso para descargar", "no_autorizado");
       return new Response(new Uint8Array(x.contenido).buffer as ArrayBuffer, { headers: { "content-type": x.mime, "content-disposition": `attachment; filename="SIMULADO-${x.nombre.replace(/[^A-Za-z0-9._-]/g, "_")}"`, "x-content-type-options": "nosniff", "cache-control": "no-store" } });
     }
     if (m === "POST" && ruta === "/api/documentos") { const b = await cuerpo(); const docId = await guardar(a, b); return json(await detalle(docId)); }
@@ -359,7 +375,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       return json({ resultado: { operacion: s.operacion.id, estado: s.operacion.estado, reutilizada: s.reutilizada, en_curso: s.enCurso }, ...(await detalle(docId)), correo_auto: await correoAuto() });
     }
     if (m === "POST" && (r = /^\/api\/operaciones\/([^/]+)\/conciliar$/.exec(ruta))) {
-      const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[]; if (!permisos.includes("fiscal.conciliar")) throw new ErrorHttp(403, "No tienes permiso para conciliar", "no_autorizado");
+      const permisos = await permisosDe(a); if (!permisos.includes("fiscal.conciliar")) throw new ErrorHttp(403, "No tienes permiso para conciliar", "no_autorizado");
       const op = await bd.rpc("fel_sys_operacion", { p_empresa: emp(), p_op: id(r[1]) }) as Obj; const c = await orqRec().conciliar(emp(), r[1]); await pr?.sincronizar();
       return json({ conciliacion: c, ...(await detalle(op.documento_id as string)) });
     }
@@ -401,17 +417,20 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     throw new ErrorHttp(404, "Ruta no encontrada", "no_encontrado");
   }
 
-  return async (req: Request): Promise<Response> => {
+  const atenderPeticion = async (req: Request): Promise<Response> => {
     try {
       const url = new URL(req.url);
       if (pr) { const s = await pr.rutasSesion(req, url); if (s) return s; }   // inicio y cierre de sesión (no requieren sesión previa)
       const a = await actor(req);
+      const negocio = req.method === "POST" && NEGOCIO_POST.some((r) => r.test(url.pathname));
+      if (req.method === "POST" && !negocio) permisosCache.clear();   // puede cambiar roles o membresías: los permisos reutilizados no sobreviven
       const atender = async () => {
         if (pr && esMaestro(a.clave)) return await pr.rutasMaestro(req, url, a);   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
         return await alcance.run({ empresa: (await personaDe(a.clave))?.empresa ?? EMPRESA }, () => manejar(req, url));
       };
       if (!simPersist?.activa) return await atender();
-      if (req.method === "GET" || req.method === "HEAD") { await simPersist.sincronizar(); return await atender(); }
+      if (negocio) return await atender();   // no toca el estado de los simuladores: se evita la sección crítica (bloqueo, lectura y escritura del estado de cada simulador = una decena de viajes a la base)
+      if (req.method === "GET" || req.method === "HEAD") { if (!LECTURA_SIN_SIM.test(url.pathname)) await simPersist.sincronizar(); return await atender(); }
       return await simPersist.con(atender);   // toda operación que escribe: estado de los simuladores cargado → atender → guardado, en exclusión mutua
     }
     catch (e) {
@@ -430,4 +449,5 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       return new Response(JSON.stringify({ codigo: "interno", mensaje: "Error interno de la demostración", detalle }), { status: 500, headers: cab });
     }
   };
+  return (req: Request): Promise<Response> => Sesiones.enPeticion(() => atenderPeticion(req));   // sesión y persona se consultan una sola vez por petición
 }

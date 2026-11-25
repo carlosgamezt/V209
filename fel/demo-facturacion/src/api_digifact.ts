@@ -7,6 +7,7 @@ import { ErrorFelGt, type ContextoFel, type DocumentoFel, type ServicioFelGt } f
 import { consultarReceptorNit, crearLimitador, ErrorReceptorNit, TOPE_REAL_GLOBAL, TOPE_REAL_POR_EMPRESA } from "./receptor_nit.ts";
 import type { ConsultorNit } from "./digifact_nit_entorno.ts";
 import type { ConsultorCui } from "./digifact_cui_entorno.ts";
+import { tiposCertificablesTest } from "./tipos_prueba.ts";
 import { correoConFormatoNuc, type PoliticaCorreoDigifact } from "./digifact_correo_entorno.ts";
 import { consultarReceptorCui, TOPE_CUI_GLOBAL, TOPE_CUI_POR_EMPRESA } from "./receptor_cui.ts";
 
@@ -102,7 +103,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       if (accion) return null; return c.json({ operaciones: await svc.estadoDocumento(ctx, docId) });
     }
     // Tipos que la base permite certificar en TEST (migración 31, si está aplicada; si no, la lista queda vacía y solo FACT certifica).
-    try { const [f] = await bd.filas<{ ok: boolean }>("select to_regprocedure('public.fel_tipos_certificacion_test()') is not null as ok"); if (f?.ok) { const [t] = await bd.filas<{ t: string[] }>("select public.fel_tipos_certificacion_test() as t"); svc.fijarTiposTest(t?.t ?? []); } else svc.fijarTiposTest([]); } catch { svc.fijarTiposTest([]); }
+    svc.fijarTiposTest(await tiposCertificablesTest(bd));
     const b = await c.cuerpo();
     const doc = async () => { const x = await leerDocumentoFel(bd, c.empresa, docId); if (!x) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado"); return x; };
     // «Enviar factura por correo»: solo si la petición lo pide Y el servidor lo habilita para esta empresa Y el destinatario está autorizado. Digifact lo envía al certificar; aquí solo se valida y se pasa el destinatario.
