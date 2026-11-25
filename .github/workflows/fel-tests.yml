@@ -117,6 +117,8 @@ jobs:
         run: |
           deno test -A fel/demo-facturacion/tests/anulacion_test.ts
           node fel/demo-facturacion/tests/e2e_anulacion.cjs
+      - name: Pantalla de documento emitido (total, serie, número, UUID y ambiente; PDF carta y ticket, imprimir, compartir, correo, permisos; 320/360/390/412/768/1440 px; simulado y local)
+        run: node fel/demo-facturacion/tests/e2e_emitido.cjs
       - name: "Correo de facturas (proveedor SIMULADO, nada sale a la red) · servicio, Resend con fetch falso, plantilla, duplicados, permisos, aislamiento, envío automático apagado por defecto y navegador (teléfono 320–430 px)"
         run: |
           deno test -A fel/demo-facturacion/tests/correo_test.ts

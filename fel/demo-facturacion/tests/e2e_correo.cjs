@@ -36,6 +36,7 @@ async function arrancar(env = {}) {
     const { p } = await ctxMovil(390); await entrar(p, "ana");
     const idA = await certificado(p, "a"), idB = await certificado(p, "b");
     await p.goto(`${srv.url}/#/f/${idA}`); await p.waitForSelector(PANEL, { state: "visible" });
+    await p.locator("#emitido-correo-btn:not([disabled])").waitFor({ timeout: 8000 }); await p.click("#emitido-correo-btn"); await p.waitForSelector("#correo-destinatario:focus", { timeout: 5000 });   // el botón de la pantalla emitida lleva al panel de envío
     const entrada = p.locator("#correo-destinatario"); assert.match(await entrada.inputValue(), /@/, "el correo guardado del receptor viene prellenado");
     assert.match(await p.locator(PANEL).innerText(), /DOCUMENTO DE PRUEBA — SIN VALIDEZ FISCAL/, "el rótulo de prueba se anuncia en la tarjeta"); assert.match(await p.locator(PANEL).innerText(), /Todavía no se ha enviado/);
     // dirección inválida: el botón no se habilita

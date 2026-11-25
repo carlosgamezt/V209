@@ -6,6 +6,7 @@ import { calcular, aInterno } from "/app/js/calculo.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 import { api } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
+import { tarjetaEmitido } from "./emitido.js";
 import { ivaIncluido } from "./iva.js";
 import { panelProceso } from "./proceso.js";
 import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
@@ -377,6 +378,13 @@ export function pantallaFactura(ctx, id) {
       poner(accionesDoc, ...extra);   // fuera de la barra fija: no le quita espacio a la pantalla
     }
     function pintarProceso() {
+      proceso.classList.toggle("proceso-emitido", !!doc.id && doc.estado_fiscal === "certificado");
+      if (doc.id && doc.estado_fiscal === "certificado") {   // pantalla posterior a la certificación: resultado y entrega arriba; el detalle fiscal queda plegado
+        const comun = { ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } };
+        const tarjeta = tarjetaEmitido({ ctx, doc, abrirPrevia, nueva: () => ctx.ir("/nueva"), volver: () => ctx.ir("/") });
+        poner(proceso, tarjeta, panelProceso(comun));   // el detalle fiscal sigue visible debajo: anular, conciliar y enviar por correo no quedan ocultos
+        return;
+      }
       poner(proceso, puedeCertificarAhora() ? (() => { const n = problemas().length; return h("p", { class: `estado-cert-compacto ${n ? "mut" : "ok-val"}`, id: "estado-cert", role: "status" }, n ? `${n} dato${n > 1 ? "s" : ""} por completar` : "Datos completos · Listo para certificar"); })() : doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
     }
 

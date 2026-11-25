@@ -30,7 +30,7 @@ async function descargar(a) {
   const url = URL.createObjectURL(await r.blob()), l = h("a", { href: url, download: `SIMULADO-${a.nombre}` }); document.body.append(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }) {
+export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError, sinCorreo = false }) {
   const { documento: doc, operaciones, eventos, conciliaciones, alertas, artefactos, nombresUsuario } = det;
   const yo = ctx.estado.usuario.id;
   const abierta = operaciones.find((o) => (o.estado === "iniciada" || o.estado === "desconocida") && o.tipo !== "anulacion");
@@ -213,6 +213,6 @@ export function panelProceso({ ctx, det, sucio, recargar, avisar, mostrarError }
   })();
 
   const digifactReal = practico && certifica && ctx.tiene("borradores.ver") ? panelDigifact({ ctx, doc, recargar, mostrarError }) : null;   // Digifact TEST real: solo vía el servidor de NEXA
-  const correo = panelCorreo({ ctx, doc, mostrarError, avisar });   // enviar la factura certificada por correo (nuestro servicio; oculto si el servidor no lo habilita)
+  const correo = sinCorreo ? null : panelCorreo({ ctx, doc, mostrarError, avisar });   // enviar la factura certificada por correo (nuestro servicio; oculto si el servidor no lo habilita)
   return h("div", { class: "proceso-col" }, estadoCard, envio, conciliacion, digifactReal, ...digifact, correo, ...extra, linea, demo);
 }

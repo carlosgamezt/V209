@@ -513,3 +513,15 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .ok-val.estado-cert-compacto{color:#19191D}
 .barra-acciones .acciones-sec,.barra-acciones .acciones-doc,.barra-acciones .sucio{grid-column:1/-1!important;grid-row:auto!important}
 .barra-acciones>#guardar-certificar,.barra-acciones>#certificar-test{grid-column:1/-1;grid-row:auto}
+
+/* Pantalla posterior a la certificación: tarjeta compacta de resultado y entrega. */
+.card-emitido{display:grid;gap:10px}.em-cab{display:flex;gap:10px;align-items:center}.em-ok{color:#2e9e4f;display:inline-flex}.em-ok svg{width:28px;height:28px}
+.em-total{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.em-total strong{font-size:26px;color:#19191D}
+.em-datos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.em-dato{display:flex;flex-direction:column;gap:2px;min-width:0}.em-dato strong{overflow-wrap:anywhere}
+.em-uuid{display:flex;flex-direction:column;gap:2px}.em-uuid-fila{display:flex;gap:6px;align-items:center}.em-uuid-fila strong{font-size:13px;overflow-wrap:anywhere;min-width:0;flex:1}
+.em-acciones{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.em-acciones .btn{width:100%;min-width:0;white-space:normal;min-height:44px}.em-acciones #emitido-nueva{grid-column:1/-1;min-height:48px}
+@media(max-width:340px){.em-acciones{grid-template-columns:minmax(0,1fr)}}
+.em-pie{display:flex;justify-content:center}.emitido-correo{min-width:0}.detalle-fiscal{margin-top:8px}.detalle-fiscal summary{cursor:pointer;color:var(--azul,#4654F5);font-weight:600;min-height:40px;display:flex;align-items:center}
+/* documento emitido: el resultado va primero (las áreas con nombre ignoran «order») */
+.doc-grid:has(>.proceso-emitido){grid-template-areas:"proceso side" "tipo side" "datos side" "items side" "msg side";grid-template-rows:auto auto auto auto 1fr}
+@media(max-width:1000px){.doc-grid:has(>.proceso-emitido){grid-template-areas:"proceso" "tipo" "datos" "items" "side" "msg"}}
