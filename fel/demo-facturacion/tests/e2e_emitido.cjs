@@ -50,7 +50,7 @@ async function arrancar() {
       // sin API de compartir del navegador: deshabilitado y explica por qué (no simula nada)
       if (!(await p.evaluate(() => typeof navigator.share === "function"))) { assert.equal(await p.locator("#emitido-compartir").isDisabled(), true, `${w}: Compartir deshabilitado sin API nativa`); assert.ok((await p.locator("#emitido-compartir").getAttribute("title")).length > 5); }
       // correo: el servidor de esta prueba no lo habilita → deshabilitado con motivo (nunca finge enviar)
-      await p.waitForFunction(() => document.getElementById("emitido-correo-btn")?.title !== "Comprobando…", null, { timeout: 8000 }).catch(() => {});
+      await p.locator('#emitido-correo-btn:not([title="Comprobando…"])').waitFor({ state: "attached", timeout: 8000 }).catch(() => {});
       if (await p.locator("#emitido-correo-btn").isDisabled()) assert.match((await p.locator("#emitido-correo-btn").getAttribute("title")) ?? "", /habilitado|rol|comprobar/i);
       if (w === 390) {
         // descargas reales: PDF carta y ticket
@@ -71,7 +71,8 @@ async function arrancar() {
     // compartir con la API nativa (simulada): entrega un PDF real, sin descarga de respaldo
     { const { c, p } = await ctxMovil(390); await c.addInitScript(() => { window.__compartido = []; navigator.canShare = () => true; navigator.share = async (d) => { window.__compartido.push({ n: d.files?.[0]?.name, tipo: d.files?.[0]?.type, tam: d.files?.[0]?.size }); }; });
       await entrar(p, "ana"); await p.goto(`${srv.url}/#/f/${cert.id}`); await p.waitForSelector('[data-panel="emitido"]'); assert.equal(await p.locator("#emitido-compartir").isDisabled(), false); await p.click("#emitido-compartir");
-      await p.waitForFunction(() => window.__compartido.length === 1, null, { timeout: 10000 }); const r = await p.evaluate(() => window.__compartido[0]); assert.equal(r.tipo, "application/pdf"); assert.ok(r.tam > 800, "se compartió un PDF con contenido"); assert.match(r.n, /\.pdf$/); await c.close(); }
+      for (let i = 0; i < 100 && (await p.evaluate(() => window.__compartido.length)) < 1; i++) await p.waitForTimeout(100);   // sondeo con evaluate (la CSP de CI prohíbe waitForFunction)
+      assert.equal(await p.evaluate(() => window.__compartido.length), 1, "se llamó una vez a la API de compartir"); const r = await p.evaluate(() => window.__compartido[0]); assert.equal(r.tipo, "application/pdf"); assert.ok(r.tam > 800, "se compartió un PDF con contenido"); assert.match(r.n, /\.pdf$/); await c.close(); }
 
     // ================= permisos: el lector (pedro) ve el resultado pero no crea documentos; el emisor (marta) sí
     for (const [u, creaNueva] of [["pedro", false], ["marta", true]]) {
