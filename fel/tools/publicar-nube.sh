@@ -68,6 +68,9 @@ PLAN
     bash tools/supabase-hospedado.sh estado || true   # SOLO LECTURA de metadatos: qué tablas y migraciones hay ya en la base
     bash tools/supabase-hospedado.sh empresa-demo || true   # SOLO LECTURA: UUID de la empresa de «ana» (solo UUID y conteos)
     bash tools/supabase-hospedado.sh secretos-estado || true   # SOLO LECTURA: qué secretos de Digifact existen en la función (solo nombres)
+    if [ "${__DG_FEL_DIGIFACT_TEST:-}" = "habilitado" ]; then   # VERIFICACIÓN EN SECO de la configuración de Digifact (SI/NO por requisito, sin valores): evita publicar para descubrir un secreto que falta
+      ( for v in "${DG_VARS[@]}"; do eval "x=\"\${__DG_$v:-}\""; [ -z "$x" ] || export "$v=$x"; done; cd demo-facturacion && deno run --allow-env nube/verificar_digifact.ts ) || { echo "La configuración de Digifact TEST está incompleta: no se publicará hasta corregirla."; exit 1; }
+    fi
   else echo "(faltan variables o herramientas: se omite la prueba de conectividad)"; fi
   exit 0; fi
 

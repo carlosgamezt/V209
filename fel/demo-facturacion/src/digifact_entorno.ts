@@ -27,7 +27,8 @@ export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: Alm
   if (env("FEL_DIGIFACT_TEST") !== "habilitado") return { motivo: "Digifact TEST no está habilitado (FEL_DIGIFACT_TEST)." };
   const empresa = env("FEL_DIGIFACT_TEST_EMPRESA") ?? ""; if (!UUID.test(empresa)) return { motivo: "Falta FEL_DIGIFACT_TEST_EMPRESA (UUID de la única empresa que usa las credenciales de TEST)." };
   const usuario = env("DIGIFACT_TEST_USERNAME"), nit = env("DIGIFACT_TEST_NIT"); if (!usuario || !env("DIGIFACT_TEST_PASSWORD") || !nit) return { motivo: "Faltan las credenciales de Digifact TEST (usuario, contraseña o NIT)." };
-  let datos: DatosEmisor; try { datos = JSON.parse(env("FEL_DIGIFACT_TEST_EMISOR") ?? ""); } catch { return { motivo: "FEL_DIGIFACT_TEST_EMISOR no es un JSON válido." }; }
+  // el emisor llega como JSON o, desde el despliegue, como BASE64 del JSON (su domicilio puede traer comillas y barras que no deben pasar crudas por un archivo .env)
+  let datos: DatosEmisor; try { const crudo = (env("FEL_DIGIFACT_TEST_EMISOR") ?? "").trim(); datos = JSON.parse(crudo.startsWith("{") ? crudo : new TextDecoder().decode(Uint8Array.from(atob(crudo), (c) => c.charCodeAt(0)))); } catch { return { motivo: "FEL_DIGIFACT_TEST_EMISOR no es un JSON válido (ni base64 de un JSON)." }; }
   if (!datos?.nit || !datos.nombre || !datos.direccion || !Array.isArray(datos.frases)) return { motivo: "FEL_DIGIFACT_TEST_EMISOR no trae los datos del emisor." };
   if (String(Number(datos.nit)) !== String(Number(nit))) return { motivo: "El NIT del emisor no coincide con el NIT de las credenciales de TEST." };
   const huella = await huellaEmisor(datos); if (huella !== env("FEL_DIGIFACT_TEST_HUELLA")) return { motivo: "La huella aprobada de los datos del emisor no coincide: no se habilita." };

@@ -99,13 +99,16 @@ dg_limpiar; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion
 ! grep -qi "digifact" "$ENV_COPIA" && ok "Digifact apagado (por defecto): ningún valor de Digifact llega a los secretos de la función" || mal "Digifact apagado pero llegó a la función"
 dg_completo; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; r=$?
 [ $r = 0 ] && grep -q "^secrets set --env-file" "$REGISTRO" && ok "Digifact habilitado y completo: la función se publica" || mal "Digifact completo no se publicó"
-grep -qF "DIGIFACT_TEST_PASSWORD='$DG_PASS'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_TEST_EMISOR='$DG_EMISOR'" "$ENV_COPIA" && grep -qx "FEL_DIGIFACT_TEST='habilitado'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_TEST_EMPRESA='$DG_EMP'" "$ENV_COPIA" && ok "los valores viajan con comillas simples (la contraseña con espacio y # y el JSON del emisor con # quedan íntegros)" || mal "los valores de Digifact no llegaron íntegros"
+grep -qF "DIGIFACT_TEST_PASSWORD='$DG_PASS'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_TEST_EMISOR='$(printf '%s' "$DG_EMISOR" | base64 -w0)'" "$ENV_COPIA" && ! grep -qF "$DG_EMISOR" "$ENV_COPIA" && grep -qx "FEL_DIGIFACT_TEST='habilitado'" "$ENV_COPIA" && grep -qF "FEL_DIGIFACT_TEST_EMPRESA='$DG_EMP'" "$ENV_COPIA" && ok "los valores viajan con comillas simples (la contraseña con espacio y # y el JSON del emisor con # quedan íntegros)" || mal "los valores de Digifact no llegaron íntegros"
 ! grep -qF "$DG_PASS" "$W/salida.txt" && ! grep -qF "$DG_USER" "$W/salida.txt" && ! grep -qF "$DG_EMISOR" "$W/salida.txt" && grep -q "Digifact TEST: habilitado para la función (valores no mostrados)" "$W/salida.txt" && ok "la salida no contiene la contraseña, el usuario ni el emisor (solo «valores no mostrados»)" || mal "la salida de la función muestra valores de Digifact"
 [ "$(stat -c %a "$(grep -o '\-\-env-file [^ ]*' "$REGISTRO" | cut -d' ' -f2)" 2>/dev/null || echo gone)" = gone ] && ok "el archivo temporal con los secretos se borra al terminar" || mal "el archivo temporal de secretos sigue existiendo"
 for falta in FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA; do
   dg_completo; unset "$falta"; dg_rechaza "Digifact habilitado SIN $falta: todo o nada, la función no se publica"
 done
-dg_completo; export FEL_DIGIFACT_TEST_EMISOR="{\"nombre\":\"O'REILLY\"}"; dg_rechaza "un valor con comilla simple se rechaza (no se publica)"
+dg_completo; export DIGIFACT_TEST_PASSWORD="clave'con'comilla"; dg_rechaza "un valor con comilla simple se rechaza (no se publica)"
+# el emisor SÍ admite comillas simples, dobles y barras (viaja en base64); lo que no es JSON se rechaza
+dg_completo; export FEL_DIGIFACT_TEST_EMISOR='{"nombre":"O'"'"'REILLY \"X\" \\108\\"}'; rm -f "$REGISTRO" "$ENV_COPIA"; base "$REF" funcion; [ $? = 0 ] && grep -q "^FEL_DIGIFACT_TEST_EMISOR='[A-Za-z0-9+/=]*'$" "$ENV_COPIA" && ok "el emisor con comillas y barras viaja en base64 (sin caracteres especiales en el .env)" || mal "emisor con comillas y barras"
+dg_completo; export FEL_DIGIFACT_TEST_EMISOR="no es json"; dg_rechaza "un emisor que no es JSON se rechaza (no se publica)"
 dg_completo; export DIGIFACT_TEST_PASSWORD=$'linea1\nlinea2'; dg_rechaza "un valor con salto de línea se rechaza (no se publica)"
 dg_completo; export FEL_DIGIFACT_TEST_HUELLA="xyz"; dg_rechaza "huella que no es de 16 hexadecimales: se rechaza"
 dg_completo; export FEL_DIGIFACT_TEST_EMPRESA="no-es-uuid"; dg_rechaza "empresa que no es UUID: se rechaza"

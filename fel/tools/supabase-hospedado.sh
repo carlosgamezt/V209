@@ -433,7 +433,12 @@ print(r)')"
         [ -z "${FEL_DIGIFACT_AUTORIZA_REFERENCIA:-}" ] || [ "${FEL_DIGIFACT_AUTORIZA_REFERENCIA}" = "CICLO-TEST" ] || printf '%s' "${FEL_DIGIFACT_AUTORIZA_REFERENCIA}" | grep -Eiq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' || { echo "FEL_DIGIFACT_AUTORIZA_REFERENCIA no es un UUID ni CICLO-TEST: no se publica la función"; exit 2; }
         for v in FEL_DIGIFACT_TEST FEL_DIGIFACT_TEST_EMPRESA DIGIFACT_TEST_USERNAME DIGIFACT_TEST_PASSWORD DIGIFACT_TEST_NIT FEL_DIGIFACT_TEST_EMISOR FEL_DIGIFACT_TEST_HUELLA FEL_DIGIFACT_AUTORIZA_REFERENCIA; do
           valor="${!v:-}"; [ -n "$valor" ] || continue
-          case "$valor" in *"'"*|*$'\n'*|*$'\r'*) echo "$v contiene un carácter no admitido (comilla simple o salto de línea): no se publica la función"; exit 2;; esac
+          if [ "$v" = "FEL_DIGIFACT_TEST_EMISOR" ]; then   # el emisor (con comillas y barras en su domicilio) viaja en BASE64: sin ningún carácter especial en el archivo .env; la función lo decodifica
+            printf '%s' "$valor" | python3 -c 'import json,sys; json.loads(sys.stdin.read())' 2>/dev/null || { echo "FEL_DIGIFACT_TEST_EMISOR no es un JSON válido: no se publica la función"; exit 2; }
+            valor="$(printf '%s' "$valor" | base64 -w0)"
+          else
+            case "$valor" in *"'"*|*$'\n'*|*$'\r'*) echo "$v contiene un carácter no admitido (comilla simple o salto de línea): no se publica la función"; exit 2;; esac
+          fi
           printf "%s='%s'\n" "$v" "$valor" >> "$ENVF"
         done
         echo "Digifact TEST: habilitado para la función (valores no mostrados)";;
