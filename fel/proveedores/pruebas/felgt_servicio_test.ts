@@ -367,14 +367,14 @@ Deno.test("chequeo previo: la referencia se busca en la fecha de emisión y haci
   const p3 = await m3.s.preparar(ctx(), doc()); ref = p3.referencia; m3.autorizar(p3.referencia); const r3 = await m3.s.certificar(ctx(), doc(), confirmar(p3)); assert.equal(m3.envios(), 0); assert.equal(r3.operacion.estado, "desconocida");
 });
 
-Deno.test("chequeo previo: sin referencia en Digifact se envía UNA vez (8 consultas de solo lectura antes); con una duda (reporte caído o ilegible) NO se envía, no se reintenta solo y la operación sigue «preparada»", async () => {
+Deno.test("chequeo previo: sin referencia en Digifact se envía UNA vez (8 consultas de solo lectura antes); con una duda (reporte caído o ilegible) en cualquier día NO se envía, no se reintenta solo y la operación sigue «preparada»", async () => {
   const ok1 = mundo(); const p = await ok1.s.preparar(ctx(), doc()); ok1.autorizar(p.referencia); await ok1.s.certificar(ctx(), doc(), confirmar(p));
   assert.equal(ok1.envios(), 1); assert.equal(reportes(ok1), 8, "el día de la emisión y 7 hacia atrás, todos de solo lectura");
   for (const [nombre, falla] of [["reporte caído (500)", () => ok({}, 500)], ["reporte ilegible", () => ({ estado: 200, cuerpo: "<html>" })], ["reporte sin filas ni respuesta clara", () => ok({ REQUEST_DATA: [{}], RESPONSE: [] })]] as const) {
     let sano = false; const m = mundo({ reporte: () => (sano ? reporteVacio() : falla()) });
     const q = await m.s.preparar(ctx(), doc()); m.autorizar(q.referencia);
     await rechaza(m.s.certificar(ctx(), doc(), confirmar(q)), "PREVUELO");
-    assert.equal(m.envios(), 0, `${nombre}: no se envió nada`); assert.equal(reportes(m), 1, `${nombre}: una sola consulta, sin reintento automático`);
+    assert.equal(m.envios(), 0, `${nombre}: no se envió nada`); assert.equal(reportes(m), 8, `${nombre}: una consulta por día (8, todas a la vez) y ninguna repetida: sin reintento automático`);
     assert.equal((await m.s.estadoDocumento(ctx(), "d1"))[0].estado, "preparada", `${nombre}: la operación sigue preparada (no bloquea ni queda «enviando»)`);
     sano = true; const r = await m.s.certificar(ctx(), doc(), confirmar(q)); assert.equal(r.operacion.estado, "certificada"); assert.equal(m.envios(), 1, `${nombre}: una persona lo repite y entonces se envía UNA vez`);
   }

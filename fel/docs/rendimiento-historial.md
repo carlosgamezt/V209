@@ -27,3 +27,23 @@ Medición (`tests/medir_navegacion.cjs`, Chromium en teléfono 390 px contra el 
 | Documentos → Nueva factura (navegación interna) | 79 ms · 7 solicitudes | 68 ms · 1 solicitud | 587 ms · 7 solicitudes | 225 ms · 1 solicitud |
 
 Lectura honesta: en red local las ganancias de tiempo son pequeñas (el cuello de botella allí no es la red); donde se nota es en red lenta, por la reducción de solicitudes (39 → 15–17 al abrir; 7 → 1 al navegar). La meta de carga inicial ≤ 3 s se cumple en la medición lenta emulada (2.2 s) pero falta medirla en un teléfono real contra Cloudflare/Supabase hospedados (arranque en frío de la función incluido). Navegación interna ≤ 500 ms: cumplida en la medición (225 ms con red lenta emulada).
+
+## 2026-11-25 · Medición en la nube (publicaciones #42 → #44) y causas reales de la lentitud
+
+Medido contra la infraestructura publicada (Cloudflare → Supabase Edge Function → PostgreSQL → Digifact TEST) con `nube/medir_rendimiento.ts` (3 ciclos guardar → revisar → preparar → certificar; la cabecera `Server-Timing` de la función da consultas y tiempo de base por petición).
+
+| Llamada | #42 (antes) | #44 | Notas |
+|---|---|---|---|
+| Archivos estáticos (Cloudflare) | 22–35 ms | 35–47 ms | no son el problema |
+| `GET /api/fecha-emision` | 972 ms | 174 ms | 7 → 1 consulta |
+| `GET /api/estado` | 2254 ms | 890 ms | 16 → 6 consultas |
+| `GET /api/documentos` (lista) | 1379 ms | 514 ms | |
+| Guardar | 3878 ms | 1926 ms | |
+| Revisar | 3270 ms | 1593 ms | |
+| Preparar | 2615 ms | 844 ms | |
+| Certificar | 7808 ms | 5844 ms | falta el chequeo previo (ver abajo) |
+| **Ciclo completo** | **17 571 ms** | **10 207 ms** | |
+
+Causas: (1) cada consulta remota cuesta 108–250 ms y cada petición hacía decenas, una tras otra (7 solo para identificar a la persona, 2 veces la sesión y 4 el usuario); (2) toda escritura entraba en la sección crítica de los simuladores (≈10 viajes) aunque no usara simuladores; (3) el detalle del documento hacía 11 lecturas seguidas; (4) la función corre en us-east-2 y la base en us-west-2 (`select 1` = 54 ms); (5) el chequeo previo de Digifact (`#prevuelo`) hacía hasta 8 consultas de solo lectura una tras otra (≈3 s) y no se contaba como tiempo de Digifact.
+
+Correcciones: sesión+persona en una consulta y una vez por petición; sin sección crítica en escrituras de negocio; `BdDemo.lote` (lecturas independientes en un solo viaje, verificado con 140 ms simulados: 8 consultas 1158 → 217 ms); permisos 5 s, tipos de prueba 60 s, nombres de personas 30 s; chequeo previo en paralelo (sigue sin enviar si cualquiera de los 8 días lo encuentra o no se puede comprobar); `x-region` hacia la región de la base.

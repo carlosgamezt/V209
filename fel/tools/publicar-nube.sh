@@ -104,6 +104,9 @@ paso "6/8 · función de Supabase"
 paso "7/8 · Cloudflare Pages: secretos y página (Wrangler)"
 WR=(npx --yes wrangler@4)
 printf '%s' "https://$REF.supabase.co/functions/v1/nexa-demo" | "${WR[@]}" pages secret put FUNCION_URL --project-name "$PAGES_PROYECTO" >/dev/null
+# región de la función = región de la base (se deduce del nombre del agrupador de conexiones; solo el nombre de la región, nunca la dirección ni credenciales). Si no se puede deducir, no se fija y todo sigue como antes.
+REGION_BD="$(printf '%s' "${FEL_DEMO_BD_URL:-}" | sed -n 's/.*aws-[0-9]*-\([a-z]*-[a-z]*-[0-9]\)\.pooler\.supabase\.com.*/\1/p' | head -1)"
+if [ -n "$REGION_BD" ]; then printf '%s' "$REGION_BD" | "${WR[@]}" pages secret put FUNCION_REGION --project-name "$PAGES_PROYECTO" >/dev/null; echo "Región de la función = región de la base: $REGION_BD"; fi
 printf '%s' "$FEL_PROXY_SECRETO" | "${WR[@]}" pages secret put PROXY_SECRETO --project-name "$PAGES_PROYECTO" >/dev/null
 "${WR[@]}" pages deploy dist/nube/pagina --project-name "$PAGES_PROYECTO" --branch main --commit-dirty=true
 paso "8/8 · prueba de humo contra https://$FEL_DEMO_HOSTS"

@@ -319,7 +319,8 @@ export class ServicioFelGt {
     { const aut = this.d.autorizaPrueba(); if (aut !== op0.referencia && aut !== AUTORIZACION_CICLO) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada"); }
     // CHEQUEO PREVIO (solo lectura): Digifact NO deduplica por referencia, y la base de NEXA puede haber perdido la memoria de lo enviado (restauración de un respaldo, reversión). La referencia es DETERMINISTA, así que si Digifact ya la
     // tiene, NO se envía: la operación queda «desconocida» y una persona la concilia (se adopta el resultado que Digifact ya tiene). Si no se puede comprobar, tampoco se envía (falla cerrado; no hay reintento automático).
-    const pv = await this.#prevuelo(cliente, op0);
+    const t0Digifact = performance.now();   // medición: todo lo que espera a Digifact (chequeo previo + envío); el resto es de NEXA
+    const pv = await this.#prevuelo(cliente, op0); const prevueloMs = Math.round(performance.now() - t0Digifact);
     if (pv.tipo === "indeterminado") throw new ErrorFelGt("PREVUELO", "No se pudo verificar en Digifact que esta referencia sea nueva: no se envió nada. Una persona decide cuándo repetirlo (no hay reintentos automáticos).");
     if (pv.tipo === "encontrado") {
       const w = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["preparada"], { estado: "enviando", actualizada: this.#ahora().getTime() });
@@ -339,7 +340,7 @@ export class ServicioFelGt {
     // «envío SOLICITADO a Digifact»: el correo viaja en el NUC y lo envía Digifact al certificar. NEXA no recibe confirmación de entrega y por eso nunca registra «entregado».
     if (correo) await this.#aud("digifact_test.correo_solicitado", ctx, { documento: doc.id, operacion: op0.id, referencia: op0.referencia, destinatario: enmascararCorreo(correo) });
 
-    let res; const t0Digifact = performance.now();   // medición: cuánto de la espera es de Digifact (el resto es de NEXA)
+    let res;
     try { res = await cliente.certificar(nuc, { referencia: op0.referencia, formatos: ["XML", "PDF"] }); }
     catch (e) {
       if (e instanceof ErrorDigifact && ["autenticacion", "no_autorizado", "no_permitido", "solicitud"].includes(e.tipo)) {   // rechazada ANTES de procesar: no salió ningún documento
@@ -364,7 +365,7 @@ export class ServicioFelGt {
     else n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", actualizada: ahora, resultado: { motivoDesconocido: res.motivo } });
     await this.#aud(`digifact_test.${res.tipo === "certificado" ? "certificada" : res.tipo === "rechazado_confirmado" ? "rechazada" : "desconocida"}`, ctx, { operacion: op0.id, referencia: op0.referencia });
     const sello = res.tipo === "certificado" && n && n.estado === "certificada" ? await this.#sellar(ctx, n, res.artefactos) : {};   // datos fiscales al documento y XML/PDF reales al almacén
-    return { reutilizada: false as const, operacion: this.#publica(n ?? op0), ...sello, tiempoDigifactMs: Math.round(performance.now() - t0Digifact) };
+    return { reutilizada: false as const, operacion: this.#publica(n ?? op0), ...sello, tiempoDigifactMs: Math.round(performance.now() - t0Digifact), prevueloMs };
   }
 
   /* ---------------------------------------------------------------- 5. conciliación (solo lectura hacia Digifact) */
@@ -397,12 +398,15 @@ export class ServicioFelGt {
   async #prevuelo(cliente: ClienteGt, op: OperacionGt): Promise<{ tipo: "no_encontrado" } | { tipo: "encontrado"; fecha: string } | { tipo: "indeterminado" }> {
     const dias = this.d.prevueloDias ?? 7; if (dias <= 0) return { tipo: "no_encontrado" };
     const base = new Date(op.fechaEmision.slice(0, 10) + "T12:00:00Z");
-    for (let i = 0; i <= dias; i++) {
+    // Las consultas de cada día son de SOLO LECTURA e independientes: se hacen TODAS A LA VEZ (antes iban una tras otra: hasta 8 viajes seguidos a Digifact, ≈3 s medidos). Para enviar hace falta que TODAS respondan
+    // «no existe»: si alguna lo encuentra o no se puede comprobar, no se envía nada (igual de estricto que antes; solo cambia que no se espera a cada día por turno).
+    const rs = await Promise.all(Array.from({ length: dias + 1 }, async (_, i) => {
       const f = new Date(base.getTime() - i * 86_400_000).toISOString().slice(0, 10);
-      let r; try { r = await cliente.conciliarPorReferencia(f, op.referencia, op.establecimiento); } catch { return { tipo: "indeterminado" }; }
-      if (r.tipo === "encontrado") return r.documento.referenciaInterna.toUpperCase() === op.referencia.toUpperCase() ? { tipo: "encontrado", fecha: f } : { tipo: "indeterminado" };
-      if (r.tipo === "indeterminado") return { tipo: "indeterminado" };
-    }
+      try { return { f, r: await cliente.conciliarPorReferencia(f, op.referencia, op.establecimiento) }; } catch { return { f, r: null }; }
+    }));
+    const hallado = rs.find((x) => x.r?.tipo === "encontrado");
+    if (hallado && hallado.r?.tipo === "encontrado") return hallado.r.documento.referenciaInterna.toUpperCase() === op.referencia.toUpperCase() ? { tipo: "encontrado", fecha: hallado.f } : { tipo: "indeterminado" };
+    if (rs.some((x) => !x.r || x.r.tipo === "indeterminado")) return { tipo: "indeterminado" };
     return { tipo: "no_encontrado" };
   }
 

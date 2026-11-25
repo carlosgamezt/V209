@@ -9,20 +9,20 @@ const claves = Object.fromEntries((Deno.env.get("FEL_DEMO_CLAVES") ?? "").split(
 if (!claves.ana) { console.error("Falta la contraseña de «ana» en FEL_DEMO_CLAVES."); Deno.exit(1); }
 type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 const jarra = new JarraCookies();
-interface Medida { ms: number; fn?: number; db?: number; n?: number; dfxToken?: number; dfxEnvio?: number; arranque?: number; status: number; json: J }
+interface Medida { ms: number; fn?: number; db?: number; n?: number; dfxToken?: number; dfxEnvio?: number; dfxOtro?: number; arranque?: number; status: number; json: J }
 const num = (s: string, k: string) => { const m = new RegExp(`${k};dur=([\\d.]+)`).exec(s); return m ? Number(m[1]) : undefined; };
 async function ll(m: string, ruta: string, cuerpo?: unknown): Promise<Medida> {
   const t0 = performance.now();
   const r = await fetch(url + ruta, { method: m, redirect: "manual", headers: { "x-demo": "1", "content-type": "application/json", ...(jarra.cabecera() ? { cookie: jarra.cabecera() } : {}) }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
   jarra.guardar(r.headers.getSetCookie()); const t = await r.text(), ms = performance.now() - t0; let json: J = {}; try { json = JSON.parse(t); } catch { /* sin cuerpo */ }
   const st = r.headers.get("server-timing") ?? ""; const n = /(\d+) consultas/.exec(st);
-  return { ms, status: r.status, json, fn: num(st, "fn"), db: num(st, "db"), n: n ? Number(n[1]) : undefined, dfxToken: num(st, "dfx_token"), dfxEnvio: num(st, "dfx_envio"), arranque: num(st, "arranque") };
+  return { ms, status: r.status, json, fn: num(st, "fn"), db: num(st, "db"), n: n ? Number(n[1]) : undefined, dfxToken: num(st, "dfx_token"), dfxEnvio: num(st, "dfx_envio"), dfxOtro: num(st, "dfx_otro"), arranque: num(st, "arranque") };
 }
 const f = (x?: number) => (x === undefined ? "–" : String(Math.round(x)));
-const fila = (nombre: string, a: Medida) => `| ${nombre.padEnd(34)} | ${f(a.ms).padStart(6)} | ${f(a.fn).padStart(6)} | ${f(a.db).padStart(6)} | ${String(a.n ?? "–").padStart(4)} | ${f(a.dfxToken).padStart(6)} | ${f(a.dfxEnvio).padStart(6)} | ${f(a.arranque).padStart(6)} | ${a.status} |`;
+const fila = (nombre: string, a: Medida) => `| ${nombre.padEnd(34)} | ${f(a.ms).padStart(6)} | ${f(a.fn).padStart(6)} | ${f(a.db).padStart(6)} | ${String(a.n ?? "–").padStart(4)} | ${f(a.dfxToken).padStart(6)} | ${f(a.dfxEnvio).padStart(6)} | ${f(a.dfxOtro).padStart(6)} | ${f(a.arranque).padStart(6)} | ${a.status} |`;
 const mediana = (v: number[]) => { const s = [...v].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 console.log("\n== MEDICIÓN DE RENDIMIENTO (publicada) · tiempos en ms · «total» = visto desde el cliente; «fn» = dentro de la función; «db» = tiempo y N° de consultas a la base ==");
-console.log(`| ${"llamada".padEnd(34)} | total  | fn     | db     | N°db | dfxTok | dfxEnv | arranq | HTTP |`); console.log("|" + "-".repeat(36) + "|--------|--------|--------|------|--------|--------|--------|------|");
+console.log(`| ${"llamada".padEnd(34)} | total  | fn     | db     | N°db | dfxTok | dfxEnv | dfxOtr | arranq | HTTP |`); console.log("|" + "-".repeat(36) + "|--------|--------|--------|------|--------|--------|--------|--------|------|");
 
 // ---- estáticos (Cloudflare Pages): 3 pidas cada uno
 for (const ruta of ["/", "/web/js/main.js", "/web/js/factura.js", "/web/js/proceso.js"]) {
@@ -54,7 +54,7 @@ for (let i = 1; i <= 3; i++) {
   reg("POST …/estado (revisado)", await ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version }));
   const prep = await ll("POST", `/api/documentos/${id}/digifact/preparar`, {}); reg("POST …/digifact/preparar", prep);
   const cer = await ll("POST", `/api/documentos/${id}/digifact/certificar`, { operacionId: prep.json.operacionId, confirmacion: "CERTIFICAR-TEST", referencia: prep.json.referencia, huellaEmisor: prep.json.huellaEmisor }); reg("POST …/digifact/certificar", cer);
-  console.log(`      certificar: estado ${cer.json.operacion?.estado ?? "?"}, tiempo de Digifact medido por la función ${cer.json.tiempoDigifactMs ?? "–"} ms, documento_actualizado ${cer.json.documento_actualizado ? "sí" : "no"}`);
+  console.log(`      certificar: estado ${cer.json.operacion?.estado ?? "?"}, tiempo de Digifact medido por la función ${cer.json.tiempoDigifactMs ?? "–"} ms (de ello, chequeo previo ${cer.json.prevueloMs ?? "–"} ms), documento_actualizado ${cer.json.documento_actualizado ? "sí" : "no"}`);
   if (!cer.json.documento_actualizado) reg("GET /api/documentos/:id (recarga)", await ll("GET", `/api/documentos/${id}`));
   const dfx = Number(cer.json.tiempoDigifactMs ?? dfxEnv + dfxTok); totales.push(acum); dfxs.push(dfx);
   console.log(`      CICLO ${i}: total ${f(acum)} ms · Digifact ${f(dfx)} ms · atribuible a NEXA/red ${f(acum - dfx)} ms`);

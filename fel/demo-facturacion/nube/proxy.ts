@@ -2,7 +2,10 @@
 //  · Añade el secreto compartido (la función rechaza todo lo que no lo traiga) y la identidad real del visitante: nombre público (Host) y IP (CF-Connecting-IP).
 //  · Quita las cabeceras que el visitante pudiera falsificar con esos mismos nombres. No añade CORS (la protección contra falsificación entre sitios es la cabecera propia + SameSite=Strict).
 //  · Solo métodos GET/POST; tope de tamaño; sin redirecciones; errores genéricos (sin direcciones internas).
-export interface EntornoProxy { FUNCION_URL: string; PROXY_SECRETO: string }
+export interface EntornoProxy { FUNCION_URL: string; PROXY_SECRETO: string; FUNCION_REGION?: string }
+// Región donde corre la función de Supabase: la MISMA de la base de datos (medido: con la función en us-east-2 y la base en us-west-2 cada consulta pagaba ≈54 ms de ida y vuelta extra). Solo regiones conocidas;
+// si Supabase no la acepta (400), se reintenta una vez sin indicarla (la función corre donde Supabase decida, como antes).
+const REGIONES = new Set(["ap-northeast-1", "ap-northeast-2", "ap-south-1", "ap-southeast-1", "ap-southeast-2", "ca-central-1", "eu-central-1", "eu-west-1", "eu-west-2", "eu-west-3", "sa-east-1", "us-east-1", "us-west-1", "us-west-2"]);
 const PROPIAS = ["x-nexa-proxy", "x-nexa-host", "x-nexa-ip", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "cf-connecting-ip", "authorization", "apikey"];
 const MAX_CUERPO = 300_000;
 
@@ -17,8 +20,11 @@ export async function reenviar(req: Request, env: EntornoProxy, f: typeof fetch 
   const cab = new Headers(); for (const [k, v] of req.headers) if (!PROPIAS.includes(k.toLowerCase()) && !k.toLowerCase().startsWith("cf-") && k.toLowerCase() !== "host") cab.set(k, v);
   cab.set("x-nexa-proxy", env.PROXY_SECRETO); cab.set("x-nexa-host", url.hostname.toLowerCase()); cab.set("x-nexa-ip", req.headers.get("cf-connecting-ip") ?? "?");
   let r: Response;
-  try { r = await f(env.FUNCION_URL.replace(/\/$/, "") + url.pathname + url.search, { method: req.method, headers: cab, body: cuerpo, redirect: "manual" }); }
-  catch { return gen(502, "El servicio no responde. Inténtalo de nuevo."); }
+  const destino = env.FUNCION_URL.replace(/\/$/, "") + url.pathname + url.search, region = (env.FUNCION_REGION ?? "").trim();
+  try {
+    if (REGIONES.has(region)) { const cr = new Headers(cab); cr.set("x-region", region); r = await f(destino, { method: req.method, headers: cr, body: cuerpo, redirect: "manual" }); if (r.status === 400) r = await f(destino, { method: req.method, headers: cab, body: cuerpo, redirect: "manual" }); }
+    else r = await f(destino, { method: req.method, headers: cab, body: cuerpo, redirect: "manual" });
+  } catch { return gen(502, "El servicio no responde. Inténtalo de nuevo."); }
   const sal = new Headers(r.headers); for (const k of ["x-nexa-proxy", "server", "x-powered-by", "sb-request-id", "sb-gateway-version", "x-sb-error-code", "x-deno-execution-id"]) sal.delete(k);
   for (const k of [...sal.keys()]) if (k.toLowerCase().startsWith("access-control-")) sal.delete(k);   // jamás CORS
   sal.set("cache-control", "no-store");
