@@ -74,7 +74,7 @@ PLAN
 if [ "$PROBAR" = 1 ]; then
   paso "1/2 · comprobaciones previas (sin tocar nada)"
   case "$SUPABASE_URL" in "https://$REF.supabase.co") ;; *) echo "SUPABASE_URL no corresponde a FEL_DEMO_PROYECTO_REF"; exit 1;; esac
-  SALIDA_PAGES="$(bash tools/pages-proyecto.sh)"; FEL_DEMO_HOSTS="$(echo "$SALIDA_PAGES" | sed -n 's/^HOST=//p' | tail -1)"; [ -n "$FEL_DEMO_HOSTS" ] || { echo "No se obtuvo el subdominio del proyecto"; exit 1; }; export FEL_DEMO_HOSTS   # el proyecto ya existe: se reutiliza (nada se crea ni se despliega)
+  SALIDA_PAGES="$(bash tools/pages-proyecto.sh)" || { echo "$SALIDA_PAGES" | grep -v '^HOST='; echo "No se pudo preparar el proyecto de Pages."; exit 1; }; FEL_DEMO_HOSTS="$(echo "$SALIDA_PAGES" | sed -n 's/^HOST=//p' | tail -1)"; [ -n "$FEL_DEMO_HOSTS" ] || { echo "No se obtuvo el subdominio del proyecto"; exit 1; }; export FEL_DEMO_HOSTS   # el proyecto ya existe: se reutiliza (nada se crea ni se despliega)
   paso "2/2 · prueba de humo contra la página ya publicada (https://$FEL_DEMO_HOSTS)"
   ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_humo.ts ); exit $?
 fi
@@ -85,7 +85,7 @@ case "$FEL_DEMO_BD_URL" in *"$REF"*) ;; *) echo "FEL_DEMO_BD_URL no pertenece al
 bash tools/supabase-hospedado.sh validar   # el pooler compartido de ESTE proyecto, sin parámetros; si no, se detiene aquí sin tocar nada
 echo "OK"
 paso "2/8 · Cloudflare Pages: crear (con Wrangler) o reutilizar el proyecto $PAGES_PROYECTO"
-SALIDA_PAGES="$(bash tools/pages-proyecto.sh)"; echo "$SALIDA_PAGES" | grep -v '^HOST='
+SALIDA_PAGES="$(bash tools/pages-proyecto.sh)" || { echo "$SALIDA_PAGES" | grep -v '^HOST='; echo "No se pudo preparar el proyecto de Pages."; exit 1; }; echo "$SALIDA_PAGES" | grep -v '^HOST='
 FEL_DEMO_HOSTS="$(echo "$SALIDA_PAGES" | sed -n 's/^HOST=//p' | tail -1)"; [ -n "$FEL_DEMO_HOSTS" ] || { echo "No se obtuvo el subdominio del proyecto"; exit 1; }; export FEL_DEMO_HOSTS
 echo "Dirección pública: https://$FEL_DEMO_HOSTS"
 paso "3/8 · migraciones (proyecto nuevo y exclusivo)"
