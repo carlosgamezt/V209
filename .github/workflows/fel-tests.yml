@@ -182,7 +182,12 @@ jobs:
       - name: D2 · lo existente no cambió y las migraciones de D2 son solo aditivas
         run: python3 fel/supabase/tests/verificar_aditiva_d2.py
       - name: Levantar Supabase local y aplicar migraciones
-        run: supabase --workdir fel start
+        # Causa más probable del fallo intermitente «failed to bind host port 0.0.0.0:5432x: address already in use»: el rango de puertos EFÍMEROS del ejecutor (32768-60999) incluye los
+        # puertos de Supabase (54321-54327); una conexión saliente cualquiera (p. ej. la descarga de imágenes) puede ocupar uno justo antes de que arranque el contenedor. Se acota el rango
+        # efímero por debajo de 54000 (solo en esta máquina virtual desechable) y, si aun así falla, se detiene SOLO este proyecto (nombre «nexa-fel») y se reintenta una vez.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_port_range="32768 49999" >/dev/null || echo "no se pudo acotar el rango efímero (se continúa)"
+          supabase --workdir fel start || { echo "Primer intento falló; se detiene este proyecto y se reintenta una vez"; supabase --workdir fel stop --no-backup || true; supabase --workdir fel start; }
       - name: Ejecutar pruebas SQL
         env:
           PGPASSWORD: postgres
@@ -248,7 +253,12 @@ jobs:
           deno-version: v2.x
       - uses: ./.github/actions/supabase-cli
       - name: Levantar Supabase local y aplicar migraciones
-        run: supabase --workdir fel start
+        # Causa más probable del fallo intermitente «failed to bind host port 0.0.0.0:5432x: address already in use»: el rango de puertos EFÍMEROS del ejecutor (32768-60999) incluye los
+        # puertos de Supabase (54321-54327); una conexión saliente cualquiera (p. ej. la descarga de imágenes) puede ocupar uno justo antes de que arranque el contenedor. Se acota el rango
+        # efímero por debajo de 54000 (solo en esta máquina virtual desechable) y, si aun así falla, se detiene SOLO este proyecto (nombre «nexa-fel») y se reintenta una vez.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_port_range="32768 49999" >/dev/null || echo "no se pudo acotar el rango efímero (se continúa)"
+          supabase --workdir fel start || { echo "Primer intento falló; se detiene este proyecto y se reintenta una vez"; supabase --workdir fel stop --no-backup || true; supabase --workdir fel start; }
       - name: Exportar claves LOCALES de la pila efímera
         run: |
           supabase --workdir fel status -o env 2>/dev/null | grep -E '^[A-Z_]+=' > "$RUNNER_TEMP/sb.env"
