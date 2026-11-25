@@ -23,7 +23,7 @@ const NO_HABILITADO = { codigo: "digifact_no_habilitado", mensaje: "Digifact TES
 /** Lee un documento de LA empresa indicada (nunca de otra) en la forma que necesita el servicio. */
 export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: string): Promise<DocumentoFel | null> {
   const conTipos = await tiposDisponibles(bd);   // sin la propuesta de tipos aplicada, las columnas nuevas no existen: el documento es Factura, como siempre
-  const [d] = await bd.filas<Obj>(`select d.id, d.empresa_id, d.estado_preparacion, d.estado_fiscal, ${conTipos ? "d.tipo_dte, d.referencia_origen, d.motivo_ajuste, d.tipo_recibo," : ""} c.tipo_identificacion as c_tipo, c.numero_identificacion as c_num, c.nombre as c_nombre
+  const [d] = await bd.filas<Obj>(`select d.id, d.empresa_id, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista::text as fecha_emision_prevista, ${conTipos ? "d.tipo_dte, d.referencia_origen, d.motivo_ajuste, d.tipo_recibo," : ""} c.tipo_identificacion as c_tipo, c.numero_identificacion as c_num, c.nombre as c_nombre
       from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2`, [docId, empresa]);
   if (!d) return null;
   const ls = await bd.filas<Obj>(`select l.descripcion, l.cantidad::text as cantidad, l.precio_unitario::text as precio_unitario, l.importes->>'descuento' as descuento, k.tipo as concepto_tipo, k.unidad_medida
@@ -34,6 +34,7 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
   return {
     id: String(d.id), empresaId: String(d.empresa_id), estadoPreparacion: String(d.estado_preparacion), estadoFiscal: String(d.estado_fiscal),
     tipoDte: String(d.tipo_dte ?? "FACT"),
+    ...(d.fecha_emision_prevista ? { fechaEmisionPrevista: String(d.fecha_emision_prevista).slice(0, 10) } : {}),   // la fecha ELEGIDA: es la que viaja en Header.IssuedDateTime
     ...(ro ? { origen: { tipo: String(ro.tipo), autorizacion: String(ro.autorizacion), fechaEmision: String(ro.fecha_emision), serie: String(ro.serie), numero: String(ro.numero), receptorId: String(ro.receptor_id) } } : {}),
     ...(d.motivo_ajuste ? { motivoAjuste: String(d.motivo_ajuste) } : {}), ...(d.tipo_recibo ? { tipoRecibo: String(d.tipo_recibo) } : {}),
     receptor: { tipoId: (["NIT", "CUI", "CF"].includes(tipo) ? tipo : "EXT") as "NIT", id: tipo === "CF" ? "CF" : String(d.c_num ?? "").replace(/-/g, ""), nombre: tipo === "CF" ? "CONSUMIDOR FINAL" : String(d.c_nombre ?? "") },

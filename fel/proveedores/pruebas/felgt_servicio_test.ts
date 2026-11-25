@@ -460,3 +460,82 @@ Deno.test("tipos: preparar y certificar un tipo no implementado se RECHAZAN ante
   // FACT sigue pudiendo prepararse
   const p = await m.s.preparar(ctx(), doc()); assert.ok(p.operacionId);
 });
+
+/* ---------------------------------------------------------------- FECHA DE EMISIÓN ELEGIDA (hasta 5 días calendario atrás; zona de Guatemala; el reloj del servidor decide) */
+const gtHora = (fechaHora: string) => new Date(`${fechaHora}-06:00`);
+const relojDe = (inicio: string) => { let t = gtHora(inicio).getTime(); return { ahora: () => new Date(t), a: (fechaHora: string) => { t = gtHora(fechaHora).getTime(); } }; };
+
+Deno.test("fecha elegida: hoy y de 1 a 5 días atrás viajan en Header.IssuedDateTime con la hora de Guatemala; la certificación NO la sustituye por la fecha actual", async () => {
+  for (let n = 0; n <= 5; n++) {
+    const m = mundo({ ahora: () => gtHora("2026-11-25T10:00:00") });   // 25/11/2026, 10:00 en Guatemala
+    const fecha = `2026-11-${String(25 - n).padStart(2, "0")}`, d = doc(EMPRESA_A, `d${n}`, { fechaEmisionPrevista: fecha });
+    const p = await m.s.preparar(ctx(), d); assert.equal(p.fechaEmision, `${fecha}T10:00:00-06:00`, "el resumen muestra la fecha elegida");
+    m.autorizar(p.referencia); const r = await m.s.certificar(ctx(), d, confirmar(p)); assert.equal(r.operacion.estado, "certificada");
+    const nuc = nucEnviado(m); assert.equal(nuc.Header.IssuedDateTime, `${fecha}T10:00:00-06:00`, `${n} días atrás`); assert.match(nuc.Header.IssuedDateTime, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-06:00$/);
+    assert.equal(r.operacion.fechaEmision, `${fecha}T10:00:00-06:00`, "la operación conserva la fecha de emisión elegida");
+    assert.equal(r.operacion.resultado?.autorizacion, AUT, "la autorización y la fecha de certificación las pone el certificador (aquí no se escriben)");
+  }
+});
+
+Deno.test("fecha elegida: 6 días atrás y un día futuro se rechazan al validar y al preparar; no se guarda ni se envía nada y la fecha no se corrige sola", async () => {
+  for (const [fecha, texto] of [["2026-11-19", /anterior al 20\/11\/2026/], ["2026-11-26", /no puede ser futura/], ["2026-02-31", /no existe/], ["25/11/2026", /formato/]] as const) {
+    const m = mundo({ ahora: () => gtHora("2026-11-25T10:00:00") }), d = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: fecha });
+    const v = await m.s.validar(ctx(), d); assert.equal(v.ok, false); assert.ok(v.errores.some((e) => e.campo === "fechaEmision" && texto.test(e.mensaje)), `${fecha}: ${JSON.stringify(v.errores)}`);
+    await assert.rejects(m.s.preparar(ctx(), d), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "FECHA_EMISION" && texto.test(e.message), fecha);
+    assert.equal((await m.almacen.deDocumento(EMPRESA_A, "d1")).length, 0, "no se creó ninguna operación"); assert.equal(m.envios(), 0); assert.equal(m.llamadas.filter((l) => l.ruta.startsWith("/v2/")).length, 0);
+    assert.equal(d.fechaEmisionPrevista, fecha, "el servicio no modifica la fecha del documento");
+  }
+});
+
+Deno.test("entre las 18:00 y las 23:59 de Guatemala (UTC ya es el día siguiente) «hoy» sigue siendo el día de Guatemala: el NUC lleva esa fecha y mañana se rechaza", async () => {
+  for (const h of ["18:00:00", "21:30:15", "23:59:59"]) {
+    const m = mundo({ ahora: () => gtHora(`2026-11-24T${h}`) });
+    const hoy = doc(EMPRESA_A, "h", { fechaEmisionPrevista: "2026-11-24" }), p = await m.s.preparar(ctx(), hoy); assert.equal(p.fechaEmision, `2026-11-24T${h}-06:00`);
+    await assert.rejects(m.s.preparar(ctx(), doc(EMPRESA_A, "m", { fechaEmisionPrevista: "2026-11-25" })), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "FECHA_EMISION" && /futura/.test(e.message), "con UTC mañana habría parecido hoy");
+  }
+});
+
+Deno.test("borrador que vence antes de certificar: se REVALIDA justo antes de enviar, no se envía nada y la fecha NO se cambia sola", async () => {
+  const r = relojDe("2026-11-24T23:50:00"), m = mundo({ ahora: r.ahora });
+  const d = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: "2026-11-19" });   // el último día válido a las 23:50 del 24/11 (5 días atrás)
+  const p = await m.s.preparar(ctx(), d); m.autorizar(p.referencia);
+  r.a("2026-11-25T00:10:00");   // pasó la medianoche: la fecha ya tiene 6 días y la preparación (20 min) aún no caducó
+  await assert.rejects(m.s.certificar(ctx(), d, confirmar(p)), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "FECHA_EMISION" && /Elige otra fecha/.test(e.message));
+  assert.equal(m.envios(), 0, "no salió nada hacia Digifact"); assert.equal(d.fechaEmisionPrevista, "2026-11-19", "la fecha del borrador no se tocó");
+  const ops = await m.almacen.deDocumento(EMPRESA_A, "d1"); assert.equal(ops.length, 1); assert.equal(ops[0].estado, "preparada", "la operación sigue preparada (nunca se envió) y no se reescribió su fecha"); assert.equal(ops[0].fechaEmision, "2026-11-19T23:50:00-06:00");
+  await assert.rejects(m.s.preparar(ctx(), d), (e: unknown) => e instanceof ErrorFelGt && e.codigo === "FECHA_EMISION", "volver a prepararlo con la misma fecha tampoco la acepta");
+});
+
+Deno.test("cambio de día con el borrador abierto: lo que era «hoy» sigue valiendo como «ayer» y el NUC conserva la fecha preparada (no la de ahora)", async () => {
+  const r = relojDe("2026-11-24T23:50:00"), m = mundo({ ahora: r.ahora });
+  const d = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: "2026-11-24" }), p = await m.s.preparar(ctx(), d); m.autorizar(p.referencia);
+  r.a("2026-11-25T00:10:00");
+  const c = await m.s.certificar(ctx(), d, confirmar(p)); assert.equal(c.operacion.estado, "certificada");
+  assert.equal(nucEnviado(m).Header.IssuedDateTime, "2026-11-24T23:50:00-06:00", "la fecha de emisión es la elegida, aunque ya sea otro día");
+});
+
+Deno.test("cambiar la fecha después de preparar es cambiar el documento: certificar con otra fecha se rechaza y preparar de nuevo da OTRA referencia", async () => {
+  const m = mundo({ ahora: () => gtHora("2026-11-25T10:00:00") });
+  const a = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: "2026-11-24" }), b = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: "2026-11-23" });
+  const p = await m.s.preparar(ctx(), a); m.autorizar(p.referencia);
+  await rechaza(m.s.certificar(ctx(), b, confirmar(p)), "DOCUMENTO_CAMBIO"); assert.equal(m.envios(), 0);
+  const q = await m.s.preparar(ctx(), b); assert.notEqual(q.referencia, p.referencia, "otra fecha, otra referencia"); assert.equal(q.fechaEmision, "2026-11-23T10:00:00-06:00");
+  const igual = await m.s.preparar(ctx(), a); assert.equal(igual.referencia, p.referencia, "la misma fecha conserva la misma referencia (idempotente)");
+});
+
+Deno.test("un documento sin fecha elegida (anterior al selector) conserva su comportamiento: la fecha y hora actuales de Guatemala", async () => {
+  const m = mundo({ ahora: () => gtHora("2026-11-24T22:15:00") }), p = await m.s.preparar(ctx(), doc()); assert.equal(p.fechaEmision, "2026-11-24T22:15:00-06:00");
+});
+
+Deno.test("notas: la fecha elegida no puede ser anterior a la del documento de origen; y NCRE, NDEB y RECI siguen sin certificarse", async () => {
+  const origen = { tipo: "FACT", autorizacion: AUT, fechaEmision: "2026-11-23", serie: "A001", numero: "5", receptorId: "44653948" };
+  const nota = (tipo: string, fecha: string) => doc(EMPRESA_A, "n1", { tipoDte: tipo, fechaEmisionPrevista: fecha, receptor: { tipoId: "NIT", id: "44653948", nombre: "EMPRESA DE PRUEBA, S.A." }, origen, motivoAjuste: "Devolución" } as Partial<DocumentoFel>);
+  const m = mundo({ ahora: () => gtHora("2026-11-25T10:00:00") });
+  for (const tipo of ["NCRE", "NDEB"]) {
+    const antes = await m.s.validar(ctx(), nota(tipo, "2026-11-22")); assert.ok(antes.errores.some((e) => /no puede ser anterior al documento/.test(e.mensaje)), `${tipo} anterior a su origen`);
+    const bien = await m.s.validar(ctx(), nota(tipo, "2026-11-24")); assert.ok(!bien.errores.some((e) => e.campo.startsWith("documento_origen.fechaEmision")), `${tipo}: ${JSON.stringify(bien.errores)}`); assert.equal(bien.certificable, false);
+    await rechaza(m.s.preparar(ctx(), nota(tipo, "2026-11-24")), "TIPO_NO_HABILITADO");
+  }
+  await rechaza(m.s.preparar(ctx(), doc(EMPRESA_A, "r1", { tipoDte: "RECI", fechaEmisionPrevista: "2026-11-24", tipoRecibo: "pago" } as Partial<DocumentoFel>)), "TIPO_NO_HABILITADO");
+  assert.equal(m.envios(), 0);
+});

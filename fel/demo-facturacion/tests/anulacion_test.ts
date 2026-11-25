@@ -8,7 +8,7 @@ type Cli = Awaited<ReturnType<Awaited<ReturnType<typeof montar>>["Cli"]["prototy
 
 async function documentoCertificado(ana: Cli, clave: string, escenario = "exito") {
   const est = (await ana.llamar("GET", "/api/estado")).json, cli = est.clientes.find((c: J) => c.nombre.startsWith("Comercial") || c.nombre.startsWith("Distribuidora")), es = est.establecimientos[0];
-  const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "100" }] });
+  const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "100" }] });
   assert.equal(d.status, 200, d.texto);
   assert.equal((await ana.llamar("POST", `/api/documentos/${d.json.documento.id}/estado`, { estado: "revisado", version: d.json.documento.version })).status, 200);
   const c = await ana.llamar("POST", `/api/documentos/${d.json.documento.id}/certificar`, { proveedor: "digifact", escenario, clave });

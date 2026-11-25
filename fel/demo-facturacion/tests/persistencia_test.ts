@@ -32,7 +32,7 @@ Deno.test({ name: "persistencia: todo sobrevive al reinicio (empresas, usuarios,
     const ana = await nuevo("ana"), marta = await nuevo("marta"), maestro = await nuevo("maestro");
     // factura certificada con consumo y cargo
     const est = (await marta.llamar("GET", "/api/estado")).json, cli = est.clientes[0], es = est.establecimientos[0];
-    const d = (await marta.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio persistente", cantidad: "2", precio_unitario: "75" }] })).json;
+    const d = (await marta.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio persistente", cantidad: "2", precio_unitario: "75" }] })).json;
     await ana.llamar("POST", `/api/documentos/${d.documento.id}/estado`, { estado: "revisado", version: d.documento.version });
     const cert = await ana.llamar("POST", `/api/documentos/${d.documento.id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: "clave-persistente-0001" }); assert.equal(cert.json.documento.estado_fiscal, "certificado"); const aut = cert.json.documento.autorizacion_sat;
     // empresa nueva con propietario, plan y pago; usuario de la empresa; cambio de contraseña propio

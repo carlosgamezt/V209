@@ -11,12 +11,13 @@
 //  · Producción bloqueada, anulación y nota de crédito cerradas (las impone el cliente DigifactGt; aquí ni siquiera se exponen).
 //  · Una certificación válida se APLICA al documento (estado fiscal, serie, número y autorización del certificador; nunca inventados) de forma atómica e idempotente, y los XML/PDF REALES se guardan y se sirven solo a su empresa.
 //  · Nada de credenciales, tokens ni cuerpos crudos en los resultados ni en la auditoría.
+import { fechaHoraEmisionGt, validarFechaEmision } from "./fecha_emision.ts";
 import { ErrorDigifact, type ArtefactosB64, type DigifactGt } from "./digifact_gt.ts";
 import { puedeCertificar, tipoDte } from "./catalogo_dte.ts";
 import { construirNuc, aMicro, deMicro, validarFactura, totalFactura, type EmisorGt, type FacturaGt, type ItemGt, type ReceptorGt } from "./nuc_gt.ts";
 
-export type CodigoFelGt = "TIPO_NO_HABILITADO" | "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO" | "PREVUELO";
-const STATUS: Record<CodigoFelGt, number> = { TIPO_NO_HABILITADO: 422, NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502, PREVUELO: 503 };
+export type CodigoFelGt = "TIPO_NO_HABILITADO" | "FECHA_EMISION" | "NO_AUTORIZADO" | "SIN_CANAL" | "VALIDACION" | "ESTADO" | "CONFIRMACION" | "PRUEBA_NO_AUTORIZADA" | "ALMACEN_NO_PERSISTENTE" | "DOCUMENTO_CAMBIO" | "NO_ENCONTRADO" | "LIMITE" | "EMISOR" | "ENTRADA" | "ARTEFACTO_INVALIDO" | "PREVUELO";
+const STATUS: Record<CodigoFelGt, number> = { TIPO_NO_HABILITADO: 422, FECHA_EMISION: 422, NO_AUTORIZADO: 403, SIN_CANAL: 422, VALIDACION: 422, ESTADO: 409, CONFIRMACION: 400, PRUEBA_NO_AUTORIZADA: 403, ALMACEN_NO_PERSISTENTE: 503, DOCUMENTO_CAMBIO: 409, NO_ENCONTRADO: 404, LIMITE: 429, EMISOR: 422, ENTRADA: 400, ARTEFACTO_INVALIDO: 502, PREVUELO: 503 };
 export class ErrorFelGt extends Error {
   constructor(public codigo: CodigoFelGt, mensaje: string, public errores?: { campo: string; mensaje: string }[]) { super(mensaje); this.name = "ErrorFelGt"; }
   get status(): number { return STATUS[this.codigo]; }
@@ -33,6 +34,8 @@ export interface DocumentoFel {
   tipoDte?: "FACT" | "NCRE" | "NDEB" | "RECI" | string;
   /** Solo notas: referencia al documento CERTIFICADO de origen (leída de la base, no escrita por el usuario) y motivo del ajuste. Solo recibos: su tipo. */
   origen?: FacturaGt["origen"]; motivoAjuste?: string; tipoRecibo?: string;
+  /** Fecha de emisión ELEGIDA para el documento (AAAA-MM-DD, columna fecha_emision_prevista). Es la que viaja en Header.IssuedDateTime; la fecha de certificación la asigna el certificador. Ausente = hoy (documentos de antes de existir el selector). */
+  fechaEmisionPrevista?: string;
   lineas: { tipo: "Bien" | "Servicio"; descripcion: string; cantidad: string; precioUnitario: string; descuento: string; unidad?: string }[];
 }
 
@@ -216,7 +219,10 @@ export class ServicioFelGt {
     const referencia = o.referencia ?? "00000000-0000-5000-8000-000000000000";   // marcador: la referencia real se fija al preparar
     let factura: FacturaGt | null = null;
     let correoVal: string | undefined; try { correoVal = this.#correo(o.correo); } catch (x) { if (x instanceof ErrorFelGt) errores.push({ campo: "receptor.correo", mensaje: x.message }); else throw x; }
-    try { factura = this.#factura(doc, e.emisor, referencia, o.fechaEmision ?? fechaGt(this.#ahora()), correoVal); }
+    let fechaDoc = fechaGt(this.#ahora());
+    if (o.fechaEmision) fechaDoc = o.fechaEmision;
+    else { try { fechaDoc = this.#fechaEmisionDe(doc); } catch (x) { if (x instanceof ErrorFelGt && x.errores) errores.push(...x.errores); else throw x; } }
+    try { factura = this.#factura(doc, e.emisor, referencia, fechaDoc, correoVal); }
     catch (x) { if (x instanceof ErrorFelGt && x.errores) errores.push(...x.errores); else throw x; }
     if (factura) errores.push(...validarFactura(factura));
     const tipo = doc.tipoDte ?? "FACT";
@@ -240,9 +246,9 @@ export class ServicioFelGt {
     const previas = await this.d.almacen.deDocumento(ctx.empresaId, doc.id);
     const bloquea = previas.find((o) => BLOQUEAN.includes(o.estado));
     if (bloquea) throw new ErrorFelGt("ESTADO", bloquea.estado === "certificada" ? "Este documento ya fue certificado" : `Este documento tiene una operación «${bloquea.estado}»: no se prepara otra (concilia primero)`);
-    const fecha = fechaGt(this.#ahora());
+    const fecha = this.#fechaEmisionDe(doc);   // la fecha ELEGIDA (nunca se cambia sola); si está fuera de la ventana, se rechaza aquí
     const intento = previas.filter((o) => o.estado === "rechazada" || o.estado === "no_enviada").length;   // solo los intentos ya resueltos: preparar dos veces lo mismo da la MISMA referencia
-    const hash = hex(await sha256(JSON.stringify([ctx.empresaId, doc.id, doc.receptor, doc.lineas, emisor.huella])));
+    const hash = await this.#hashDoc(ctx, doc, emisor.huella);
     const referencia = await guidDe("nexa-fel-gt", ctx.empresaId, doc.id, hash, String(intento));
     const v = await this.validar(ctx, doc, { fechaEmision: fecha, referencia, correo });
     if (!v.ok) throw new ErrorFelGt("VALIDACION", "El documento no cumple los requisitos de Digifact", v.errores);
@@ -290,8 +296,10 @@ export class ServicioFelGt {
     if (c.huellaEmisor !== op0.huellaEmisor) throw new ErrorFelGt("CONFIRMACION", "La huella del emisor escrita no coincide con la aprobada");
     if (emisor.huella !== op0.huellaEmisor) throw new ErrorFelGt("EMISOR", "Los datos del emisor cambiaron desde que se prepararon");
     // el contenido que se envía es EXACTAMENTE el que se preparó
-    const hash = hex(await sha256(JSON.stringify([ctx.empresaId, doc.id, doc.receptor, doc.lineas, emisor.huella])));
+    const hash = await this.#hashDoc(ctx, doc, emisor.huella);
     if (hash !== op0.hash) throw new ErrorFelGt("DOCUMENTO_CAMBIO", "El documento cambió desde que se preparó: vuelve a prepararlo");
+    // la fecha de emisión se REVALIDA inmediatamente antes de enviar (el reloj del servidor): un borrador preparado ayer con una fecha que hoy ya excede el plazo NO se certifica ni se cambia solo
+    { const v = validarFechaEmision(op0.fechaEmision.slice(0, 10), this.#ahora()); if (!v.ok) throw new ErrorFelGt("FECHA_EMISION", `${v.mensaje} Elige otra fecha de emisión y vuelve a revisar y preparar el documento.`, [{ campo: "fechaEmision", mensaje: v.mensaje }]); }
     if (doc.estadoPreparacion !== "revisado" || !["ninguno", "rechazado"].includes(doc.estadoFiscal)) throw new ErrorFelGt("ESTADO", "El documento ya no está en un estado que permita certificar");
     if (!this.d.almacen.persistente) throw new ErrorFelGt("ALMACEN_NO_PERSISTENTE", "No hay almacén persistente de operaciones: no se envía nada real (si el proceso se reiniciara, se perdería la memoria de lo enviado)");
     if (this.d.autorizaPrueba() !== op0.referencia) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada");
@@ -451,6 +459,18 @@ export class ServicioFelGt {
     if (v === undefined || v === null || v === "") return undefined;
     if (typeof v !== "string" || v.length > 254) throw new ErrorFelGt("ENTRADA", "El correo no es válido");
     return v.trim() || undefined;
+  }
+  /** Huella del contenido que se prepara y se envía. Incluye la FECHA de emisión elegida (solo si existe: los documentos sin ella conservan su huella de siempre): cambiar la fecha es cambiar el documento, así que se vuelve a preparar. */
+  async #hashDoc(ctx: ContextoFel, doc: DocumentoFel, huellaEmisor: string) {
+    return hex(await sha256(JSON.stringify([ctx.empresaId, doc.id, doc.receptor, doc.lineas, huellaEmisor, ...(doc.fechaEmisionPrevista ? [doc.fechaEmisionPrevista] : [])])));
+  }
+  /** Header.IssuedDateTime del documento: la fecha ELEGIDA (validada contra el reloj del SERVIDOR) con la hora local de Guatemala. Sin fecha elegida, el momento actual. Una fecha fuera de la ventana NO se corrige: se rechaza. */
+  #fechaEmisionDe(doc: DocumentoFel): string {
+    const ahora = this.#ahora();
+    if (!doc.fechaEmisionPrevista) return fechaGt(ahora);
+    const v = validarFechaEmision(doc.fechaEmisionPrevista, ahora);
+    if (!v.ok) throw new ErrorFelGt("FECHA_EMISION", v.mensaje, [{ campo: "fechaEmision", mensaje: v.mensaje }]);
+    return fechaHoraEmisionGt(v.fecha, ahora);
   }
   #factura(doc: DocumentoFel, emisor: EmisorGt, referencia: string, fechaEmision: string, correo?: string): FacturaGt {
     const politica = this.d.impuestos ?? ivaIncluidoGeneral;

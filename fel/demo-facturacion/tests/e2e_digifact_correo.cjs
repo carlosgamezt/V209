@@ -23,7 +23,7 @@ async function arrancar() {
     const revisado = (p) => p.evaluate(async () => {
       const J = { "x-demo": "1", "content-type": "application/json" }, get = async (r) => (await fetch(r, { headers: J })).json(), post = async (r, b) => (await fetch(r, { method: "POST", headers: J, body: JSON.stringify(b) })).json();
       const est = await get("/api/estado"), cli = est.clientes.find((c) => c.nombre.startsWith("Comercial") || c.nombre.startsWith("Distribuidora")), es = est.establecimientos[0];
-      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio de prueba", cantidad: "1", precio_unitario: "300" }] });
+      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio de prueba", cantidad: "1", precio_unitario: "300" }] });
       await post(`/api/documentos/${d.documento.id}/estado`, { estado: "revisado", version: d.documento.version }); return d.documento.id;
     });
     // Digifact TEST SUSTITUIDO en el navegador: estado, operaciones, validar/preparar/certificar y «correo». Guarda lo que la pantalla ENVÍA.

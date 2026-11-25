@@ -60,7 +60,7 @@ Deno.test({ name: "Digifact TEST por la API: permisos, aislamiento entre empresa
 
   // ---- documento revisado de la empresa 1
   const est = (await ana.llamar("GET", "/api/estado")).json, cli = est.clientes.find((c: J) => c.tipo_identificacion === "NIT"), es = est.establecimientos[0];
-  const d = await marta.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, lineas: [{ descripcion: "Supervisión de obra", cantidad: "2", precio_unitario: "500" }], fecha: new Date().toISOString().slice(0, 10) }); assert.equal(d.status, 200, JSON.stringify(d.json));
+  const d = await marta.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, lineas: [{ descripcion: "Supervisión de obra", cantidad: "2", precio_unitario: "500" }], fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()) }); assert.equal(d.status, 200, JSON.stringify(d.json));
   const docId = d.json.documento.id as string;
   assert.equal((await ana.llamar("POST", `/api/documentos/${docId}/estado`, { estado: "revisado", version: d.json.documento.version })).status, 200);
   const R = (id: string, x: string) => `/api/documentos/${id}/digifact${x}`;

@@ -29,6 +29,7 @@ export const api = {
   guardarConcepto: (c) => llamar("POST", "/api/conceptos", c),
   configuracion: () => llamar("GET", "/api/configuracion"),
   tiposDocumento: () => llamar("GET", "/api/tipos-documento"),
+  ventanaFecha: () => llamar("GET", "/api/fecha-emision"),   // hoy en Guatemala (reloj del servidor) y la fecha de emisión más antigua permitida
   guardarTipoEmpresa: (c) => llamar("POST", "/api/tipos-documento", c),
   origenes: (tipo, cliente, q) => llamar("GET", `/api/documentos/origenes?tipo=${encodeURIComponent(tipo)}${cliente ? `&cliente=${encodeURIComponent(cliente)}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
   guardarEstablecimiento: (e) => llamar("POST", "/api/establecimientos", e),

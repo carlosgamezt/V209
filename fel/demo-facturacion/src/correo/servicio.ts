@@ -92,7 +92,7 @@ export class ServicioCorreo {
     const le = await this.#limEmpresa.permitir(`correo:e:${ctx.empresaId}`), lp = await this.#limPersona.permitir(`correo:p:${ctx.actorId}`);
     if (!le.ok || !lp.ok) throw new ErrorCorreo(429, "demasiados_envios", `Demasiados envíos seguidos. Intenta de nuevo en ${Math.max(le.reintentarEnS, lp.reintentarEnS)} s.`);
     // 3) la factura, SIEMPRE de la empresa de la sesión
-    const [d] = await this.bd.filas<Obj>(`select d.id, d.estado_fiscal, d.serie, d.numero_fiscal, d.autorizacion_sat, d.fecha_emision_prevista, coalesce(d.total, d.base_imponible)::text as total, d.moneda,
+    const [d] = await this.bd.filas<Obj>(`select d.id, d.estado_fiscal, d.serie, d.numero_fiscal, d.autorizacion_sat, d.fecha_emision_prevista::text as fecha_emision_prevista, coalesce(d.total, d.base_imponible)::text as total, d.moneda,
         c.nombre as cliente_nombre, c.email as cliente_email, e.nombre_comercial, e.razon_social
       from public.documentos d join public.empresas e on e.id = d.empresa_id left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2`, [p.documentoId, ctx.empresaId]);
     if (!d) throw new ErrorCorreo(404, "no_encontrado", "Documento no encontrado.");

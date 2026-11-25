@@ -28,7 +28,7 @@ async function arrancar() {
     const borrador = (p, precio = "100", cantidad = "2") => p.evaluate(async ([precio, cantidad]) => {
       const J = { "x-demo": "1", "content-type": "application/json" }, get = async (r) => (await fetch(r, { headers: J })).json(), post = async (r, b) => (await fetch(r, { method: "POST", headers: J, body: JSON.stringify(b) })).json();
       const est = await get("/api/estado"), cli = est.clientes.find((c) => c.nombre.startsWith("Comercial")), es = est.establecimientos[0];
-      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio con una descripción bastante larga para comprobar que se ajusta a dos líneas sin romper la fila", cantidad, precio_unitario: precio }] });
+      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio con una descripción bastante larga para comprobar que se ajusta a dos líneas sin romper la fila", cantidad, precio_unitario: precio }] });
       if (!d.documento) throw new Error("no se creó el borrador: " + JSON.stringify(d).slice(0, 200)); return d.documento.id;
     }, [precio, cantidad]);
 

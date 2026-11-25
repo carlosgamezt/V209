@@ -51,7 +51,7 @@ Deno.test({ name: "nube: intermediario → función → base; secreto compartido
     assert.equal((await mae.ll("POST", "/api/sesion/entrar", { usuario: "maestro", clave: claves.maestro, codigo: await codigo(semillas.maestro) })).status, 200);
     // 6) un recorrido real: factura con ítems, certificada con Digifact simulado; el estado del simulador vive en la base
     const e1 = (await ana.ll("GET", "/api/estado")).json; assert.equal(e1.usuario.clave, "ana"); const cli = e1.clientes[0], es = e1.establecimientos[0];
-    const d = await ana.ll("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio A", cantidad: "2", precio_unitario: "100.00" }, { descripcion: "Servicio B", cantidad: "1", precio_unitario: "50.00" }] });
+    const d = await ana.ll("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio A", cantidad: "2", precio_unitario: "100.00" }, { descripcion: "Servicio B", cantidad: "1", precio_unitario: "50.00" }] });
     assert.equal(d.status, 200, d.texto); const id = d.json.documento.id;
     await ana.ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version });
     const cert = await ana.ll("POST", `/api/documentos/${id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: "clave-nube-0000001" }); assert.equal(cert.json.documento.estado_fiscal, "certificado", cert.texto);

@@ -395,6 +395,7 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .rc-card .nit-estado{display:block;margin-top:3px}
 .rc-meta{font-size:12.5px;color:var(--mut)}
 .rc-emision{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:10px;padding-top:10px}
+.rc-aviso-fecha{margin:6px 2px 0;font-size:12px;line-height:1.35;color:var(--mut)}.rc-aviso-fecha.err{color:var(--bad)}
 .rc-mini{display:flex;flex-direction:column;gap:3px;min-width:0}.rc-mini>span{font-size:11px;font-weight:700;color:var(--mut)}
 .rc-mini select,.rc-mini input{height:44px;min-height:44px;width:100%;font-size:16px}
 .rc-obs-btn{display:block;margin-top:2px;min-height:40px;padding:0;border:0;background:none;color:var(--mut);font-weight:600;font-size:14px;text-align:left;cursor:pointer}

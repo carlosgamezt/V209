@@ -23,6 +23,7 @@ import { normalizarCui, RE_CUI } from "./receptor_cui.ts";
 import { PersistenciaSimuladores } from "./simuladores.ts";
 import { EMPRESA, type Sembrado } from "./mundo_demo.ts";
 import { ErrorCorreo, type ServicioCorreo } from "./correo/servicio.ts";
+import { hoyGt, validarFechaEmision, ventanaEmision } from "../../proveedores/src/fecha_emision.ts";
 import type { PoliticaCorreoDigifact } from "./digifact_correo_entorno.ts";
 
 export const ESCENARIOS: { id: Escenario; nombre: string; explicacion: string }[] = [
@@ -48,7 +49,7 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
@@ -58,7 +59,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
   const orq = (ganchos?: ConstructorParameters<typeof OrquestadorDb>[2]) => new OrquestadorDb(bd.rpc, base, ganchos);
   const orqRec = () => new OrquestadorDb(bd.rpc, pr ? new ProveedorEnrutado(bd.rpc, { mock: base, ...Object.fromEntries(pr.registro.listar().map((x) => [x.id, x.proveedor])) }, base) : base);   // conciliar / recuperar: cada operación con SU proveedor
-  const CTX = { ambiente: "simulado" as const, ahora: () => new Date() };
+  const CTX = { ambiente: "simulado" as const, ahora: extras.ahora ?? (() => new Date()) };   // el reloj del SERVIDOR decide qué día es hoy (America/Guatemala); el del dispositivo no cuenta
   const personas = (): typeof PERSONAS => extras.sesiones ? PERSONAS : Object.fromEntries(Object.entries(PERSONAS).filter(([, u]) => u.empresa === EMPRESA)) as typeof PERSONAS;
   const canalDe = async (proveedor: string): Promise<string> => {
     const [c] = await bd.filas<{ id: string }>("select id from public.empresa_canales where empresa_id = $1 and proveedor_id = $2 and ambiente = 'simulado' and habilitado order by prioridad limit 1", [emp(), proveedor]);
@@ -86,8 +87,10 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
   const permisosDe = async (a: { id: string }) => await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[];
 
   async function detalle(docId: string) {
-    const [d] = await bd.filas<Obj>("select d.*, c.nombre as cliente_nombre, c.email as cliente_email, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]);
+    const [d] = await bd.filas<Obj>("select d.*, d.fecha_emision_prevista::text as fecha_emision_txt, c.nombre as cliente_nombre, c.email as cliente_email, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]);
     if (!d) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado");
+    // la fecha de emisión SIEMPRE como texto AAAA-MM-DD, tal cual está en la base (un objeto Date dependería de la zona horaria del servidor y el PDF mostraba «Sat Nov 21»)
+    d.fecha_emision_prevista = d.fecha_emision_txt ?? null; delete d.fecha_emision_txt;
     const lineas = await bd.filas("select orden, descripcion, cantidad::text as cantidad, precio_unitario::text as precio_unitario, descuento_tipo, descuento_valor::text as descuento_valor, importes from public.documento_lineas where documento_id = $1 order by orden", [docId]);
     const operaciones = await bd.filas("select id, tipo, estado, proveedor, ambiente, enviada_en, orden_externa, resolucion, motivo_desconocido, reintento_desde, iniciada_en, resuelta_en, clave_idempotencia from public.operaciones_fiscales where documento_id = $1 order by iniciada_en, id", [docId]);
     const ids = operaciones.map((o) => o.id);
@@ -130,6 +133,15 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     return { tipo, origen, motivo, recibo };
   }
 
+  /** La fecha de emisión del documento guardado debe estar dentro de la ventana AHORA (reloj del servidor). Se usa al revisar y justo antes de certificar; nunca modifica la fecha. */
+  async function exigirFechaVigente(docId: string, soloSiPendiente = false) {
+    const [d] = await bd.filas<{ f: string | null; ef: string }>("select fecha_emision_prevista::text as f, estado_fiscal as ef from public.documentos where id = $1 and empresa_id = $2", [docId, emp()]);
+    if (!d || (soloSiPendiente && !["ninguno", "rechazado"].includes(d.ef))) return;   // lo ya certificado no se juzga de nuevo (la reutilización es idempotente)
+    if (!d.f) throw new ErrorHttp(422, "Indica la fecha de emisión.", "fecha_emision");
+    const v = validarFechaEmision(d.f, CTX.ahora());
+    if (!v.ok) throw new ErrorHttp(422, `${v.mensaje} Elige otra fecha de emisión: el borrador no se cambia solo.`, "fecha_emision");
+  }
+
   async function guardar(a: { id: string }, b: Obj) {
     const tp = await prevalidarTipo(a, b);   // antes de tocar nada
     const lineasEntrada = b.lineas; if (!Array.isArray(lineasEntrada) || lineasEntrada.length < 1 || lineasEntrada.length > 50) throw new ErrorHttp(400, "Debe haber de 1 a 50 líneas", "entrada_invalida");
@@ -156,9 +168,24 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       clienteId = r.id as string;
     }
     if (clienteId && !uuidOk(clienteId)) throw new ErrorHttp(400, "Receptor no válido", "entrada_invalida");
-    const fecha = typeof b.fecha === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.fecha) ? b.fecha : null;
+    // FECHA DE EMISIÓN: se valida AQUÍ, en el servidor, con su reloj y la zona de Guatemala (la interfaz solo ayuda; una petición directa no la salta). Sin fecha: la que ya tenía el borrador o, si es nuevo, hoy.
+    // Una fecha que NO cambia no se vuelve a juzgar al guardar (un borrador que venció no se cambia solo: se le impide revisarse y certificarse hasta que se elija otra fecha).
+    const ahoraSrv = CTX.ahora();
+    const previaFecha = uuidOk(b.id) ? ((await bd.filas<{ f: string | null }>("select fecha_emision_prevista::text as f from public.documentos where id = $1 and empresa_id = $2", [b.id, emp()]))[0]?.f ?? null) : null;
+    let fecha: string;
+    if (b.fecha === undefined || b.fecha === null || b.fecha === "") fecha = previaFecha ?? hoyGt(ahoraSrv);
+    else {
+      if (typeof b.fecha !== "string") throw new ErrorHttp(422, "La fecha de emisión debe tener el formato AAAA-MM-DD.", "fecha_emision");
+      fecha = b.fecha;
+      if (fecha !== previaFecha) { const v = validarFechaEmision(fecha, ahoraSrv); if (!v.ok) throw new ErrorHttp(422, v.mensaje, "fecha_emision"); }
+    }
     const doc = await bd.rpc("fel_op_documento_guardar", { p_actor: a.id, p_empresa: emp(), p_id: b.id ?? null, p_cliente: clienteId ?? null, p_fecha: fecha, p_observaciones: typeof b.observaciones === "string" && b.observaciones.trim() ? b.observaciones.trim().slice(0, 500) : null,
       p_lineas: lineas.map((l, i) => ({ orden: i + 1, ...l, importes: c.lineas[i] })), p_subtotal: c.subtotal, p_descuento_total: c.descuento_total, p_base: c.base_imponible, p_calculo: c.meta, p_version: b.id ? Number(b.version) : null }) as Obj;
+    // AUDITORÍA de la fecha de emisión (las fechas de creación, emisión y certificación son tres cosas distintas): se registra cuando se fija una distinta de hoy o cuando cambia
+    if (previaFecha ? fecha !== previaFecha : fecha !== hoyGt(ahoraSrv)) {
+      const v = validarFechaEmision(fecha, ahoraSrv);
+      await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::text::jsonb)", [emp(), a.id, previaFecha ? "documento.fecha_emision_cambiada" : "documento.fecha_emision_fijada", doc.id, JSON.stringify({ anterior: previaFecha, nueva: fecha, dias_atras: v.ok ? v.diasAtras : null, mes_anterior: v.ok ? v.mesAnterior : null, hoy_servidor: hoyGt(ahoraSrv) })]);
+    }
     if (uuidOk(b.establecimiento_id)) await bd.rpc("fel_op_documento_establecimiento", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_est: b.establecimiento_id });
     // el tipo se asigna DESPUÉS (la base copia el receptor y la referencia fiscal del origen y valida habilitación, origen certificado, tope y duplicados)
     if (!tp.mantener) {
@@ -202,6 +229,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
       const r = await bd.rpc("fel_op_concepto_guardar", { p_actor: a.id, p_empresa: emp(), p_id: uuidOk(b.id) ? b.id : null, p_codigo: texto(b.codigo, 1, 40, "Código"), p_descripcion: texto(b.descripcion, 1, 300, "Descripción"), p_tipo: b.tipo, p_unidad_medida: "UND", p_precio_unitario: b.precio_unitario, p_categoria_fiscal: null, p_version: b.id ? Number(b.version) : null });
       return json(r);
     }
+    if (m === "GET" && ruta === "/api/fecha-emision") return json(ventanaEmision(CTX.ahora()));   // hoy en Guatemala (servidor) y la fecha más antigua permitida
     if (m === "GET" && ruta === "/api/configuracion") {
       const [empr] = await bd.filas("select e.razon_social, e.nombre_comercial, e.nit, e.estado, e.moneda, e.emision_real_habilitada, r.nombre as regimen, r.estado as regimen_estado from public.empresas e left join public.regimenes_fiscales r on r.id = e.regimen_id where e.id = $1", [emp()]);
       const establecimientos = await bd.filas("select id, codigo_sat, nombre, direccion, estado, (select count(*)::int from public.documentos d where d.establecimiento_id = x.id and d.empresa_id = x.empresa_id) as documentos from public.establecimientos x where x.empresa_id = $1 order by codigo_sat", [emp()]);
@@ -288,6 +316,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     if (m === "POST" && ruta === "/api/documentos") { const b = await cuerpo(); const docId = await guardar(a, b); return json(await detalle(docId)); }
     if (m === "POST" && (r = /^\/api\/documentos\/([^/]+)\/estado$/.exec(ruta))) {
       const b = await cuerpo(); const nuevo = b.estado; if (!["borrador", "revisado", "archivado"].includes(nuevo as string)) throw new ErrorHttp(400, "Estado no válido", "entrada_invalida");
+      if (nuevo === "revisado") await exigirFechaVigente(id(r[1]));   // no se revisa un borrador con la fecha fuera del plazo
       await bd.rpc("fel_op_documento_preparacion", { p_actor: a.id, p_empresa: emp(), p_id: id(r[1]), p_nuevo: nuevo, p_motivo: typeof b.motivo === "string" ? b.motivo : null, p_version: Number(b.version) });
       return json(await detalle(r[1]));
     }
@@ -297,6 +326,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { supervisor?: { s
     }
     if (m === "POST" && (r = /^\/api\/documentos\/([^/]+)\/certificar$/.exec(ruta))) {
       const b = await cuerpo(); const docId = id(r[1]);
+      await exigirFechaVigente(docId, true);   // revalidación justo antes de certificar (reloj del servidor); no cambia la fecha
       // Envío AUTOMÁTICO del correo tras certificar: solo si el servidor lo habilita (FEL_CORREO_AUTOMATICO) Y la petición lo pide Y quedó certificada. Un fallo del correo NUNCA afecta a la certificación.
       const correoAuto = async (): Promise<Obj | null> => {
         const svc = extras.correo; if (!svc || b.enviar_correo !== true || !svc.automatico) return null;

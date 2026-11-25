@@ -23,7 +23,7 @@ async function arrancar(env = {}) {
     const certificado = (p, n) => p.evaluate(async (n) => {
       const J = { "x-demo": "1", "content-type": "application/json" }, get = async (r) => (await fetch(r, { headers: J })).json(), post = async (r, b) => (await fetch(r, { method: "POST", headers: J, body: JSON.stringify(b) })).json();
       const est = await get("/api/estado"), cli = est.clientes.find((c) => c.nombre.startsWith("Comercial") || c.nombre.startsWith("Distribuidora")), es = est.establecimientos[0];
-      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "100" }] });
+      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "100" }] });
       await post(`/api/documentos/${d.documento.id}/estado`, { estado: "revisado", version: d.documento.version });
       const c = await post(`/api/documentos/${d.documento.id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: `clave-e2e-correo-${n}-${Date.now()}` });
       if (c.documento?.estado_fiscal !== "certificado") throw new Error("no se certificó: " + JSON.stringify(c).slice(0, 200));
@@ -73,7 +73,7 @@ async function arrancar(env = {}) {
     const borrador = (p) => p.evaluate(async () => {
       const J = { "x-demo": "1", "content-type": "application/json" }, get = async (r) => (await fetch(r, { headers: J })).json(), post = async (r, b) => (await fetch(r, { method: "POST", headers: J, body: JSON.stringify(b) })).json();
       const est = await get("/api/estado"), cli = est.clientes.find((c) => c.nombre.startsWith("Comercial") || c.nombre.startsWith("Distribuidora")), es = est.establecimientos[0];
-      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio de prueba", cantidad: "1", precio_unitario: "300" }] });
+      const d = await post("/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio de prueba", cantidad: "1", precio_unitario: "300" }] });
       await post(`/api/documentos/${d.documento.id}/estado`, { estado: "revisado", version: d.documento.version }); return d.documento.id;
     });
     { const idN = await borrador(p); await p.goto(`${srv.url}/#/f/${idN}`); await p.waitForSelector("#enviar"); await p.waitForTimeout(600); assert.equal(await p.locator("#correo-auto").isVisible(), false, "sin FEL_CORREO_AUTOMATICO no hay casilla"); }

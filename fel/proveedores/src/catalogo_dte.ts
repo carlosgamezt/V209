@@ -1,3 +1,4 @@
+import { fechaReal } from "./fecha_emision.ts";
 // CATÁLOGO CENTRAL de tipos de Documento Tributario Electrónico (DTE) de Guatemala. ÚNICA fuente de verdad: el constructor NUC, el servicio de emisión, la API, el formulario y la migración
 // (fel_tipos_dte, que una prueba compara con este archivo) leen de aquí. Añadir un tipo = añadir una entrada; habilitarlo para certificar = cambiarle la disponibilidad Y pasar sus pruebas (ver «estado» abajo).
 //
@@ -163,7 +164,7 @@ export interface ReferenciaOrigen { documentoId: string; tipo: string; autorizac
 export interface ErrorRegla { campo: string; mensaje: string }
 const UUID = /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
-const fechaReal = (s: string) => { if (!FECHA_ISO.test(s)) return false; const d = new Date(s + "T00:00:00Z"); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; };
+// (fechaReal: una sola implementación, en fecha_emision.ts)
 
 export interface DatosTipo {
   tipo: string; fechaEmision: string;                       // AAAA-MM-DD (o fecha-hora ISO: se usan los 10 primeros)

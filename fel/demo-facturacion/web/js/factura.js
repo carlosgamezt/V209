@@ -13,23 +13,33 @@ import { crearAutollenado, textoEstado, ETIQUETAS, RE_CUI, RE_NIT, normalizarCui
 /** Etiqueta del origen del nombre (Digifact TEST / simulado / manual / consumidor final). */
 const pintarEtiqueta = (el, t) => { if (!el) return; el.hidden = !t; el.textContent = t ? ETIQUETAS[t] : ""; el.className = `nit-etiqueta${t ? ` nit-et-${t}` : ""}`; };
 
+// Fecha de emisión: el servidor dice qué día es hoy en Guatemala y hasta cuántos días atrás se admite (api.ventanaFecha). Si no responde, se calcula con la zona de Guatemala (NUNCA con UTC: desde las 18:00 de Guatemala, UTC ya marca el día siguiente).
+const hoyGuatemala = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const sumarDias = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const diasEntre = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+const ventanaLocal = () => { const hoy = hoyGuatemala(); return { hoy, minima: sumarDias(hoy, -5), maxDias: 5 }; };
+const dmy = (iso) => String(iso ?? "").slice(0, 10).split("-").reverse().join("/");
+/** Problema de la fecha de emisión frente a la ventana, o "" si está bien. La regla definitiva la aplica el servidor. */
+const problemaFecha = (f, v) => !f ? "Indica la fecha de emisión." : f > v.hoy ? `La fecha de emisión no puede ser futura (hoy es ${dmy(v.hoy)}).` : f < v.minima ? `La fecha de emisión no puede ser anterior al ${dmy(v.minima)} (hasta ${v.maxDias} días atrás desde hoy).` : "";
+
 const TOPE_CF = "2500";   // SAT: «Consumidor final» solo en facturas por montos MENORES a Q2,500.00 (Reglamento de la Ley del IVA, art. 30 núm. 9, reformado por el Acuerdo Gubernativo 12-2023; preguntas frecuentes del portal SAT)
 const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).";
 
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
-    try { const tipos = await api.tiposDocumento(); ctx.tiposDoc = tipos; poner(raiz, construir(id ? await api.documento(id) : null, tipos)); }
+    try { const tipos = await api.tiposDocumento(); ctx.tiposDoc = tipos; const ventana = await api.ventanaFecha().catch(() => null); poner(raiz, construir(id ? await api.documento(id) : null, tipos, ventana)); }
     catch (e) { poner(raiz, h("p", { class: "err", role: "alert" }, mensajeError(e)), boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") })); }
   })();
   return raiz;
 
-  function construir(det, tipos) {
+  function construir(det, tipos, ventana) {
     const est = ctx.estado;
+    let VEN = ventana && ventana.hoy ? ventana : ventanaLocal();
     let d = det, doc = det?.documento ?? { id: null, version: null, estado_preparacion: "borrador", estado_fiscal: "ninguno" };
     const inicial = () => ({
       cliente_id: doc.cliente_id ?? "", nuevo: false, tipo: "NIT", numero: "", nombre: "", establecimiento_id: doc.establecimiento_id ?? "",
-      fecha: doc.fecha_emision_prevista ? String(doc.fecha_emision_prevista).slice(0, 10) : new Date().toISOString().slice(0, 10), observaciones: doc.observaciones ?? "",
+      fecha: doc.fecha_emision_prevista ? String(doc.fecha_emision_prevista).slice(0, 10) : VEN.hoy, observaciones: doc.observaciones ?? "",
       ...tipoInicial(tipos, det?.documento),
       lineas: d?.lineas?.length ? d.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) })) : [],
     });
@@ -52,7 +62,7 @@ export function pantallaFactura(ctx, id) {
       if (f.nuevo && f.tipo !== "CF" && !/^[0-9A-Za-z-]{1,30}$/.test(f.numero.trim())) p.push("La identificación solo admite letras, números y guion (máximo 30).");
       if (f.nuevo && f.tipo === "CUI" && f.numero.trim() && !RE_CUI.test(normalizarCui(f.numero))) p.push("El CUI debe tener 13 dígitos (solo números).");
       if (!f.establecimiento_id) p.push("Elige el establecimiento.");
-      if (!f.fecha) p.push("Indica la fecha de emisión.");
+      { const pf = problemaFecha(f.fecha, VEN); if (pf) p.push(pf); }
       if (!f.lineas.length) p.push("Agrega al menos un ítem.");
       f.lineas.forEach((l, i) => { const x = problemaLinea(l, i + 1); if (x) p.push(x.msg); });
       const c = calcularSeguro(); if (!c.ok && c.msg && !p.length) p.push(c.msg);
@@ -216,14 +226,25 @@ export function pantallaFactura(ctx, id) {
       // la fecha se MUESTRA día/mes/año (formato de Guatemala) sin importar el idioma del navegador; el campo de fecha nativo, transparente encima, conserva el valor AAAA-MM-DD y abre el selector del dispositivo
       const ddmmaaaa = (iso) => { const [y, m, d] = String(iso ?? "").slice(0, 10).split("-"); return y && m && d ? `${d}/${m}/${y}` : "dd/mm/aaaa"; };
       const vistaFecha = h("span", { class: "fv-t", id: "fecha-vista" }, ddmmaaaa(f.fecha));
-      const nativo = h("input", { type: "date", class: "fv-in", value: f.fecha, "aria-label": "Fecha de emisión", disabled: !ed, oninput: (e) => { f.fecha = e.target.value; vistaFecha.textContent = ddmmaaaa(f.fecha); sucio = true; pintarBarra(); } });
+      const aviso = h("p", { class: "rc-aviso-fecha", id: "fecha-aviso", role: "status", hidden: true });
+      // aviso discreto: una fecha anterior se emite con ESA fecha; la de certificación la asigna el certificador (no se escribe aquí). Una fecha fuera del plazo se señala sin cambiarla sola.
+      const pintarAviso = () => {
+        if (!ed) { aviso.hidden = true; return; }   // un documento ya revisado o certificado no se edita: sin avisos
+        const pf = f.fecha ? problemaFecha(f.fecha, VEN) : "", n = f.fecha ? diasEntre(f.fecha, VEN.hoy) : 0;
+        aviso.className = `rc-aviso-fecha${pf ? " err" : ""}`;
+        aviso.textContent = pf ? `${pf} Elige otra fecha.` : n > 0 ? `Fecha anterior (hace ${n} ${n === 1 ? "día" : "días"}). La fecha de certificación la asigna el certificador.${f.fecha.slice(0, 7) !== VEN.hoy.slice(0, 7) ? " Pertenece a un mes anterior: cuenta para el período de IVA de ese mes." : ""}` : "";
+        aviso.hidden = !aviso.textContent;
+      };
+      const nativo = h("input", { type: "date", class: "fv-in", value: f.fecha, min: VEN.minima, max: VEN.hoy, "aria-label": "Fecha de emisión", disabled: !ed, oninput: (e) => { f.fecha = e.target.value; vistaFecha.textContent = ddmmaaaa(f.fecha); pintarAviso(); sucio = true; pintarBarra(); } });
+      pintarAviso();
       const icoFecha = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>', "image/svg+xml").documentElement; icoFecha.classList.add("fv-i"); icoFecha.setAttribute("aria-hidden", "true");
-      const fecha = h("div", { class: `fv${ed ? "" : " fv-off"}`, onclick: () => { if (!ed) return; try { nativo.showPicker(); } catch { nativo.focus(); } } }, vistaFecha, icoFecha, nativo);
+      const fecha = h("div", { class: `fv${ed ? "" : " fv-off"}`, onclick: () => { if (!ed) return; try { nativo.showPicker(); } catch { nativo.focus(); } api.ventanaFecha().then((v) => { if (v && v.hoy) { VEN = v; nativo.min = v.minima; nativo.max = v.hoy; pintarAviso(); } }).catch(() => {}); } }, vistaFecha, icoFecha, nativo);
       const obs = h("input", { value: f.observaciones, maxlength: 500, "aria-label": "Observaciones", disabled: !ed, placeholder: "Observaciones (opcional)", oninput: (e) => { f.observaciones = e.target.value; sucio = true; pintarBarra(); } });
       const bloqueObs = (f.observaciones || verObs) ? obs : (ed ? h("button", { type: "button", class: "rc-obs-btn", id: "agregar-observaciones", onclick: () => { verObs = true; pintarReceptor(); document.querySelector('input[aria-label="Observaciones"]')?.focus(); } }, "+ Agregar observaciones") : null);
       poner(cuerpoReceptor,
         h("div", { class: "rc-sec" }, h("span", { class: "rc-et" }, "Receptor"), nit.seg, h("div", { class: "rc-campo" }, nit.numero, nit.ok, nit.sug), nit.ayuda, nit.tarjeta),
         h("div", { class: "rc-emision" }, h("label", { class: "rc-mini" }, h("span", {}, "Establecimiento"), campoEst), h("label", { class: "rc-mini" }, h("span", {}, "Fecha"), fecha)),
+        aviso,
         bloqueObs);
     }
 

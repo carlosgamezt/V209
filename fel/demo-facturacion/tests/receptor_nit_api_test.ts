@@ -38,7 +38,7 @@ Deno.test("Receptor por NIT: permiso «clientes.ver» obligatorio y tope de 20 c
 Deno.test({ name: "Consumidor final al guardar: se normaliza a CF/«CONSUMIDOR FINAL» y solo se admite por debajo de Q2,500.00", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const { bd, Cli } = await montar(), ana = await new Cli("ana").entrar();
   const est = (await ana.llamar("GET", "/api/estado")).json, es = est.establecimientos[0], cfExistente = est.clientes.find((c: J) => c.tipo_identificacion === "CF"), nitCli = est.clientes.find((c: J) => c.tipo_identificacion === "NIT");
-  const doc = (receptor: J, precio: string) => ana.llamar("POST", "/api/documentos", { ...receptor, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: precio }] });
+  const doc = (receptor: J, precio: string) => ana.llamar("POST", "/api/documentos", { ...receptor, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: precio }] });
   // receptor nuevo: «c f» escrito en la identificación, aunque el tipo diga NIT
   const g = await doc({ cliente_nuevo: { tipo_identificacion: "NIT", numero_identificacion: " c f ", nombre: "lo que sea" } }, "2499.99"); assert.equal(g.status, 200, g.texto);
   const [c] = await bd.filas<J>("select tipo_identificacion as t, numero_identificacion as n, nombre from public.clientes where id = (select cliente_id from public.documentos where id = $1)", [g.json.documento.id]); assert.deepEqual([c.t, c.n, c.nombre], ["CF", "CF", NOMBRE_CF]);

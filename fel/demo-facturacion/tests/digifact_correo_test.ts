@@ -46,7 +46,7 @@ async function montar(env: Record<string, string>) {
   const ana = await new Cli("ana").entrar();
   const est = (await ana.llamar("GET", "/api/estado")).json, cli = est.clientes.find((c: J) => c.tipo_identificacion === "NIT"), es = est.establecimientos[0];
   const crear = async (clave: string) => {
-    const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, lineas: [{ descripcion: "Supervisión de obra", cantidad: "2", precio_unitario: "500" }], fecha: new Date().toISOString().slice(0, 10) });
+    const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, lineas: [{ descripcion: "Supervisión de obra", cantidad: "2", precio_unitario: "500" }], fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()) });
     assert.equal((await ana.llamar("POST", `/api/documentos/${d.json.documento.id}/estado`, { estado: "revisado", version: d.json.documento.version })).status, 200, clave); return d.json.documento.id as string;
   };
   return { bd, Cli, ana, nucs, autorizar: (r: string) => { autorizada = r; }, crear, pol };
@@ -128,7 +128,7 @@ Deno.test({ name: "correo del receptor: se recupera de clientes.email (con corre
   await poner(bd, cli.id, "  Con.Espacios@Pruebas.Example.org  "); r = await ana.llamar("GET", DEST_URL(id)); assert.equal(r.json.correo, "Con.Espacios@Pruebas.Example.org", "se recorta; las mayúsculas se respetan (la lista de destinatarios no distingue)");
   // Consumidor Final: el correo es opcional (sin cliente con correo, el campo queda vacío y no se exige nada)
   const cf = est.clientes.find((c: J) => c.tipo_identificacion === "CF");
-  if (cf) { await poner(bd, cf.id, null); const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cf.id, establecimiento_id: est.establecimientos[0].id, lineas: [{ descripcion: "Venta de mostrador", cantidad: "1", precio_unitario: "50" }], fecha: new Date().toISOString().slice(0, 10) });
+  if (cf) { await poner(bd, cf.id, null); const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cf.id, establecimiento_id: est.establecimientos[0].id, lineas: [{ descripcion: "Venta de mostrador", cantidad: "1", precio_unitario: "50" }], fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()) });
     assert.equal(d.status, 200, d.texto); const x = await ana.llamar("GET", DEST_URL(d.json.documento.id)); assert.deepEqual(x.json, { clienteId: cf.id, consumidorFinal: true, correo: null, registradoNoValido: false }, "Consumidor Final: opcional y vacío"); }
   else assert.fail("el catálogo de la demostración debe traer Consumidor Final");
   // permisos y habilitación: el lector no ve el correo del cliente; sin el interruptor no existe la ruta útil; un documento inexistente no existe

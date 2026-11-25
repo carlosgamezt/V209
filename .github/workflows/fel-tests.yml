@@ -132,6 +132,10 @@ jobs:
         run: |
           deno test -A fel/demo-facturacion/tests/catalogo_migracion_test.ts fel/demo-facturacion/tests/tipos_documento_api_test.ts
           node fel/demo-facturacion/tests/e2e_tipos.cjs
+      - name: "Fecha de emisión (hasta 5 días calendario atrás, zona de Guatemala, validación en el servidor, auditoría, inmutabilidad; teléfono y PC; simulado y local)"
+        run: |
+          deno test -A fel/demo-facturacion/tests/fecha_emision_api_test.ts
+          node fel/demo-facturacion/tests/e2e_fecha_emision.cjs
       - name: Versión práctica · inicio de sesión (unidad), API real (Digifact simulado, plan y saldo, plataforma, aislamiento) y navegador en PC y teléfono (PWA); simulado y local
         run: |
           deno test -A fel/demo-facturacion/tests/sesiones_test.ts fel/demo-facturacion/tests/practico_api_test.ts

@@ -18,7 +18,7 @@ export const aplicarCorreo = async (bd: BdDemo) => { if (bd.tipo === "pglite") a
 type Cli = Awaited<ReturnType<Awaited<ReturnType<typeof montar>>["Cli"]["prototype"]["entrar"]>>;
 async function documento(ana: Cli, clave: string, certificar = true) {
   const est = (await ana.llamar("GET", "/api/estado")).json, cli = est.clientes.find((c: J) => c.nombre.startsWith("Comercial") || c.nombre.startsWith("Distribuidora")), es = est.establecimientos[0];
-  const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "1000" }] });
+  const d = await ana.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "1000" }] });
   assert.equal(d.status, 200, d.texto);
   if (!certificar) return d.json.documento.id as string;
   assert.equal((await ana.llamar("POST", `/api/documentos/${d.json.documento.id}/estado`, { estado: "revisado", version: d.json.documento.version })).status, 200);
@@ -258,7 +258,7 @@ Deno.test({ name: "correo (PostgreSQL REAL): envío, duplicados simultáneos, re
 Deno.test({ name: "correo automático: apagado por defecto; con el interruptor y la casilla se envía al certificar; un fallo del correo no afecta la certificación; sin duplicados", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const certificarAuto = async (c: Cli, clave: string, enviar: boolean | undefined) => {
     const est = (await c.llamar("GET", "/api/estado")).json, cli = est.clientes.find((x: J) => x.nombre.startsWith("Comercial") || x.nombre.startsWith("Distribuidora")), es = est.establecimientos[0];
-    const d = await c.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Date().toISOString().slice(0, 10), lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: "500" }] });
+    const d = await c.llamar("POST", "/api/documentos", { cliente_id: cli.id, establecimiento_id: es.id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: "500" }] });
     await c.llamar("POST", `/api/documentos/${d.json.documento.id}/estado`, { estado: "revisado", version: d.json.documento.version });
     const r = await c.llamar("POST", `/api/documentos/${d.json.documento.id}/certificar`, { proveedor: "digifact", escenario: "exito", clave, ...(enviar === undefined ? {} : { enviar_correo: enviar }) });
     return { id: d.json.documento.id as string, r };

@@ -39,7 +39,7 @@ Deno.test({ name: "tipos de documento por la API: catálogo, habilitación por e
   const ana = await new Cli("ana").entrar(), marta = await new Cli("marta").entrar(), pedro = await new Cli("pedro").entrar(), sofia = await new Cli("sofia").entrar();
   const est = (await ana.llamar("GET", "/api/estado")).json, cli = est.clientes.find((c: J) => c.tipo_identificacion === "NIT") ?? est.clientes[0], otro = est.clientes.find((c: J) => c.id !== cli.id && c.tipo_identificacion === "NIT"), es = est.establecimientos[0];
   const linea = (precio: string, descripcion = "Servicio de prueba") => [{ descripcion, cantidad: "2", precio_unitario: precio }];
-  const nuevoDoc = async (u: Cli, extra: J = {}, precio = "50", cliente_id = cli.id) => await u.llamar("POST", "/api/documentos", { cliente_id, establecimiento_id: es.id, lineas: linea(precio), fecha: new Date().toISOString().slice(0, 10), ...extra });
+  const nuevoDoc = async (u: Cli, extra: J = {}, precio = "50", cliente_id = cli.id) => await u.llamar("POST", "/api/documentos", { cliente_id, establecimiento_id: es.id, lineas: linea(precio), fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), ...extra });
   const revisar = async (r: J) => (await ana.llamar("POST", `/api/documentos/${r.json.documento.id}/estado`, { estado: "revisado", version: r.json.documento.version }));
   const certificarFalso = async (id: string, serie: string, num: string) => {   // sin proveedor: deja un FACT certificado como origen (las mismas transiciones que usa el sistema)
     await bd.ejecutar("select set_config('fel.op_fiscal', 'on', false)");
@@ -152,7 +152,7 @@ Deno.test({ name: "base SIN la propuesta de migración de tipos: la demostració
   const llamar = async (cookie: string, m: string, ruta: string, cuerpo?: unknown) => { const r = await api(new Request("http://127.0.0.1" + ruta, { method: m, headers: { "x-demo": "1", "content-type": "application/json", ...(cookie ? { cookie } : {}) }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) })); const t = await r.text(); let json: J = {}; try { json = JSON.parse(t); } catch { /* sin cuerpo */ } return { status: r.status, json, cookie: (r.headers.get("set-cookie") ?? "").split(";")[0] }; };
   const entrar = async (u: string) => (await llamar("", "POST", "/api/sesion/entrar", { usuario: u, clave: CLAVE_DEMO })).cookie;
   const ana = await entrar("ana"), est = (await llamar(ana, "GET", "/api/estado")).json, cli = est.clientes.find((c: J) => c.tipo_identificacion === "NIT") ?? est.clientes[0], es = est.establecimientos[0];
-  const cuerpo = (extra: J = {}) => ({ cliente_id: cli.id, establecimiento_id: es.id, lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: "75" }], fecha: new Date().toISOString().slice(0, 10), ...extra });
+  const cuerpo = (extra: J = {}) => ({ cliente_id: cli.id, establecimiento_id: es.id, lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: "75" }], fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()), ...extra });
   const c = (await llamar(ana, "GET", "/api/tipos-documento")).json;
   assert.equal(c.sin_migracion, true); assert.equal(c.puede_configurar, false); assert.deepEqual(c.tipos.filter((t: J) => t.habilitado).map((t: J) => t.codigo), ["FACT"]); assert.equal(c.predeterminado, "FACT");
   assert.match(c.tipos.find((t: J) => t.codigo === "NCRE").motivo_no_habilitado, /migración/);
