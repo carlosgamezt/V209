@@ -117,7 +117,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
     // ---------------------------------------------------------------- rutas de una empresa
     async rutasEmpresa(c: CtxEmpresa): Promise<Response | null> {
       const { m, ruta, a } = c; let r: RegExpExecArray | null; const E = d.emp();
-      { const x = await rutasDigifact({ m, ruta, a, empresa: E, cuerpo: c.cuerpo, id: c.id, json: c.json, permisos: c.permisos }, bd, d.digifact, d.digifactNit, d.digifactCui, d.digifactCorreo); if (x) return x; }
+      { const x = await rutasDigifact({ m, ruta, a, empresa: E, cuerpo: c.cuerpo, id: c.id, json: c.json, permisos: c.permisos, detalle: c.detalle }, bd, d.digifact, d.digifactNit, d.digifactCui, d.digifactCorreo); if (x) return x; }
       { const x = await rutasCorreo({ m, ruta, a, empresa: E, cuerpo: c.cuerpo, id: c.id, json: c.json, permisos: c.permisos }, d.correo); if (x) return x; }   // envío de facturas por correo (nuestro propio servicio; Digifact solo certifica)   // Digifact TEST: solo desde el servidor, con la empresa de la sesión
       if (m === "POST" && ruta === "/api/cuenta/clave") {   // «Mi cuenta»: cambiar la propia contraseña; cierra todas las sesiones de la persona
         const b = await c.cuerpo(), S = d.sesiones; if (!S) throw new ErrorPr(404, "No disponible en este modo", "no_disponible");

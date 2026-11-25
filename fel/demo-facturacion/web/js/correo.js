@@ -19,9 +19,31 @@ export function panelCorreo({ ctx, doc, mostrarError, avisar }) {
 
   async function cargar() {
     try { estado = await api.correoEstado(); } catch { estado = { habilitado: false }; }
-    if (!estado.habilitado || (!estado.puedeVer && !estado.puedeEnviar)) { raiz.hidden = true; return; }
+    if (!estado.habilitado || (!estado.puedeVer && !estado.puedeEnviar)) { if (certificado && ctx.tiene?.("fiscal.certificar") !== false) { raiz.hidden = false; pintarManual(); } else raiz.hidden = true; return; }
     try { envios = estado.puedeVer ? (await api.correos(doc.id)).envios : []; } catch (e) { envios = []; mostrarError(e); }
     raiz.hidden = false; pintar();
+  }
+  // SIN el servicio de correo del servidor (no está habilitado): se puede igual enviar la factura certificada, con la aplicación de correo de la persona. En el teléfono se abre «Compartir» con el PDF (Gmail, Outlook…);
+  // en la computadora se descarga el PDF y se abre un correo ya redactado para el destinatario (hay que adjuntar el PDF descargado). NEXA no envía nada aquí y no puede confirmar la entrega.
+  function pintarManual() {
+    const guardado = ctx.estado.clientes?.find((c) => c.id === doc.cliente_id)?.email ?? "";
+    const entrada = h("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "none", spellcheck: "false", maxlength: 254, id: "correo-destinatario", "aria-label": "Correo del destinatario", placeholder: "correo@ejemplo.com", value: RE_CORREO.test(guardado) ? guardado : "" });
+    const aviso = h("p", { class: "correo-aviso", role: "status", "aria-live": "polite" });
+    const titulo = `Factura ${doc.serie ?? ""} ${doc.numero_fiscal ?? ""}`.trim(), nombre = `${titulo}.pdf`.replace(/[^A-Za-z0-9._-]/g, "_");
+    const btn = boton("Enviar por correo", { tipo: "pri", id: "correo-enviar", onclick: async () => {
+      const para = entrada.value.trim(); if (!RE_CORREO.test(para)) { aviso.textContent = "Escribe un correo válido."; entrada.focus(); return; }
+      btn.disabled = true; aviso.textContent = "Preparando la factura…";
+      try {
+        const r = await fetch(`/api/documentos/${doc.id}/pdf-demo?formato=carta`, { headers: { "x-demo": "1" } }); if (!r.ok) throw new Error("No se pudo generar el PDF.");
+        const blob = await r.blob(), archivo = new File([blob], nombre, { type: "application/pdf" }), texto = `Adjunto la ${titulo.toLowerCase()} (documento de prueba, sin validez fiscal).`;
+        if (navigator.canShare?.({ files: [archivo] })) { await navigator.share({ files: [archivo], title: titulo, text: `Para: ${para}\n${texto}` }); aviso.textContent = "Elige tu aplicación de correo en la ventana que se abrió."; }
+        else { const url = URL.createObjectURL(blob), a = h("a", { href: url, download: nombre }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+          location.href = `mailto:${encodeURIComponent(para)}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent(texto + "\n\n(Adjunta el PDF que se descargó: " + nombre + ")")}`; aviso.textContent = "Se descargó el PDF y se abrió tu correo: adjúntalo y envía."; }
+      } catch (e) { if (e?.name !== "AbortError") aviso.textContent = e.message || "No se pudo preparar el envío."; else aviso.textContent = ""; }
+      finally { btn.disabled = false; }
+    } });
+    cuerpo.replaceChildren(h("p", { class: "mut correo-nota" }, "Escribe o corrige el correo y envía la factura certificada cuando quieras (también si no lo pusiste al certificar). Se abre tu aplicación de correo con el PDF; el envío lo confirmas tú."),
+      h("div", { class: "form" }, campo("Correo del destinatario", entrada), h("div", { class: "acciones-fila" }, btn), aviso));
   }
   const yaEnviado = () => envios.some((e) => e.estado === "aceptado" || e.estado === "entregado");
 

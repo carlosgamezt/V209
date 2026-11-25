@@ -127,7 +127,7 @@ Deno.test({ name: "Digifact TEST por la API: permisos, aislamiento entre empresa
 Deno.test("el navegador NUNCA habla con Digifact ni toca credenciales: ningún archivo de la interfaz los menciona", async () => {
   const raiz = new URL("../web/", import.meta.url).pathname; const ruidosos: string[] = [];
   const recorrer = async (dir: string) => { for await (const e of Deno.readDir(dir)) { const r = `${dir}${e.name}`; if (e.isDirectory) await recorrer(r + "/"); else if (/\.(js|html)$/.test(e.name)) { const t = await Deno.readTextFile(r);
-    if (/digifact\.com|testnucgt|get_token|DIGIFACT_TEST|api\.digifact|Authorization|authorization/i.test(t.replace(/\/api\/digifact\//g, "").replace(/panelDigifact|digifactEstado|digifactNit|digifactDocumento|digifactValidar|digifactPreparar|digifactCertificar|digifactConciliar|digifact-/g, ""))) ruidosos.push(r); } } };
+    if (/digifact\.com|testnucgt|get_token|DIGIFACT_TEST|api\.digifact|Authorization|authorization/i.test(t.replace(/\/api\/digifact\//g, "").replace(/panelDigifact|digifactEstado|digifactNit|digifactDocumento|digifactValidar|digifactPreparar|digifactCertificar|digifactConciliar|digifactCalentar|digifact-/g, ""))) ruidosos.push(r); } } };
   await recorrer(raiz); assert.deepEqual(ruidosos, [], "la interfaz no debe conocer el servidor, las credenciales ni el token de Digifact");
   const t = await Deno.readTextFile(`${raiz}js/digifact.js`); assert.ok(!/fetch\(/.test(t), "digifact.js no llama directamente a ninguna red: usa api.js");
   const a = await Deno.readTextFile(`${raiz}js/api.js`); for (const m of a.matchAll(/llamar\("(?:GET|POST)", [`"]([^`"]+)/g)) assert.ok(m[1].startsWith("/api/"), `solo rutas de NEXA: ${m[1]}`);

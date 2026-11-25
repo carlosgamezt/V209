@@ -31,6 +31,7 @@ const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q
 let previaPendiente = null, certificarPendiente = null, correoPendiente = null;   // lo elegido en la pantalla de «Nueva factura» pasa a la pantalla del documento ya guardado
 const CONFIRMACION_TEST = "CERTIFICAR-TEST";
 
+let calentadoEn = 0;
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
@@ -308,6 +309,8 @@ export function pantallaFactura(ctx, id) {
     // Solo si el servidor lo habilitó para ESTA empresa con el ciclo de pruebas autorizado, el almacén es persistente y el rol puede certificar. El documento se guarda SIEMPRE antes y
     // queda guardado (y revisado) pase lo que pase con la certificación.
     const infoTipoCert = () => tipoPorCodigo(tipos, f.tipo_dte);
+    // al abrir la pantalla (el usuario aún está capturando) se prepara por adelantado el canal de certificación de pruebas: así la primera certificación no espera ese paso (máx. una vez cada 8 minutos, en silencio)
+    if (!doc.estado_fiscal || doc.estado_fiscal === "ninguno") queueMicrotask(() => { if (certificaEnTest() && Date.now() - calentadoEn > 480000) { calentadoEn = Date.now(); api.digifactCalentar().catch(() => {}); } });
     const certificaEnTest = () => !!dg && dg.habilitado && dg.certificacion && dg.empresaConCanal && dg.ciclo && dg.almacenamiento === "persistente" && ctx.tiene("fiscal.certificar")
       && (f.tipo_dte === "FACT" || !!infoTipoCert()?.certificacion_habilitada || !!infoTipoCert()?.certificacion_test);
     const puedeCertificarAhora = () => certificaEnTest() && doc.estado_fiscal === "ninguno" && ["borrador", "revisado"].includes(doc.estado_preparacion) && (doc.id || editable());
@@ -355,7 +358,7 @@ export function pantallaFactura(ctx, id) {
         const tC = performance.now();
         const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: CONFIRMACION_TEST, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor }, extra.enviar_correo ? { ...extra, correo_ref: prep.correoRef } : {});
         const totalCert = performance.now() - tC, dfx = Number(r.tiempoDigifactMs ?? 0);
-        const tR = performance.now(); await recargar(undefined, { sinEstado: true });
+        const tR = performance.now(); await recargar(r.documento_actualizado, { sinEstado: true });   // el servidor ya devolvió el documento: sin otra lectura
         const total = performance.now() - t0, nexa = Math.max(0, total - dfx);
         globalThis.__felTiempos = { doc: doc.id, totalMs: Math.round(total), digifactMs: Math.round(dfx), nexaMs: Math.round(nexa), preparacionMs: Math.round(tNexaPrev), certificarMs: Math.round(totalCert), recargaMs: Math.round(performance.now() - tR) };
         console.info("Certificación (ms)", globalThis.__felTiempos);

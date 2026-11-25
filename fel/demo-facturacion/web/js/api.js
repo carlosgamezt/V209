@@ -80,6 +80,7 @@ export const api = {
   cambiarClave: (actual, nueva) => llamar("POST", "/api/cuenta/clave", { actual, nueva }),
   panel: () => llamar("GET", "/api/panel"), usuarios: () => llamar("GET", "/api/usuarios"), crearUsuario: (u) => llamar("POST", "/api/usuarios", u), actualizarUsuario: (id, cambios) => llamar("POST", `/api/usuarios/${id}/actualizar`, cambios),
   // Digifact TEST: el navegador solo habla con NEXA; el servidor es quien llama a Digifact
+  digifactCalentar: () => llamar("POST", "/api/digifact/calentar", {}),
   digifactEstado: () => llamar("GET", "/api/digifact/estado"),
   digifactNit: (nit) => llamar("POST", "/api/digifact/nit", { nit }),
   /** Autollenado del receptor: la consulta la hace el SERVIDOR (CF local, Digifact TEST o simulador con datos ficticios). */

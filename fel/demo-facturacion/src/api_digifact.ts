@@ -14,6 +14,7 @@ type Obj = Record<string, unknown>;
 export interface CtxDigifact {
   m: string; ruta: string; a: { clave: string; id: string }; empresa: string;
   cuerpo: () => Promise<Obj>; id: (x: string) => string; json: (x: unknown, s?: number) => Response; permisos: () => Promise<string[]>;
+  detalle?: (id: string) => Promise<unknown>;   // el documento ya armado: la respuesta de «certificar» lo lleva para que la pantalla NO tenga que pedirlo de nuevo
 }
 const limitadores = new WeakMap<BdDemo, (empresa: string) => boolean>();   // un tope de consultas de NIT por minuto y por empresa (simulador), por base de datos
 const limitadoresCui = new WeakMap<BdDemo, { sim: (e: string) => boolean; empresa: (e: string) => boolean; global: () => boolean }>();   // consulta de CUI (dato personal): simulador 20/min por empresa; REAL 5/min por empresa + tope global
@@ -48,6 +49,12 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
   const { m, ruta } = c; let r: RegExpExecArray | null;
   const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado", esReceptor = m === "POST" && ruta === "/api/receptores/nit", esReceptorCui = m === "POST" && ruta === "/api/receptores/cui";
   const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf|correo|destinatario))?$/.exec(ruta));
+  const esCalentar = m === "POST" && ruta === "/api/digifact/calentar";
+  if (esCalentar) {   // pide por adelantado el TOKEN de Digifact TEST (solo inicio de sesión: no envía ni consulta ningún documento) para que la primera certificación no espere ese paso
+    const ctxK: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
+    if (svc && ctxK.permisos.includes("fiscal.certificar")) { try { await svc.calentar(ctxK); } catch { /* la certificación mostrará el motivo real */ } }
+    return c.json({ ok: true });
+  }
   if (!esNit && !esEstado && !esReceptor && !esReceptorCui && !rd) return null;
   if (esReceptor) {   // autollenado del nombre del receptor: CF local, Digifact TEST si está habilitado, o simulador con datos ficticios (siempre desde el servidor, con la empresa y los permisos de la SESIÓN)
     if (!limitadores.has(bd)) limitadores.set(bd, crearLimitador());
@@ -118,7 +125,9 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
         if (!ref) return c.json({ codigo: "correo_sin_preparacion", mensaje: "Prepara de nuevo la certificación con este correo antes de certificar." }, 400);
         if (ref !== await refCorreo(String(b.operacionId ?? ""), pc.correo)) return c.json({ codigo: "correo_distinto", mensaje: "El correo no coincide con el de la preparación. Prepara de nuevo la certificación con el correo que quieres usar." }, 409);
       }
-      return c.json(await svc.certificar(ctx, await doc(), { operacionId: b.operacionId, confirmacion: b.confirmacion, referencia: b.referencia, huellaEmisor: b.huellaEmisor, correo: pc.correo }));
+      const res = await svc.certificar(ctx, await doc(), { operacionId: b.operacionId, confirmacion: b.confirmacion, referencia: b.referencia, huellaEmisor: b.huellaEmisor, correo: pc.correo });
+      let actualizado: unknown; if (c.detalle) { try { actualizado = await c.detalle(docId); } catch { /* la pantalla lo pedirá como siempre */ } }
+      return c.json(actualizado ? { ...res, documento_actualizado: actualizado } : res);
     }
     if (accion === "conciliar") return c.json(await svc.conciliar(ctx, b.operacionId));
     return null;

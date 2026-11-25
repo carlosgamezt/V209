@@ -75,7 +75,14 @@ async function arrancar(env = {}) {
 
     // ================= servidor sin correo configurado: la tarjeta no aparece
     const sin = await ctxMovil(390); await entrar(sin.p, "ana", srvSin.url); const idS = await certificado(sin.p, "s"); await sin.p.goto(`${srvSin.url}/#/f/${idS}`); await sin.p.waitForSelector(".doc-cab"); await sin.p.waitForTimeout(800);
-    assert.equal(await sin.p.locator(PANEL).isVisible(), false, "sin FEL_CORREO la tarjeta de correo no se muestra");
+    // ahora la tarjeta SÍ aparece en modo manual (con la aplicación de correo de la persona): sin historial del servidor, sin llamadas de envío al servidor, con el destinatario editable y el PDF compartido
+    assert.equal(await sin.p.locator(PANEL).isVisible(), true, "sin FEL_CORREO la tarjeta de correo aparece en modo manual"); assert.equal(await sin.p.locator(".correo-fila").count(), 0, "sin historial del servidor");
+    await sin.p.evaluate(() => { globalThis.__compartido = null; navigator.canShare = () => true; navigator.share = async (d) => { globalThis.__compartido = { n: d.files?.[0]?.name, t: d.files?.[0]?.type, texto: d.text, titulo: d.title }; }; });
+    const envios = []; sin.p.on("request", (r) => { if (/\/correo/.test(r.url()) && r.method() === "POST") envios.push(r.url()); });
+    await sin.p.fill("#correo-destinatario", "no-es-correo"); await sin.p.tap("#correo-enviar"); assert.match(await sin.p.locator(`${PANEL} .correo-aviso`).innerText(), /correo válido/);
+    await sin.p.fill("#correo-destinatario", "cliente@ejemplo.com"); await sin.p.tap("#correo-enviar");
+    for (let i = 0; i < 40 && !(await sin.p.evaluate(() => globalThis.__compartido)); i++) await sin.p.waitForTimeout(100);
+    const comp = await sin.p.evaluate(() => globalThis.__compartido); assert.ok(comp, "se abrió «Compartir»"); assert.equal(comp.t, "application/pdf"); assert.match(comp.n, /\.pdf$/); assert.match(comp.texto, /cliente@ejemplo\.com/, "el destinatario va en el mensaje"); assert.deepEqual(envios, [], "NEXA no envía nada por su cuenta en modo manual");
 
 
     // ================= envío AUTOMÁTICO: la casilla solo existe si el servidor lo habilita; apagada por defecto; al certificar con la casilla se envía y queda en el historial

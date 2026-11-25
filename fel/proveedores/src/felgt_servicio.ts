@@ -197,6 +197,8 @@ export class ServicioFelGt {
   estadoCanal(empresaId: string): { canal: boolean; ciclo: boolean } {
     return { canal: !!this.d.clienteDe(empresaId) && !!this.d.emisorDe(empresaId), ciclo: this.d.autorizaPrueba() === AUTORIZACION_CICLO };
   }
+  /** Inicia sesión en Digifact por adelantado (solo el token, que queda en memoria): no envía ni consulta ningún documento. Si no hay canal, no hace nada. */
+  async calentar(ctx: ContextoFel): Promise<void> { const cliente = this.d.clienteDe(ctx.empresaId); if (cliente && this.d.emisorDe(ctx.empresaId)) await (cliente as Partial<DigifactGt>).token?.(); }
   #canal(ctx: ContextoFel): { cliente: ClienteGt; emisor: DatosEmisorEmpresa } {
     const cliente = this.d.clienteDe(ctx.empresaId), emisor = this.d.emisorDe(ctx.empresaId);
     if (!cliente || !emisor) throw new ErrorFelGt("SIN_CANAL", "Esta empresa no tiene un canal Digifact TEST habilitado");
