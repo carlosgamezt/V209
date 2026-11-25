@@ -9,6 +9,12 @@ import { pantallaLogin } from "./login.js";
 // Carga diferida de pantallas: el navegador solo descarga el código de la pantalla que se abre (la carga inicial trae solo el marco, la lista y el inicio de sesión).
 const MODULOS = { pantallaFactura: "./factura.js", pantallaClientes: "./clientes.js", pantallaConceptos: "./conceptos.js", pantallaConfig: "./config.js", pantallaPlan: "./plan.js", pantallaPanel: "./panel.js", pantallaCuenta: "./cuenta.js", pantallaUsuarios: "./usuarios.js",
   pantallaEmpresas: "./plataforma.js", pantallaEmpresa: "./plataforma.js", pantallaPlanes: "./plataforma.js", pantallaBolson: "./plataforma.js" };
+let moduloPrecargado = false;
+function precargarPantallas() {   // tras pintar la primera pantalla y con el navegador libre: se descargan EN PARALELO (con sus dependencias) las pantallas diferidas, para que abrirlas no espere una cascada de archivos
+  if (moduloPrecargado) return; moduloPrecargado = true;
+  const poner = () => { for (const m of new Set(Object.values(MODULOS))) { const l = document.createElement("link"); l.rel = "modulepreload"; l.href = m.replace("./", "/web/js/"); document.head.append(l); } };
+  if ("requestIdleCallback" in globalThis) requestIdleCallback(poner, { timeout: 2500 }); else setTimeout(poner, 800);
+}
 const perezosa = (nombre, ...args) => {
   const marco = h("section", { class: "pantalla", "aria-busy": "true" }, h("p", { class: "mut" }, "Cargando…"));
   import(MODULOS[nombre]).then((m) => { if (marco.isConnected) marco.replaceWith(m[nombre](...args)); }).catch(() => { marco.replaceChildren(h("p", { class: "err", role: "alert" }, "No se pudo cargar la pantalla. Revisa tu conexión e inténtalo de nuevo.")); });
@@ -154,7 +160,7 @@ async function iniciar(estadoInicial) {
     else if (ruta === "/usuarios" && estado.practico) vista = perezosa("pantallaUsuarios", ctx);
     else if (ruta === "/config") vista = perezosa("pantallaConfig", ctx);
     else vista = pantallaLista(ctx);
-    poner(contenido, vista); pintarMenu();
+    poner(contenido, vista); pintarMenu(); precargarPantallas();
     document.title = `NEXA FEL · Demostración (SIMULADO)`;
     cargarPendientes().then(pintarCab);
   }

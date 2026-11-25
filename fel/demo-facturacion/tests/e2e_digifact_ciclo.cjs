@@ -19,7 +19,7 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
 (async () => {
   const srv = await arrancar(), nav = await motor.launch(), errores = [];
   try {
-    for (const [w, h] of [[390, 844], [1100, 800]]) {
+    for (const [w, h] of [[360, 640], [390, 780], [412, 780], [1100, 800]]) {   // teléfonos pequeño, mediano y grande (con táctil real) y computadora
       const donde = `${w}px`;
       const c = await nav.newContext({ viewport: { width: w, height: h }, hasTouch: w < 900, ...(w < 900 && NAV !== "firefox" ? { isMobile: true } : {}), serviceWorkers: "block", locale: "es-GT" });
       await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" }));
@@ -46,6 +46,9 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
         return json(r, {});
       });
       await p.reload(); await p.waitForSelector(".cab-demo");   // la aplicación precarga el estado de Digifact al entrar (caché en memoria): se recarga para que use las respuestas simuladas de arriba
+      // TOQUE real en teléfono (eventos táctiles) y clic en computadora; antes de tocar se comprueba que NADA tapa el control (barra fija, navegación inferior) en su punto central
+      const libre = async (sel, nombre) => { const r = await p.evaluate((q) => { const e = document.querySelector(q); e.scrollIntoView({ block: "center" }); const b = e.getBoundingClientRect(); const t = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2); return { ok: !!t && (t === e || e.contains(t) || t.contains(e)), tapa: t ? `${t.tagName.toLowerCase()}.${String(t.className).split(" ")[0]}` : "nada", dentro: b.top >= 0 && b.bottom <= innerHeight && b.left >= 0 && b.right <= innerWidth }; }, sel); assert.ok(r.ok, `${donde}: ${nombre ?? sel} queda TAPADO por ${r.tapa}`); assert.ok(r.dentro, `${donde}: ${nombre ?? sel} cabe en la pantalla`); };
+      const toque = async (sel) => { await libre(sel); if (w < 900) await p.tap(sel); else await p.click(sel); };
       const nuevaConItem = async () => {
         await p.goto(srv.url + "/#/nueva"); await esperarNueva(p); await elegirReceptor(p);
         const sel = p.locator(".sel-concepto"); await sel.selectOption(await sel.locator("option").nth(1).getAttribute("value")); await p.waitForSelector(".it");
@@ -62,7 +65,7 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
 
       // ---- 2) Certificar en TEST (sin ventanas intermedias): se guarda, se revisa, se prepara y se certifica de corrido, en la misma pantalla; el documento queda guardado ANTES de enviar nada
       const antes = (await listaApi()).length;
-      await p.click("#guardar-certificar");
+      await toque("#guardar-certificar");
       await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "se certifica tras pulsar el botón");
       assert.equal(await p.locator(".modal").count(), 0, `${donde}: no se abre ninguna ventana adicional`);
       assert.deepEqual(env.llamadas.map((l) => l.accion), ["preparar", "certificar"], `${donde}: primero se PREPARA (sin enviar) y después se certifica, una sola vez`);
@@ -75,17 +78,17 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
 
       // ---- 3) la certificación RECHAZADA antes de salir: el documento queda guardado y el motivo se explica
       env.ops = []; env.llamadas.length = 0; env.cert = "error";
-      await nuevaConItem(); const n2 = (await listaApi()).length; await p.click("#guardar-certificar");
+      await nuevaConItem(); const n2 = (await listaApi()).length; await toque("#guardar-certificar");
       await hasta(async () => /No se envió a Digifact/.test(await p.locator(".err.area-msg").innerText()), "mensaje de no enviada");
       assert.match(await p.locator(".err.area-msg").innerText(), /quedó guardado/); assert.equal((await listaApi()).length, n2 + 1, `${donde}: el documento sigue guardado aunque no se certificó`);
 
       // ---- 4) respuesta INCIERTA: se dice que quedó bloqueado y que no se reenvía; una caída de red también conserva el documento
       env.ops = []; env.llamadas.length = 0; env.cert = "incierta";
-      await nuevaConItem(); await p.click("#guardar-certificar");
+      await nuevaConItem(); await toque("#guardar-certificar");
       await hasta(async () => /BLOQUEADO/.test(await p.locator(".err.area-msg").innerText()), "mensaje de resultado incierto");
       assert.equal(env.llamadas.filter((l) => l.accion === "certificar").length, 1, `${donde}: UNA sola certificación enviada`);
       env.ops = []; env.llamadas.length = 0; env.cert = "caida"; const n4 = (await listaApi()).length;
-      await nuevaConItem(); await p.click("#guardar-certificar");
+      await nuevaConItem(); await toque("#guardar-certificar");
       await hasta(async () => /quedó guardado/.test(await p.locator(".err.area-msg").innerText()), "mensaje tras la caída"); assert.equal((await listaApi()).length, n4 + 1, `${donde}: tras una caída de red el documento sigue guardado`);
 
       // ---- 5) doble clic / dos toques seguidos: UNA sola preparación y UNA sola certificación (el botón se bloquea y muestra el avance)
@@ -117,18 +120,18 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       await p.fill(require("./ayudas_nueva.cjs").ID, conCorreo.nombre.slice(0, 8)); await p.locator(".rc-sug .sg-ex", { hasText: conCorreo.nombre }).first().click(); await p.waitForSelector('.rc-card[data-modo="existente"]');
       { const sel = p.locator(".sel-concepto"); await sel.selectOption(await sel.locator("option").nth(1).getAttribute("value")); await p.waitForSelector(".it"); }
       assert.equal(await p.locator("#correo-fac").isVisible(), true, `${donde}: con correo habilitado se ofrece enviar por correo`); assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: apagado por defecto`); assert.equal(await p.locator("#correo-fac-texto").isVisible(), false);
-      await p.check("#correo-fac-chk"); assert.equal(await p.inputValue("#correo-fac-texto"), "cliente.registrado@ejemplo.com", `${donde}: precarga el correo registrado del cliente`);
+      await toque(".chk-correo"); assert.equal(await p.locator("#correo-fac-chk").isChecked(), true, `${donde}: el toque marca la casilla de correo`); await libre("#correo-fac-texto", "el campo de correo"); assert.equal(await p.inputValue("#correo-fac-texto"), "cliente.registrado@ejemplo.com", `${donde}: precarga el correo registrado del cliente`);
       // un correo inválido bloquea ANTES de preparar o enviar nada
-      await p.fill("#correo-fac-texto", "no-es-correo"); await p.click("#guardar-certificar"); await p.waitForSelector(".err.area-msg:not(:empty)");
+      await p.fill("#correo-fac-texto", "no-es-correo"); await toque("#guardar-certificar"); await p.waitForSelector(".err.area-msg:not(:empty)");
       assert.match(await p.locator(".err.area-msg").innerText(), /correo válido/i); assert.equal(env.llamadas.length, 0, `${donde}: con correo inválido no se prepara ni se envía nada`);
       // correo editado: viaja en preparar y en certificar con la referencia de la preparación; el diálogo lo muestra enmascarado
-      await p.fill("#correo-fac-texto", "otro.destino@ejemplo.com"); await p.click("#guardar-certificar, #certificar-test");   // el documento ya quedó guardado en el intento anterior; sin diálogo: certifica directo
+      await p.fill("#correo-fac-texto", "otro.destino@ejemplo.com"); await toque("#guardar-certificar, #certificar-test");   // el documento ya quedó guardado en el intento anterior; sin diálogo: certifica directo
       await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica con correo");
       const prep8 = env.llamadas.find((l) => l.accion === "preparar").cuerpo; assert.deepEqual({ e: prep8.enviar_correo, c: prep8.correo }, { e: true, c: "otro.destino@ejemplo.com" });
       const cert8 = env.llamadas.find((l) => l.accion === "certificar").cuerpo; assert.equal(cert8.enviar_correo, true); assert.equal(cert8.correo, "otro.destino@ejemplo.com"); assert.equal(cert8.correo_ref, "REF-CORREO-1", `${donde}: el correo queda atado a la preparación`);
       // sin marcar la casilla: ni preparar ni certificar piden correo
       env.llamadas.length = 0; env.ops = []; await p.goto(srv.url + "/#/nueva"); await esperarNueva(p); await elegirReceptor(p); { const sel = p.locator(".sel-concepto"); await sel.selectOption(await sel.locator("option").nth(1).getAttribute("value")); await p.waitForSelector(".it"); }
-      assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: el documento nuevo vuelve a empezar sin correo`); await p.click("#guardar-certificar"); await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica sin correo");
+      assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: el documento nuevo vuelve a empezar sin correo`); await toque("#guardar-certificar"); await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica sin correo");
       assert.equal(env.llamadas.find((l) => l.accion === "preparar").cuerpo.enviar_correo, undefined, `${donde}: sin casilla no se pide correo`); assert.equal(env.llamadas.find((l) => l.accion === "certificar").cuerpo.enviar_correo, undefined);
       const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde}: ${a} > ${v}`);
       await c.close();

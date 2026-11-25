@@ -211,13 +211,16 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     const a = await actor(req); let r: RegExpExecArray | null;
 
     if (m === "GET" && ruta === "/api/estado") {
-      const permisos = await bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as string[];
-      const establecimientos = await bd.filas("select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]);
-      const clientes = await bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]);
-      const conceptos = await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]);
-      const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
-      return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, persistente: bd.tipo === "pg", practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
-        permisos, establecimientos, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+      // Lecturas independientes EN PARALELO (antes iban una tras otra: con la base remota cada una sumaba un viaje de red completo).
+      const [permisos, establecimientos, clientes, conceptos, parametros, empresaD, personaD, extraD, canalD] = await Promise.all([
+        bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as Promise<string[]>,
+        bd.filas("select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]),
+        bd.filas("select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]),
+        bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]),
+        bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave"),
+        empresaDatos(), personaDe(a.clave), pr ? pr.estadoExtra() : Promise.resolve({}), canalBase()]);
+      return json({ empresa: empresaD, usuario: { clave: a.clave, ...personaD }, login: !!extras.sesiones, persistente: bd.tipo === "pg", practico: !!pr, ...extraD, usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
+        permisos, establecimientos, clientes, conceptos, canal: canalD, escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
       return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, c.frecuente, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [emp()]));

@@ -29,6 +29,14 @@ async function arrancar() {
       assert.equal(await tipoActual(p), "CF", `${donde}: el tipo sigue siendo CF tras editar el nombre`); assert.equal(await p.inputValue(ID), "CF", `${donde}: la identificación sigue siendo CF`);
       assert.match(await p.locator(".rc-nombre-ver").innerText(), /Juan Pérez/); assert.equal(await p.locator(".seg-tipo [role=radio][aria-checked=true]").count(), 1);
       await escribirNombre(p, "Juan Pérez García"); assert.equal(await tipoActual(p), "CF"); assert.equal(await p.inputValue(ID), "CF");
+      // ---- 2b) FLUJO TÁCTIL EXACTO: tocar directamente el nombre (sin botón de edición), escribir sin borrar lo anterior, dejarlo vacío = predeterminado
+      const campoNombre = p.locator(NOMBRE); assert.equal(await campoNombre.isVisible(), true, `${donde}: en CF el nombre es un campo directo`); assert.equal(await p.locator("#receptor-nombre-ver").isVisible(), false, `${donde}: sin botón intermedio de edición`);
+      const toque = (sel) => (w < 900 ? p.tap(sel) : p.click(sel));
+      await toque(NOMBRE); await p.keyboard.type("Ana Gómez"); assert.equal(await campoNombre.inputValue(), "Ana Gómez", `${donde}: al tocar el nombre queda seleccionado y lo escrito lo reemplaza (no hay que borrar)`);
+      assert.equal(await tipoActual(p), "CF"); assert.equal(await p.inputValue(ID), "CF"); assert.equal(await p.locator('.seg-tipo [aria-checked=true][data-tipo="NIT"], .seg-tipo [aria-checked=true][data-tipo="CUI"]').count(), 0, `${donde}: nunca pasa a NIT ni a CUI`);
+      await toque(NOMBRE); await p.keyboard.press("Control+A"); await p.keyboard.press("Delete"); await p.locator(ID).focus();   // vacío y se sale del campo
+      assert.match((await campoNombre.inputValue()).toUpperCase(), /CONSUMIDOR FINAL/, `${donde}: vacío vuelve a «Consumidor Final»`); assert.equal(await tipoActual(p), "CF"); assert.equal(await p.inputValue(ID), "CF");
+      await toque(NOMBRE); await p.keyboard.type("Juan Pérez García"); await p.locator("body").click({ position: { x: 5, y: 5 } }); assert.equal(await tipoActual(p), "CF");
       // ---- 3) guardar: se conserva CF + nombre; recargar la pantalla del documento los muestra igual (no «NIT»)
       await conItem(); await p.click("#guardar, #guardar-certificar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}/); const id = (/#\/f\/([0-9a-f-]{36})/.exec(p.url()) ?? [])[1]; assert.ok(id, `${donde}: se guardó`);
       const det = (await api("GET", `/api/documentos/${id}`)).j; assert.equal(det.documento.cliente_nombre ?? det.cliente?.nombre ?? "Juan Pérez García", "Juan Pérez García");

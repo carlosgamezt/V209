@@ -135,14 +135,14 @@ export function pantallaFactura(ctx, id) {
       // el nombre se muestra como información CONFIRMADA (texto, sin recuadro); solo se vuelve campo si está vacío (hay que escribirlo) o si la persona lo toca para corregirlo
       nit.editando = false;
       nit.nombre = h("textarea", { class: "rc-nombre", rows: 1, maxlength: 200, "aria-label": "Nombre del receptor", placeholder: "Nombre del receptor", disabled: !ed, spellcheck: "false",
-        onfocus: () => { nit.editando = true; },
-        onblur: () => { nit.editando = false; actualizarNombre(); },
-        oninput: (e) => { const v = e.target.value.replace(/[\r\n]+/g, " "); if (v !== e.target.value) e.target.value = v; ctrl?.alEscribirNombre(v); crecer(); cambio(); },
+        onfocus: (e) => { nit.editando = true; if (f.tipo === "CF") { const t = e.target; nit.sinTeclear = true; try { t.select(); } catch { /* sin selección */ } setTimeout(() => { if (nit.sinTeclear) { try { t.select(); } catch { /* sin selección */ } } }, 0); } },   // en CF, al tocar el nombre queda seleccionado (de inmediato y de nuevo tras el toque, solo si aún no se escribió nada): lo que se escriba lo reemplaza
+        onblur: () => { nit.editando = false; if (f.tipo === "CF" && f.nombre.trim() === "") { f.nombre = "CONSUMIDOR FINAL"; nit.nombre.value = f.nombre; cambio(); } actualizarNombre(); },   // vacío en CF = nombre predeterminado
+        oninput: (e) => { nit.sinTeclear = false; const v = e.target.value.replace(/[\r\n]+/g, " "); if (v !== e.target.value) e.target.value = v; ctrl?.alEscribirNombre(v); crecer(); cambio(); },
         onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } } });
       nit.nombre.value = f.nombre;
       nit.nombreVer = h("button", { type: "button", class: "rc-nombre-ver", id: "receptor-nombre-ver", "aria-label": "Editar el nombre del receptor", disabled: !ed, onclick: () => { nit.editando = true; actualizarNombre(); nit.nombre.focus(); nit.nombre.setSelectionRange(nit.nombre.value.length, nit.nombre.value.length); } });
       function actualizarNombre() {
-        const v = f.nombre.trim(), texto = v !== "" && !nit.editando;
+        const v = f.nombre.trim(), texto = v !== "" && !nit.editando && (f.tipo !== "CF" || !ed);   // en CF el nombre es SIEMPRE el campo editable (sin botón intermedio)
         nit.nombreVer.textContent = f.nombre; nit.nombreVer.hidden = !texto; nit.nombre.hidden = texto; nit.nombreVer.disabled = !ed; if (!texto) crecer();
       }
       nit.estado = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }, textoEstado(nit.info));
@@ -379,7 +379,7 @@ export function pantallaFactura(ctx, id) {
     // ---------------------------------------------------------------- barra: una acción principal + «Más acciones»
     let cerrarMenu = () => {};
     function pintarBarra() {
-      cerrarMenu(); queueMicrotask(() => { try { pintarProceso(); } catch { /* aún no existe */ } });
+      cerrarMenu(); pintarIndicador();
       const ed = editable(), prep = doc.estado_preparacion;
       const puedeRevisar = doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar");
       let principal;
@@ -403,6 +403,12 @@ export function pantallaFactura(ctx, id) {
       extra.push(enlace("Volver a documentos", "mi-volver", () => ctx.ir("/")));
       poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, principal, h("div", { class: "acciones-sec" }, secundaria, previa));
       poner(accionesDoc, ...extra);   // fuera de la barra fija: no le quita espacio a la pantalla
+    }
+    // Solo el texto del indicador «Datos completos…»: se llama en cada cambio (cada tecla), así que NO reconstruye el panel de proceso ni hace lecturas de red.
+    function pintarIndicador() {
+      const el = document.getElementById("estado-cert"); if (!el) return;
+      const n = problemas().length, t = n ? `${n} dato${n > 1 ? "s" : ""} por completar` : "Datos completos · Listo para certificar (prueba en Digifact TEST, sin valor fiscal)";
+      if (el.textContent !== t) { el.textContent = t; el.className = `estado-cert-compacto ${n ? "mut" : "ok-val"}`; }
     }
     function pintarProceso() {
       proceso.classList.toggle("proceso-emitido", !!doc.id && doc.estado_fiscal === "certificado");
