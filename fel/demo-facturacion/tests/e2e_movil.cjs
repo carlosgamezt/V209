@@ -100,8 +100,8 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       // ---- «Más acciones»: el menú cabe en pantalla; la barra no pisa la navegación inferior ni a sí misma
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(120);
       const c = await p.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r("#mas-acciones") }; });
-      if (!(c.prim.r <= c.mas.l + 1)) console.log(`DIAGNÓSTICO ${NAV} ${w}px: barra de acciones ${JSON.stringify({ barra: c.barra, prim: c.prim, mas: c.mas })}`);
-      assert.ok(c.barra.b <= c.nav.t + 1, donde(`la barra queda sobre la navegación inferior (${c.barra.b} ≤ ${c.nav.t})`)); assert.ok(c.prim.r <= c.mas.l + 1, donde("acción principal y «Más acciones» en una fila sin superponerse"));
+      if (!(c.prim.r <= c.mas.l + 1 || c.prim.b <= c.mas.t + 1)) console.log(`DIAGNÓSTICO ${NAV} ${w}px: barra de acciones ${JSON.stringify({ barra: c.barra, prim: c.prim, mas: c.mas })}`);
+      assert.ok(c.barra.b <= c.nav.t + 1, donde(`la barra queda sobre la navegación inferior (${c.barra.b} ≤ ${c.nav.t})`)); assert.ok(c.prim.r <= c.mas.l + 1 || c.prim.b <= c.mas.t + 1, donde("acción principal y «Más acciones» sin superponerse (en una fila o apiladas)"));
       await p.click("#mas-acciones"); const mn = await p.locator(".menu-mas").boundingBox(); assert.ok(mn.x >= 0 && mn.x + mn.width <= w + 1 && mn.y >= 0, donde("el menú cabe en la pantalla")); await sinDesborde("menú Más acciones"); await foto("05-mas-acciones"); await textoVisible("menú"); await p.keyboard.press("Escape");
 
       // ---- guardar (el borrador no pierde nada), recargar y recuperar

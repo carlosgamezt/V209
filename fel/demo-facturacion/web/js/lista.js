@@ -5,7 +5,7 @@ import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 
-const FILTROS = [["todas", "Todas"], ["borrador", "Borradores"], ["revisado", "Revisadas"], ["certificado", "Certificadas (simuladas)"], ["por_verificar", "Por verificar"], ["rechazado", "Rechazadas"], ["anulado", "Anuladas"]];
+const FILTROS = [["todas", "Todas"], ["borrador", "Borradores"], ["revisado", "Revisadas"], ["certificado", "Emitidos (TEST / simulados)"], ["por_verificar", "Por verificar"], ["rechazado", "Rechazadas"], ["anulado", "Anuladas"]];
 const coincide = (d, f) => f === "todas" || d.estado_preparacion === f || d.estado_fiscal === f;
 // Un documento certificado con una autorización que NO empieza por «SIM-» salió del certificador de PRUEBAS (Digifact TEST): se rotula TEST, nunca como simulado ni como real.
 export const esTest = (d) => d.estado_fiscal !== "ninguno" && !!d.autorizacion_sat && !String(d.autorizacion_sat).toUpperCase().startsWith("SIM-");
@@ -41,7 +41,7 @@ export function pantallaLista(ctx) {
   async function cargar() {
     try { [todos, tiposDoc] = await Promise.all([api.documentos(), api.tiposDocumento().catch(() => null)]); pintarFiltro(); pintarFiltroTipo(); pintar(); } catch (e) { poner(lista, h("p", { class: "err", role: "alert" }, mensajeError(e))); }
   }
-  const visibles = () => todos.filter((d) => coincide(d, filtro) && (filtroTipo === "todos" || (d.tipo_dte ?? "FACT") === filtroTipo) && (!busqueda || `${codigoBorrador(d.numero_borrador)} ${d.cliente_nombre ?? ""}`.toLowerCase().includes(busqueda.toLowerCase())));
+  const visibles = () => todos.filter((d) => coincide(d, filtro) && (filtroTipo === "todos" || (d.tipo_dte ?? "FACT") === filtroTipo) && (!busqueda || `${codigoBorrador(d.numero_borrador)} ${d.cliente_nombre ?? ""} ${d.serie ?? ""} ${d.numero_fiscal ?? ""} ${d.autorizacion_sat ?? ""}`.toLowerCase().includes(busqueda.toLowerCase())));
   function pintar() {
     const datos = visibles();
     poner(resumen, `${datos.length} de ${todos.length} documentos`);
@@ -78,8 +78,8 @@ export function pantallaLista(ctx) {
 
   cargar();
   return h("section", { class: "pantalla" },
-    cabecera({ icon: "file", titulo: "Documentos", subtitulo: "Facturas, notas y recibos en simulación: borrador → validación → revisión → envío simulado → resultado.",
+    cabecera({ icon: "file", titulo: "Documentos", subtitulo: "Consulta tus documentos guardados, emitidos en TEST y simulados.",
       accion: puedeCrear ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null }),
-    h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar por número o cliente…", "aria-label": "Buscar documentos", oninput: (e) => { busqueda = e.target.value.trim(); pintar(); } })), selFiltro, selTipo, resumen),
+    h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar cliente, serie, número o UUID…", "aria-label": "Buscar documentos", oninput: (e) => { busqueda = e.target.value.trim(); pintar(); } })), selFiltro, selTipo, resumen),
     lista);
 }

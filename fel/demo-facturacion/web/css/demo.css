@@ -477,3 +477,19 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .cc-fila{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--borde,#e5e7eb)}.cc-fila span{color:var(--tinta-suave,#6b7280)}.cc-fila strong{text-align:right;overflow-wrap:anywhere}
 .barra-acciones #guardar-certificar{flex:2 1 0}.barra-acciones .tot-iva,.totales .tot-iva{font-size:.95em}
 @media(max-width:420px){.barra-acciones #guardar-certificar{font-size:13px}}
+
+/* Acciones móviles: el botón de certificación ocupa su propia fila. */
+@media(max-width:900px){
+ .barra-acciones:has(#guardar-certificar),.barra-acciones:has(#certificar-test){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .barra-acciones #guardar-certificar,.barra-acciones #certificar-test{grid-column:1/-1;grid-row:1;width:100%;min-height:48px;font-size:15px}
+ .barra-acciones .sucio{grid-column:1/-1;grid-row:auto}
+ .barra-acciones .btn{white-space:normal;overflow-wrap:anywhere;min-width:0;max-width:100%}
+ .barra-acciones .mas-wrap,.barra-acciones .mas-wrap>.btn{width:100%;min-width:0}
+ .barra-acciones .menu-mas{min-width:0;width:min(280px,calc(100vw - 24px));max-height:45vh;overflow-y:auto}
+ .menu-mas .mi{padding:8px 12px;min-width:0;overflow-wrap:anywhere}
+ .hoja-mas{min-width:0;width:min(280px,calc(100vw - 24px));max-height:60vh;overflow-y:auto}
+ .nav-movil .hoja-mas .nv{display:flex;flex-direction:row;justify-content:flex-start;align-items:center;text-align:left;gap:10px;padding:8px 12px;height:auto;min-height:44px;font-size:14px;white-space:normal}
+ .nav-movil .hoja-mas .nv svg{flex:none}
+ .nav-movil .hoja-mas .nv.act::before{display:none}
+}
+.estado-cert-compacto{font-size:12px;margin:4px 0;line-height:1.4}

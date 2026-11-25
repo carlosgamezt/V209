@@ -33,7 +33,7 @@ const CONFIRMACION_TEST = "CERTIFICAR-TEST";
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
-    try { const tipos = await api.tiposDocumento(); ctx.tiposDoc = tipos; const ventana = await api.ventanaFecha().catch(() => null), dg = await api.digifactEstado().catch(() => null); poner(raiz, construir(id ? await api.documento(id) : null, tipos, ventana, dg)); }
+    try { const [tipos, ventana, dg, detalle] = await Promise.all([api.tiposDocumento(), api.ventanaFecha().catch(() => null), api.digifactEstado().catch(() => null), id ? api.documento(id) : Promise.resolve(null)]); ctx.tiposDoc = tipos; poner(raiz, construir(detalle, tipos, ventana, dg)); }
     catch (e) { poner(raiz, h("p", { class: "err", role: "alert" }, mensajeError(e)), boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") })); }
   })();
   return raiz;
@@ -317,7 +317,7 @@ export function pantallaFactura(ctx, id) {
           pie: [boton("Ahora no", { tipo: "sec", id: "cancelar-certificar-test", onclick: () => { m.cerrar(); resolve(false); } }), si] });
       });
     }
-    let certificando = false;
+    let certificando = false, guardandoParaCertificar = false;
     async function certificarEnTest() {
       if (certificando) return; certificando = true; err.textContent = "";
       const bc = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (bc) bc.disabled = true;
@@ -339,8 +339,13 @@ export function pantallaFactura(ctx, id) {
       finally { certificando = false; const b2 = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (b2) b2.disabled = false; }
     }
     async function guardarYCertificar() {
-      const r = await guardar({ certificar: true }); if (!r || certificarPendiente) return;   // documento nuevo: la pantalla se reconstruye y continúa sola
-      await certificarEnTest();
+      if (guardandoParaCertificar || certificando) return;
+      guardandoParaCertificar = true;
+      const b = document.getElementById("guardar-certificar"); if (b) b.disabled = true;
+      try {
+        const r = await guardar({ certificar: true }); if (!r || certificarPendiente) return;
+        await certificarEnTest();
+      } finally { guardandoParaCertificar = false; if (b?.isConnected) b.disabled = false; }
     }
 
     // ---------------------------------------------------------------- barra: una acción principal + «Más acciones»
@@ -352,7 +357,7 @@ export function pantallaFactura(ctx, id) {
       let principal;
       let secundaria = null;
       if (ed && (sucio || !doc.id) && puedeCertificarAhora()) {   // dos acciones claras: guardar solo, o guardar y certificar en TEST
-        principal = boton("Guardar y certificar en TEST", { icon: "shield", id: "guardar-certificar", onclick: guardarYCertificar });
+        principal = boton("Certificar en TEST", { icon: "shield", id: "guardar-certificar", onclick: guardarYCertificar });
         secundaria = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { tipo: "sec", icon: "check", id: "guardar", onclick: () => guardar() });
       } else if (ed && (sucio || !doc.id)) principal = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { icon: "check", id: "guardar", onclick: () => guardar() });
       else if (doc.id && !sucio && puedeCertificarAhora() && ["borrador", "revisado"].includes(prep)) principal = boton("Certificar en TEST", { icon: "shield", id: "certificar-test", onclick: certificarEnTest });
@@ -375,7 +380,7 @@ export function pantallaFactura(ctx, id) {
       poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, secundaria, principal, wrap);
     }
     function pintarProceso() {
-      poner(proceso, doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
+      poner(proceso, puedeCertificarAhora() ? h("p", { class: "mut estado-cert-compacto" }, "El guardado y la revisión técnica se realizan al certificar en TEST.") : doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
     }
 
     // ---------------------------------------------------------------- acciones
