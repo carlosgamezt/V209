@@ -17,6 +17,7 @@ import { crearConsultorNitDesdeEntorno } from "../src/digifact_nit_entorno.ts";
 import { crearConsultorCuiDesdeEntorno } from "../src/digifact_cui_entorno.ts";
 import { crearCorreoDesdeEntorno } from "../src/correo/entorno.ts";
 import { crearPoliticaCorreoDigifactDesdeEntorno } from "../src/digifact_correo_entorno.ts";
+import { conMedicion, envolverBd, fetchMedido, marcar } from "../src/medicion.ts";
 
 const igualesSeguro = (a: string, b: string) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 const generico = (s: number, m: string) => new Response(JSON.stringify({ codigo: "no_disponible", mensaje: m }), { status: s, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -27,11 +28,12 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
   let listo: Promise<{ api: (r: Request) => Promise<Response>; endurecer: ReturnType<typeof crearEndurecimiento> }> | null = null;
   const iniciar = () => listo ??= (async () => {
     const cfg = leerConfigPublicada((k) => env.get(k), Object.keys(PERSONAS), { exigirClaves: false });
-    const bd = bdExterna ?? bdDeEntorno((k) => env.get(k));
+    const t0Inicio = performance.now();
+    const bd = envolverBd(bdExterna ?? bdDeEntorno((k) => env.get(k)));   // cuenta y cronometra las consultas (solo números)
     const mundo = await prepararBase(bd, { sembrar: false });
     const sesiones = new Sesiones(undefined, new AlmacenPg(bd)); sesiones.claveDemoPublica = null; sesiones.forzarSeguro = true;
     sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch { /* la auditoría no debe tumbar la petición */ } };
-    const digifact = await crearDigifactParaBd((k) => env.get(k), bd);   // sin FEL_DIGIFACT_* no existe; sin la tabla de la migración 29 prepara y valida pero NO envía nada real
+    const digifact = await crearDigifactParaBd((k) => env.get(k), bd, fetchMedido());   // sin FEL_DIGIFACT_* no existe; sin la tabla de la migración 29 prepara y valida pero NO envía nada real
     console.log(`Digifact TEST: ${digifact.motivo}${digifact.servicio ? (digifact.almacenPersistente ? " · almacén persistente" : " · sin almacén persistente: no envía") : ""}`);   // nunca valores
     const nit = crearConsultorNitDesdeEntorno((k) => env.get(k));   // independiente de la certificación: solo sabe consultar NIT y solo para UNA empresa; sin FEL_DIGIFACT_NIT no existe
     const cui = crearConsultorCuiDesdeEntorno((k) => env.get(k));   // independiente de NIT y de la certificación; sin FEL_DIGIFACT_CUI no existe
@@ -45,9 +47,10 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     const endurecer = crearEndurecimiento({ publicado: true, hosts: cfg.hosts, hostDe: (r) => (r.headers.get("x-nexa-host") ?? "").toLowerCase(), ipDe: (r) => r.headers.get("x-nexa-ip") ?? "?",
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo
       limiteApi: new LimiteTasa(Number(env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });
+    marcar("arranque", performance.now() - t0Inicio);   // solo la primera petición de una instancia nueva paga este tiempo
     return { api, endurecer };
   })();
-  return async (req: Request): Promise<Response> => {
+  const atender = async (req: Request): Promise<Response> => {
     if (secreto.length < 32 || (!url && !bdExterna)) return generico(503, "Servicio no configurado");
     if (!igualesSeguro(req.headers.get("x-nexa-proxy") ?? "", secreto)) return new Response("Prohibido", { status: 403 });
     const u = new URL(req.url), ruta = u.pathname.replace(/^\/nexa-demo(?=\/|$)/, "") || "/";   // Supabase antepone el nombre de la función
@@ -57,4 +60,5 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     const previo = await app.endurecer.previo(interna); if (previo) return previo;
     return app.endurecer.asegurar(await app.api(interna));
   };
+  return (req: Request) => conMedicion(() => atender(req));
 }
