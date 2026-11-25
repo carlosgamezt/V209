@@ -23,7 +23,7 @@ const doc = (empresaId = EMPRESA_A, id = "d1", extra: Partial<DocumentoFel> = {}
 const referenciaEnviada = (p: PeticionHttp) => { const n = JSON.parse(p.cuerpo!); return n.AdditionalDocumentInfo.AdditionalInfo[0].Code as string; };
 
 type Manejador = (p: PeticionHttp, envios: number) => RespuestaHttp | Promise<RespuestaHttp>;
-function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fecha?: string) => RespuestaHttp; prevueloDias?: number; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
+function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fecha?: string) => RespuestaHttp; prevueloDias?: number; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; tipoTest?: (codigo: string) => boolean; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
   const llamadas: PeticionHttp[] = []; let envios = 0; let ultimaReferencia: string | null = null;
   const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
     llamadas.push(p);
@@ -43,7 +43,7 @@ function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fec
   const emisor = { emisor: facturaPrueba().emisor, huella: HUELLA };
   const s = new ServicioFelGt({
     clienteDe: (e) => (e === EMPRESA_A || (e === EMPRESA_B && !opc.sinCanalB) ? cliente : null), emisorDe: (e) => (e === EMPRESA_A || (e === EMPRESA_B && !opc.sinCanalB) ? emisor : null),
-    almacen, autorizaPrueba: () => (opc.autorizada === false ? null : autorizada), ahora: opc.ahora ?? (() => AHORA), auditar: (evento, _c, detalle) => { aud.push({ evento, detalle }); }, ...(opc.prevueloDias !== undefined ? { prevueloDias: opc.prevueloDias } : {}),
+    almacen, autorizaPrueba: () => (opc.autorizada === false ? null : autorizada), ...(opc.tipoTest ? { tipoCertificableEnTest: opc.tipoTest } : {}), ahora: opc.ahora ?? (() => AHORA), auditar: (evento, _c, detalle) => { aud.push({ evento, detalle }); }, ...(opc.prevueloDias !== undefined ? { prevueloDias: opc.prevueloDias } : {}),
   });
   return { s, llamadas, almacen, aud, envios: () => envios, autorizar: (ref: string) => { autorizada = ref; }, cliente };
 }
@@ -550,4 +550,25 @@ Deno.test("notas: la fecha elegida no puede ser anterior a la del documento de o
   }
   await rechaza(m.s.preparar(ctx(), doc(EMPRESA_A, "r1", { tipoDte: "RECI", fechaEmisionPrevista: "2026-11-24", tipoRecibo: "pago" } as Partial<DocumentoFel>)), "TIPO_NO_HABILITADO");
   assert.equal(m.envios(), 0);
+});
+
+Deno.test("NCRE en TEST (cuando el despliegue la habilita): se prepara y se certifica UNA vez con su referencia al origen y su motivo; NDEB, RECI y los pendientes siguen bloqueados", async () => {
+  const m = mundo({ tipoTest: (c) => c === "NCRE" }); m.autorizar(AUTORIZACION_CICLO);
+  const d = docTipo("NCRE", { origen: ORIGEN_NOTA, motivoAjuste: "Devolución de mercadería" });
+  const p = await m.s.preparar(ctx(), d); assert.equal(m.envios(), 0, "preparar no envía");
+  const r = await m.s.certificar(ctx(), d, confirmar(p)); assert.equal(r.operacion.estado, "certificada"); assert.equal(m.envios(), 1);
+  const envio = m.llamadas.find((l) => l.ruta.startsWith("/v2/transform/nuc_json"))!, cuerpo = envio.cuerpo!;
+  assert.ok(cuerpo.includes("NCRE"), "el DTE enviado es una nota de crédito"); assert.ok(cuerpo.includes(AUT), "referencia la autorización del origen"); assert.ok(cuerpo.includes("BDE0DEC2"), "y su serie"); assert.ok(cuerpo.includes("Devolución de mercadería"), "y el motivo");
+  // idempotente: certificar otra vez no reenvía
+  const otra = await m.s.certificar(ctx(), d, confirmar(p)); assert.equal(otra.reutilizada, true); assert.equal(m.envios(), 1);
+  // lo que el despliegue no habilitó sigue bloqueado, aunque exista el gancho
+  for (const t of ["NDEB", "RECI", "FCAM", "FPEQ"]) {
+    const x = docTipo(t, { origen: ORIGEN_NOTA, motivoAjuste: "Cargo", tipoRecibo: "Colegio" });
+    await rechaza(m.s.preparar(ctx(), x), "TIPO_NO_HABILITADO"); assert.deepEqual(await m.almacen.deDocumento(EMPRESA_A, x.id), []);
+  }
+  // un tipo PENDIENTE jamás certifica, ni con un gancho que lo permita
+  const todo = mundo({ tipoTest: () => true }); todo.autorizar(AUTORIZACION_CICLO);
+  await rechaza(todo.s.preparar(ctx(), docTipo("FCAM")), "TIPO_NO_HABILITADO"); await rechaza(todo.s.preparar(ctx(), docTipo("FPEQ")), "TIPO_NO_HABILITADO");
+  // sin la autorización del ciclo de pruebas tampoco se certifica una NCRE
+  const sin = mundo({ tipoTest: (c) => c === "NCRE" }); const ps = await sin.s.preparar(ctx(), d); await rechaza(sin.s.certificar(ctx(), d, confirmar(ps)), "PRUEBA_NO_AUTORIZADA"); assert.equal(sin.envios(), 0);
 });

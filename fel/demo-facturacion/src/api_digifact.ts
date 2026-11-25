@@ -94,6 +94,8 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       }
       if (accion) return null; return c.json({ operaciones: await svc.estadoDocumento(ctx, docId) });
     }
+    // Tipos que la base permite certificar en TEST (migración 31, si está aplicada; si no, la lista queda vacía y solo FACT certifica).
+    try { const [f] = await bd.filas<{ ok: boolean }>("select to_regprocedure('public.fel_tipos_certificacion_test()') is not null as ok"); if (f?.ok) { const [t] = await bd.filas<{ t: string[] }>("select public.fel_tipos_certificacion_test() as t"); svc.fijarTiposTest(t?.t ?? []); } else svc.fijarTiposTest([]); } catch { svc.fijarTiposTest([]); }
     const b = await c.cuerpo();
     const doc = async () => { const x = await leerDocumentoFel(bd, c.empresa, docId); if (!x) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado"); return x; };
     // «Enviar factura por correo»: solo si la petición lo pide Y el servidor lo habilita para esta empresa Y el destinatario está autorizado. Digifact lo envía al certificar; aquí solo se valida y se pasa el destinatario.

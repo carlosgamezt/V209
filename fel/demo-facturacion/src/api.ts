@@ -286,10 +286,11 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     }
     if (((ruta === "/api/tipos-documento" && m === "POST") || (ruta === "/api/documentos/origenes" && m === "GET")) && !(await tiposDisponibles(bd))) throw new ErrorHttp(422, "Los tipos de documento aún no están habilitados en esta base de datos.", "regla");
     if (m === "GET" && ruta === "/api/tipos-documento") {
+      let tiposTest: string[] = []; try { const [f] = await bd.filas<{ ok: boolean }>("select to_regprocedure('public.fel_tipos_certificacion_test()') is not null as ok"); if (f?.ok) tiposTest = ((await bd.filas<{ t: string[] }>("select public.fel_tipos_certificacion_test() as t"))[0]?.t) ?? []; } catch { /* sin la migración 31 */ }
       const permisos = await permisosDe(a), cfg = await bd.rpc("fel_tipos_empresa", { p_actor: a.id, p_empresa: emp() }) as { tipos: { codigo: string; habilitado: boolean; motivo: string | null; base_habilitacion: string | null; predeterminado: boolean }[]; predeterminado: string };
       return json({ predeterminado: cfg.predeterminado, puede_configurar: permisos.includes("empresa.editar"), tipos: CATALOGO_DTE.map((t) => {
         const h = cfg.tipos.find((x) => x.codigo === t.codigo);
-        return { codigo: t.codigo, nombre: t.nombre, corto: t.corto, familia: t.familia, titulo: t.tituloDocumento, disponibilidad: t.disponibilidad, certificacion_habilitada: t.certificacionHabilitada, requiere_origen: t.requiereOrigen, origenes_permitidos: t.origenesPermitidos,
+        return { codigo: t.codigo, nombre: t.nombre, corto: t.corto, familia: t.familia, titulo: t.tituloDocumento, disponibilidad: t.disponibilidad, certificacion_habilitada: t.certificacionHabilitada, certificacion_test: t.certificacionHabilitada || tiposTest.includes(t.codigo), requiere_origen: t.requiereOrigen, origenes_permitidos: t.origenesPermitidos,
           campos_obligatorios: t.camposObligatorios, complementos: t.complementos, regimen: t.regimen.condicion, regimen_verificado: t.regimen.verificado, motivo_pendiente: t.motivoPendiente ?? null, pendientes_verificar: t.pendientesVerificar,
           habilitado: !!h?.habilitado, motivo_no_habilitado: h?.motivo ?? null, base_habilitacion: h?.base_habilitacion ?? null, predeterminado: !!h?.predeterminado };
       }) });

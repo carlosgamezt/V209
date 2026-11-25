@@ -114,6 +114,8 @@ export interface DepsFelGt {
   /** Referencia que la persona responsable autorizó para ESTA prueba (nada más se envía). null = ninguna autorizada. */
   /** Autorización de la persona responsable: o la referencia de UNA prueba (GUID), o «CICLO-TEST» (ciclo de pruebas en TEST publicado con su aprobación: vale para cualquier documento de la empresa de demostración mientras esté publicado). */
   autorizaPrueba: () => string | null;
+  /** Tipos que SE PUEDEN certificar en Digifact TEST además de los «de verdad» (catálogo). Por omisión ninguno: solo FACT. El despliegue lo conecta a la columna certificacion_test de la base (migración 31, aún no aplicada); la base repite el bloqueo con su guardián. */
+  tipoCertificableEnTest?: (codigo: string) => boolean;
   ahora?: () => Date;
   auditar?: (evento: string, ctx: ContextoFel, detalle: Record<string, unknown>) => Promise<void> | void;
   /** Política de impuestos. Por defecto: IVA 12 % INCLUIDO en el precio, solo para afiliación GEN; pendiente de validación fiscal. */
@@ -242,9 +244,12 @@ export class ServicioFelGt {
 
   /* ---------------------------------------------------------------- 3. preparación (guarda la operación; NO envía) */
   /** Un tipo que no está «implementado» NO se prepara ni se certifica (ni TEST ni real): solo se valida y se previsualiza. La base repite este bloqueo (fel_tipos_dte.certificacion_habilitada). */
+  #tiposTest: ReadonlySet<string> = new Set();
+  /** El servidor informa qué tipos puede certificar en TEST según la base (columna certificacion_test; vacío si la migración 31 no está aplicada). Se refresca antes de cada operación; la base repite el bloqueo. */
+  fijarTiposTest(codigos: Iterable<string>) { this.#tiposTest = new Set([...codigos].filter((c) => c !== "FACT")); }
   #exigirTipoCertificable(doc: DocumentoFel) {
     const t = doc.tipoDte ?? "FACT";
-    if (!puedeCertificar(t)) throw new ErrorFelGt("TIPO_NO_HABILITADO", `${tipoDte(t)?.nombre ?? t}: la certificación de este tipo de documento aún no está habilitada (solo validación y vista previa)`);
+    if (!puedeCertificar(t) && !((this.d.tipoCertificableEnTest?.(t) || this.#tiposTest.has(t)) && tipoDte(t)?.disponibilidad !== "pendiente")) throw new ErrorFelGt("TIPO_NO_HABILITADO", `${tipoDte(t)?.nombre ?? t}: la certificación de este tipo de documento aún no está habilitada (solo validación y vista previa)`);
   }
   async preparar(ctx: ContextoFel, doc: DocumentoFel, o: { correo?: unknown } = {}): Promise<ResumenPreparacion> {
     this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc); this.#exigirTipoCertificable(doc);

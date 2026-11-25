@@ -30,6 +30,8 @@ export function pantallaLista(ctx) {
   let categoria = "emitidos", busqueda = "", pagina = 1, filtroTipo = "", filtroEstado = "", desde = "", hasta = "", nit = "", datos = { items: [], total: 0, paginas: 1, conteos: {} }, tiposDoc = null, peticion = 0, temporizador = null;
   const lista = h("div", { class: "lista", "aria-live": "polite" }), resumen = h("span", { class: "mut resumen-lista" }), pestanas = h("div", { class: "pestanas", role: "tablist", "aria-label": "Categorías de documentos" }), pager = h("div", { class: "barra barra-compacta pager", role: "navigation", "aria-label": "Páginas de documentos" });
   const puedeCrear = ctx.tiene("borradores.crear");
+  let correoOk = false;   // el envío por correo está habilitado en el servidor y la persona puede enviar (si no, no se ofrece el atajo «Correo»)
+  api.correoEstado().then((e) => { correoOk = !!(e.habilitado && e.puedeEnviar); if (datos.items.length) pintar(); }).catch(() => {});
   const selEstado = h("select", { "aria-label": "Estado de los documentos", class: "sel-tipo", onchange: (e) => { filtroEstado = e.target.value; pagina = 1; cargar(); } }, ...ESTADOS.map(([v, t]) => h("option", { value: v }, t)));
   const selTipo = h("select", { "aria-label": "Tipo de documento", class: "sel-tipo", id: "filtro-tipo", onchange: (e) => { filtroTipo = e.target.value; pagina = 1; cargar(); } });
   const campoFecha = (etiqueta, set) => h("label", { class: "campo-fecha" }, h("span", { class: "mut" }, etiqueta), h("input", { type: "date", "aria-label": etiqueta, onchange: (e) => { set(e.target.value); pagina = 1; cargar(); } }));
@@ -82,6 +84,7 @@ export function pantallaLista(ctx) {
     if (d.estado_preparacion === "borrador" && sinFiscal && ctx.tiene("borradores.revisar")) a.push(h("button", { type: "button", class: "btn btn-sec btn-mini slot-2", "data-accion": "revisar", "aria-label": `Revisar ${codigoBorrador(d.numero_borrador)}`, onclick: () => revisar(d) }, icono("circleCheck"), h("span", {}, "Revisar")));
     if (d.estado_preparacion === "revisado" && sinFiscal && ctx.tiene("fiscal.certificar")) a.push(abrir("Enviar", "enviar", "shield"));
     if ((d.estado_fiscal === "por_verificar" || d.alertas > 0 || d.estado_fiscal === "pendiente_certificacion") && ctx.tiene("fiscal.conciliar")) a.push(abrir("Resolver", "resolver", "info"));
+    if (d.estado_fiscal === "certificado" && correoOk) a.push(h("a", { class: "btn btn-sec btn-mini slot-2", href: `#/f/${d.id}`, "data-accion": "correo", "aria-label": `Enviar o reenviar por correo ${codigoBorrador(d.numero_borrador)}`, onclick: () => { globalThis.__felCorreo = d.id; } }, icono("mail"), h("span", {}, "Correo")));   // lleva al panel de envío y reenvío del documento
     a.push(h("a", { class: "icon-btn slot-3", href: `#/f/${d.id}`, title: "Consultar", "aria-label": `Consultar ${codigoBorrador(d.numero_borrador)}`, "data-accion": "consultar" }, icono("eye")));
     return a;
   };

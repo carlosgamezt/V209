@@ -304,7 +304,7 @@ export function pantallaFactura(ctx, id) {
     // queda guardado (y revisado) pase lo que pase con la certificación.
     const infoTipoCert = () => tipoPorCodigo(tipos, f.tipo_dte);
     const certificaEnTest = () => !!dg && dg.habilitado && dg.certificacion && dg.empresaConCanal && dg.ciclo && dg.almacenamiento === "persistente" && ctx.tiene("fiscal.certificar")
-      && (f.tipo_dte === "FACT" || !!infoTipoCert()?.certificacion_habilitada);
+      && (f.tipo_dte === "FACT" || !!infoTipoCert()?.certificacion_habilitada || !!infoTipoCert()?.certificacion_test);
     const puedeCertificarAhora = () => certificaEnTest() && doc.estado_fiscal === "ninguno" && ["borrador", "revisado"].includes(doc.estado_preparacion) && (doc.id || editable());
     // ---- correo de la factura al certificar: lo envía DIGIFACT (con su plantilla), solo si el servidor lo habilita para esta empresa. Apagado por defecto; el destinatario se precarga del cliente
     // registrado y se puede editar. El servidor valida permiso, lista de destinatarios autorizados y que el correo coincida con lo preparado (correo_ref); aquí solo se pide.
@@ -461,6 +461,9 @@ export function pantallaFactura(ctx, id) {
     const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", avisoSalir);
     if (doc.id && previaPendiente === doc.id) { previaPendiente = null; setTimeout(mostrarPrevia, 0); }   // venía de «Vista previa» con un documento nuevo: ya está guardado
+    if (doc.id && globalThis.__felCorreo === doc.id) {   // viene del atajo «Correo» del historial: se abre el panel de envío cuando el botón esté listo
+      globalThis.__felCorreo = null; let intentos = 0; const t = setInterval(() => { const b = document.getElementById("emitido-correo-btn"); if (b && !b.disabled) { clearInterval(t); b.click(); } else if (++intentos > 40) clearInterval(t); }, 150);
+    }
     if (doc.id && certificarPendiente === doc.id) {
       certificarPendiente = null;
       if (correoPendiente) { Object.assign(correoFac, correoPendiente, { cli: f.cliente_id ?? "nuevo" }); correoFacChk.checked = correoFac.activo; correoFacEntrada.value = correoFac.texto; correoFacCampo.hidden = !correoFac.activo; correoFacNota(); correoPendiente = null; }

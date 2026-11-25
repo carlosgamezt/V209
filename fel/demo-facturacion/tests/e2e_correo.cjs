@@ -56,6 +56,13 @@ async function arrancar(env = {}) {
     // recargar: el historial persiste
     await p.reload(); await p.waitForSelector(".correo-fila"); assert.equal(await p.locator(".correo-fila").count(), 2);
 
+    // ================= historial: atajo «Correo» en las filas de documentos emitidos (envío y reenvío), solo con correo habilitado y permiso
+    await p.goto(`${srv.url}/#/`); await p.locator('.pestana[data-categoria="emitidos"].act').waitFor(); await p.waitForSelector(".fila-fac");
+    await p.locator('.fila-fac [data-accion="correo"]').first().waitFor({ timeout: 8000 }); assert.ok((await p.locator('.fila-fac [data-accion="correo"]').count()) >= 1, "las filas emitidas ofrecen «Correo»");
+    await p.locator('.fila-fac [data-accion="correo"]').first().click(); await p.waitForSelector(PANEL, { state: "visible" }); await p.waitForSelector("#correo-destinatario:focus, #correo-enviar, #correo-reenviar", { timeout: 8000 });
+    assert.equal(await p.locator("#correo-destinatario").count(), 1, "el atajo del historial abre el panel de envío del documento");
+    await sinDesborde(p, "historial con atajo de correo");
+
     // ================= anulada: no se ofrece enviar; el historial sigue visible
     await p.goto(`${srv.url}/#/f/${idB}`); await p.waitForSelector(PANEL, { state: "visible" }); assert.equal(await p.locator("#correo-enviar").count(), 1);
     await p.evaluate(async (id) => { await fetch(`/api/documentos/${id}/anular`, { method: "POST", headers: { "x-demo": "1", "content-type": "application/json" }, body: JSON.stringify({ confirmacion: "ANULAR", motivo: "Anulación de prueba del correo", clave: "clave-anula-e2e-correo-b" }) }); }, idB);
@@ -64,6 +71,7 @@ async function arrancar(env = {}) {
     // ================= el lector (pedro) ve el historial pero no puede enviar
     const lec = await ctxMovil(390); await entrar(lec.p, "pedro"); await lec.p.goto(`${srv.url}/#/f/${idA}`); await lec.p.waitForSelector(PANEL, { state: "visible" });
     assert.equal(await lec.p.locator("#correo-enviar").count() + await lec.p.locator("#correo-reenviar").count(), 0, "el lector no tiene botones"); assert.match(await lec.p.locator(PANEL).innerText(), /Tu rol no puede enviar/); assert.equal(await lec.p.locator(".correo-fila").count(), 2);
+    await lec.p.goto(`${srv.url}/#/`); await lec.p.waitForSelector(".fila-fac"); await lec.p.waitForTimeout(500); assert.equal(await lec.p.locator('[data-accion="correo"]').count(), 0, "el lector no ve el atajo «Correo» en el historial");
 
     // ================= servidor sin correo configurado: la tarjeta no aparece
     const sin = await ctxMovil(390); await entrar(sin.p, "ana", srvSin.url); const idS = await certificado(sin.p, "s"); await sin.p.goto(`${srvSin.url}/#/f/${idS}`); await sin.p.waitForSelector(".doc-cab"); await sin.p.waitForTimeout(800);

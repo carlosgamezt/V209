@@ -13,6 +13,8 @@ export async function crearBd(): Promise<BdDemo> {
   // La migración 30 (tipos de documento) forma parte de supabase/migrations. FEL_TIPOS=0 simula una base hospedada que todavía NO la tiene (la demostración debe degradar a solo Factura).
   const archivos = [...Deno.readDirSync(`${RAIZ}supabase/migrations`)].map((f) => f.name).filter((n) => n.endsWith(".sql") && !(Deno.env.get("FEL_TIPOS") === "0" && n.startsWith("20261115000100_"))).sort();
   for (const f of archivos) await db.exec(await Deno.readTextFile(`${RAIZ}supabase/migrations/${f}`));
+  // Propuesta 31 (fuera de supabase/migrations, NO aprobada): solo para PROBAR en memoria la certificación de NCRE en TEST (FEL_PROPUESTA_31=1). Nunca se aplica a una base persistente desde aquí.
+  if (Deno.env.get("FEL_PROPUESTA_31") === "1") await db.exec(await Deno.readTextFile(`${RAIZ}docs/migracion-31/20261125000100_fel_certificacion_test_tipos.sql`));
   // Propuesta (fuera de supabase/migrations): historial de envíos por correo. Solo se aplica cuando se pide el correo (FEL_CORREO); el conjunto de 29 migraciones no cambia.
   if (Deno.env.get("FEL_CORREO")) for (const f of [...Deno.readDirSync(`${RAIZ}docs/migracion-correo`)].map((x) => x.name).filter((n) => /^\d{14}_.+\.sql$/.test(n)).sort()) await db.exec(await Deno.readTextFile(`${RAIZ}docs/migracion-correo/${f}`));   // solo la migración (no la reversión ni la verificación)
   const rpc: Rpc = async (fn, args) => {
