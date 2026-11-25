@@ -344,23 +344,19 @@ export function pantallaFactura(ctx, id) {
     const progreso = (t) => { const b = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (b) { b.disabled = true; b.replaceChildren(icono("shield"), h("span", {}, t)); } };
     async function certificarEnTest() {
       if (certificando) return; certificando = true; err.textContent = "";
-      const t0 = performance.now(); let tNexaPrev = 0;
+      const t0 = performance.now();
       try {
         progreso("Certificando…");
-        if (doc.estado_preparacion === "borrador") {   // revisar congela el contenido, requisito para preparar
-          if (!ctx.tiene("borradores.revisar")) { err.textContent = "Tu rol no puede marcar el documento como revisado, paso previo a certificar. El borrador quedó guardado."; return; }
-          const r = await api.estadoPreparacion(doc.id, "revisado", doc.version); await recargar(r, { sinEstado: true }); progreso("Certificando…");
-        }
+        if (doc.estado_preparacion === "borrador" && !ctx.tiene("borradores.revisar")) { err.textContent = "Tu rol no puede marcar el documento como revisado, paso previo a certificar. El borrador quedó guardado."; return; }
         const extra = extraCorreoFac();
         if (extra.enviar_correo && !correoFacOk()) { await recargar(undefined, { sinEstado: true }); err.textContent = "Escribe un correo válido o desmarca «Enviar factura por correo». El documento quedó guardado."; return; }
-        const tP = performance.now(); const prep = await api.digifactPreparar(doc.id, extra);   // no envía nada
-        tNexaPrev = performance.now() - tP;
+        // UNA sola petición: el servidor revisa (si hace falta), prepara y certifica con los mismos controles de siempre (antes eran tres viajes seguidos). El éxito se muestra solo cuando vuelve la confirmación fiscal.
         const tC = performance.now();
-        const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: CONFIRMACION_TEST, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor }, extra.enviar_correo ? { ...extra, correo_ref: prep.correoRef } : {});
+        const r = await api.digifactCertificarTodo(doc.id, { version: doc.version, confirmacion: CONFIRMACION_TEST, ...extra });
         const totalCert = performance.now() - tC, dfx = Number(r.tiempoDigifactMs ?? 0);
         const tR = performance.now(); await recargar(r.documento_actualizado, { sinEstado: true });   // el servidor ya devolvió el documento: sin otra lectura
         const total = performance.now() - t0, nexa = Math.max(0, total - dfx);
-        globalThis.__felTiempos = { doc: doc.id, totalMs: Math.round(total), digifactMs: Math.round(dfx), nexaMs: Math.round(nexa), preparacionMs: Math.round(tNexaPrev), certificarMs: Math.round(totalCert), recargaMs: Math.round(performance.now() - tR) };
+        globalThis.__felTiempos = { doc: doc.id, totalMs: Math.round(total), digifactMs: Math.round(dfx), nexaMs: Math.round(nexa), preparacionMs: 0, certificarMs: Math.round(totalCert), recargaMs: Math.round(performance.now() - tR) };
         console.info("Certificación (ms)", globalThis.__felTiempos);
         const op = r.operacion?.estado;
         if (r.error) err.textContent = `No se envió a Digifact: ${r.error.mensaje} El documento quedó guardado.`;

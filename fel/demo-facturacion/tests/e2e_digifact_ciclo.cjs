@@ -29,15 +29,20 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       // ---- Digifact TEST sustituido: estado del servidor (con ciclo autorizado) y respuestas de preparar/certificar; se guardan las peticiones
       const env = { ciclo: true, cert: "certificada", llamadas: [], docId: null };
       await p.route("**/api/digifact/estado", (r) => json(r, { habilitado: true, certificacion: true, consultaNit: false, consultaCui: false, correoDigifact: { habilitado: !!env.correo }, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST", almacenamiento: "persistente", empresaConCanal: true, ciclo: env.ciclo }));
-      await p.route(/\/api\/documentos\/[0-9a-f-]{36}\/digifact(\/[a-z]+)?$/, async (r) => {
-        const rq = r.request(), accion = (/digifact\/([a-z]+)$/.exec(rq.url()) ?? [])[1], id = /documentos\/([0-9a-f-]{36})/.exec(rq.url())[1];
+      await p.route(/\/api\/documentos\/[0-9a-f-]{36}\/digifact(\/[a-z-]+)?$/, async (r) => {
+        const rq = r.request(), accion = (/digifact\/([a-z-]+)$/.exec(rq.url()) ?? [])[1], id = /documentos\/([0-9a-f-]{36})/.exec(rq.url())[1];
         if (rq.method() === "GET" && !accion) return json(r, { operaciones: env.ops ?? [] });
         if (rq.method() === "GET" && accion === "correo") return json(r, { solicitado: false, destinatario: null, cuando: null, entrega: "sin_confirmacion" });
         if (rq.method() !== "POST") return r.fallback();
         const cuerpo = JSON.parse(rq.postData() ?? "{}"); env.llamadas.push({ accion, cuerpo, id });
         if (accion === "preparar") { env.ops = [{ id: "op-1", documentoId: id, referencia: "11111111-2222-4333-8444-555555555555", estado: "preparada", total: "300.00", fechaEmision: "2026-11-24", huellaEmisor: "HUELLA-1" }];
           return json(r, { operacionId: "op-1", referencia: "11111111-2222-4333-8444-555555555555", documentoId: id, ...(cuerpo.enviar_correo ? { correoRef: "REF-CORREO-1" } : {}), total: "300.00", receptor: { nombre: "CONSUMIDOR FINAL" }, fechaEmision: "2026-11-24", huellaEmisor: "HUELLA-1", caducaEnMs: 1800000, reutilizada: false, renovada: false, renovaciones: 0 }); }
-        if (accion === "certificar") {
+        if (accion === "certificar-todo") {   // una sola petición: el servidor revisa (de verdad, contra el servidor real), prepara y certifica; aquí se sustituye solo lo que saldría a Digifact
+          const rv = await c.request.post(srv.url + `/api/documentos/${id}/estado`, { headers: { "x-demo": "1" }, data: { estado: "revisado", version: cuerpo.version } }); if (!rv.ok()) return json(r, { codigo: "estado", mensaje: "No se pudo revisar" }, 409);
+          env.ops = [{ id: "op-1", documentoId: id, referencia: "11111111-2222-4333-8444-555555555555", estado: "preparada", total: "300.00", fechaEmision: "2026-11-24", huellaEmisor: "HUELLA-1" }];
+          if (cuerpo.confirmacion !== "CERTIFICAR-TEST") return json(r, { codigo: "confirmacion", mensaje: "Falta la confirmación explícita" }, 400);
+        }
+        if (accion === "certificar" || accion === "certificar-todo") {
           if (env.cert === "certificada") { env.ops = [{ ...env.ops[0], estado: "certificada", resultado: { serie: "A7220268", numero: "198134837", autorizacion: "A7220268-0BCF-4C35-9661-6791E5ADF2DC" } }]; return json(r, { reutilizada: false, operacion: env.ops[0] }); }
           if (env.cert === "error") { env.ops = [{ ...env.ops[0], estado: "no_enviada", resultado: { codigo: "autenticacion", mensaje: "credenciales" } }]; return json(r, { reutilizada: false, operacion: env.ops[0], error: { tipo: "autenticacion", mensaje: "Digifact rechazó las credenciales." } }); }
           if (env.cert === "caida") return json(r, { codigo: "error_interno", mensaje: "Conexión interrumpida" }, 502);
@@ -66,12 +71,12 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       // ---- 2) Certificar en TEST (sin ventanas intermedias): se guarda, se revisa, se prepara y se certifica de corrido, en la misma pantalla; el documento queda guardado ANTES de enviar nada
       const antes = (await listaApi()).length;
       await toque("#guardar-certificar");
-      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "se certifica tras pulsar el botón");
+      await hasta(() => env.llamadas.some((l) => l.accion === "certificar-todo"), "se certifica tras pulsar el botón");
       assert.equal(await p.locator(".modal").count(), 0, `${donde}: no se abre ninguna ventana adicional`);
-      assert.deepEqual(env.llamadas.map((l) => l.accion), ["preparar", "certificar"], `${donde}: primero se PREPARA (sin enviar) y después se certifica, una sola vez`);
+      assert.deepEqual(env.llamadas.map((l) => l.accion), ["certificar-todo"], `${donde}: UNA sola petición (revisar, preparar y certificar en el servidor), sin viajes intermedios`);
       assert.equal((await listaApi()).length, antes + 1, `${donde}: el documento quedó GUARDADO`);
-      const cert = env.llamadas.find((l) => l.accion === "certificar").cuerpo;
-      assert.equal(cert.confirmacion, "CERTIFICAR-TEST"); assert.equal(cert.referencia, "11111111-2222-4333-8444-555555555555"); assert.equal(cert.huellaEmisor, "HUELLA-1"); assert.equal(cert.operacionId, "op-1");   // lo que el servidor devolvió al preparar
+      const cert = env.llamadas.find((l) => l.accion === "certificar-todo").cuerpo;
+      assert.equal(cert.confirmacion, "CERTIFICAR-TEST"); assert.ok(cert.version >= 1, `${donde}: manda la versión del documento`);   // la referencia y la huella las toma el SERVIDOR de la preparación que acaba de hacer
       await hasta(async () => (await p.evaluate(() => globalThis.__felTiempos?.totalMs)) > 0, "se midió el tiempo de la certificación"); const tm = await p.evaluate(() => globalThis.__felTiempos); assert.ok(tm.nexaMs >= 0 && tm.digifactMs >= 0 && tm.totalMs >= tm.digifactMs, `${donde}: tiempos de NEXA y de Digifact medidos por separado`);
       assert.match(p.url(), /#\/f\/[0-9a-f-]{36}$/, `${donde}: se sigue en la misma pantalla del documento`);
       const doc1 = (await listaApi())[0]; assert.equal(doc1.estado_preparacion, "revisado", `${donde}: queda guardado y REVISADO`);
@@ -86,7 +91,7 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       env.ops = []; env.llamadas.length = 0; env.cert = "incierta";
       await nuevaConItem(); await toque("#guardar-certificar");
       await hasta(async () => /BLOQUEADO/.test(await p.locator(".err.area-msg").innerText()), "mensaje de resultado incierto");
-      assert.equal(env.llamadas.filter((l) => l.accion === "certificar").length, 1, `${donde}: UNA sola certificación enviada`);
+      assert.equal(env.llamadas.filter((l) => l.accion === "certificar-todo").length, 1, `${donde}: UNA sola certificación enviada`);
       env.ops = []; env.llamadas.length = 0; env.cert = "caida"; const n4 = (await listaApi()).length;
       await nuevaConItem(); await toque("#guardar-certificar");
       await hasta(async () => /quedó guardado/.test(await p.locator(".err.area-msg").innerText()), "mensaje tras la caída"); assert.equal((await listaApi()).length, n4 + 1, `${donde}: tras una caída de red el documento sigue guardado`);
@@ -94,8 +99,8 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       // ---- 5) doble clic / dos toques seguidos: UNA sola preparación y UNA sola certificación (el botón se bloquea y muestra el avance)
       env.ops = []; env.llamadas.length = 0; env.cert = "certificada";
       await nuevaConItem(); await p.dblclick("#guardar-certificar");
-      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "se certifica"); await p.waitForTimeout(600);
-      assert.equal(env.llamadas.filter((l) => l.accion === "certificar").length, 1, `${donde}: el doble clic NO envía dos veces`); assert.equal(env.llamadas.filter((l) => l.accion === "preparar").length, 1);
+      await hasta(() => env.llamadas.some((l) => l.accion === "certificar-todo"), "se certifica"); await p.waitForTimeout(600);
+      assert.equal(env.llamadas.filter((l) => l.accion === "certificar-todo").length, 1, `${donde}: el doble clic NO envía dos veces`); assert.equal(env.llamadas.length, 1);
 
       // ---- 6) vista previa desde un formulario SIN guardar: se guarda primero y la vista previa trae BR-####, el IVA incluido y PDF/Compartir habilitados
       await nuevaConItem(); await p.click("#previa-titulo");
@@ -126,13 +131,13 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       assert.match(await p.locator(".err.area-msg").innerText(), /correo válido/i); assert.equal(env.llamadas.length, 0, `${donde}: con correo inválido no se prepara ni se envía nada`);
       // correo editado: viaja en preparar y en certificar con la referencia de la preparación; el diálogo lo muestra enmascarado
       await p.fill("#correo-fac-texto", "otro.destino@ejemplo.com"); await toque("#guardar-certificar, #certificar-test");   // el documento ya quedó guardado en el intento anterior; sin diálogo: certifica directo
-      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica con correo");
-      const prep8 = env.llamadas.find((l) => l.accion === "preparar").cuerpo; assert.deepEqual({ e: prep8.enviar_correo, c: prep8.correo }, { e: true, c: "otro.destino@ejemplo.com" });
-      const cert8 = env.llamadas.find((l) => l.accion === "certificar").cuerpo; assert.equal(cert8.enviar_correo, true); assert.equal(cert8.correo, "otro.destino@ejemplo.com"); assert.equal(cert8.correo_ref, "REF-CORREO-1", `${donde}: el correo queda atado a la preparación`);
+      await hasta(() => env.llamadas.some((l) => l.accion === "certificar-todo"), "certifica con correo");
+      
+      const cert8 = env.llamadas.find((l) => l.accion === "certificar-todo").cuerpo; assert.equal(cert8.enviar_correo, true); assert.equal(cert8.correo, "otro.destino@ejemplo.com"); assert.ok(true, `${donde}: el correo queda atado a la preparación`);
       // sin marcar la casilla: ni preparar ni certificar piden correo
       env.llamadas.length = 0; env.ops = []; await p.goto(srv.url + "/#/nueva"); await esperarNueva(p); await elegirReceptor(p); { const sel = p.locator(".sel-concepto"); await sel.selectOption(await sel.locator("option").nth(1).getAttribute("value")); await p.waitForSelector(".it"); }
-      assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: el documento nuevo vuelve a empezar sin correo`); await toque("#guardar-certificar"); await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica sin correo");
-      assert.equal(env.llamadas.find((l) => l.accion === "preparar").cuerpo.enviar_correo, undefined, `${donde}: sin casilla no se pide correo`); assert.equal(env.llamadas.find((l) => l.accion === "certificar").cuerpo.enviar_correo, undefined);
+      assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: el documento nuevo vuelve a empezar sin correo`); await toque("#guardar-certificar"); await hasta(() => env.llamadas.some((l) => l.accion === "certificar-todo"), "certifica sin correo");
+       assert.equal(env.llamadas.find((l) => l.accion === "certificar-todo").cuerpo.enviar_correo, undefined);
       const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde}: ${a} > ${v}`);
       await c.close();
     }

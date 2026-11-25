@@ -15,7 +15,8 @@ type Obj = Record<string, unknown>;
 export interface CtxDigifact {
   m: string; ruta: string; a: { clave: string; id: string }; empresa: string;
   cuerpo: () => Promise<Obj>; id: (x: string) => string; json: (x: unknown, s?: number) => Response; permisos: () => Promise<string[]>;
-  detalle?: (id: string) => Promise<unknown>;   // el documento ya armado: la respuesta de «certificar» lo lleva para que la pantalla NO tenga que pedirlo de nuevo
+  detalle?: (id: string) => Promise<unknown>;
+  revisar?: (id: string, version: number) => Promise<void>;   // marca el borrador como revisado (misma regla que POST …/estado)   // el documento ya armado: la respuesta de «certificar» lo lleva para que la pantalla NO tenga que pedirlo de nuevo
 }
 const limitadores = new WeakMap<BdDemo, (empresa: string) => boolean>();   // un tope de consultas de NIT por minuto y por empresa (simulador), por base de datos
 const limitadoresCui = new WeakMap<BdDemo, { sim: (e: string) => boolean; empresa: (e: string) => boolean; global: () => boolean }>();   // consulta de CUI (dato personal): simulador 20/min por empresa; REAL 5/min por empresa + tope global
@@ -49,7 +50,7 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
 export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFelGt | undefined, consultor?: ConsultorNit, consultorCui?: ConsultorCui, politicaCorreo?: PoliticaCorreoDigifact): Promise<Response | null> {
   const { m, ruta } = c; let r: RegExpExecArray | null;
   const esNit = m === "POST" && ruta === "/api/digifact/nit", esEstado = m === "GET" && ruta === "/api/digifact/estado", esReceptor = m === "POST" && ruta === "/api/receptores/nit", esReceptorCui = m === "POST" && ruta === "/api/receptores/cui";
-  const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|conciliar|xml|pdf|correo|destinatario))?$/.exec(ruta));
+  const rd = (m === "POST" || m === "GET") && (r = /^\/api\/documentos\/([^/]+)\/digifact(?:\/(validar|preparar|certificar|certificar-todo|conciliar|xml|pdf|correo|destinatario))?$/.exec(ruta));
   const esCalentar = m === "POST" && ruta === "/api/digifact/calentar";
   if (esCalentar) {   // pide por adelantado el TOKEN de Digifact TEST (solo inicio de sesión: no envía ni consulta ningún documento) para que la primera certificación no espere ese paso
     const ctxK: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
@@ -114,6 +115,22 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       if (!v.ok) return { rechazo: c.json({ codigo: v.codigo.toLowerCase(), mensaje: v.mensaje }, v.codigo === "CORREO_INVALIDO" ? 400 : 403) };
       return { correo: x };
     };
+    if (accion === "certificar-todo") {
+      // UNA sola petición para «Certificar en TEST»: revisar (si hace falta) → preparar → certificar. Son EXACTAMENTE los mismos pasos y controles de siempre (cada uno con su permiso, su validación y su idempotencia), pero se evitan
+      // dos viajes del navegador y las lecturas repetidas. La confirmación explícita sigue siendo obligatoria; la referencia y la huella del emisor las toma el servidor de la preparación que acaba de hacer.
+      const pc = pedirCorreo(); if (pc.rechazo) return pc.rechazo;
+      if (typeof c.revisar !== "function") return null;
+      let d0 = await doc();
+      if (d0.estadoPreparacion === "borrador") {
+        if (!ctx.permisos.includes("borradores.revisar")) throw new ErrorFelGt("NO_AUTORIZADO", "Tu rol no puede marcar el documento como revisado, paso previo a certificar");
+        const v = Number(b.version); if (!Number.isInteger(v) || v < 1) throw new ErrorFelGt("ENTRADA", "Falta la versión del documento");
+        await c.revisar(docId, v); d0 = await doc();
+      }
+      const prep = await svc.preparar(ctx, d0, { correo: pc.correo });
+      const res = await svc.certificar(ctx, d0, { operacionId: prep.operacionId, confirmacion: b.confirmacion, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor, correo: pc.correo, formatos: b.formatos });
+      let actualizado: unknown; if (c.detalle) { try { actualizado = await c.detalle(docId); } catch { /* la pantalla lo pedirá como siempre */ } }
+      return c.json({ ...res, preparacion: { operacionId: prep.operacionId, referencia: prep.referencia }, ...(actualizado ? { documento_actualizado: actualizado } : {}) });
+    }
     if (accion === "validar" || accion === "preparar" || accion === "certificar") {
       const pc = pedirCorreo(); if (pc.rechazo) return pc.rechazo;
       if (accion === "validar") return c.json(await svc.validar(ctx, await doc(), { correo: pc.correo }));
@@ -126,7 +143,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
         if (!ref) return c.json({ codigo: "correo_sin_preparacion", mensaje: "Prepara de nuevo la certificación con este correo antes de certificar." }, 400);
         if (ref !== await refCorreo(String(b.operacionId ?? ""), pc.correo)) return c.json({ codigo: "correo_distinto", mensaje: "El correo no coincide con el de la preparación. Prepara de nuevo la certificación con el correo que quieres usar." }, 409);
       }
-      const res = await svc.certificar(ctx, await doc(), { operacionId: b.operacionId, confirmacion: b.confirmacion, referencia: b.referencia, huellaEmisor: b.huellaEmisor, correo: pc.correo });
+      const res = await svc.certificar(ctx, await doc(), { operacionId: b.operacionId, confirmacion: b.confirmacion, referencia: b.referencia, huellaEmisor: b.huellaEmisor, correo: pc.correo, formatos: b.formatos });
       let actualizado: unknown; if (c.detalle) { try { actualizado = await c.detalle(docId); } catch { /* la pantalla lo pedirá como siempre */ } }
       return c.json(actualizado ? { ...res, documento_actualizado: actualizado } : res);
     }

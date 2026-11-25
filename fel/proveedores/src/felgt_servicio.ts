@@ -43,7 +43,7 @@ export type EstadoOpGt = "preparada" | "enviando" | "certificada" | "rechazada" 
 export interface OperacionGt {
   id: string; empresaId: string; documentoId: string; referencia: string; hash: string; huellaEmisor: string; fechaEmision: string; establecimiento: number; total: string;
   estado: EstadoOpGt; creada: number; actualizada: number; actorId: string; intentoDelDocumento: number; intentosConciliacion: number; /** veces que se renovó la vigencia de la preparación (0 si nunca) */ renovaciones?: number;
-  resultado?: { autorizacion?: string; serie?: string; numero?: string; fechaCertificacion?: string; codigo?: string; mensaje?: string; motivoDesconocido?: string; fechaReporte?: string };
+  resultado?: { autorizacion?: string; serie?: string; numero?: string; fechaCertificacion?: string; codigo?: string; mensaje?: string; motivoDesconocido?: string; fechaReporte?: string; fechaReporteFin?: string };
 }
 export interface AlmacenGt {
   /** ¿Sobrevive a un reinicio? Sin esto no se envía nada real. */
@@ -293,7 +293,7 @@ export class ServicioFelGt {
   }
 
   /* ---------------------------------------------------------------- 4. certificación en TEST (confirmación manual) */
-  async certificar(ctx: ContextoFel, doc: DocumentoFel, c: { operacionId: unknown; confirmacion: unknown; referencia: unknown; huellaEmisor: unknown; correo?: unknown }) {
+  async certificar(ctx: ContextoFel, doc: DocumentoFel, c: { operacionId: unknown; confirmacion: unknown; referencia: unknown; huellaEmisor: unknown; correo?: unknown; formatos?: unknown }) {
     this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc); this.#exigirTipoCertificable(doc);
     if (typeof c.operacionId !== "string") throw new ErrorFelGt("ENTRADA", "Falta la operación preparada");
     const op0 = await this.d.almacen.obtener(ctx.empresaId, c.operacionId); if (!op0 || op0.documentoId !== doc.id) throw new ErrorFelGt("NO_ENCONTRADO", "Operación no encontrada");
@@ -320,12 +320,12 @@ export class ServicioFelGt {
     // CHEQUEO PREVIO (solo lectura): Digifact NO deduplica por referencia, y la base de NEXA puede haber perdido la memoria de lo enviado (restauración de un respaldo, reversión). La referencia es DETERMINISTA, así que si Digifact ya la
     // tiene, NO se envía: la operación queda «desconocida» y una persona la concilia (se adopta el resultado que Digifact ya tiene). Si no se puede comprobar, tampoco se envía (falla cerrado; no hay reintento automático).
     const t0Digifact = performance.now();   // medición: todo lo que espera a Digifact (chequeo previo + envío); el resto es de NEXA
-    const pv = await this.#prevuelo(cliente, op0); const prevueloMs = Math.round(performance.now() - t0Digifact);
+    const pv = await this.#prevuelo(cliente, op0, !!doc.fechaEmisionPrevista); const prevueloMs = Math.round(performance.now() - t0Digifact);
     if (pv.tipo === "indeterminado") throw new ErrorFelGt("PREVUELO", "No se pudo verificar en Digifact que esta referencia sea nueva: no se envió nada. Una persona decide cuándo repetirlo (no hay reintentos automáticos).");
     if (pv.tipo === "encontrado") {
       const w = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["preparada"], { estado: "enviando", actualizada: this.#ahora().getTime() });
       if (!w) { const ya = await this.d.almacen.obtener(ctx.empresaId, op0.id); return { reutilizada: true as const, operacion: this.#publica(ya ?? op0) }; }
-      const n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", resultado: { motivoDesconocido: "ya_existia_en_digifact", fechaReporte: pv.fecha }, actualizada: this.#ahora().getTime() });
+      const n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", resultado: { motivoDesconocido: "ya_existia_en_digifact", fechaReporte: pv.fecha, fechaReporteFin: pv.fechaFin }, actualizada: this.#ahora().getTime() });
       await this.#aud("digifact_test.ya_existia_en_digifact", ctx, { operacion: op0.id, referencia: op0.referencia });
       return { reutilizada: false as const, operacion: this.#publica(n ?? op0), aviso: "Digifact YA tiene un documento con esta referencia: NO se envió nada. Usa «Consultar a Digifact» para registrar ese resultado (sin reenviar)." };
     }
@@ -340,8 +340,10 @@ export class ServicioFelGt {
     // «envío SOLICITADO a Digifact»: el correo viaja en el NUC y lo envía Digifact al certificar. NEXA no recibe confirmación de entrega y por eso nunca registra «entregado».
     if (correo) await this.#aud("digifact_test.correo_solicitado", ctx, { documento: doc.id, operacion: op0.id, referencia: op0.referencia, destinatario: enmascararCorreo(correo) });
 
+    // formatos que Digifact devuelve en la MISMA respuesta: siempre el XML (el documento fiscal); el PDF de Digifact es opcional (si no se pide, se recupera de Digifact al descargarlo: ya es un caso previsto y reparable)
+    const formatos: ("XML" | "PDF")[] = Array.isArray(c.formatos) && c.formatos.length && c.formatos.every((x) => x === "XML" || x === "PDF") && c.formatos.includes("XML") ? [...new Set(c.formatos as ("XML" | "PDF")[])] : ["XML", "PDF"];
     let res;
-    try { res = await cliente.certificar(nuc, { referencia: op0.referencia, formatos: ["XML", "PDF"] }); }
+    try { res = await cliente.certificar(nuc, { referencia: op0.referencia, formatos }); }
     catch (e) {
       if (e instanceof ErrorDigifact && ["autenticacion", "no_autorizado", "no_permitido", "solicitud"].includes(e.tipo)) {   // rechazada ANTES de procesar: no salió ningún documento
         const n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "no_enviada", resultado: { codigo: e.tipo, mensaje: e.message.slice(0, 200) }, actualizada: this.#ahora().getTime() });
@@ -379,7 +381,7 @@ export class ServicioFelGt {
     }
     if (op.estado !== "desconocida") return { resultado: "sin_cambios" as const, operacion: this.#publica(op), ...(op.estado === "certificada" ? await this.#sellar(ctx, op) : {}) };
     const { cliente } = this.#canal(ctx);
-    let r; try { r = await cliente.conciliarPorReferencia(op.resultado?.fechaReporte ?? op.fechaEmision.slice(0, 10), op.referencia, op.establecimiento); } catch (e) { throw this.#traducir(e); }
+    let r; try { r = await cliente.conciliarPorReferencia(op.resultado?.fechaReporte ?? op.fechaEmision.slice(0, 10), op.referencia, op.establecimiento, op.resultado?.fechaReporteFin); } catch (e) { throw this.#traducir(e); }
     if (r.tipo === "encontrado") {
       if (r.documento.referenciaInterna.toUpperCase() !== op.referencia.toUpperCase()) throw new ErrorFelGt("ESTADO", "El reporte devolvió otra referencia: no se concilia");
       let n: OperacionGt | null;
@@ -395,17 +397,20 @@ export class ServicioFelGt {
   }
 
   /** Busca la referencia en el reporte de acuses de Digifact (solo lectura), del día de la emisión hacia atrás. «indeterminado» ante cualquier duda: nunca se asume que no existe. */
-  async #prevuelo(cliente: ClienteGt, op: OperacionGt): Promise<{ tipo: "no_encontrado" } | { tipo: "encontrado"; fecha: string } | { tipo: "indeterminado" }> {
+  async #prevuelo(cliente: ClienteGt, op: OperacionGt, fechaFijada: boolean): Promise<{ tipo: "no_encontrado" } | { tipo: "encontrado"; fecha: string; fechaFin: string } | { tipo: "indeterminado" }> {
     const dias = this.d.prevueloDias ?? 7; if (dias <= 0) return { tipo: "no_encontrado" };
-    const base = new Date(op.fechaEmision.slice(0, 10) + "T12:00:00Z");
-    // Las consultas de cada día son de SOLO LECTURA e independientes: se hacen TODAS A LA VEZ (antes iban una tras otra: hasta 8 viajes seguidos a Digifact, ≈3 s medidos). Para enviar hace falta que TODAS respondan
-    // «no existe»: si alguna lo encuentra o no se puede comprobar, no se envía nada (igual de estricto que antes; solo cambia que no se espera a cada día por turno).
-    const rs = await Promise.all(Array.from({ length: dias + 1 }, async (_, i) => {
-      const f = new Date(base.getTime() - i * 86_400_000).toISOString().slice(0, 10);
-      try { return { f, r: await cliente.conciliarPorReferencia(f, op.referencia, op.establecimiento) }; } catch { return { f, r: null }; }
-    }));
+    const dia = (f: Date) => f.toISOString().slice(0, 10), base = new Date(op.fechaEmision.slice(0, 10) + "T12:00:00Z");
+    // Qué días se miran. Con la fecha de emisión ELEGIDA, la referencia ya depende de ella (entra en la huella): un envío anterior de esta misma referencia tuvo ESA fecha de emisión y se certificó entre ella y hoy, así que se miran
+    // desde la fecha hasta hoy (antes se miraba hacia atrás, que con esta fecha no encontraba nada y dejaba ciegos los días posteriores). Sin fecha elegida (la referencia no depende de ella) se conserva la ventana anterior: la emisión y hacia atrás.
+    const hoy = new Date(dia(this.#ahora()) + "T12:00:00Z"), fechas: string[] = [];
+    if (fechaFijada) { for (let t = base.getTime(); t <= Math.max(base.getTime(), hoy.getTime()) && fechas.length <= 7; t += 86_400_000) fechas.push(dia(new Date(t))); }
+    else { for (let i = dias; i >= 0; i--) fechas.push(dia(new Date(base.getTime() - i * 86_400_000))); }
+    // Las consultas son de SOLO LECTURA e independientes: se agrupan en rangos de hasta 3 días (regla de Digifact: 0 a 2 días) y se hacen TODAS A LA VEZ. Para enviar hace falta que TODAS respondan «no existe»:
+    // si alguna lo encuentra o no se puede comprobar, no se envía nada (igual de estricto que antes).
+    const rangos: [string, string][] = []; for (let k = 0; k < fechas.length; k += 3) rangos.push([fechas[k], fechas[Math.min(k + 2, fechas.length - 1)]]);
+    const rs = await Promise.all(rangos.map(async ([d, h]) => { try { return { d, h, r: await cliente.conciliarPorReferencia(d, op.referencia, op.establecimiento, h) }; } catch { return { d, h, r: null }; } }));
     const hallado = rs.find((x) => x.r?.tipo === "encontrado");
-    if (hallado && hallado.r?.tipo === "encontrado") return hallado.r.documento.referenciaInterna.toUpperCase() === op.referencia.toUpperCase() ? { tipo: "encontrado", fecha: hallado.f } : { tipo: "indeterminado" };
+    if (hallado && hallado.r?.tipo === "encontrado") return hallado.r.documento.referenciaInterna.toUpperCase() === op.referencia.toUpperCase() ? { tipo: "encontrado", fecha: hallado.d, fechaFin: hallado.h } : { tipo: "indeterminado" };
     if (rs.some((x) => !x.r || x.r.tipo === "indeterminado")) return { tipo: "indeterminado" };
     return { tipo: "no_encontrado" };
   }

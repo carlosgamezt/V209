@@ -49,22 +49,24 @@ if (!cliente || !estab) { console.error("Sin cliente o establecimiento para la p
 const primero = (Deno.env.get("FEL_MEDIR_DESTINATARIO") ?? "").trim();
 const destinatario = primero ? (primero.startsWith("@") ? `prueba.rendimiento${primero}` : primero) : "";
 console.log(`escenario con correo: ${destinatario ? "destinatario autorizado disponible" : "SIN destinatario autorizado (no se mide)"}`);
-const res: Record<string, { total: number[]; cert: number[]; dfx: number[]; prev: number[]; nexa: number[]; envio: number[]; pdf: number[] }> = { "sin correo": { total: [], cert: [], dfx: [], prev: [], nexa: [], envio: [], pdf: [] }, "con correo": { total: [], cert: [], dfx: [], prev: [], nexa: [], envio: [], pdf: [] } };
-const orden = destinatario ? ["sin correo", "con correo", "sin correo", "con correo", "sin correo", "con correo"] : ["sin correo", "sin correo", "sin correo"];
+type Esc = "sin correo" | "XML solo" | "con correo";
+const res: Record<string, { total: number[]; todo: number[]; dfx: number[]; prev: number[]; envio: number[]; nexa: number[]; pdf: number[] }> = {};
+for (const e of ["sin correo", "XML solo", "con correo"]) res[e] = { total: [], todo: [], dfx: [], prev: [], envio: [], nexa: [], pdf: [] };
+const orden: Esc[] = destinatario ? ["sin correo", "XML solo", "con correo", "sin correo", "XML solo", "con correo", "sin correo", "XML solo", "con correo"] : ["sin correo", "XML solo", "sin correo", "XML solo", "sin correo", "XML solo"];
 let n = 0;
 for (const esc of orden) {
-  n++; console.log(`-- ciclo ${n} (${esc}) --`); let acum = 0; const conCorreo = esc === "con correo", extra = conCorreo ? { enviar_correo: true, correo: destinatario } : {};
+  n++; console.log(`-- ciclo ${n} (${esc}) · guardar + «certificar-todo» (revisar, preparar y certificar en UNA petición) --`); let acum = 0;
+  const extra: J = esc === "con correo" ? { enviar_correo: true, correo: destinatario } : esc === "XML solo" ? { formatos: ["XML"] } : {};
   const reg = (nombre: string, m: Medida) => { console.log(fila(nombre, m)); acum += m.ms; };
   const d = await ll("POST", "/api/documentos", { cliente_id: cliente.id, establecimiento_id: estab.id, fecha: hoy, observaciones: `MEDICION RENDIMIENTO ${n}`, lineas: [{ descripcion: "Servicio de prueba TEST (medicion)", cantidad: "1", precio_unitario: "100.00" }] }); reg("POST /api/documentos (guardar)", d); if (d.status !== 200) { console.error("No se pudo guardar el borrador."); Deno.exit(1); }
   const id = d.json.documento.id as string;
-  reg("POST …/estado (revisado)", await ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version }));
-  const prep = await ll("POST", `/api/documentos/${id}/digifact/preparar`, extra); reg("POST …/digifact/preparar", prep);
-  const cer = await ll("POST", `/api/documentos/${id}/digifact/certificar`, { operacionId: prep.json.operacionId, confirmacion: "CERTIFICAR-TEST", referencia: prep.json.referencia, huellaEmisor: prep.json.huellaEmisor, ...(conCorreo ? { ...extra, correo_ref: prep.json.correoRef } : {}) }); reg("POST …/digifact/certificar", cer);
-  const estado = cer.json.operacion?.estado ?? "?"; console.log(`      certificar: estado ${estado}, Digifact (chequeo previo + envío) ${cer.json.tiempoDigifactMs ?? "–"} ms (chequeo previo ${cer.json.prevueloMs ?? "–"} ms), documento_actualizado ${cer.json.documento_actualizado ? "sí" : "no"}`);
+  const cer = await ll("POST", `/api/documentos/${id}/digifact/certificar-todo`, { version: d.json.documento.version, confirmacion: "CERTIFICAR-TEST", ...extra }); reg("POST …/digifact/certificar-todo", cer);
+  const estado = cer.json.operacion?.estado ?? "?"; const dfx = Number(cer.json.tiempoDigifactMs ?? 0);
+  console.log(`      certificar-todo: HTTP ${cer.status}, estado ${estado}, Digifact (chequeo previo + envío) ${cer.json.tiempoDigifactMs ?? "–"} ms (chequeo previo ${cer.json.prevueloMs ?? "–"} ms), artefactos ${cer.json.artefactos ?? "–"}, documento_actualizado ${cer.json.documento_actualizado ? "sí" : "no"}`);
   if (estado !== "certificada") { console.log("      (no certificada: se descarta del resumen)"); continue; }
   const pdf = await ll("GET", `/api/documentos/${id}/pdf-demo?formato=carta`); console.log(fila("GET …/pdf-demo (listo para imprimir)", pdf));
-  const r = res[esc]; r.total.push(acum); r.cert.push(cer.ms); r.dfx.push(Number(cer.json.tiempoDigifactMs ?? 0)); r.prev.push(Number(cer.json.prevueloMs ?? 0)); r.envio.push(cer.dfxEnvio ?? 0); r.nexa.push(acum - Number(cer.json.tiempoDigifactMs ?? 0)); r.pdf.push(pdf.ms);
-  console.log(`      CICLO ${n} (${esc}): total ${f(acum)} ms · Digifact ${f(Number(cer.json.tiempoDigifactMs ?? 0))} ms · NEXA/red ${f(acum - Number(cer.json.tiempoDigifactMs ?? 0))} ms`);
+  const r = res[esc]; r.total.push(acum); r.todo.push(cer.ms); r.dfx.push(dfx); r.prev.push(Number(cer.json.prevueloMs ?? 0)); r.envio.push(cer.dfxEnvio ?? 0); r.nexa.push(acum - dfx); r.pdf.push(pdf.ms);
+  console.log(`      CICLO ${n} (${esc}): factura certificada a los ${f(acum)} ms (guardar + certificar-todo) · Digifact ${f(dfx)} ms · NEXA/red ${f(acum - dfx)} ms`);
 }
-console.log("\nRESUMEN COMPARATIVO (mediana; mín–máx) · solo facturas certificadas");
-for (const [esc, r] of Object.entries(res)) { if (!r.total.length) { console.log(`  ${esc}: sin ciclos certificados`); continue; } const mm = (v: number[]) => `${f(mediana(v))} (${f(Math.min(...v))}–${f(Math.max(...v))})`; console.log(`  ${esc} (${r.total.length}): ciclo ${mm(r.total)} · certificar HTTP ${mm(r.cert)} · Digifact total ${mm(r.dfx)} (chequeo previo ${mm(r.prev)}, llamada de envío ${mm(r.envio)}) · NEXA/red ${mm(r.nexa)} · PDF listo ${mm(r.pdf)}`); }
+console.log("\nRESUMEN COMPARATIVO (mediana; mín–máx) · solo facturas certificadas · «certificada en» = guardar + certificar-todo");
+for (const [esc, r] of Object.entries(res)) { if (!r.total.length) { console.log(`  ${esc}: sin ciclos certificados`); continue; } const mm = (v: number[]) => `${f(mediana(v))} (${f(Math.min(...v))}–${f(Math.max(...v))})`; console.log(`  ${esc} (${r.total.length}): certificada en ${mm(r.total)} · petición certificar-todo ${mm(r.todo)} · Digifact ${mm(r.dfx)} (chequeo previo ${mm(r.prev)}, llamada de envío ${mm(r.envio)}) · NEXA/red ${mm(r.nexa)} · PDF listo ${mm(r.pdf)}`); }

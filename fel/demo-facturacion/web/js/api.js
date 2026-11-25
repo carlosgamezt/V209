@@ -90,6 +90,7 @@ export const api = {
   // «extra» = { enviar_correo: true, correo } solo si la persona marcó «Enviar factura por correo» (lo envía DIGIFACT al certificar)
   digifactValidar: (id, extra = {}) => llamar("POST", `/api/documentos/${id}/digifact/validar`, extra),
   digifactPreparar: (id, extra = {}) => llamar("POST", `/api/documentos/${id}/digifact/preparar`, extra),
+  digifactCertificarTodo: (id, c) => llamar("POST", `/api/documentos/${id}/digifact/certificar-todo`, c),
   digifactCertificar: (id, c, extra = {}) => llamar("POST", `/api/documentos/${id}/digifact/certificar`, { ...c, ...extra }),
   correoDeDigifact: (id) => llamar("GET", `/api/documentos/${id}/digifact/correo`),
   // el correo REGISTRADO del cliente de este documento (solo de la empresa de la sesión): prellena la casilla «Enviar factura por correo»

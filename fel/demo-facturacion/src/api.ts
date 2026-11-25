@@ -413,7 +413,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       try { await o.solicitar({ actor: a.id, empresa: emp(), documento: docId, clave: texto(b.clave, 16, 80, "Clave"), canal: await canalBase() }); } catch (e) { if (e instanceof ProcesoCaido) caido = true; else throw e; }
       return json({ caido, punto, ...(await detalle(docId)) });
     }
-    if (pr) { const x = await pr.rutasEmpresa({ req, url, a, ruta, m, cuerpo, id, json, canalDe, detalle, permisos: () => permisosDe(a) }); if (x) return x; }
+    if (pr) { const x = await pr.rutasEmpresa({ req, url, a, ruta, m, cuerpo, id, json, canalDe, detalle, permisos: () => permisosDe(a), revisar: async (docId, version) => { await exigirFechaVigente(docId); await bd.rpc("fel_op_documento_preparacion", { p_actor: a.id, p_empresa: emp(), p_id: docId, p_nuevo: "revisado", p_motivo: null, p_version: version }); } }); if (x) return x; }
     throw new ErrorHttp(404, "Ruta no encontrada", "no_encontrado");
   }
 

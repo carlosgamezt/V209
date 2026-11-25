@@ -277,10 +277,12 @@ export class DigifactGt {
    * CONCILIACIÓN por referencia interna con el reporte diario de acuses (SHARED_GETREPORTDAILYACUSES; la guía oficial dice que por ahora solo existe en TEST).
    * «no_encontrado» NO prueba que no se certificó (puede haber demora): el orquestador debe esperar y repetir la consulta antes de permitir un reenvío.
    */
-  async conciliarPorReferencia(fecha: string, referenciaInterna: string, establecimiento?: number): Promise<ResultadoConciliacionGt> {
-    if (!FECHA_DIA.test(fecha)) throw new ErrorDigifact("solicitud", "La fecha debe ser AAAA-MM-DD");
+  /** Busca la referencia en el reporte de acuses de UN día, o de un RANGO de 0 a 2 días (`hasta`, regla de Digifact): una sola consulta cubre hasta tres días. «indeterminado» ante cualquier duda. */
+  async conciliarPorReferencia(fecha: string, referenciaInterna: string, establecimiento?: number, hasta?: string): Promise<ResultadoConciliacionGt> {
+    if (!FECHA_DIA.test(fecha) || (hasta !== undefined && !FECHA_DIA.test(hasta))) throw new ErrorDigifact("solicitud", "La fecha debe ser AAAA-MM-DD");
+    if (hasta !== undefined && (Date.parse(hasta) < Date.parse(fecha) || Date.parse(hasta) - Date.parse(fecha) > 2 * 86_400_000)) throw new ErrorDigifact("solicitud", "El rango debe ir de 0 a 2 días");
     if (!UUID.test(referenciaInterna)) throw new ErrorDigifact("solicitud", "La referencia interna debe ser un GUID de 36 caracteres");
-    const filtros = `FECHA|${fecha}` + (establecimiento !== undefined ? `|ESTABLECIMIENTO|${Math.trunc(establecimiento)}` : "");
+    const filtros = `FECHA|${fecha}` + (hasta !== undefined && hasta !== fecha ? `|FECHAFIN|${hasta}` : "") + (establecimiento !== undefined ? `|ESTABLECIMIENTO|${Math.trunc(establecimiento)}` : "");
     let j: Record<string, unknown> | null;
     try { ({ j } = await this.#shared("SHARED_GETREPORTDAILYACUSES", filtros)); }
     catch (e) { return { tipo: "indeterminado", motivo: e instanceof ErrorDigifact ? e.message : "fallo desconocido" }; }

@@ -23,7 +23,7 @@ const doc = (empresaId = EMPRESA_A, id = "d1", extra: Partial<DocumentoFel> = {}
 const referenciaEnviada = (p: PeticionHttp) => { const n = JSON.parse(p.cuerpo!); return n.AdditionalDocumentInfo.AdditionalInfo[0].Code as string; };
 
 type Manejador = (p: PeticionHttp, envios: number) => RespuestaHttp | Promise<RespuestaHttp>;
-function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fecha?: string) => RespuestaHttp; prevueloDias?: number; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; tipoTest?: (codigo: string) => boolean; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
+function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fecha?: string, fin?: string) => RespuestaHttp; prevueloDias?: number; persistente?: boolean; autorizada?: boolean; sinCanalB?: boolean; ahora?: () => Date; tipoTest?: (codigo: string) => boolean; documento?: (p: PeticionHttp) => RespuestaHttp; almacen?: AlmacenGtMemoria } = {}) {
   const llamadas: PeticionHttp[] = []; let envios = 0; let ultimaReferencia: string | null = null;
   const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
     llamadas.push(p);
@@ -33,7 +33,7 @@ function mundo(opc: { certificar?: Manejador; reporte?: (ref: string | null, fec
     if (p.ruta.startsWith("/Shared")) {
       const q = new URL("https://x" + p.ruta).searchParams;
       if (q.get("DATA1") === "SHARED_GETINFONITcom") return ok({ RESPONSE: [{ NIT: "44653948", NOMBRE: "EMPRESA DE PRUEBA, S.A." }] });
-      if (q.get("DATA1") === "SHARED_GETREPORTDAILYACUSES") { const fecha = /FECHA\|(\d{4}-\d{2}-\d{2})/.exec(decodeURIComponent(p.ruta))?.[1]; return (opc.reporte ?? (() => ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] })))(ultimaReferencia, fecha); }
+      if (q.get("DATA1") === "SHARED_GETREPORTDAILYACUSES") { const ruta = decodeURIComponent(p.ruta), fecha = /FECHA\|(\d{4}-\d{2}-\d{2})/.exec(ruta)?.[1], fin = /FECHAFIN\|(\d{4}-\d{2}-\d{2})/.exec(ruta)?.[1] ?? fecha; return (opc.reporte ?? (() => ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] })))(ultimaReferencia, fecha, fin); }
     }
     return ok({}, 404);
   };
@@ -356,25 +356,25 @@ Deno.test("restauración de un respaldo (la base perdió la memoria de lo enviad
 
 Deno.test("chequeo previo: la referencia se busca en la fecha de emisión y hacia atrás; hallada en un día anterior bloquea el envío y se concilia en ESE día", async () => {
   let dia = "2026-11-13", ref: string | null = null;   // AHORA es 2026-11-16: tres días antes
-  const m = mundo({ reporte: (_r, fecha) => (ref && fecha === dia ? reporteCon(ref) : reporteVacio()) });
+  const m = mundo({ reporte: (_r, fecha, fin) => (ref && fecha! <= dia && dia <= fin! ? reporteCon(ref) : reporteVacio()) });
   const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia); ref = p.referencia;
   const r = await m.s.certificar(ctx(), doc(), confirmar(p)); assert.equal(r.operacion.estado, "desconocida"); assert.equal(m.envios(), 0); assert.equal(r.operacion.resultado?.motivoDesconocido, "ya_existia_en_digifact");
   assert.equal((await m.s.conciliar(ctx(), p.operacionId)).resultado, "certificada", "la conciliación consulta el día en que se halló");
   // fuera de la ventana (9 días antes) NO se ve con 7 días: ese es el límite del chequeo (documentado); con una ventana mayor sí
-  dia = "2026-11-07"; const m2 = mundo({ reporte: (_r, fecha) => (ref && fecha === dia ? reporteCon(ref) : reporteVacio()) });
+  dia = "2026-11-07"; const m2 = mundo({ reporte: (_r, fecha, fin) => (ref && fecha! <= dia && dia <= fin! ? reporteCon(ref) : reporteVacio()) });
   const p2 = await m2.s.preparar(ctx(), doc()); ref = p2.referencia; m2.autorizar(p2.referencia); await m2.s.certificar(ctx(), doc(), confirmar(p2)); assert.equal(m2.envios(), 1, "con la ventana por defecto (7 días) no se alcanza a ver un día 9 días atrás");
-  const m3 = mundo({ prevueloDias: 10, reporte: (_r, fecha) => (ref && fecha === dia ? reporteCon(ref) : reporteVacio()) });
+  const m3 = mundo({ prevueloDias: 10, reporte: (_r, fecha, fin) => (ref && fecha! <= dia && dia <= fin! ? reporteCon(ref) : reporteVacio()) });
   const p3 = await m3.s.preparar(ctx(), doc()); ref = p3.referencia; m3.autorizar(p3.referencia); const r3 = await m3.s.certificar(ctx(), doc(), confirmar(p3)); assert.equal(m3.envios(), 0); assert.equal(r3.operacion.estado, "desconocida");
 });
 
-Deno.test("chequeo previo: sin referencia en Digifact se envía UNA vez (8 consultas de solo lectura antes); con una duda (reporte caído o ilegible) en cualquier día NO se envía, no se reintenta solo y la operación sigue «preparada»", async () => {
+Deno.test("chequeo previo: sin referencia en Digifact se envía UNA vez (3 consultas de rango, de solo lectura, antes); con una duda (reporte caído o ilegible) en cualquier día NO se envía, no se reintenta solo y la operación sigue «preparada»", async () => {
   const ok1 = mundo(); const p = await ok1.s.preparar(ctx(), doc()); ok1.autorizar(p.referencia); await ok1.s.certificar(ctx(), doc(), confirmar(p));
-  assert.equal(ok1.envios(), 1); assert.equal(reportes(ok1), 8, "el día de la emisión y 7 hacia atrás, todos de solo lectura");
+  assert.equal(ok1.envios(), 1); assert.equal(reportes(ok1), 3, "sin fecha elegida: la emisión y 7 días hacia atrás (8 días) en 3 consultas de rango, todas de solo lectura");
   for (const [nombre, falla] of [["reporte caído (500)", () => ok({}, 500)], ["reporte ilegible", () => ({ estado: 200, cuerpo: "<html>" })], ["reporte sin filas ni respuesta clara", () => ok({ REQUEST_DATA: [{}], RESPONSE: [] })]] as const) {
     let sano = false; const m = mundo({ reporte: () => (sano ? reporteVacio() : falla()) });
     const q = await m.s.preparar(ctx(), doc()); m.autorizar(q.referencia);
     await rechaza(m.s.certificar(ctx(), doc(), confirmar(q)), "PREVUELO");
-    assert.equal(m.envios(), 0, `${nombre}: no se envió nada`); assert.equal(reportes(m), 8, `${nombre}: una consulta por día (8, todas a la vez) y ninguna repetida: sin reintento automático`);
+    assert.equal(m.envios(), 0, `${nombre}: no se envió nada`); assert.equal(reportes(m), 3, `${nombre}: una consulta por rango (3, todas a la vez) y ninguna repetida: sin reintento automático`);
     assert.equal((await m.s.estadoDocumento(ctx(), "d1"))[0].estado, "preparada", `${nombre}: la operación sigue preparada (no bloquea ni queda «enviando»)`);
     sano = true; const r = await m.s.certificar(ctx(), doc(), confirmar(q)); assert.equal(r.operacion.estado, "certificada"); assert.equal(m.envios(), 1, `${nombre}: una persona lo repite y entonces se envía UNA vez`);
   }
@@ -571,4 +571,32 @@ Deno.test("NCRE en TEST (cuando el despliegue la habilita): se prepara y se cert
   await rechaza(todo.s.preparar(ctx(), docTipo("FCAM")), "TIPO_NO_HABILITADO"); await rechaza(todo.s.preparar(ctx(), docTipo("FPEQ")), "TIPO_NO_HABILITADO");
   // sin la autorización del ciclo de pruebas tampoco se certifica una NCRE
   const sin = mundo({ tipoTest: (c) => c === "NCRE" }); const ps = await sin.s.preparar(ctx(), d); await rechaza(sin.s.certificar(ctx(), d, confirmar(ps)), "PRUEBA_NO_AUTORIZADA"); assert.equal(sin.envios(), 0);
+});
+
+Deno.test("chequeo previo con la fecha de emisión ELEGIDA: se miran los días desde esa fecha hasta hoy (la referencia ya depende de la fecha), en el mínimo de consultas de rango; hallada un día posterior bloquea y se concilia en ese rango", async () => {
+  // fecha de hoy: UNA sola consulta de solo lectura
+  const hoy = mundo(); const dh = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: "2026-11-16" });
+  const ph = await hoy.s.preparar(ctx(), dh); hoy.autorizar(ph.referencia); const rh = await hoy.s.certificar(ctx(), dh, confirmar(ph));
+  assert.equal(rh.operacion.estado, "certificada"); assert.equal(hoy.envios(), 1); assert.equal(reportes(hoy), 1, "fecha de hoy: una consulta");
+  // fecha de hace 3 días: del 13 al 16 (4 días) = 2 consultas de rango (13-15 y 16)
+  let ref: string | null = null, dia = "2026-11-16";
+  const m = mundo({ reporte: (_r, fecha, fin) => (ref && fecha! <= dia && dia <= fin! ? reporteCon(ref) : reporteVacio()) }); const d3 = doc(EMPRESA_A, "d1", { fechaEmisionPrevista: "2026-11-13" });
+  const p = await m.s.preparar(ctx(), d3); m.autorizar(p.referencia); ref = p.referencia;   // Digifact YA la tiene, certificada el 16 (después de la fecha de emisión)
+  const r = await m.s.certificar(ctx(), d3, confirmar(p)); assert.equal(reportes(m), 2, "dos consultas de rango, a la vez"); assert.equal(m.envios(), 0, "NO se envió: estaba en un día posterior a la emisión, que el chequeo anterior (hacia atrás) no veía");
+  assert.equal(r.operacion.estado, "desconocida"); assert.equal(r.operacion.resultado?.motivoDesconocido, "ya_existia_en_digifact");
+  assert.equal((await m.s.conciliar(ctx(), p.operacionId)).resultado, "certificada", "se concilia con el rango donde se halló"); assert.equal(m.envios(), 0);
+  // si no se puede comprobar alguno de los rangos: no se envía y la operación sigue preparada
+  const q = mundo({ reporte: (_r, fecha) => (fecha === "2026-11-16" ? ok({}, 500) : reporteVacio()) }); const pq = await q.s.preparar(ctx(), d3); q.autorizar(pq.referencia);
+  await rechaza(q.s.certificar(ctx(), d3, confirmar(pq)), "PREVUELO"); assert.equal(q.envios(), 0); assert.equal((await q.s.estadoDocumento(ctx(), "d1"))[0].estado, "preparada");
+});
+
+Deno.test("concurrencia: dos certificaciones simultáneas de la misma operación envían UNA sola vez; con resultado incierto, repetir no reenvía y solo concilia", async () => {
+  const m = mundo(); const p = await m.s.preparar(ctx(), doc()); m.autorizar(p.referencia);
+  const rs = await Promise.allSettled([m.s.certificar(ctx(), doc(), confirmar(p)), m.s.certificar(ctx(), doc(), confirmar(p)), m.s.certificar(ctx(), doc(), confirmar(p))]);
+  assert.equal(m.envios(), 1, "un solo NUC enviado pese a tres solicitudes a la vez"); assert.ok(rs.some((x) => x.status === "fulfilled" && x.value.operacion.estado === "certificada"));
+  // resultado incierto (corte tras enviar): jamás se reenvía; repetir devuelve lo mismo
+  const u = mundo({ certificar: () => { throw new Error("corte"); } }); const pu = await u.s.preparar(ctx(), doc()); u.autorizar(pu.referencia);
+  const a = await Promise.allSettled([u.s.certificar(ctx(), doc(), confirmar(pu)), u.s.certificar(ctx(), doc(), confirmar(pu))]); assert.equal(u.envios(), 1);
+  assert.ok(a.some((x) => x.status === "fulfilled" && x.value.operacion.estado === "desconocida"));
+  assert.equal((await u.s.certificar(ctx(), doc(), confirmar(pu))).reutilizada, true); assert.equal(u.envios(), 1, "repetir NO reenvía");
 });
