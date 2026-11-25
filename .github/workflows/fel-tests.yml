@@ -134,7 +134,7 @@ jobs:
         run: node fel/demo-facturacion/tests/e2e_rediseno.cjs
       - name: "Tipos de documento (DTE): catálogo = base, notas con origen certificado, recibo, habilitación por empresa, certificación de tipos nuevos BLOQUEADA, selector compacto y configuración (teléfono y PC; simulado y local)"
         run: |
-          deno test -A fel/demo-facturacion/tests/catalogo_migracion_test.ts fel/demo-facturacion/tests/tipos_documento_api_test.ts fel/demo-facturacion/tests/lista_paginada_api_test.ts fel/demo-facturacion/tests/cache_cliente_test.ts
+          deno test -A fel/demo-facturacion/tests/catalogo_migracion_test.ts fel/demo-facturacion/tests/tipos_documento_api_test.ts fel/demo-facturacion/tests/lista_paginada_api_test.ts fel/demo-facturacion/tests/cache_cliente_test.ts fel/demo-facturacion/tests/pdf_matriz_api_test.ts fel/demo-facturacion/tests/seguridad_api_test.ts
           node fel/demo-facturacion/tests/e2e_tipos.cjs
       - name: "Fecha de emisión (hasta 5 días calendario atrás, zona de Guatemala, validación en el servidor, auditoría, inmutabilidad; teléfono y PC; simulado y local)"
         run: |
