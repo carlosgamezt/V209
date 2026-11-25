@@ -1,8 +1,9 @@
-# Procedimiento · respaldo persistente, cifrado y recuperable ANTES de la etapa 4 (PREPARADO; no ejecutado)
+# Procedimiento · respaldo persistente, cifrado y recuperable ANTES de la etapa 4
 
-Estado: **procedimiento por escrito**. No se creó ningún bucket, secreto ni flujo, y no se aplicó nada en `nexa-demo`.
+Estado (25/11/2026): **pasos 1 a 6 COMPLETADOS.** El respaldo `nexa-demo/20261124-120509-b0bd6343` se generó, se conservó cifrado en R2 y se **recuperó con éxito** en el equipo del propietario (ver `RECUPERACION-VERIFICADA-20261124.md`).
+Queda el paso 7: la autorización de la etapa 4, con su solicitud en `docs/migracion-tipos-documento/SOLICITUD-AUTORIZACION-ETAPA-4.md`. La etapa 4 NO se ha ejecutado.
 Base de diseño: `RESPALDO-FASE-2-CLOUDFLARE-R2.md` (arquitectura, credenciales, retención, riesgos).
-Punto de partida probado: el ensayo `respaldo-nube.yml` (`ensayo-respaldo`) del 23/11/2026 terminó en OK sobre el estado de 29 migraciones.
+Punto de partida probado: el ensayo `respaldo-nube.yml` (`ensayo-respaldo`) del 23/11/2026 terminó en OK sobre el estado de 29 migraciones. Herramientas: `tools/respaldo-nexa-demo.sh` (acción `respaldo-persistente`), `tools/r2_subir.py` y `tools/recuperar-respaldo.py` / `.ps1`.
 
 ## Reglas
 - Nunca un artefacto, caché ni release de GitHub con el volcado (los guardianes de `verificar-publicacion.py` ya lo exigen).

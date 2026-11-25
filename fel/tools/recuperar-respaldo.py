@@ -36,7 +36,7 @@ def cierra(codigo, titulo, informe):
     if informe:
         try:
             cab = [f"NEXA FEL · informe de recuperación (sin datos ni claves) · {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')} hora de este equipo", ""]
-            with open(informe, "w", encoding="utf-8") as f:
+            with open(informe, "w", encoding="utf-8-sig") as f:      # con BOM: PowerShell 5 (Get-Content) y el Bloc de notas muestran bien los acentos
                 f.write("\n".join(cab + LINEAS) + "\n")
             print(f"  INFO  informe guardado en {informe}", flush=True)
         except OSError as e:
