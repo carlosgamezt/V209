@@ -90,3 +90,19 @@ Deno.test({ name: "CON la propuesta de la migración 31 (solo en la base de prue
   const dn = (await e.ana.llamar("GET", `/api/documentos/${e.nota.id}`)).json.documento; assert.equal(dn.tipo_dte, "NCRE");
   const dorig = (await e.ana.llamar("GET", `/api/documentos/${e.origen.id}`)).json.documento; assert.equal(dorig.estado_fiscal, "certificado"); assert.equal(dorig.tipo_dte, "FACT");
 } });
+
+Deno.test({ name: "receptor CF con nombre escrito («Juan Pérez»): la identificación sigue siendo CF y el DTE enviado a Digifact lleva ese nombre (y «CONSUMIDOR FINAL» por omisión)", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const e = await entorno(false);
+  const est = (await e.ana.llamar("GET", "/api/estado")).json, es = est.establecimientos[0], hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date());
+  for (const [nombre, esperado] of [["Juan Pérez", "Juan Pérez"], ["", "CONSUMIDOR FINAL"]] as const) {
+    const r = await e.ana.llamar("POST", "/api/documentos", { establecimiento_id: es.id, fecha: hoy, lineas: [{ descripcion: "Servicio", cantidad: "1", precio_unitario: "50" }], cliente_nuevo: { tipo_identificacion: "CF", numero_identificacion: "CF", nombre } });
+    assert.equal(r.status, 200, JSON.stringify(r.json)); const d = r.json.documento;
+    assert.equal((await e.ana.llamar("POST", `/api/documentos/${d.id}/estado`, { estado: "revisado", version: d.version })).status, 200);
+    const antes = e.llamadas.length;
+    const p = await e.ana.llamar("POST", `/api/documentos/${d.id}/digifact/preparar`, {}); assert.equal(p.status, 200, JSON.stringify(p.json)); assert.equal(p.json.receptor.nombre, esperado, "el resumen de la preparación muestra el nombre");
+    const c = await e.ana.llamar("POST", `/api/documentos/${d.id}/digifact/certificar`, { operacionId: p.json.operacionId ?? p.json.id, confirmacion: "CERTIFICAR-TEST", referencia: p.json.referencia, huellaEmisor: p.json.huellaEmisor }); assert.equal(c.status, 200, JSON.stringify(c.json));
+    const cuerpo = e.llamadas.slice(antes).find((l) => l.ruta.startsWith("/v2/transform/nuc_json"))!.cuerpo!;
+    const comprador = JSON.stringify(JSON.parse(cuerpo).Buyer ?? JSON.parse(cuerpo));
+    assert.ok(comprador.includes(esperado), `el DTE lleva el nombre «${esperado}»`); assert.ok(/"CF"/.test(comprador), "con identificación CF");
+  }
+} });

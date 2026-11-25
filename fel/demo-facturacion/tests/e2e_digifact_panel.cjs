@@ -41,6 +41,7 @@ async function arrancar() {
         if (accion === "conciliar") { env.ops = [{ ...env.ops[0], estado: "certificada", resultado: { serie: "0AB12CD", numero: "1234567", autorizacion: "A1B2C3D4-0000-1111-2222-333344445555" } }]; return json(r, conciliar ?? { resultado: "certificada", operacion: env.ops[0] }); }
         return json(r, {});
       });
+      await p.reload(); await p.waitForSelector(".cab-demo");   // la aplicación precarga el estado de Digifact al entrar (caché en memoria): se recarga para que use las respuestas simuladas de arriba
       return env;
     };
     const PANEL = '[data-panel="digifact-test"]';

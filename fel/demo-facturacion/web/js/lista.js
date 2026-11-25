@@ -52,7 +52,10 @@ export function pantallaLista(ctx) {
   async function cargar() {
     const mia = ++peticion; lista.setAttribute("aria-busy", "true");
     try {
-      const [r, t] = await Promise.all([api.documentosPagina(parametros().toString()), tiposDoc ? Promise.resolve(tiposDoc) : api.tiposDocumento().catch(() => null)]);
+      const pre = globalThis.__felPrecarga, qs = parametros().toString(), esInicial = qs === "pagina=1&tam=25&categoria=emitidos";   // la primera carga reutiliza lo pedido en paralelo al arrancar (una sola vez y si es reciente)
+      const usarPre = esInicial && pre && Date.now() - pre.t < 10000 && !pre.listaUsada; if (usarPre) pre.listaUsada = true;
+      const [r0, t] = await Promise.all([usarPre ? pre.emitidos : api.documentosPagina(qs), tiposDoc ? Promise.resolve(tiposDoc) : ((usarPre && pre.tipos) || api.tiposDocumento()).catch(() => null)]);
+      const r = r0 ?? await api.documentosPagina(qs);
       if (mia !== peticion) return;   // llegó una respuesta más nueva: esta se descarta
       datos = r; pagina = r.pagina; if (!tiposDoc && t) { tiposDoc = t; pintarTipos(); }
       pintarPestanas(); pintar();

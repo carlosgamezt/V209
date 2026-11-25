@@ -80,7 +80,8 @@ async function arrancar() {
     await p.locator(ID).press("Enter"); for (let i = 0; i < 60 && (await p.inputValue(NOMBRE)) === ""; i++) await p.waitForTimeout(150); assert.equal(await p.inputValue(NOMBRE), "PERSONA FICTICIA DE PRUEBA CUI UNO"); assert.deepEqual(pet, ["cui"], "una sola consulta de CUI");
     assert.equal((await p.locator(".rc-card .tg").innerText()).trim(), "Nuevo"); await p.locator(NOMBRE).blur(); await foto(p, "m6-nuevo-cui.png");
     // CF: sin consulta, nombre fijo y sin etiqueta «Nuevo»
-    pet.length = 0; await elegirTipo(p, "CF"); assert.equal(await p.inputValue(ID), "CF"); assert.equal(await p.inputValue(NOMBRE), "CONSUMIDOR FINAL"); assert.equal(await p.locator(NOMBRE).evaluate((e) => e.readOnly), true); assert.equal(await p.locator(".rc-card .tg").isHidden(), true); await p.waitForTimeout(700); assert.deepEqual(pet, [], "CF no consulta nada");
+    pet.length = 0; await elegirTipo(p, "CF"); assert.equal(await p.inputValue(ID), "CF"); assert.equal(await p.inputValue(NOMBRE), "CONSUMIDOR FINAL"); assert.equal(await p.locator(NOMBRE).evaluate((e) => e.readOnly), false);   // el nombre de CF se puede editar; la identificación sigue siendo CF
+     assert.equal(await p.locator(".rc-card .tg").isHidden(), true); await p.waitForTimeout(700); assert.deepEqual(pet, [], "CF no consulta nada");
     // «Otro»: ingreso manual
     await elegirTipo(p, "EXT"); assert.equal(await tipoActual(p), "EXT"); await p.fill(ID, "AB1234567"); await p.waitForSelector(NOMBRE); await p.fill(NOMBRE, "Persona extranjera de prueba"); assert.deepEqual(pet, [], "Otro no consulta nada");
     // establecimiento y fecha en una fila; observaciones plegadas

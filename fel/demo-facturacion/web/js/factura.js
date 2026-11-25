@@ -43,8 +43,10 @@ export function pantallaFactura(ctx, id) {
     const est = ctx.estado;
     let VEN = ventana && ventana.hoy ? ventana : ventanaLocal();
     let d = det, doc = det?.documento ?? { id: null, version: null, estado_preparacion: "borrador", estado_fiscal: "ninguno" };
+    const clienteCF = () => (doc.cliente_id ? est.clientes.find((c) => c.id === doc.cliente_id && c.tipo_identificacion === "CF") : null);
     const inicial = () => ({
-      cliente_id: doc.cliente_id ?? "", nuevo: false, tipo: "NIT", numero: "", nombre: "", establecimiento_id: doc.establecimiento_id ?? "",
+      // Consumidor Final: identificación «CF» FIJA y nombre editable (el nombre nunca cambia la identificación); se guarda como receptor CF con ese nombre
+      ...(clienteCF() ? { cliente_id: "", nuevo: true, tipo: "CF", numero: "CF", nombre: clienteCF().nombre } : { cliente_id: doc.cliente_id ?? "", nuevo: false, tipo: "NIT", numero: "", nombre: "" }), establecimiento_id: doc.establecimiento_id ?? "",
       fecha: doc.fecha_emision_prevista ? String(doc.fecha_emision_prevista).slice(0, 10) : VEN.hoy, observaciones: doc.observaciones ?? "",
       ...tipoInicial(tipos, det?.documento),
       lineas: d?.lineas?.length ? d.lineas.map((l) => ({ descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) })) : [],
@@ -132,16 +134,16 @@ export function pantallaFactura(ctx, id) {
       // ---- receptor elegido o nuevo (tarjeta sin marco: nombre, etiqueta Existente/Nuevo, origen y «Cambiar»)
       // el nombre se muestra como información CONFIRMADA (texto, sin recuadro); solo se vuelve campo si está vacío (hay que escribirlo) o si la persona lo toca para corregirlo
       nit.editando = false;
-      nit.nombre = h("textarea", { class: "rc-nombre", rows: 1, maxlength: 200, "aria-label": "Nombre del receptor", placeholder: "Nombre del receptor", disabled: !ed, readonly: f.tipo === "CF", spellcheck: "false",
+      nit.nombre = h("textarea", { class: "rc-nombre", rows: 1, maxlength: 200, "aria-label": "Nombre del receptor", placeholder: "Nombre del receptor", disabled: !ed, spellcheck: "false",
         onfocus: () => { nit.editando = true; },
         onblur: () => { nit.editando = false; actualizarNombre(); },
         oninput: (e) => { const v = e.target.value.replace(/[\r\n]+/g, " "); if (v !== e.target.value) e.target.value = v; ctrl?.alEscribirNombre(v); crecer(); cambio(); },
         onkeydown: (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } } });
       nit.nombre.value = f.nombre;
-      nit.nombreVer = h("button", { type: "button", class: "rc-nombre-ver", id: "receptor-nombre-ver", "aria-label": "Editar el nombre del receptor", disabled: !ed || f.tipo === "CF", onclick: () => { nit.editando = true; actualizarNombre(); nit.nombre.focus(); nit.nombre.setSelectionRange(nit.nombre.value.length, nit.nombre.value.length); } });
+      nit.nombreVer = h("button", { type: "button", class: "rc-nombre-ver", id: "receptor-nombre-ver", "aria-label": "Editar el nombre del receptor", disabled: !ed, onclick: () => { nit.editando = true; actualizarNombre(); nit.nombre.focus(); nit.nombre.setSelectionRange(nit.nombre.value.length, nit.nombre.value.length); } });
       function actualizarNombre() {
         const v = f.nombre.trim(), texto = v !== "" && !nit.editando;
-        nit.nombreVer.textContent = f.nombre; nit.nombreVer.hidden = !texto; nit.nombre.hidden = texto; nit.nombreVer.disabled = !ed || f.tipo === "CF"; if (!texto) crecer();
+        nit.nombreVer.textContent = f.nombre; nit.nombreVer.hidden = !texto; nit.nombre.hidden = texto; nit.nombreVer.disabled = !ed; if (!texto) crecer();
       }
       nit.estado = h("small", { class: "nit-estado", role: "status", "aria-live": "polite" }, textoEstado(nit.info));
       nit.etiqueta = h("small", { class: "nit-etiqueta", hidden: true }); pintarEtiqueta(nit.etiqueta, nit.et);
@@ -168,7 +170,7 @@ export function pantallaFactura(ctx, id) {
         for (const b of nit.seg.querySelectorAll(".st-op")) b.setAttribute("aria-checked", String(b.dataset.tipo === f.tipo));
         nit.numero.placeholder = textoDe(f.tipo); nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text");
         if (f.nuevo && nit.numero.value !== f.numero) nit.numero.value = f.numero;
-        nit.nombre.value = f.nombre; nit.nombre.readOnly = f.tipo === "CF"; nit.chip.hidden = f.tipo === "CF" && modo() === "nuevo";
+        nit.nombre.value = f.nombre; nit.chip.hidden = f.tipo === "CF" && modo() === "nuevo";
         pintarTarjeta(); actualizarOk(); actualizarNombre();
       }
       // ---- acciones
@@ -189,7 +191,9 @@ export function pantallaFactura(ctx, id) {
         ctrl.alEscribirId(valor); sincronizar(); mostrarSugerencias(); cambio();
       }
       function elegirExistente(c) {
-        ctrl?.cancelar(); ctrl = null; f.cliente_id = c.id; f.nuevo = false; f.tipo = c.tipo_identificacion === "CF" ? "NIT" : c.tipo_identificacion; f.numero = ""; f.nombre = ""; nit.info = null; nit.et = null;
+        ctrl?.cancelar(); ctrl = null; nit.info = null; nit.et = null;
+        if (c.tipo_identificacion === "CF") { f.cliente_id = ""; f.nuevo = true; f.tipo = "CF"; f.numero = "CF"; f.nombre = c.nombre; nit.numero.value = "CF"; ocultarSugerencias(); asegurarCtrl(); sincronizar(); cambio(); return; }
+        f.cliente_id = c.id; f.nuevo = false; f.tipo = c.tipo_identificacion; f.numero = ""; f.nombre = "";
         nit.numero.value = c.tipo_identificacion === "CF" ? "CF" : c.numero_identificacion; ocultarSugerencias(); sincronizar(); cambio();
       }
       function cambiarReceptor() {
@@ -330,39 +334,36 @@ export function pantallaFactura(ctx, id) {
       if (correoFac.cli !== cli) { correoFac.cli = cli; correoFac.texto = est.clientes.find((x) => x.id === f.cliente_id)?.email ?? ""; correoFacEntrada.value = correoFac.texto; correoFacNota(); }   // jamás se conserva el correo de OTRO cliente
     }
     const extraCorreoFac = () => (correoFac.activo && aplicaCorreoFac() ? { enviar_correo: true, correo: correoFac.texto.trim() } : {});
-    function confirmarCertificacion(prep, ocupadaPor, correoDestino) {
-      return new Promise((resolve) => {
-        const c0 = calcularSeguro(), iv = c0.ok ? ivaIncluido(c0.r.lineas.map((x) => x.neto)) : null, q2 = (t) => quetzales(Number(t).toFixed(2));
-        const fila = (et, v) => h("div", { class: "cc-fila" }, h("span", {}, et), h("strong", { class: "mono" }, v));
-        let m;
-        const si = boton("Certificar en TEST", { id: "confirmar-certificar-test", onclick: () => { m.cerrar(); resolve(true); } });
-        m = modal({ titulo: "Certificar en Digifact TEST", ancho: "sm",
-          contenido: [h("p", { class: "aviso aviso-azul", role: "note" }, icono("info"), h("span", {}, "Se enviará UNA sola vez al ambiente de PRUEBAS de Digifact. Es un documento de prueba: no tiene valor fiscal.")),
-            fila("Receptor", prep.receptor?.nombre ?? "—"), fila("Fecha de emisión", dmy(String(prep.fechaEmision ?? "").slice(0, 10))), fila("Total", q2(prep.total)), iv ? fila("IVA 12 % incluido (estimado)", quetzales(iv.iva)) : null, fila("Referencia", String(prep.referencia ?? "").slice(0, 8) + "…"), correoDestino ? fila("Correo (lo envía Digifact)", correoDestino.replace(/^(.).*@/, "$1***@")) : null],
-          pie: [boton("Ahora no", { tipo: "sec", id: "cancelar-certificar-test", onclick: () => { m.cerrar(); resolve(false); } }), si] });
-      });
-    }
     let certificando = false, guardandoParaCertificar = false;
+    // Sin ventana intermedia: pulsar «Certificar en TEST» ES la confirmación (el servidor sigue exigiendo la palabra, la referencia y la huella de la preparación, que aquí se rellenan con lo que él mismo devolvió).
+    // El botón informa el avance (Revisando… · Preparando… · Certificando…) y se miden por separado los tiempos de NEXA y de Digifact.
+    const progreso = (t) => { const b = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (b) { b.disabled = true; b.replaceChildren(icono("shield"), h("span", {}, t)); } };
     async function certificarEnTest() {
       if (certificando) return; certificando = true; err.textContent = "";
-      const bc = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (bc) bc.disabled = true;
+      const t0 = performance.now(); let tNexaPrev = 0;
       try {
+        progreso("Certificando…");
         if (doc.estado_preparacion === "borrador") {   // revisar congela el contenido, requisito para preparar
           if (!ctx.tiene("borradores.revisar")) { err.textContent = "Tu rol no puede marcar el documento como revisado, paso previo a certificar. El borrador quedó guardado."; return; }
-          const r = await api.estadoPreparacion(doc.id, "revisado", doc.version); await recargar(r);
+          const r = await api.estadoPreparacion(doc.id, "revisado", doc.version); await recargar(r, { sinEstado: true }); progreso("Certificando…");
         }
         const extra = extraCorreoFac();
-        if (extra.enviar_correo && !correoFacOk()) { await recargar(); err.textContent = "Escribe un correo válido o desmarca «Enviar factura por correo». El documento quedó guardado."; return; }
-        const prep = await api.digifactPreparar(doc.id, extra);   // no envía nada
-        if (!(await confirmarCertificacion(prep, null, extra.correo))) { toast("No se certificó. El documento quedó guardado y revisado."); await recargar(); return; }
+        if (extra.enviar_correo && !correoFacOk()) { await recargar(undefined, { sinEstado: true }); err.textContent = "Escribe un correo válido o desmarca «Enviar factura por correo». El documento quedó guardado."; return; }
+        const tP = performance.now(); const prep = await api.digifactPreparar(doc.id, extra);   // no envía nada
+        tNexaPrev = performance.now() - tP;
+        const tC = performance.now();
         const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: CONFIRMACION_TEST, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor }, extra.enviar_correo ? { ...extra, correo_ref: prep.correoRef } : {});
-        await recargar();
+        const totalCert = performance.now() - tC, dfx = Number(r.tiempoDigifactMs ?? 0);
+        const tR = performance.now(); await recargar(undefined, { sinEstado: true });
+        const total = performance.now() - t0, nexa = Math.max(0, total - dfx);
+        globalThis.__felTiempos = { doc: doc.id, totalMs: Math.round(total), digifactMs: Math.round(dfx), nexaMs: Math.round(nexa), preparacionMs: Math.round(tNexaPrev), certificarMs: Math.round(totalCert), recargaMs: Math.round(performance.now() - tR) };
+        console.info("Certificación (ms)", globalThis.__felTiempos);
         const op = r.operacion?.estado;
         if (r.error) err.textContent = `No se envió a Digifact: ${r.error.mensaje} El documento quedó guardado.`;
-        else if (op === "certificada") toast(r.reutilizada ? "Este documento ya estaba certificado en TEST." : "Certificado en Digifact TEST");
+        else if (op === "certificada") { if (r.reutilizada) toast("Este documento ya estaba certificado en TEST."); }   // la confirmación se muestra dentro de la pantalla (tarjeta «Documento emitido»), sin avisos ni ventanas
         else if (op === "rechazada") err.textContent = `Digifact TEST rechazó el documento: ${r.operacion?.resultado?.mensaje ?? ""} El documento quedó guardado.`;
         else err.textContent = "No se sabe si Digifact TEST lo certificó. El documento quedó guardado y BLOQUEADO para no duplicarlo: usa «Consultar a Digifact» en el panel de abajo.";
-      } catch (e) { try { await recargar(); } catch { /* se queda la pantalla */ } err.textContent = `${mensajeError(e)} El documento quedó guardado.`; }   // primero se recarga (limpia los mensajes) y después se explica
+      } catch (e) { try { await recargar(undefined, { sinEstado: true }); } catch { /* se queda la pantalla */ } err.textContent = `${mensajeError(e)} El documento quedó guardado.`; }   // primero se recarga (limpia los mensajes)
       finally { certificando = false; const b2 = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (b2) b2.disabled = false; }
     }
     async function guardarYCertificar() {
@@ -411,13 +412,14 @@ export function pantallaFactura(ctx, id) {
         poner(proceso, tarjeta, panelProceso(comun));   // el detalle fiscal sigue visible debajo: anular, conciliar y enviar por correo no quedan ocultos
         return;
       }
-      poner(proceso, puedeCertificarAhora() ? (() => { const n = problemas().length; return h("p", { class: `estado-cert-compacto ${n ? "mut" : "ok-val"}`, id: "estado-cert", role: "status" }, n ? `${n} dato${n > 1 ? "s" : ""} por completar` : "Datos completos · Listo para certificar"); })() : doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
+      poner(proceso, puedeCertificarAhora() ? (() => { const n = problemas().length; return h("p", { class: `estado-cert-compacto ${n ? "mut" : "ok-val"}`, id: "estado-cert", role: "status" }, n ? `${n} dato${n > 1 ? "s" : ""} por completar` : "Datos completos · Listo para certificar (prueba en Digifact TEST, sin valor fiscal)"); })() : doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
     }
 
     // ---------------------------------------------------------------- acciones
-    async function recargar(nuevo) {
+    async function recargar(nuevo, opc = {}) {
       d = nuevo ?? await api.documento(doc.id); doc = d.documento; f = inicial(); sucio = false; intentoGuardar = false; err.textContent = "";
-      await ctx.recargarEstado(); todo();
+      if (!opc.sinEstado) await ctx.recargarEstado();   // el estado general (clientes, conceptos…) no cambia al revisar ni al certificar: se evita una lectura completa
+      todo();
     }
     async function guardar(opc = {}) {
       err.textContent = ""; intentoGuardar = true; const ps = problemas(); pintarTotales();

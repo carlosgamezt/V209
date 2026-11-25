@@ -46,7 +46,12 @@ const NAV_MAESTRO = [
 const iniciales = (n) => n.split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
 
 async function iniciar(estadoInicial) {
+  // Lecturas independientes en PARALELO con el estado (antes iban una tras otra): la primera página de «Emitidos», los tipos y los pendientes. Quedan en una «precarga» de un solo uso que las pantallas consumen.
+  const precarga = (p) => p.catch(() => null);
+  // Solo lo NECESARIO para la primera pantalla viaja junto al estado (la primera página de «Emitidos»); el resto se pide justo después, para que no compita por el ancho de banda del teléfono con lo que se necesita para pintar.
+  if (!estadoInicial) globalThis.__felPrecarga = { t: Date.now(), emitidos: precarga(api.documentosPagina(`pagina=1&tam=25&categoria=emitidos`)) };
   let estado = estadoInicial ?? await api.estado(), pendientes = [];
+  if (!estadoInicial && globalThis.__felPrecarga) { const pc = globalThis.__felPrecarga; pc.pendientes = precarga(api.documentosPagina("pagina=1&tam=25&categoria=pendientes")); pc.tipos = precarga(api.tiposDocumento()); for (const f of [() => api.correoEstado(), () => api.digifactEstado(), () => api.ventanaFecha()]) precarga(f()); }   // catálogos de TTL corto: los guarda la caché segura en memoria
   const maestro = !!estado.esMaestro, conLogin = !!estado.login;
   const salir = async () => { try { await api.salir(); } catch { /* sesión ya cerrada */ } location.hash = ""; await arrancar(); };
   const contenido = h("div", { class: "contenido", tabindex: "-1" });
@@ -79,7 +84,7 @@ async function iniciar(estadoInicial) {
     if (maestro) { pendientes = []; return; }
     if (pendEscr === escrituras && Date.now() - pendEn < 15000) return;   // sin escrituras recientes no se vuelve a pedir en cada cambio de pantalla
     pendEn = Date.now(); pendEscr = escrituras;
-    try { const r = await api.documentosPagina("pagina=1&tam=25&categoria=pendientes"); pendientes = r.items; pendientes.total = r.total; } catch { pendientes = []; }   // solo la primera página de pendientes (no todos los documentos)
+    try { const pre = globalThis.__felPrecarga; const r = (pre && Date.now() - pre.t < 10000 && pre.pendientes && !pre.pendUsado ? (pre.pendUsado = true, await pre.pendientes) : null) ?? await api.documentosPagina("pagina=1&tam=25&categoria=pendientes"); pendientes = r.items; pendientes.total = r.total; } catch { pendientes = []; }   // solo la primera página de pendientes (no todos los documentos)
   }
   function pintarMenu() {
     const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin));
@@ -166,7 +171,7 @@ async function arrancar() {
 arrancar().catch(mostrar); }); }
   let sesion = null;
   try { sesion = await api.sesion(); } catch (e) { if (e.status !== 404) throw e; }   // 404: modo de pruebas (selector de personas, sin contraseña)
-  if (sesion && !sesion.autenticado) return pantallaLogin(raiz, sesion, arrancar);
+  if (sesion && !sesion.autenticado) return pantallaLogin(raiz, sesion, () => iniciar().catch(mostrar));   // al entrar no se vuelve a pedir la sesión: ya se sabe que está autenticada
   await iniciar();
 }
 const mostrar = (e) => { console.error(e); poner(raiz, h("p", { class: "err", role: "alert", style: "padding:24px" }, mensajeError(e))); };

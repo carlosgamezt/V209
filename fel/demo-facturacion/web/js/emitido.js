@@ -29,7 +29,13 @@ export function tarjetaEmitido({ ctx, doc, abrirPrevia, nueva, volver }) {
   // correo: el panel «Enviar por correo» del detalle (más abajo) decide permisos, destinatarios autorizados, duplicados y límites; este botón solo lleva hasta él
   const alPanelCorreo = () => { const p = document.querySelector('[data-panel="correo"]'); if (!p || p.hidden) { aviso.textContent = "El envío por correo no está disponible para este documento."; return; } p.scrollIntoView?.({ block: "center", behavior: "smooth" }); setTimeout(() => document.getElementById("correo-destinatario")?.focus({ preventScroll: true }), 350); };
   const bCorreo = boton("Enviar por correo", { tipo: "sec", icon: "mail", id: "emitido-correo-btn", disabled: true, title: "Comprobando…", onclick: alPanelCorreo });
-  api.correoEstado().then((e) => { const ok = e.habilitado && e.puedeEnviar; bCorreo.disabled = !ok; bCorreo.title = ok ? "" : (!e.habilitado ? "El envío por correo no está habilitado en esta demostración" : "Tu rol no puede enviar correos"); }).catch(() => { bCorreo.title = "No se pudo comprobar el correo"; });
+  const notaCorreo = h("small", { class: "mut em-nota-correo", id: "emitido-correo-nota", role: "status" });
+  api.correoEstado().then((e) => {
+    const ok = e.habilitado && e.puedeEnviar; bCorreo.disabled = !ok;
+    const motivo = !e.habilitado ? "el servicio de correo (proveedor y remitente) no está configurado en esta demostración" : "tu rol no puede enviar correos";
+    bCorreo.title = ok ? "" : `No disponible: ${motivo}`;
+    notaCorreo.textContent = ok ? "" : `Correo no disponible: ${motivo}. Si Digifact tiene el envío habilitado, marca «Enviar factura por correo» ANTES de certificar.`;   // la razón se ve en pantalla (no solo al pasar el cursor)
+  }).catch(() => { bCorreo.title = "No se pudo comprobar el correo"; notaCorreo.textContent = "No se pudo comprobar si el correo está disponible."; });
   const dato = (et, v, clase = "") => h("div", { class: `em-dato ${clase}` }, h("span", { class: "mut" }, et), h("strong", { class: "mono" }, v ?? "—"));
   return h("div", { class: "card card-emitido", "data-panel": "emitido" },
     h("div", { class: "em-cab" }, h("span", { class: "em-ok", "aria-hidden": "true" }, icono("circleCheck")), h("div", {}, h("h2", { class: "card-t" }, "Documento emitido"), h("span", { class: `tag ${esTest ? "tag-test" : "tag-sim"}`, "data-ambiente": amb, title: "Sin valor fiscal" }, esTest ? "TEST · sin valor fiscal" : "SIMULADO · sin valor fiscal"))),
@@ -43,6 +49,7 @@ export function tarjetaEmitido({ ctx, doc, abrirPrevia, nueva, volver }) {
       boton("Ticket 80 mm", { tipo: "sec", icon: "receipt", id: "emitido-ticket", onclick: descargar("ticket") }),
       boton("Compartir", { tipo: "sec", icon: "share", id: "emitido-compartir", disabled: !puedeCompartir, title: puedeCompartir ? "" : "Este navegador no permite compartir", onclick: compartir }),
       ctx.tiene("borradores.crear") ? boton("Nueva factura", { icon: "plus", id: "emitido-nueva", onclick: nueva }) : null),
-    aviso,
+    (() => { const t = globalThis.__felTiempos; return t && t.doc === doc.id ? h("small", { class: "mut em-tiempos", id: "emitido-tiempos", title: "Medido en este dispositivo: tiempo total de certificar, lo que tardó Digifact y el resto (NEXA y la red)" }, `Certificado en ${(t.totalMs / 1000).toFixed(1)} s · Digifact ${(t.digifactMs / 1000).toFixed(1)} s · NEXA y red ${(t.nexaMs / 1000).toFixed(1)} s`) : null; })(),
+    aviso, notaCorreo,
     h("div", { class: "em-pie" }, h("button", { type: "button", class: "enlace-doc", id: "emitido-volver", onclick: volver }, "Volver a documentos")));
 }

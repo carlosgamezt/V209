@@ -37,7 +37,7 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
     ...(d.fecha_emision_prevista ? { fechaEmisionPrevista: String(d.fecha_emision_prevista).slice(0, 10) } : {}),   // la fecha ELEGIDA: es la que viaja en Header.IssuedDateTime
     ...(ro ? { origen: { tipo: String(ro.tipo), autorizacion: String(ro.autorizacion), fechaEmision: String(ro.fecha_emision), serie: String(ro.serie), numero: String(ro.numero), receptorId: String(ro.receptor_id) } } : {}),
     ...(d.motivo_ajuste ? { motivoAjuste: String(d.motivo_ajuste) } : {}), ...(d.tipo_recibo ? { tipoRecibo: String(d.tipo_recibo) } : {}),
-    receptor: { tipoId: (["NIT", "CUI", "CF"].includes(tipo) ? tipo : "EXT") as "NIT", id: tipo === "CF" ? "CF" : String(d.c_num ?? "").replace(/-/g, ""), nombre: tipo === "CF" ? "CONSUMIDOR FINAL" : String(d.c_nombre ?? "") },
+    receptor: { tipoId: (["NIT", "CUI", "CF"].includes(tipo) ? tipo : "EXT") as "NIT", id: tipo === "CF" ? "CF" : String(d.c_num ?? "").replace(/-/g, ""), nombre: String(d.c_nombre ?? "").trim() || (tipo === "CF" ? "CONSUMIDOR FINAL" : "") },
     lineas: ls.map((l) => ({ tipo: String(l.concepto_tipo ?? "servicio").toLowerCase() === "bien" ? "Bien" as const : "Servicio" as const, descripcion: String(l.descripcion), cantidad: String(l.cantidad), precioUnitario: String(l.precio_unitario),
       descuento: String(l.descuento ?? "0"), ...(l.unidad_medida ? { unidad: String(l.unidad_medida).slice(0, 20) } : {}) })),
   };

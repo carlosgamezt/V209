@@ -28,8 +28,8 @@ const cliente = est.clientes.find((c: J) => c.tipo_identificacion === "CF") ?? e
 
 /** XML certificado: lee los datos que Digifact entregó (tolerante al prefijo del espacio de nombres). */
 const dato = (xml: string, re: RegExp) => re.exec(xml)?.[1];
-async function certificarFact(etiqueta: string, fecha: string, lineas: J[], esperado: { total: string; iva: string }) {
-  const d = await ana.ll("POST", "/api/documentos", { cliente_id: cliente.id, establecimiento_id: est.establecimientos[0].id, fecha, observaciones: `PRUEBA TEST ${etiqueta}`, lineas });
+async function certificarFact(etiqueta: string, fecha: string, lineas: J[], esperado: { total: string; iva: string }, cf?: string) {
+  const d = await ana.ll("POST", "/api/documentos", { ...(cf ? { cliente_nuevo: { tipo_identificacion: "CF", numero_identificacion: "CF", nombre: cf } } : { cliente_id: cliente.id }), establecimiento_id: est.establecimientos[0].id, fecha, observaciones: `PRUEBA TEST ${etiqueta}`, lineas });
   ok(d.status === 200, `${etiqueta}: borrador creado y guardado`); if (d.status !== 200) return;
   const id = d.json.documento.id as string;
   ok((await ana.ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version })).status === 200, `${etiqueta}: marcado como revisado`);
@@ -54,6 +54,7 @@ async function certificarFact(etiqueta: string, fecha: string, lineas: J[], espe
   ok((uuid ?? "").toUpperCase() === String(res.autorizacion).toUpperCase(), `${etiqueta}: el UUID del XML coincide con la autorización registrada`);
   ok(serieXml === res.serie && String(numXml) === String(res.numero), `${etiqueta}: serie y número del XML coinciden con los registrados`);
   ok(tipoXml === "FACT", `${etiqueta}: tipo de documento FACT en el XML`);
+  if (cf) { ok(xml.includes(cf), `${etiqueta}: el XML certificado lleva el nombre del receptor CF escrito («${cf}»)`); ok(/IDReceptor="CF"/.test(xml), `${etiqueta}: y la identificación CF`); }
   ok(fechaXml === fecha, `${etiqueta}: la fecha de emisión del XML es la elegida (${fecha}), no la de hoy`);
   const pdf = await ana.ll("GET", `/api/documentos/${id}/digifact/pdf`); ok(pdf.status === 200 && new TextDecoder().decode(pdf.buf.slice(0, 4)) === "%PDF", `${etiqueta}: PDF del certificador descargable`);
   const local = await ana.ll("GET", `/api/documentos/${id}/pdf-demo?formato=ticket`); ok(local.status === 200 && /PRUEBAS/.test(new TextDecoder("latin1").decode(local.buf)), `${etiqueta}: el PDF/ticket local se rotula como PRUEBAS`);
@@ -67,6 +68,7 @@ async function certificarFact(etiqueta: string, fecha: string, lineas: J[], espe
 const lin = (descripcion: string, precio: string) => [{ descripcion, cantidad: "1", precio_unitario: precio }];
 await certificarFact("FACT hoy", hoyGt, lin("Servicio de prueba TEST", "100.00"), { total: "100", iva: "10.714286" });
 await certificarFact("FACT fecha anterior", sumar(hoyGt, -2), lin("Servicio de prueba TEST (fecha anterior)", "250.50"), { total: "250.5", iva: "26.839286" });
+await certificarFact("FACT receptor CF con nombre", hoyGt, lin("Servicio de prueba TEST (CF con nombre)", "75.00"), { total: "75", iva: "8.035714" }, "Juan Pérez");
 await ana.ll("POST", "/api/sesion/salir", {});
 const sal = Deno.env.get("GITHUB_STEP_SUMMARY");
 if (sal) Deno.writeTextFileSync(sal, `### Certificación en Digifact TEST (documentos de PRUEBA, sin valor fiscal)\n\n| Documento | Resultado | Serie · Número | Autorización (UUID) | Detalle |\n|---|---|---|---|---|\n${resumen.join("\n")}\n`, { append: true });

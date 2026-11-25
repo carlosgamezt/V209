@@ -165,8 +165,15 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     if (!clienteId && nuevo) {
       const tipo = tipoNuevo!; let num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
       if (tipo === "CUI") { num = normalizarCui(num); if (!RE_CUI.test(num)) throw new ErrorHttp(400, "El CUI debe tener exactamente 13 dígitos (sin letras).", "entrada_invalida"); }
-      const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? NOMBRE_CF : texto(nuevo.nombre, 1, 200, "Nombre del receptor"), p_direccion: null, p_email: null, p_telefono: null, p_version: null }) as Obj;
-      clienteId = r.id as string;
+      // CF: la identificación SIEMPRE es «CF»; el nombre es «CONSUMIDOR FINAL» por omisión pero la persona puede escribir otro (p. ej. «Juan Pérez») sin que cambie la identificación. Un receptor CF con ese nombre se reutiliza si ya existe en la empresa.
+      let nombreCF = NOMBRE_CF;
+      if (tipo === "CF" && typeof nuevo.nombre === "string" && nuevo.nombre.trim() !== "" && nuevo.nombre.trim().toUpperCase() !== NOMBRE_CF) nombreCF = texto(nuevo.nombre, 1, 200, "Nombre del receptor");
+      const previo = tipo === "CF" ? (await bd.filas<{ id: string }>("select id from public.clientes where empresa_id = $1 and tipo_identificacion = 'CF' and nombre = $2 and activo order by creado_en limit 1", [emp(), nombreCF]))[0] : undefined;
+      if (previo) clienteId = previo.id;
+      else {
+        const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? nombreCF : texto(nuevo.nombre, 1, 200, "Nombre del receptor"), p_direccion: null, p_email: null, p_telefono: null, p_version: null }) as Obj;
+        clienteId = r.id as string;
+      }
     }
     if (clienteId && !uuidOk(clienteId)) throw new ErrorHttp(400, "Receptor no válido", "entrada_invalida");
     // FECHA DE EMISIÓN: se valida AQUÍ, en el servidor, con su reloj y la zona de Guatemala (la interfaz solo ayuda; una petición directa no la salta). Sin fecha: la que ya tenía el borrador o, si es nuevo, hoy.

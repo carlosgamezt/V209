@@ -51,7 +51,7 @@ async function arrancar() {
       if (!(await p.evaluate(() => typeof navigator.share === "function"))) { assert.equal(await p.locator("#emitido-compartir").isDisabled(), true, `${w}: Compartir deshabilitado sin API nativa`); assert.ok((await p.locator("#emitido-compartir").getAttribute("title")).length > 5); }
       // correo: el servidor de esta prueba no lo habilita → deshabilitado con motivo (nunca finge enviar)
       await p.locator('#emitido-correo-btn:not([title="Comprobando…"])').waitFor({ state: "attached", timeout: 8000 }).catch(() => {});
-      if (await p.locator("#emitido-correo-btn").isDisabled()) assert.match((await p.locator("#emitido-correo-btn").getAttribute("title")) ?? "", /habilitado|rol|comprobar/i);
+      if (await p.locator("#emitido-correo-btn").isDisabled()) { assert.match((await p.locator("#emitido-correo-btn").getAttribute("title")) ?? "", /no disponible|comprobar/i); await p.locator("#emitido-correo-nota").waitFor({ state: "attached" }); assert.match(await p.locator("#emitido-correo-nota").innerText(), /Correo no disponible: .+/, `${w}: la razón del correo bloqueado se ve en pantalla`); }
       if (w === 390) {
         // descargas reales: PDF carta y ticket
         for (const [id, fmt] of [["emitido-pdf", "CARTA"], ["emitido-ticket", "TICKET"]]) {

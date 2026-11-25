@@ -45,6 +45,7 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
         }
         return json(r, {});
       });
+      await p.reload(); await p.waitForSelector(".cab-demo");   // la aplicación precarga el estado de Digifact al entrar (caché en memoria): se recarga para que use las respuestas simuladas de arriba
       const nuevaConItem = async () => {
         await p.goto(srv.url + "/#/nueva"); await esperarNueva(p); await elegirReceptor(p);
         const sel = p.locator(".sel-concepto"); await sel.selectOption(await sel.locator("option").nth(1).getAttribute("value")); await p.waitForSelector(".it");
@@ -59,39 +60,39 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       // el resumen muestra el IVA incluido (estimado) en lugar de «pendientes»
       assert.match(await p.locator(".totales").innerText(), /IVA 12 % incluido/, `${donde}: el resumen muestra el IVA incluido`); assert.ok(!/pendientes de régimen/.test(await p.locator(".totales").innerText()));
 
-      // ---- 2) Guardar y certificar → se guarda, se revisa, se prepara (sin enviar), aparece UN diálogo y solo al confirmar se certifica
+      // ---- 2) Certificar en TEST (sin ventanas intermedias): se guarda, se revisa, se prepara y se certifica de corrido, en la misma pantalla; el documento queda guardado ANTES de enviar nada
       const antes = (await listaApi()).length;
-      await p.click("#guardar-certificar"); await p.waitForSelector("#confirmar-certificar-test");
-      assert.equal((await listaApi()).length, antes + 1, `${donde}: el documento ya está GUARDADO cuando se pide confirmar`);
-      assert.deepEqual(env.llamadas.map((l) => l.accion), ["preparar"], `${donde}: hasta confirmar solo se PREPARA (nada se envía)`);
-      assert.match(await p.locator(".modal").innerText(), /UNA sola vez[\s\S]*PRUEBAS[\s\S]*no tiene valor fiscal/i);
-      await p.click("#confirmar-certificar-test");
-      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "se envía la certificación tras confirmar");
+      await p.click("#guardar-certificar");
+      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "se certifica tras pulsar el botón");
+      assert.equal(await p.locator(".modal").count(), 0, `${donde}: no se abre ninguna ventana adicional`);
+      assert.deepEqual(env.llamadas.map((l) => l.accion), ["preparar", "certificar"], `${donde}: primero se PREPARA (sin enviar) y después se certifica, una sola vez`);
+      assert.equal((await listaApi()).length, antes + 1, `${donde}: el documento quedó GUARDADO`);
       const cert = env.llamadas.find((l) => l.accion === "certificar").cuerpo;
-      assert.equal(cert.confirmacion, "CERTIFICAR-TEST"); assert.equal(cert.referencia, "11111111-2222-4333-8444-555555555555"); assert.equal(cert.huellaEmisor, "HUELLA-1"); assert.equal(cert.operacionId, "op-1");
-      await hasta(async () => (await p.locator("body").innerText()).includes("Certificado en Digifact TEST"), "aviso de certificación en TEST");
+      assert.equal(cert.confirmacion, "CERTIFICAR-TEST"); assert.equal(cert.referencia, "11111111-2222-4333-8444-555555555555"); assert.equal(cert.huellaEmisor, "HUELLA-1"); assert.equal(cert.operacionId, "op-1");   // lo que el servidor devolvió al preparar
+      await hasta(async () => (await p.evaluate(() => globalThis.__felTiempos?.totalMs)) > 0, "se midió el tiempo de la certificación"); const tm = await p.evaluate(() => globalThis.__felTiempos); assert.ok(tm.nexaMs >= 0 && tm.digifactMs >= 0 && tm.totalMs >= tm.digifactMs, `${donde}: tiempos de NEXA y de Digifact medidos por separado`);
+      assert.match(p.url(), /#\/f\/[0-9a-f-]{36}$/, `${donde}: se sigue en la misma pantalla del documento`);
       const doc1 = (await listaApi())[0]; assert.equal(doc1.estado_preparacion, "revisado", `${donde}: queda guardado y REVISADO`);
 
       // ---- 3) la certificación RECHAZADA antes de salir: el documento queda guardado y el motivo se explica
       env.ops = []; env.llamadas.length = 0; env.cert = "error";
-      await nuevaConItem(); const n2 = (await listaApi()).length; await p.click("#guardar-certificar"); await p.waitForSelector("#confirmar-certificar-test"); await p.click("#confirmar-certificar-test");
+      await nuevaConItem(); const n2 = (await listaApi()).length; await p.click("#guardar-certificar");
       await hasta(async () => /No se envió a Digifact/.test(await p.locator(".err.area-msg").innerText()), "mensaje de no enviada");
       assert.match(await p.locator(".err.area-msg").innerText(), /quedó guardado/); assert.equal((await listaApi()).length, n2 + 1, `${donde}: el documento sigue guardado aunque no se certificó`);
 
       // ---- 4) respuesta INCIERTA: se dice que quedó bloqueado y que no se reenvía; una caída de red también conserva el documento
       env.ops = []; env.llamadas.length = 0; env.cert = "incierta";
-      await nuevaConItem(); await p.click("#guardar-certificar"); await p.waitForSelector("#confirmar-certificar-test"); await p.click("#confirmar-certificar-test");
+      await nuevaConItem(); await p.click("#guardar-certificar");
       await hasta(async () => /BLOQUEADO/.test(await p.locator(".err.area-msg").innerText()), "mensaje de resultado incierto");
       assert.equal(env.llamadas.filter((l) => l.accion === "certificar").length, 1, `${donde}: UNA sola certificación enviada`);
       env.ops = []; env.llamadas.length = 0; env.cert = "caida"; const n4 = (await listaApi()).length;
-      await nuevaConItem(); await p.click("#guardar-certificar"); await p.waitForSelector("#confirmar-certificar-test"); await p.click("#confirmar-certificar-test");
+      await nuevaConItem(); await p.click("#guardar-certificar");
       await hasta(async () => /quedó guardado/.test(await p.locator(".err.area-msg").innerText()), "mensaje tras la caída"); assert.equal((await listaApi()).length, n4 + 1, `${donde}: tras una caída de red el documento sigue guardado`);
 
-      // ---- 5) «Ahora no»: el documento queda guardado y revisado, y NO se certifica
+      // ---- 5) doble clic / dos toques seguidos: UNA sola preparación y UNA sola certificación (el botón se bloquea y muestra el avance)
       env.ops = []; env.llamadas.length = 0; env.cert = "certificada";
-      await nuevaConItem(); await p.click("#guardar-certificar"); await p.waitForSelector("#cancelar-certificar-test"); await p.click("#cancelar-certificar-test");
-      await hasta(async () => (await p.locator("body").innerText()).includes("No se certificó"), "aviso de no certificado");
-      assert.equal(env.llamadas.filter((l) => l.accion === "certificar").length, 0, `${donde}: sin confirmar NO se certifica`);
+      await nuevaConItem(); await p.dblclick("#guardar-certificar");
+      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "se certifica"); await p.waitForTimeout(600);
+      assert.equal(env.llamadas.filter((l) => l.accion === "certificar").length, 1, `${donde}: el doble clic NO envía dos veces`); assert.equal(env.llamadas.filter((l) => l.accion === "preparar").length, 1);
 
       // ---- 6) vista previa desde un formulario SIN guardar: se guarda primero y la vista previa trae BR-####, el IVA incluido y PDF/Compartir habilitados
       await nuevaConItem(); await p.click("#previa-titulo");
@@ -121,19 +122,18 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       await p.fill("#correo-fac-texto", "no-es-correo"); await p.click("#guardar-certificar"); await p.waitForSelector(".err.area-msg:not(:empty)");
       assert.match(await p.locator(".err.area-msg").innerText(), /correo válido/i); assert.equal(env.llamadas.length, 0, `${donde}: con correo inválido no se prepara ni se envía nada`);
       // correo editado: viaja en preparar y en certificar con la referencia de la preparación; el diálogo lo muestra enmascarado
-      await p.fill("#correo-fac-texto", "otro.destino@ejemplo.com"); await p.click("#guardar-certificar, #certificar-test");   // el documento ya quedó guardado en el intento anterior await p.waitForSelector("#confirmar-certificar-test");
-      assert.match(await p.locator(".modal").innerText(), /Correo \(lo envía Digifact\)[\s\S]*o\*\*\*@ejemplo\.com/); assert.ok(!(await p.locator(".modal").innerText()).includes("otro.destino"), `${donde}: el diálogo no muestra el correo completo`);
+      await p.fill("#correo-fac-texto", "otro.destino@ejemplo.com"); await p.click("#guardar-certificar, #certificar-test");   // el documento ya quedó guardado en el intento anterior; sin diálogo: certifica directo
+      await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica con correo");
       const prep8 = env.llamadas.find((l) => l.accion === "preparar").cuerpo; assert.deepEqual({ e: prep8.enviar_correo, c: prep8.correo }, { e: true, c: "otro.destino@ejemplo.com" });
-      await p.click("#confirmar-certificar-test"); await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica con correo");
       const cert8 = env.llamadas.find((l) => l.accion === "certificar").cuerpo; assert.equal(cert8.enviar_correo, true); assert.equal(cert8.correo, "otro.destino@ejemplo.com"); assert.equal(cert8.correo_ref, "REF-CORREO-1", `${donde}: el correo queda atado a la preparación`);
       // sin marcar la casilla: ni preparar ni certificar piden correo
       env.llamadas.length = 0; env.ops = []; await p.goto(srv.url + "/#/nueva"); await esperarNueva(p); await elegirReceptor(p); { const sel = p.locator(".sel-concepto"); await sel.selectOption(await sel.locator("option").nth(1).getAttribute("value")); await p.waitForSelector(".it"); }
-      assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: el documento nuevo vuelve a empezar sin correo`); await p.click("#guardar-certificar"); await p.waitForSelector("#confirmar-certificar-test");
-      assert.equal(env.llamadas.find((l) => l.accion === "preparar").cuerpo.enviar_correo, undefined, `${donde}: sin casilla no se pide correo`); await p.click("#cancelar-certificar-test");
+      assert.equal(await p.locator("#correo-fac-chk").isChecked(), false, `${donde}: el documento nuevo vuelve a empezar sin correo`); await p.click("#guardar-certificar"); await hasta(() => env.llamadas.some((l) => l.accion === "certificar"), "certifica sin correo");
+      assert.equal(env.llamadas.find((l) => l.accion === "preparar").cuerpo.enviar_correo, undefined, `${donde}: sin casilla no se pide correo`); assert.equal(env.llamadas.find((l) => l.accion === "certificar").cuerpo.enviar_correo, undefined);
       const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde}: ${a} > ${v}`);
       await c.close();
     }
     assert.deepEqual(errores, [], `errores en la consola: ${errores.join(" | ")}`);
-    console.log("OK  ciclo guardar y certificar en TEST (390 px y 1100 px): guarda siempre, confirma en un diálogo, nada sin confirmar, rechazo/incierto/caída conservan el documento, vista previa con BR e IVA, sin ciclo no se ofrece");
+    console.log("OK  ciclo guardar y certificar en TEST (390 px y 1100 px): guarda siempre, certifica de corrido sin ventanas ni doble envío, mide NEXA y Digifact por separado, rechazo/incierto/caída conservan el documento, vista previa con BR e IVA, sin ciclo no se ofrece");
   } finally { await nav.close(); srv.parar(); }
 })().catch((e) => { console.error(e); process.exit(1); });

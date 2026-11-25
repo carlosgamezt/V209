@@ -49,6 +49,7 @@ async function arrancar() {
         }
         return json(r, {});
       });
+      await p.reload(); await p.waitForSelector(".cab-demo");   // la aplicación precarga el estado de Digifact al entrar (caché en memoria): se recarga para que use las respuestas simuladas de arriba
       return env;
     };
     const PANEL = '[data-panel="digifact-test"]', CHK = "#digifact-correo-chk", CAMPO = "#digifact-correo-campo", IN = "#digifact-correo";

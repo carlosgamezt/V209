@@ -337,7 +337,7 @@ export class ServicioFelGt {
     // «envío SOLICITADO a Digifact»: el correo viaja en el NUC y lo envía Digifact al certificar. NEXA no recibe confirmación de entrega y por eso nunca registra «entregado».
     if (correo) await this.#aud("digifact_test.correo_solicitado", ctx, { documento: doc.id, operacion: op0.id, referencia: op0.referencia, destinatario: enmascararCorreo(correo) });
 
-    let res;
+    let res; const t0Digifact = performance.now();   // medición: cuánto de la espera es de Digifact (el resto es de NEXA)
     try { res = await cliente.certificar(nuc, { referencia: op0.referencia, formatos: ["XML", "PDF"] }); }
     catch (e) {
       if (e instanceof ErrorDigifact && ["autenticacion", "no_autorizado", "no_permitido", "solicitud"].includes(e.tipo)) {   // rechazada ANTES de procesar: no salió ningún documento
@@ -362,7 +362,7 @@ export class ServicioFelGt {
     else n = await this.d.almacen.transicion(ctx.empresaId, op0.id, ["enviando"], { estado: "desconocida", actualizada: ahora, resultado: { motivoDesconocido: res.motivo } });
     await this.#aud(`digifact_test.${res.tipo === "certificado" ? "certificada" : res.tipo === "rechazado_confirmado" ? "rechazada" : "desconocida"}`, ctx, { operacion: op0.id, referencia: op0.referencia });
     const sello = res.tipo === "certificado" && n && n.estado === "certificada" ? await this.#sellar(ctx, n, res.artefactos) : {};   // datos fiscales al documento y XML/PDF reales al almacén
-    return { reutilizada: false as const, operacion: this.#publica(n ?? op0), ...sello };
+    return { reutilizada: false as const, operacion: this.#publica(n ?? op0), ...sello, tiempoDigifactMs: Math.round(performance.now() - t0Digifact) };
   }
 
   /* ---------------------------------------------------------------- 5. conciliación (solo lectura hacia Digifact) */
