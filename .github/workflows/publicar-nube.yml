@@ -48,8 +48,13 @@ on:
         description: "Solo con digifact_correo=habilitado: UUID de LA ÚNICA empresa de demostración que puede pedir el envío por correo"
         type: string
         default: ""
+      digifact_prueba:
+        description: "Tras publicar (o en el modo «probar»): crea y certifica documentos de PRUEBA en Digifact TEST con la API real y valida XML, impuestos, UUID, serie y número. Solo con digifact=habilitado y digifact_referencia=CICLO-TEST. Apagado por defecto"
+        type: choice
+        options: [apagado, habilitado]
+        default: apagado
       digifact_referencia:
-        description: "Solo con digifact=habilitado: referencia (GUID) de LA ÚNICA prueba autorizada (déjalo vacío para no autorizar ninguna)"
+        description: "Solo con digifact=habilitado: referencia (GUID) de LA ÚNICA prueba autorizada, o CICLO-TEST para autorizar el ciclo de pruebas en TEST (cualquier documento de la empresa de demostración mientras esta publicación esté vigente). Vacío = no autoriza ninguna"
         type: string
         default: ""
 permissions:
@@ -100,6 +105,7 @@ jobs:
           FEL_DIGIFACT_TEST_EMISOR: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_EMISOR || '' }}
           FEL_DIGIFACT_TEST_HUELLA: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_HUELLA || '' }}
           FEL_DIGIFACT_AUTORIZA_REFERENCIA: ${{ inputs.digifact == 'habilitado' && inputs.digifact_referencia || '' }}
+          FEL_DEMO_PRUEBA_DIGIFACT: ${{ inputs.digifact_prueba == 'habilitado' && 'habilitado' || '' }}
           # Consulta de NIT (independiente): solo usuario, contraseña y NIT de TEST; NUNCA el emisor, su huella ni la autorización de una referencia. Si la certificación ya los carga, son los mismos secretos.
           FEL_DIGIFACT_NIT: ${{ inputs.digifact_nit == 'habilitado' && 'habilitado' || '' }}
           FEL_DIGIFACT_NIT_EMPRESA: ${{ inputs.digifact_nit == 'habilitado' && inputs.digifact_nit_empresa || '' }}

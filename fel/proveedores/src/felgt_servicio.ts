@@ -112,6 +112,7 @@ export interface DepsFelGt {
   emisorDe: (empresaId: string) => DatosEmisorEmpresa | null;
   almacen: AlmacenGt;
   /** Referencia que la persona responsable autorizó para ESTA prueba (nada más se envía). null = ninguna autorizada. */
+  /** Autorización de la persona responsable: o la referencia de UNA prueba (GUID), o «CICLO-TEST» (ciclo de pruebas en TEST publicado con su aprobación: vale para cualquier documento de la empresa de demostración mientras esté publicado). */
   autorizaPrueba: () => string | null;
   ahora?: () => Date;
   auditar?: (evento: string, ctx: ContextoFel, detalle: Record<string, unknown>) => Promise<void> | void;
@@ -124,6 +125,8 @@ export interface DepsFelGt {
 }
 
 export const CONFIRMACION_TEST = "CERTIFICAR-TEST";
+/** Valor de «autorizaPrueba» que autoriza el CICLO de pruebas en TEST (todos los documentos de la empresa de demostración, mientras esa publicación esté vigente); el resto de controles sigue igual. */
+export const AUTORIZACION_CICLO = "CICLO-TEST";
 /** «c***@dominio»: lo único del correo que se registra o devuelve. */
 export const enmascararCorreo = (c: string) => { const [u, d] = c.split("@"); return `${(u ?? "").slice(0, 1)}***@${d ?? ""}`; };
 const RE_NIT = /^\d{1,11}[0-9K]$/i;
@@ -187,6 +190,10 @@ export class ServicioFelGt {
   #exigir(ctx: ContextoFel, permiso: string) {
     if (!ctx || typeof ctx.empresaId !== "string" || !ctx.empresaId || typeof ctx.actorId !== "string" || !ctx.actorId) throw new ErrorFelGt("NO_AUTORIZADO", "Contexto de empresa no válido");
     if (!ctx.permisos.includes(permiso)) throw new ErrorFelGt("NO_AUTORIZADO", "No tienes permiso para esta operación");
+  }
+  /** ¿Esta empresa tiene canal Digifact TEST, y está autorizado el CICLO de pruebas (sin fijar una referencia)? No revela nada sensible; solo lo que la interfaz necesita para ofrecer «Guardar y certificar en TEST». */
+  estadoCanal(empresaId: string): { canal: boolean; ciclo: boolean } {
+    return { canal: !!this.d.clienteDe(empresaId) && !!this.d.emisorDe(empresaId), ciclo: this.d.autorizaPrueba() === AUTORIZACION_CICLO };
   }
   #canal(ctx: ContextoFel): { cliente: ClienteGt; emisor: DatosEmisorEmpresa } {
     const cliente = this.d.clienteDe(ctx.empresaId), emisor = this.d.emisorDe(ctx.empresaId);
@@ -302,7 +309,7 @@ export class ServicioFelGt {
     { const v = validarFechaEmision(op0.fechaEmision.slice(0, 10), this.#ahora()); if (!v.ok) throw new ErrorFelGt("FECHA_EMISION", `${v.mensaje} Elige otra fecha de emisión y vuelve a revisar y preparar el documento.`, [{ campo: "fechaEmision", mensaje: v.mensaje }]); }
     if (doc.estadoPreparacion !== "revisado" || !["ninguno", "rechazado"].includes(doc.estadoFiscal)) throw new ErrorFelGt("ESTADO", "El documento ya no está en un estado que permita certificar");
     if (!this.d.almacen.persistente) throw new ErrorFelGt("ALMACEN_NO_PERSISTENTE", "No hay almacén persistente de operaciones: no se envía nada real (si el proceso se reiniciara, se perdería la memoria de lo enviado)");
-    if (this.d.autorizaPrueba() !== op0.referencia) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada");
+    { const aut = this.d.autorizaPrueba(); if (aut !== op0.referencia && aut !== AUTORIZACION_CICLO) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada"); }
     // CHEQUEO PREVIO (solo lectura): Digifact NO deduplica por referencia, y la base de NEXA puede haber perdido la memoria de lo enviado (restauración de un respaldo, reversión). La referencia es DETERMINISTA, así que si Digifact ya la
     // tiene, NO se envía: la operación queda «desconocida» y una persona la concilia (se adopta el resultado que Digifact ya tiene). Si no se puede comprobar, tampoco se envía (falla cerrado; no hay reintento automático).
     const pv = await this.#prevuelo(cliente, op0);

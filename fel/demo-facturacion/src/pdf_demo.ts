@@ -9,6 +9,7 @@ export type ModoPdf = "simulado" | "prueba" | "oficial";
 export interface DatosPdf { empresa: string; nit: string; receptor: string; receptorId: string; fecha: string; numeroBorrador: string; estado: string; serie?: string | null; numero?: string | null; autorizacion?: string | null;
   lineas: { descripcion: string; cantidad: string; precio: string; neto: string }[]; subtotal: string; descuento: string; base: string;
   formato?: FormatoPdf; modo?: ModoPdf; impuestos?: string; total?: string;
+  /** Solo vista de demostración o prueba: IVA 12 % INCLUIDO en el precio (estimado, misma política que el documento enviado a Digifact). Si falta, se indica que los impuestos están pendientes. */ iva?: { gravable: string; iva: string; total: string };
   /** Marca de anulación: «anulado» (hecho confirmado, definitivo) o «solicitada» (pendiente de conciliar). `fechaAnulacion` ya viene formateada dd/mm/aaaa. */
   anulacion?: "anulado" | "solicitada"; fechaAnulacion?: string;
   /** Tipo de documento (catálogo central). Sin él se rotula «Factura» como siempre. `enPruebas`: el tipo se puede elaborar y ver, pero NO se certifica todavía. */
@@ -105,6 +106,7 @@ function carta(d: DatosPdf, modo: ModoPdf, sim: boolean): Uint8Array {
   t += 8; c.push(L(40, 555, t - 12));
   c.push(T(380, t + 4, "Subtotal", 10), T(490, t + 4, q(d.subtotal), 10), T(380, t + 20, "Descuentos", 10), T(490, t + 20, q(d.descuento), 10));
   if (oficial) c.push(T(380, t + 38, "Impuestos", 10), T(490, t + 38, q(d.impuestos ?? "0"), 10), T(380, t + 56, "Total", 11, true), T(490, t + 56, q(d.total!), 11, true));
+  else if (d.iva) c.push(T(380, t + 38, "Base gravable", 10), T(490, t + 38, q(d.iva.gravable), 10), T(380, t + 54, "IVA 12 % (incluido)", 10), T(490, t + 54, q(d.iva.iva), 10), T(380, t + 72, "TOTAL", 11, true), T(490, t + 72, q(d.iva.total), 11, true), T(48, t + 92, modo === "prueba" ? "Importes de una factura certificada en el ambiente de PRUEBAS." : "IVA 12 % incluido en el precio (estimado). El importe definitivo lo fija el certificador.", 8.5, false, 0.35), T(48, t + 104, modo === "prueba" ? "Este documento NO tiene valor fiscal." : "Este documento NO es una factura ni un DTE.", 8.5, false, 0.35));
   else c.push(T(380, t + 38, "Base imponible", 11, true), T(490, t + 38, q(d.base), 11, true), T(48, t + 64, "Impuestos y total: pendientes (régimen fiscal sin verificar). Este documento NO es una factura ni un DTE.", 8.5, false, 0.35));
   const textoPie = modo === "simulado" ? "Generado por NEXA FEL en modo demostración. Sin firma electrónica, sin autorización de SAT, sin certificador. No lo uses como comprobante." : "Generado por NEXA FEL con un certificador de PRUEBAS. Sin valor fiscal. No lo uses como comprobante.";
   const pie: Cmd[] = oficial ? [] : envolver(textoPie, 100).map((x, k) => (h: number) => T(48, h - 52 + k * 11, x, 8, false, 0.45)(h));
@@ -140,11 +142,19 @@ function ticket(d: DatosPdf, modo: ModoPdf, sim: boolean): Uint8Array {
   t += 0; c.push(L(M, X2, t, 0.6)); t += 10;
   const fila = (et: string, v: string, neg = false) => { c.push(T(M, t + 9, et, neg ? 9 : 8, neg), TD(X2, t + 9, v, neg ? 9 : 8, neg)); t += neg ? 15 : 12; };
   fila("Subtotal", q(d.subtotal)); fila("Descuentos", q(d.descuento));
-  if (oficial) { fila("Impuestos", q(d.impuestos ?? "0")); fila("Total", q(d.total!), true); } else fila("Base imponible", q(d.base), true);
+  if (oficial) { fila("Impuestos", q(d.impuestos ?? "0")); fila("Total", q(d.total!), true); } else if (d.iva) { fila("Base gravable", q(d.iva.gravable)); fila("IVA 12 % (incluido)", q(d.iva.iva)); fila("TOTAL", q(d.iva.total), true); } else fila("Base imponible", q(d.base), true);
   t += 4;
-  if (!oficial) { lineas("Impuestos y total: pendientes (régimen fiscal sin verificar). NO es una factura ni un DTE.", 50, 7, false, 0.35, 9); t += 2;
+  if (!oficial) { lineas(d.iva ? (modo === "prueba" ? "Importes de una factura certificada en el ambiente de PRUEBAS." : "IVA 12 % incluido en el precio (estimado). El importe definitivo lo fija el certificador.") : "Impuestos y total: pendientes (régimen fiscal sin verificar).", 50, 7, false, 0.35, 9); lineas("NO es una factura ni un DTE.", 50, 7, false, 0.35, 9); t += 2;
     lineas(modo === "simulado" ? "Generado por NEXA FEL en modo demostración. Sin firma electrónica, sin autorización de SAT, sin certificador. No lo uses como comprobante." : "Generado por NEXA FEL con un certificador de PRUEBAS. Sin valor fiscal.", 54, 6.5, false, 0.45, 8);
     t += 4; c.push(R(M, t, W - 2 * M, 16, "1 0.93 0.75"), T(M + 6, t + 11, "SIN VALOR FISCAL", 8.5, true, 0.3)); t += 16; }
   t += 10;
   return ensamblar(W, Math.ceil(t), c);
+}
+
+/** IVA 12 % INCLUIDO en el precio a partir de los netos de cada línea (texto decimal): misma política y redondeo que el documento enviado a Digifact (por línea, 6 decimales, mitad hacia arriba). Los importes salen a 2 decimales. */
+export function ivaIncluidoPdf(netos: string[]): { gravable: string; iva: string; total: string } {
+  const micro = (t: string) => { const [e, dd = ""] = String(t).split("."); return BigInt(e || "0") * 1_000_000n + BigInt(dd.padEnd(6, "0").slice(0, 6)); };
+  const cent = (m: bigint) => { const c = (m + 5_000n) / 10_000n; return `${c / 100n}.${String(c % 100n).padStart(2, "0")}`; };
+  let total = 0n, iva = 0n; for (const n of netos) { const m = micro(n); total += m; iva += (m * 12n + 56n) / 112n; }
+  return { gravable: cent(total - iva), iva: cent(iva), total: cent(total) };
 }

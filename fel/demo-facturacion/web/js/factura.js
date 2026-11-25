@@ -1,11 +1,12 @@
 // Crear, editar, revisar y procesar UNA factura simulada. El cálculo local es solo una vista previa: el servidor recalcula siempre.
 // UNA sola pantalla: receptor y establecimiento, ítems como filas compactas (se editan en una hoja, ver item_editor.js), resumen y una barra con la acción principal + «Más acciones».
-import { h, boton, insignia, campo, toast, quetzales, mensajeError, pedirMotivo, poner } from "/app/js/ui.js";
+import { h, boton, insignia, campo, toast, quetzales, mensajeError, pedirMotivo, poner, modal } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
 import { calcular, aInterno } from "/app/js/calculo.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 import { api } from "./api.js";
 import { vistaPrevia } from "./vista_previa.js";
+import { ivaIncluido } from "./iva.js";
 import { panelProceso } from "./proceso.js";
 import { editarItem, problemaLinea, resumenLinea, RE_MONTO, lineaVacia } from "./item_editor.js";
 import { selectorTipo, panelTipo, problemasTipo, tipoInicial, aplicarTipo, tipoPorCodigo, tituloDocumento } from "./tipos.js";
@@ -25,15 +26,19 @@ const problemaFecha = (f, v) => !f ? "Indica la fecha de emisión." : f > v.hoy 
 const TOPE_CF = "2500";   // SAT: «Consumidor final» solo en facturas por montos MENORES a Q2,500.00 (Reglamento de la Ley del IVA, art. 30 núm. 9, reformado por el Acuerdo Gubernativo 12-2023; preguntas frecuentes del portal SAT)
 const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).";
 
+// Tras guardar un documento NUEVO la pantalla se reconstruye con su id: estas banderas continúan lo que la persona pidió (abrir la vista previa, o certificar en TEST).
+let previaPendiente = null, certificarPendiente = null;
+const CONFIRMACION_TEST = "CERTIFICAR-TEST";
+
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
-    try { const tipos = await api.tiposDocumento(); ctx.tiposDoc = tipos; const ventana = await api.ventanaFecha().catch(() => null); poner(raiz, construir(id ? await api.documento(id) : null, tipos, ventana)); }
+    try { const tipos = await api.tiposDocumento(); ctx.tiposDoc = tipos; const ventana = await api.ventanaFecha().catch(() => null), dg = await api.digifactEstado().catch(() => null); poner(raiz, construir(id ? await api.documento(id) : null, tipos, ventana, dg)); }
     catch (e) { poner(raiz, h("p", { class: "err", role: "alert" }, mensajeError(e)), boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") })); }
   })();
   return raiz;
 
-  function construir(det, tipos, ventana) {
+  function construir(det, tipos, ventana, dg) {
     const est = ctx.estado;
     let VEN = ventana && ventana.hoy ? ventana : ventanaLocal();
     let d = det, doc = det?.documento ?? { id: null, version: null, estado_preparacion: "borrador", estado_fiscal: "ninguno" };
@@ -76,7 +81,13 @@ export function pantallaFactura(ctx, id) {
       try { return { ok: true, r: calcular(f.lineas) }; } catch (e) { return { ok: false, msg: e.message }; }
     }
 
-    const abrirPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio, tipos });
+    const mostrarPrevia = () => vistaPrevia({ ctx, doc, f, calc: calcularSeguro(), det: d, sucio, tipos });
+    // La vista previa se abre con el documento GUARDADO (con su BR-####, y PDF y Compartir disponibles). Si hay cambios y los datos están completos, se guardan primero; si faltan datos se
+    // muestra lo escrito (solo imprimir) y se dice qué falta.
+    const abrirPrevia = async () => {
+      if (editable() && (sucio || !doc.id) && problemas().length === 0) { const r = await guardar({ previa: true }); if (!r) return; if (!doc.id || previaPendiente) return; }
+      mostrarPrevia();
+    };
 
     // ---------------------------------------------------------------- pintado
     function pintarCab() {
@@ -281,10 +292,55 @@ export function pantallaFactura(ctx, id) {
       const c = calcularSeguro(), ps = problemas();
       const fila = (et, v, extra) => h("div", { class: `tot${extra ? " " + extra : ""}` }, h("span", {}, et), h("strong", { class: "num" }, v));
       poner(totales,
-        ...(c.ok ? [fila("Subtotal", quetzales(c.r.subtotal)), fila("Descuentos", quetzales(c.r.descuento_total)), fila("Total provisional", quetzales(c.r.base_imponible), "tot-base"), h("small", { class: "mut tot-nota" }, "Sin impuestos: pendientes de régimen fiscal verificado. SIMULADO · SIN VALOR FISCAL.")]
+        ...(c.ok ? [fila("Subtotal", quetzales(c.r.subtotal)), fila("Descuentos", quetzales(c.r.descuento_total)), fila("Total provisional", quetzales(c.r.base_imponible), "tot-base"), fila("IVA 12 % incluido (estimado)", quetzales(ivaIncluido(c.r.lineas.map((x) => x.neto)).iva), "tot-iva"), h("small", { class: "mut tot-nota" }, "El importe definitivo lo fija el certificador. SIMULADO · SIN VALOR FISCAL.")]
           : [h("p", { class: "mut" }, c.vacio ? "Agrega ítems para ver los importes." : "Completa cantidad y precio de cada ítem para ver los importes."), h("small", { class: "mut tot-nota" }, "SIMULADO · SIN VALOR FISCAL.")]),
         avisoPrecioCero(),
         ps.length && (intentoGuardar || !editable()) ? h("div", { class: "validacion", role: "status" }, h("strong", {}, "Antes de guardar:"), h("ul", {}, ...ps.map((x) => h("li", {}, x)))) : ps.length ? h("p", { class: "mut ayuda-val" }, `${ps.length} dato${ps.length > 1 ? "s" : ""} por completar.`) : h("p", { class: "ok-val" }, icono("circleCheck"), h("span", {}, "Datos completos.")));
+    }
+
+    // ---------------------------------------------------------------- Digifact TEST: «Guardar y certificar»
+    // Solo si el servidor lo habilitó para ESTA empresa con el ciclo de pruebas autorizado, el almacén es persistente y el rol puede certificar. El documento se guarda SIEMPRE antes y
+    // queda guardado (y revisado) pase lo que pase con la certificación.
+    const infoTipoCert = () => tipoPorCodigo(tipos, f.tipo_dte);
+    const certificaEnTest = () => !!dg && dg.habilitado && dg.certificacion && dg.empresaConCanal && dg.ciclo && dg.almacenamiento === "persistente" && ctx.tiene("fiscal.certificar")
+      && (f.tipo_dte === "FACT" || !!infoTipoCert()?.certificacion_habilitada);
+    const puedeCertificarAhora = () => certificaEnTest() && doc.estado_fiscal === "ninguno" && ["borrador", "revisado"].includes(doc.estado_preparacion) && (doc.id || editable());
+    function confirmarCertificacion(prep, ocupadaPor) {
+      return new Promise((resolve) => {
+        const c0 = calcularSeguro(), iv = c0.ok ? ivaIncluido(c0.r.lineas.map((x) => x.neto)) : null, q2 = (t) => quetzales(Number(t).toFixed(2));
+        const fila = (et, v) => h("div", { class: "cc-fila" }, h("span", {}, et), h("strong", { class: "mono" }, v));
+        let m;
+        const si = boton("Certificar en TEST", { id: "confirmar-certificar-test", onclick: () => { m.cerrar(); resolve(true); } });
+        m = modal({ titulo: "Certificar en Digifact TEST", ancho: "sm",
+          contenido: [h("p", { class: "aviso aviso-azul", role: "note" }, icono("info"), h("span", {}, "Se enviará UNA sola vez al ambiente de PRUEBAS de Digifact. Es un documento de prueba: no tiene valor fiscal.")),
+            fila("Receptor", prep.receptor?.nombre ?? "—"), fila("Fecha de emisión", dmy(String(prep.fechaEmision ?? "").slice(0, 10))), fila("Total", q2(prep.total)), iv ? fila("IVA 12 % incluido (estimado)", quetzales(iv.iva)) : null, fila("Referencia", String(prep.referencia ?? "").slice(0, 8) + "…")],
+          pie: [boton("Ahora no", { tipo: "sec", id: "cancelar-certificar-test", onclick: () => { m.cerrar(); resolve(false); } }), si] });
+      });
+    }
+    let certificando = false;
+    async function certificarEnTest() {
+      if (certificando) return; certificando = true; err.textContent = "";
+      const bc = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (bc) bc.disabled = true;
+      try {
+        if (doc.estado_preparacion === "borrador") {   // revisar congela el contenido, requisito para preparar
+          if (!ctx.tiene("borradores.revisar")) { err.textContent = "Tu rol no puede marcar el documento como revisado, paso previo a certificar. El borrador quedó guardado."; return; }
+          const r = await api.estadoPreparacion(doc.id, "revisado", doc.version); await recargar(r);
+        }
+        const prep = await api.digifactPreparar(doc.id, {});   // no envía nada
+        if (!(await confirmarCertificacion(prep))) { toast("No se certificó. El documento quedó guardado y revisado."); await recargar(); return; }
+        const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: CONFIRMACION_TEST, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor });
+        await recargar();
+        const op = r.operacion?.estado;
+        if (r.error) err.textContent = `No se envió a Digifact: ${r.error.mensaje} El documento quedó guardado.`;
+        else if (op === "certificada") toast(r.reutilizada ? "Este documento ya estaba certificado en TEST." : "Certificado en Digifact TEST");
+        else if (op === "rechazada") err.textContent = `Digifact TEST rechazó el documento: ${r.operacion?.resultado?.mensaje ?? ""} El documento quedó guardado.`;
+        else err.textContent = "No se sabe si Digifact TEST lo certificó. El documento quedó guardado y BLOQUEADO para no duplicarlo: usa «Consultar a Digifact» en el panel de abajo.";
+      } catch (e) { try { await recargar(); } catch { /* se queda la pantalla */ } err.textContent = `${mensajeError(e)} El documento quedó guardado.`; }   // primero se recarga (limpia los mensajes) y después se explica
+      finally { certificando = false; const b2 = document.getElementById("guardar-certificar") ?? document.getElementById("certificar-test"); if (b2) b2.disabled = false; }
+    }
+    async function guardarYCertificar() {
+      const r = await guardar({ certificar: true }); if (!r || certificarPendiente) return;   // documento nuevo: la pantalla se reconstruye y continúa sola
+      await certificarEnTest();
     }
 
     // ---------------------------------------------------------------- barra: una acción principal + «Más acciones»
@@ -294,7 +350,12 @@ export function pantallaFactura(ctx, id) {
       const ed = editable(), prep = doc.estado_preparacion;
       const puedeRevisar = doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar");
       let principal;
-      if (ed && (sucio || !doc.id)) principal = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { icon: "check", id: "guardar", onclick: guardar });
+      let secundaria = null;
+      if (ed && (sucio || !doc.id) && puedeCertificarAhora()) {   // dos acciones claras: guardar solo, o guardar y certificar en TEST
+        principal = boton("Guardar y certificar en TEST", { icon: "shield", id: "guardar-certificar", onclick: guardarYCertificar });
+        secundaria = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { tipo: "sec", icon: "check", id: "guardar", onclick: () => guardar() });
+      } else if (ed && (sucio || !doc.id)) principal = boton(doc.id ? "Guardar cambios" : "Guardar borrador", { icon: "check", id: "guardar", onclick: () => guardar() });
+      else if (doc.id && !sucio && puedeCertificarAhora() && ["borrador", "revisado"].includes(prep)) principal = boton("Certificar en TEST", { icon: "shield", id: "certificar-test", onclick: certificarEnTest });
       else if (puedeRevisar) principal = boton("Marcar como revisado", { icon: "circleCheck", id: "revisar", onclick: () => cambiar("revisado") });
       else principal = boton("Vista previa e impresión", { icon: "eye", id: "ver-previa", onclick: abrirPrevia });
       const items = [{ t: "Vista previa e impresión", i: "eye", id: "mi-previa", f: abrirPrevia }];
@@ -311,7 +372,7 @@ export function pantallaFactura(ctx, id) {
       function cerrar() { menu.hidden = true; bMas.setAttribute("aria-expanded", "false"); document.removeEventListener("click", fuera); document.removeEventListener("keydown", tecla); }
       cerrarMenu = cerrar;
       const wrap = h("div", { class: "mas-wrap" }, bMas, menu);
-      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, principal, wrap);
+      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, secundaria, principal, wrap);
     }
     function pintarProceso() {
       poner(proceso, doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
@@ -322,9 +383,9 @@ export function pantallaFactura(ctx, id) {
       d = nuevo ?? await api.documento(doc.id); doc = d.documento; f = inicial(); sucio = false; intentoGuardar = false; err.textContent = "";
       await ctx.recargarEstado(); todo();
     }
-    async function guardar() {
+    async function guardar(opc = {}) {
       err.textContent = ""; intentoGuardar = true; const ps = problemas(); pintarTotales();
-      if (ps.length) { err.textContent = ps[0]; return; }
+      if (ps.length) { err.textContent = ps[0]; return null; }
       const b = document.getElementById("guardar"); if (b) b.disabled = true;
       try {
         const nuevo = !doc.id;
@@ -332,9 +393,9 @@ export function pantallaFactura(ctx, id) {
           tipo_dte: f.tipo_dte, documento_origen_id: f.documento_origen_id || undefined, motivo_ajuste: f.motivo_ajuste || undefined, tipo_recibo: f.tipo_recibo || undefined,
           ...(f.nuevo ? { cliente_nuevo: { tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre } } : { cliente_id: f.cliente_id }) };
         const r = await api.guardar(cuerpo); await ctx.recargarEstado(); toast(`Borrador ${codigoBorrador(r.documento.numero_borrador)} guardado`);
-        if (nuevo) { ctx.ir(`/f/${r.documento.id}`, { reemplazar: true }); return; }
-        await recargar(r);
-      } catch (e) { err.textContent = mensajeError(e); if (e.codigo === "FEL_CONFLICTO" || e.status === 409) err.append(" ", h("button", { type: "button", class: "link", onclick: () => recargar() }, "Recargar")); if (b) b.disabled = false; }
+        if (nuevo) { if (opc.previa) previaPendiente = r.documento.id; if (opc.certificar) certificarPendiente = r.documento.id; ctx.ir(`/f/${r.documento.id}`, { reemplazar: true }); return r; }
+        await recargar(r); return r;
+      } catch (e) { err.textContent = mensajeError(e); if (e.codigo === "FEL_CONFLICTO" || e.status === 409) err.append(" ", h("button", { type: "button", class: "link", onclick: () => recargar() }, "Recargar")); if (b) b.disabled = false; return null; }
     }
     async function validar() {
       err.textContent = "";
@@ -363,6 +424,8 @@ export function pantallaFactura(ctx, id) {
     // no perder lo escrito por un cierre o una recarga accidental de la página
     const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", avisoSalir);
+    if (doc.id && previaPendiente === doc.id) { previaPendiente = null; setTimeout(mostrarPrevia, 0); }   // venía de «Vista previa» con un documento nuevo: ya está guardado
+    if (doc.id && certificarPendiente === doc.id) { certificarPendiente = null; setTimeout(certificarEnTest, 0); }   // venía de «Guardar y certificar»
     return h("div", { class: "pf" }, cab, barraTipo,
       avisoDoc,
       h("div", { class: "doc-grid" }, cardTipo, cardDatos, cardItems, totales, err, proceso), barra);

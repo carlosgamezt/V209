@@ -76,7 +76,9 @@ if [ "$PROBAR" = 1 ]; then
   case "$SUPABASE_URL" in "https://$REF.supabase.co") ;; *) echo "SUPABASE_URL no corresponde a FEL_DEMO_PROYECTO_REF"; exit 1;; esac
   SALIDA_PAGES="$(bash tools/pages-proyecto.sh)" || { echo "$SALIDA_PAGES" | grep -v '^HOST='; echo "No se pudo preparar el proyecto de Pages."; exit 1; }; FEL_DEMO_HOSTS="$(echo "$SALIDA_PAGES" | sed -n 's/^HOST=//p' | tail -1)"; [ -n "$FEL_DEMO_HOSTS" ] || { echo "No se obtuvo el subdominio del proyecto"; exit 1; }; export FEL_DEMO_HOSTS   # el proyecto ya existe: se reutiliza (nada se crea ni se despliega)
   paso "2/2 · prueba de humo contra la página ya publicada (https://$FEL_DEMO_HOSTS)"
-  ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_humo.ts ); exit $?
+  ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_humo.ts ) || exit $?
+  if [ "${FEL_DEMO_PRUEBA_DIGIFACT:-}" = "habilitado" ]; then paso "certificación de PRUEBA en Digifact TEST (documentos sin valor fiscal)"; ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_digifact.ts ); exit $?; fi
+  exit 0
 fi
 comprobar_cli || { echo "La CLI instalada no es compatible con este script. No se hace nada."; exit 1; }
 paso "1/8 · comprobaciones previas"
@@ -104,4 +106,8 @@ printf '%s' "$FEL_PROXY_SECRETO" | "${WR[@]}" pages secret put PROXY_SECRETO --p
 paso "8/8 · prueba de humo contra https://$FEL_DEMO_HOSTS"
 sleep 10
 ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_humo.ts )
+if [ "${FEL_DEMO_PRUEBA_DIGIFACT:-}" = "habilitado" ]; then   # solo si la persona lo eligió en esta ejecución Y Digifact TEST está habilitado con el ciclo autorizado
+  paso "9/9 · certificación de PRUEBA en Digifact TEST (documentos sin valor fiscal)"
+  ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_digifact.ts )
+fi
 echo; echo "LISTO: https://$FEL_DEMO_HOSTS (privada: solo entra quien tenga una cuenta). Siguiente: probarla desde el teléfono."

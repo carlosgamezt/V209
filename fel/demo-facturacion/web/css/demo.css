@@ -473,3 +473,7 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .check{display:flex;align-items:center;gap:8px;min-height:44px}
 @media (max-width:640px){.tipo-bar{padding:4px 0}.tipo-sel{flex:1 1 100%}.tipos-cfg-lista{grid-template-columns:1fr}}
 @media print{.tipo-fila,.tipo-card-cont{display:none!important}}
+/* Certificar en Digifact TEST: resumen del diálogo de confirmación y barra con dos acciones («Guardar» + «Guardar y certificar en TEST») */
+.cc-fila{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--borde,#e5e7eb)}.cc-fila span{color:var(--tinta-suave,#6b7280)}.cc-fila strong{text-align:right;overflow-wrap:anywhere}
+.barra-acciones #guardar-certificar{flex:2 1 0}.barra-acciones .tot-iva,.totales .tot-iva{font-size:.95em}
+@media(max-width:420px){.barra-acciones #guardar-certificar{font-size:13px}}

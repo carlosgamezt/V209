@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DigifactGt } from "../src/digifact_gt.ts";
 import type { PeticionHttp, RespuestaHttp } from "../src/digifact.ts";
-import { AlmacenGtMemoria, CONFIRMACION_TEST, ErrorFelGt, MAX_RENOVACIONES, ServicioFelGt, ivaIncluidoGeneral, type ContextoFel, type DocumentoFel, type EstadoOpGt } from "../src/felgt_servicio.ts";
+import { AUTORIZACION_CICLO, AlmacenGtMemoria, CONFIRMACION_TEST, ErrorFelGt, MAX_RENOVACIONES, ServicioFelGt, ivaIncluidoGeneral, type ContextoFel, type DocumentoFel, type EstadoOpGt } from "../src/felgt_servicio.ts";
 import { facturaPrueba } from "./digifact_gt_fixture.ts";
 
 // Todo con transporte SIMULADO sobre el cliente REAL de Digifact: ninguna prueba toca la red ni usa credenciales reales.
@@ -118,6 +118,18 @@ Deno.test("certificar exige cada garantía por separado y, si falta alguna, NO s
   await sinSalida("NO_ENCONTRADO", () => m.s.certificar(ctx(EMPRESA_B), doc(EMPRESA_B), c));   // otra empresa no puede usar la operación de A
   const caduca = mundo({ ahora: (() => { let t = AHORA.getTime(); return () => new Date((t += 40 * 60_000)); })() });
   const pc = await caduca.s.preparar(ctx(), doc()); caduca.autorizar(pc.referencia); await rechaza(caduca.s.certificar(ctx(), doc(), confirmar(pc)), "ESTADO"); assert.equal(caduca.llamadas.length, 0, "una preparación caducada no se envía");
+});
+
+Deno.test("«CICLO-TEST» autoriza el ciclo de pruebas SIN fijar una referencia, pero el resto de garantías sigue exigiéndose y nunca se envía dos veces lo mismo", async () => {
+  const m = mundo(); const p = await m.s.preparar(ctx(), doc()); m.autorizar(AUTORIZACION_CICLO);
+  // con el ciclo autorizado siguen faltando la confirmación escrita, la referencia y la huella: sin ellas NO sale nada
+  const antes = m.llamadas.length;
+  await rechaza(m.s.certificar(ctx(), doc(), { ...confirmar(p), confirmacion: "x" }), "CONFIRMACION"); await rechaza(m.s.certificar(ctx(), doc(), { ...confirmar(p), huellaEmisor: "ffffffffffffffff" }), "CONFIRMACION");
+  assert.equal(m.llamadas.length, antes); assert.equal(m.envios(), 0);
+  const r = await m.s.certificar(ctx(), doc(), confirmar(p)); assert.equal(r.operacion.estado, "certificada"); assert.equal(m.envios(), 1);
+  const otra = await m.s.certificar(ctx(), doc(), confirmar(p)); assert.equal(otra.reutilizada, true); assert.equal(m.envios(), 1, "una certificación ya hecha no se reenvía");   // anti duplicados
+  m.autorizar("CICLO-OTRO"); const q = mundo(); const pq = await q.s.preparar(ctx(), doc()); q.autorizar("CICLO-OTRO");
+  await rechaza(q.s.certificar(ctx(), doc(), confirmar(pq)), "PRUEBA_NO_AUTORIZADA");   // solo el valor exacto «CICLO-TEST» vale
 });
 
 Deno.test("sin almacén persistente no hay envío real (falla cerrado)", async () => {

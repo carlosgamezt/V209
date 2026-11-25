@@ -12,7 +12,7 @@ import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
 import { EXTRA, esMaestro } from "./mundo_practico.ts";
 import { Sesiones } from "./sesiones.ts";
-import { pdfDemo } from "./pdf_demo.ts";
+import { ivaIncluidoPdf, pdfDemo } from "./pdf_demo.ts";
 import { verificar as verificarTotp } from "./totp.ts";
 import { rutasCorreo } from "./api_correo.ts";
 import type { ServicioCorreo } from "./correo/servicio.ts";
@@ -195,7 +195,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
               ...(ro ? { origen: { serie: String(ro.serie), numero: String(ro.numero), fecha: String(ro.fecha_emision).split("-").reverse().join("/"), tipo: String(ro.tipo), ...(dc.motivo_ajuste ? { motivo: String(dc.motivo_ajuste) } : {}) } } : {}), ...(dc.tipo_recibo ? { tipoRecibo: String(dc.tipo_recibo) } : {}) } : undefined; })(),
           anulacion: dc.estado_fiscal === "anulado" ? "anulado" : dc.estado_fiscal === "anulacion_solicitada" ? "solicitada" : undefined,
           fechaAnulacion: dc.anulado_en ? new Date(String(dc.anulado_en)).toISOString().slice(0, 10).split("-").reverse().join("/") : undefined,
-          lineas: det.lineas.map((l) => ({ descripcion: String(l.descripcion), cantidad: String(l.cantidad), precio: String(l.precio_unitario), neto: String((l.importes as Obj)?.neto ?? "0") })), subtotal: String(dc.subtotal ?? dc.base_imponible), descuento: String(dc.descuento_total ?? "0"), base: String(dc.base_imponible) });
+          lineas: det.lineas.map((l) => ({ descripcion: String(l.descripcion), cantidad: String(l.cantidad), precio: String(l.precio_unitario), neto: String((l.importes as Obj)?.neto ?? "0") })), subtotal: String(dc.subtotal ?? dc.base_imponible), descuento: String(dc.descuento_total ?? "0"), base: String(dc.base_imponible), iva: ivaIncluidoPdf(det.lineas.map((l) => String((l.importes as Obj)?.neto ?? "0"))) });
         return new Response(bytes as unknown as BodyInit, { headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="NO-FISCAL-DEMO-${fmt.toUpperCase()}-BR-${dc.numero_borrador}.pdf"`, "cache-control": "no-store", "x-content-type-options": "nosniff" } });
       }
       if (m === "GET" && ruta === "/api/plan") {

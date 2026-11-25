@@ -6,10 +6,11 @@
 //   FEL_DIGIFACT_TEST_EMISOR=<json>         datos del emisor leídos de un DTE aceptado por SAT (paso «datos-emisor»); no son secretos
 //   FEL_DIGIFACT_TEST_HUELLA=<16 hex>       huella de esos datos que una persona aprobó: si no coincide, no se habilita
 //   FEL_DIGIFACT_AUTORIZA_REFERENCIA=<guid> autorización EXPRESA de UNA prueba: solo esa referencia se puede enviar (se retira al terminar)
+//   FEL_DIGIFACT_AUTORIZA_REFERENCIA=CICLO-TEST  autoriza el CICLO de pruebas en TEST: cualquier documento de la empresa de demostración mientras esa publicación esté vigente (se retira publicando con Digifact apagado)
 import { crearDigifactGt } from "../../proveedores/src/digifact_gt.ts";
 import { huellaEmisor, type DatosEmisor } from "../../proveedores/src/datos_emisor.ts";
 import type { EmisorGt } from "../../proveedores/src/nuc_gt.ts";
-import { AlmacenGtMemoria, ServicioFelGt, type AlmacenGt, type ContextoFel } from "../../proveedores/src/felgt_servicio.ts";
+import { AUTORIZACION_CICLO, AlmacenGtMemoria, ServicioFelGt, type AlmacenGt, type ContextoFel } from "../../proveedores/src/felgt_servicio.ts";
 import { AlmacenGtPg } from "../../proveedores/src/almacen_gt_pg.ts";
 import type { BdDemo } from "./bd.ts";
 
@@ -35,7 +36,7 @@ export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: Alm
   const servicio = new ServicioFelGt({
     clienteDe: (e) => (e === empresa.toLowerCase() ? cliente : null), emisorDe: (e) => (e === empresa.toLowerCase() ? emisor : null),
     almacen: o.almacen ?? new AlmacenGtMemoria(),   // sin almacén persistente el servicio PREPARA y VALIDA, pero se niega a enviar nada real
-    autorizaPrueba: () => { const a = env("FEL_DIGIFACT_AUTORIZA_REFERENCIA") ?? ""; return UUID.test(a) ? a.toLowerCase() : null; }, auditar: o.auditar, ...(o.ahora ? { ahora: o.ahora } : {}),
+    autorizaPrueba: () => { const a = env("FEL_DIGIFACT_AUTORIZA_REFERENCIA") ?? ""; return a === AUTORIZACION_CICLO ? a : UUID.test(a) ? a.toLowerCase() : null; }, auditar: o.auditar, ...(o.ahora ? { ahora: o.ahora } : {}),
   });
   return { servicio, motivo: "Digifact TEST habilitado" };
 }

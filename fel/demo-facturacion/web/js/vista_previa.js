@@ -6,6 +6,7 @@ import { descargarArchivo } from "./descarga.js";
 import { calcular } from "/app/js/calculo.js";
 import { codigoBorrador } from "/app/js/formato.js";
 import { tipoPorCodigo } from "./tipos.js";
+import { ivaIncluido } from "./iva.js";
 
 export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
   const est = ctx.estado, emp = est.empresa;
@@ -40,20 +41,23 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
   const referencia = doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "BR-????";
   const dato = (et, v) => h("div", { class: "pp-dato" }, h("span", {}, et), h("strong", {}, v));
   const sim = !certificado || String(doc.autorizacion_sat).toUpperCase().startsWith("SIM-");
+  const esTest = certificado && !sim;   // certificado en el ambiente de PRUEBAS de Digifact: sigue sin valor fiscal
+  const rotulo = esTest ? "PRUEBA (TEST) · SIN VALOR FISCAL" : "SIMULADO - SIN VALOR FISCAL";
+  const iva = c ? ivaIncluido(c.lineas.map((x) => x.neto)) : null;   // IVA 12 % incluido en el precio (misma política que el documento enviado a Digifact)
   if (formato === "ticket") {   // ticket térmico de 80 mm: una sola columna, cada ítem en dos líneas (descripción / cantidad × precio y neto)
     const fila = (et, v, cls) => h("div", { class: `tk-fila${cls ? " " + cls : ""}` }, h("span", {}, et), h("strong", { class: "num" }, v));
     return h("div", { class: `papel papel-ticket${anu ? " papel-" + anu : ""}`, "data-vista": "previa", "data-formato": "ticket" }, bandaAnu, selloAnu,
-      h("div", { class: "tk-banda" }, h("strong", {}, "SIMULADO - SIN VALOR FISCAL"), h("small", {}, certificado ? (sim ? "Certificado en SIMULACIÓN" : "Certificado en PRUEBAS (TEST)") + (anu === "anulado" ? " · ANULADO" : anu ? " · anulación pendiente" : "") : "Vista previa NO certificada")),
+      h("div", { class: "tk-banda" }, h("strong", {}, rotulo), h("small", {}, certificado ? (sim ? "Certificado en SIMULACIÓN" : "Certificado en PRUEBAS (TEST)") + (anu === "anulado" ? " · ANULADO" : anu ? " · anulación pendiente" : "") : "Vista previa NO certificada")),
       h("strong", { class: "tk-razon" }, emp.nombre), h("small", {}, `NIT ${emp.nit} (ficticio)`), h("small", {}, establecimiento?.direccion ?? emp.direccion ?? ""),
       h("div", { class: "tk-meta" }, h("strong", { class: "pp-ref" }, referencia), h("small", {}, fecha ? fechaLarga(fecha) : "—")), distinto ? h("strong", { class: "tk-tipo" }, tit.toUpperCase()) : null, bloqueTipo,
       certificado ? h("small", { class: "mono" }, `Serie ${doc.serie} · Número ${doc.numero_fiscal}`) : null, certificado ? h("small", { class: "mono" }, `${sim ? "Autorización simulada" : "Autorización (pruebas)"} ${doc.autorizacion_sat}`) : null,
       h("hr", {}), h("small", { class: "mut" }, "Receptor"), h("strong", {}, cliente ? cliente.nombre : "— sin receptor —"), cliente ? h("small", {}, cliente.id) : null, h("hr", {}),
       ...lineas.map((l, i) => h("div", { class: "tk-it" }, h("strong", {}, l.descripcion || "—"), h("div", { class: "tk-nn" }, h("span", {}, `${String(l.cantidad).replace(/\.?0+$/, "") || "0"} × ${l.precio_unitario ? quetzales(l.precio_unitario) : "—"}${l.descuento_tipo === "ninguno" ? "" : l.descuento_tipo === "porcentaje" ? ` · −${l.descuento_valor}%` : ` · −${quetzales(l.descuento_valor)}`}`), h("strong", { class: "num" }, c ? quetzales(c.lineas[i]?.neto) : "—")))),
-      h("hr", {}), c ? [fila("Subtotal", quetzales(c.subtotal)), fila("Descuentos", quetzales(c.descuento_total)), fila("Base imponible", quetzales(c.base_imponible), "tk-base")] : h("p", { class: "mut" }, "Completa los importes."),
-      h("small", { class: "mut" }, "Impuestos y total: pendientes (sin régimen fiscal verificado). NO es una factura ni un DTE."), h("div", { class: "tk-banda tk-pie" }, h("strong", {}, "SIN VALOR FISCAL")));
+      h("hr", {}), c ? [fila("Subtotal", quetzales(c.subtotal)), fila("Descuentos", quetzales(c.descuento_total)), fila("Base gravable", quetzales(iva.gravable)), fila("IVA 12 % (incluido)", quetzales(iva.iva)), fila("TOTAL", quetzales(iva.total), "tk-base")] : h("p", { class: "mut" }, "Completa los importes."),
+      h("small", { class: "mut" }, esTest ? "Importes de la factura certificada en TEST. NO tiene valor fiscal." : "IVA 12 % incluido en el precio (estimado). El importe definitivo lo fija el certificador. NO es una factura ni un DTE."), h("div", { class: "tk-banda tk-pie" }, h("strong", {}, "SIN VALOR FISCAL")));
   }
   return h("div", { class: `papel papel-carta${anu ? " papel-" + anu : ""}`, "data-vista": "previa", "data-formato": "carta" },
-    h("div", { class: "marca-agua", "aria-hidden": "true" }, "SIMULADO - SIN VALOR FISCAL"), selloAnu, bandaAnu,
+    h("div", { class: "marca-agua", "aria-hidden": "true" }, rotulo), selloAnu, bandaAnu,
     h("div", { class: "papel-cab" },
       h("div", { class: "pp-emisor" }, h("span", { class: "pp-logo", "aria-hidden": "true" }, "N"),
         h("div", {}, h("strong", { class: "pp-razon" }, emp.nombre), dato("NIT", `${emp.nit} (ficticio)`), dato("Dirección", establecimiento?.direccion ?? emp.direccion), dato("Teléfono", emp.telefono), dato("Correo", emp.correo),
@@ -71,9 +75,9 @@ export function papel({ ctx, doc, f, calc, det, formato = "carta" }) {
         h("td", { class: "der num" }, l.descuento_tipo === "ninguno" ? "—" : l.descuento_tipo === "porcentaje" ? `${l.descuento_valor}%` : quetzales(l.descuento_valor)), h("td", { class: "der num" }, c ? quetzales(c.lineas[i]?.neto) : "—")))))),
     h("div", { class: "pp-pie" },
       h("div", { class: "pp-obs" }, h("strong", {}, "Observaciones:"), h("p", {}, observaciones || "—")),
-      h("div", { class: "papel-tot" }, c ? [h("div", {}, h("span", {}, "Subtotal"), h("strong", { class: "num" }, quetzales(c.subtotal))), h("div", {}, h("span", {}, "Descuentos"), h("strong", { class: "num" }, quetzales(c.descuento_total))), h("div", { class: "papel-base" }, h("span", {}, "Base imponible"), h("strong", { class: "num" }, quetzales(c.base_imponible)))] : h("p", { class: "mut" }, "Completa los importes para ver los totales."),
-        h("p", { class: "mut" }, "Impuestos y total: pendientes (no hay régimen fiscal verificado)."))),
-    h("p", { class: "papel-pie" }, "Documento de demostración. No es una factura, no fue enviado a SAT ni a ningún certificador y no tiene validez fiscal."));
+      h("div", { class: "papel-tot" }, c ? [h("div", {}, h("span", {}, "Subtotal"), h("strong", { class: "num" }, quetzales(c.subtotal))), h("div", {}, h("span", {}, "Descuentos"), h("strong", { class: "num" }, quetzales(c.descuento_total))), h("div", {}, h("span", {}, "Base gravable"), h("strong", { class: "num" }, quetzales(iva.gravable))), h("div", {}, h("span", {}, "IVA 12 % (incluido en el precio)"), h("strong", { class: "num" }, quetzales(iva.iva))), h("div", { class: "papel-base" }, h("span", {}, "TOTAL"), h("strong", { class: "num" }, quetzales(iva.total)))] : h("p", { class: "mut" }, "Completa los importes para ver los totales."),
+        c ? h("p", { class: "mut" }, esTest ? "Importes de la factura certificada en el ambiente de PRUEBAS de Digifact." : "IVA 12 % incluido en el precio (estimado para régimen general). El importe definitivo lo fija el certificador.") : null)),
+    h("p", { class: "papel-pie" }, esTest ? "Documento de PRUEBA certificado en el ambiente TEST de Digifact. No es una factura real, no fue enviado a SAT y no tiene validez fiscal." : "Documento de demostración. No es una factura, no fue enviado a SAT ni a ningún certificador y no tiene validez fiscal."));
 }
 
 // El ticket es de ancho fijo (80 mm) y ALTO VARIABLE: los navegadores no admiten «size: 80mm auto», así que justo antes de imprimir se inserta (por CSSOM) una regla @page con el alto real del contenido.
