@@ -103,7 +103,7 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       await p.keyboard.press("Escape");
 
       // ---- 7) sin el ciclo autorizado (o sin Digifact) no aparece la acción de certificar: solo se guarda
-      env.ciclo = false; await nuevaConItem();
+      env.ciclo = false; await p.reload(); await nuevaConItem();   // el estado del canal cambia solo al publicar de nuevo (la página se recarga y la caché en memoria se vacía)
       assert.equal(await p.locator("#guardar-certificar").count(), 0, `${donde}: sin ciclo autorizado no se ofrece certificar`); assert.equal(await p.locator("#guardar").count(), 1);
       const [a, v] = await p.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert.ok(a <= v + 1, `desplazamiento horizontal en ${donde}: ${a} > ${v}`);
       await c.close();

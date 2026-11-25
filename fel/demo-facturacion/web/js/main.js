@@ -2,18 +2,18 @@
 // Rutas: #/ (facturas), #/nueva, #/f/<id>, #/clientes, #/conceptos, #/config
 import { h, poner, toast, mensajeError } from "/app/js/ui.js";
 import { icono } from "/app/js/icons.js";
-import { api, cambiarUsuario, usuarioActual } from "./api.js";
+import { api, cambiarUsuario, usuarioActual, escrituras } from "./api.js";
 import { pantallaLista } from "./lista.js";
-import { pantallaFactura } from "./factura.js";
-import { pantallaClientes } from "./clientes.js";
-import { pantallaConceptos } from "./conceptos.js";
-import { pantallaConfig } from "./config.js";
 import { pantallaLogin } from "./login.js";
-import { pantallaPlan } from "./plan.js";
-import { pantallaPanel } from "./panel.js";
-import { pantallaCuenta } from "./cuenta.js";
-import { pantallaUsuarios } from "./usuarios.js";
-import { pantallaEmpresas, pantallaEmpresa, pantallaPlanes, pantallaBolson } from "./plataforma.js";
+
+// Carga diferida de pantallas: el navegador solo descarga el código de la pantalla que se abre (la carga inicial trae solo el marco, la lista y el inicio de sesión).
+const MODULOS = { pantallaFactura: "./factura.js", pantallaClientes: "./clientes.js", pantallaConceptos: "./conceptos.js", pantallaConfig: "./config.js", pantallaPlan: "./plan.js", pantallaPanel: "./panel.js", pantallaCuenta: "./cuenta.js", pantallaUsuarios: "./usuarios.js",
+  pantallaEmpresas: "./plataforma.js", pantallaEmpresa: "./plataforma.js", pantallaPlanes: "./plataforma.js", pantallaBolson: "./plataforma.js" };
+const perezosa = (nombre, ...args) => {
+  const marco = h("section", { class: "pantalla", "aria-busy": "true" }, h("p", { class: "mut" }, "Cargando…"));
+  import(MODULOS[nombre]).then((m) => { if (marco.isConnected) marco.replaceWith(m[nombre](...args)); }).catch(() => { marco.replaceChildren(h("p", { class: "err", role: "alert" }, "No se pudo cargar la pantalla. Revisa tu conexión e inténtalo de nuevo.")); });
+  return marco;
+};
 
 const raiz = document.getElementById("app");
 const VERSION_DEMO = "demo-ea1";   // acceso anticipado, 1.ª iteración
@@ -74,8 +74,11 @@ async function iniciar(estadoInicial) {
   const rutaActual = () => location.hash.slice(1) || "/";
   const activa = (n, r) => (n.exacta ? r === n.ruta || (n.tambien ?? []).some((t) => r.startsWith(t)) : r.startsWith(n.ruta));
 
+  let pendEn = 0, pendEscr = -1;
   async function cargarPendientes() {
     if (maestro) { pendientes = []; return; }
+    if (pendEscr === escrituras && Date.now() - pendEn < 15000) return;   // sin escrituras recientes no se vuelve a pedir en cada cambio de pantalla
+    pendEn = Date.now(); pendEscr = escrituras;
     try { const r = await api.documentosPagina("pagina=1&tam=25&categoria=pendientes"); pendientes = r.items; pendientes.total = r.total; } catch { pendientes = []; }   // solo la primera página de pendientes (no todos los documentos)
   }
   function pintarMenu() {
@@ -133,18 +136,18 @@ async function iniciar(estadoInicial) {
     const ruta = rutaActual();
     let vista;
     if (maestro) {
-      if (ruta.startsWith("/empresa/")) vista = pantallaEmpresa(ctx, ruta.split("/")[2]); else if (ruta === "/planes") vista = pantallaPlanes(ctx); else if (ruta === "/bolson") vista = pantallaBolson(ctx); else vista = pantallaEmpresas(ctx);
+      if (ruta.startsWith("/empresa/")) vista = perezosa("pantallaEmpresa", ctx, ruta.split("/")[2]); else if (ruta === "/planes") vista = perezosa("pantallaPlanes", ctx); else if (ruta === "/bolson") vista = perezosa("pantallaBolson", ctx); else vista = perezosa("pantallaEmpresas", ctx);
       poner(contenido, vista); pintarMenu(); document.title = "NEXA FEL · Plataforma (SIMULADO)"; return;
     }
-    if (ruta === "/nueva") vista = pantallaFactura(ctx, null);
-    else if (ruta.startsWith("/f/")) vista = pantallaFactura(ctx, ruta.split("/")[2]);
-    else if (ruta === "/clientes") vista = pantallaClientes(ctx);
-    else if (ruta === "/conceptos") vista = pantallaConceptos(ctx);
-    else if (ruta === "/plan" && estado.practico) vista = pantallaPlan(ctx);
-    else if (ruta === "/panel" && estado.practico) vista = pantallaPanel(ctx);
-    else if (ruta === "/cuenta" && conLogin) vista = pantallaCuenta(ctx);
-    else if (ruta === "/usuarios" && estado.practico) vista = pantallaUsuarios(ctx);
-    else if (ruta === "/config") vista = pantallaConfig(ctx);
+    if (ruta === "/nueva") vista = perezosa("pantallaFactura", ctx, null);
+    else if (ruta.startsWith("/f/")) vista = perezosa("pantallaFactura", ctx, ruta.split("/")[2]);
+    else if (ruta === "/clientes") vista = perezosa("pantallaClientes", ctx);
+    else if (ruta === "/conceptos") vista = perezosa("pantallaConceptos", ctx);
+    else if (ruta === "/plan" && estado.practico) vista = perezosa("pantallaPlan", ctx);
+    else if (ruta === "/panel" && estado.practico) vista = perezosa("pantallaPanel", ctx);
+    else if (ruta === "/cuenta" && conLogin) vista = perezosa("pantallaCuenta", ctx);
+    else if (ruta === "/usuarios" && estado.practico) vista = perezosa("pantallaUsuarios", ctx);
+    else if (ruta === "/config") vista = perezosa("pantallaConfig", ctx);
     else vista = pantallaLista(ctx);
     poner(contenido, vista); pintarMenu();
     document.title = `NEXA FEL · Demostración (SIMULADO)`;

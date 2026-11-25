@@ -5,9 +5,20 @@ export class ErrorApi extends Error {
 let usuario = "ana";
 try { const g = localStorage.getItem("fel_demo_usuario"); if (g && ["ana", "luis", "marta", "pedro"].includes(g)) usuario = g; } catch { /* sin almacenamiento: se usa el predeterminado */ }
 export const usuarioActual = () => usuario;
-export function cambiarUsuario(u) { usuario = u; try { localStorage.setItem("fel_demo_usuario", u); } catch { /* ignorado */ } }
+export function cambiarUsuario(u) { usuario = u; generacion++; CACHE.clear(); ENVUELO.clear(); try { localStorage.setItem("fel_demo_usuario", u); } catch { /* ignorado */ } }
 
-export async function llamar(metodo, ruta, cuerpo, opciones = {}) {
+// ---------------------------------------------------------------- caché segura en MEMORIA (nunca en disco, localStorage ni cachés compartidas)
+// Solo para lecturas con TTL corto (catálogos y estado del canal). Está atada a UNA sesión: se vacía al entrar, salir, vencer la sesión, cambiar de persona y tras cualquier escritura que
+// pueda cambiar lo leído. Además, las lecturas idénticas simultáneas comparten una sola solicitud. Los documentos y datos fiscales jamás se cachean.
+const CACHE = new Map(), ENVUELO = new Map();
+const TTL_MS = { "/api/tipos-documento": 300000, "/api/correo/estado": 300000, "/api/digifact/estado": 60000, "/api/fecha-emision": 60000 };
+let generacion = 0;
+export let escrituras = 0;   // cuenta las escrituras: quien guarda datos derivados (p. ej. pendientes) sabe cuándo refrescarlos
+export function vaciarCache() { generacion++; CACHE.clear(); ENVUELO.clear(); }
+if (typeof document !== "undefined") document.addEventListener("fel-sesion-vencida", vaciarCache);
+export const estadisticasCache = { aciertos: 0, fallos: 0, compartidas: 0 };
+
+async function pedir(metodo, ruta, cuerpo, opciones) {
   let r;
   try {
     r = await fetch(ruta, { method: metodo, headers: { "x-demo": "1", "x-demo-usuario": usuario, "content-type": "application/json" }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo), signal: opciones.signal });
@@ -16,6 +27,23 @@ export async function llamar(metodo, ruta, cuerpo, opciones = {}) {
   if (r.status === 401 && datos?.codigo === "no_sesion") document.dispatchEvent(new Event("fel-sesion-vencida"));
   if (!r.ok) { const err = new ErrorApi(datos?.mensaje || "No se pudo completar la operación.", datos?.codigo || "error", r.status); err.detalle = datos; throw err; }
   return datos;
+}
+export async function llamar(metodo, ruta, cuerpo, opciones = {}) {
+  if (metodo !== "GET") {
+    escrituras++;
+    const antes = generacion;
+    try { return await pedir(metodo, ruta, cuerpo, opciones); }
+    finally { if (antes === generacion && !/^\/api\/documentos(\/|$)/.test(ruta)) vaciarCache(); else if (/^\/api\/sesion\//.test(ruta)) vaciarCache(); }   // una escritura de configuración, clientes, sesión… invalida lo leído
+  }
+  const ttl = TTL_MS[ruta.split("?")[0]], clave = `${generacion}|${usuario}|${ruta}`;
+  if (ttl && !opciones.signal) { const c = CACHE.get(clave); if (c && c.hasta > Date.now()) { estadisticasCache.aciertos++; return structuredClone(c.datos); } }
+  if (!opciones.signal && ENVUELO.has(clave)) { estadisticasCache.compartidas++; return structuredClone(await ENVUELO.get(clave)); }
+  estadisticasCache.fallos++;
+  const gen = generacion, vuelo = pedir("GET", ruta, undefined, opciones);
+  if (!opciones.signal) { ENVUELO.set(clave, vuelo); vuelo.then(() => {}, () => {}).finally(() => { if (ENVUELO.get(clave) === vuelo) ENVUELO.delete(clave); }); }
+  const datos = await vuelo;
+  if (ttl && gen === generacion && !opciones.signal) CACHE.set(clave, { datos: structuredClone(datos), hasta: Date.now() + ttl });
+  return structuredClone(datos);
 }
 export const api = {
   estado: () => llamar("GET", "/api/estado"),
