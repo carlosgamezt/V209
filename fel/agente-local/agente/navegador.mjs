@@ -5,7 +5,7 @@ import { ErrorRed, peticionPermitida } from "./seguridad_red.mjs";
 
 export class ErrorOrden extends Error { constructor(codigo, mensaje) { super(mensaje ?? codigo); this.codigo = codigo; } }
 const TIPOS = new Set(["NIT", "CUI", "EXT", "CF"]);
-const hoy = () => new Date().toISOString().slice(0, 10);
+const hoy = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date());   // hoy en Guatemala, no en UTC
 
 /** Traduce la instantánea CONGELADA de la orden al formulario del simulador. Lanza ErrorOrden si algo no es representable (antes de tocar nada). */
 export function aFormulario(i) {

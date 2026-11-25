@@ -61,7 +61,7 @@ let secNit = 1000000 + Math.floor(Math.random() * 500000);
 /** Documento revisado y certificación SOLICITADA por el canal asistido ⇒ queda una orden pendiente para el agente. */
 export async function nuevaOrden(nexa, o = {}) {
   const cliente = o.cliente ?? { tipo_identificacion: "NIT", numero_identificacion: `${++secNit}-${secNit % 10}`, nombre: "Cliente de prueba" };
-  const d = await nexa.api("marta", "POST", "/api/documentos", { cliente_nuevo: cliente, lineas: o.lineas ?? [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "10.50" }], establecimiento_id: nexa.info.establecimientos[0].id, fecha: "2026-11-11" });
+  const d = await nexa.api("marta", "POST", "/api/documentos", { cliente_nuevo: cliente, lineas: o.lineas ?? [{ descripcion: "Servicio de prueba", cantidad: "2", precio_unitario: "10.50" }], establecimiento_id: nexa.info.establecimientos[0].id, fecha: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date()) });
   if (d.status !== 200) throw new Error(`no se creó el documento: ${d.texto}`);
   const doc = d.json.documento.id;
   const r = await nexa.api("ana", "POST", `/api/documentos/${doc}/estado`, { estado: "revisado", version: d.json.documento.version }); if (r.status !== 200) throw new Error(`no se revisó: ${r.texto}`);

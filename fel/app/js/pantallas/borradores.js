@@ -64,7 +64,7 @@ export function pantallaEditor(ctx, id) {
 
   function construir(clientes, conceptos, doc0) {
     let doc = doc0 ?? { id: null, version: null, estado_preparacion: "borrador", estado_fiscal: "ninguno", numero_borrador: null, cliente_id: "", cliente_snapshot: null,
-      fecha_emision_prevista: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),   // hoy en Guatemala (no en UTC) observaciones: "", lineas: [vaciaLinea()] };
+      fecha_emision_prevista: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()), observaciones: "", lineas: [vaciaLinea()] };   // fecha: hoy en Guatemala (no en UTC)
     let lineas = doc.lineas.map((l) => ({ concepto_id: l.concepto_id ?? "", descripcion: l.descripcion, cantidad: String(l.cantidad), precio_unitario: String(l.precio_unitario), descuento_tipo: l.descuento_tipo, descuento_valor: String(l.descuento_valor) }));
     let sucio = !doc.id;
     const editable = () => doc.estado_preparacion === "borrador" && doc.estado_fiscal === "ninguno" && tiene(doc.id ? "borradores.editar" : "borradores.crear");
