@@ -263,4 +263,4 @@ do $$ begin
   assert (select count(*) from public.documentos where tipo_dte in ('NCRE','NDEB') and (documento_origen_id is null or referencia_origen is null)) = 0;
 end $$;
 rollback;
-\echo OK 16_tipos_documento
+select 'PRUEBAS 30 OK' as resultado;

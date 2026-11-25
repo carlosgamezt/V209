@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { CATALOGO_DTE } from "../../proveedores/src/catalogo_dte.ts";
 
-const SQL = await Deno.readTextFile(new URL("../../docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql", import.meta.url));
+const SQL = await Deno.readTextFile(new URL("../../supabase/migrations/20261115000100_fel_tipos_documento.sql", import.meta.url));
 const bloque = SQL.slice(SQL.indexOf("insert into public.fel_tipos_dte"), SQL.indexOf("-- El catálogo es de solo lectura"));
 const filas = [...bloque.matchAll(/\(\s*'([A-Z]{4})',\s*'([^']*)',\s*'(\w+)',\s*'(\w+)',\s*(true|false),\s*(true|false),\s*(true|false),\s*(?:'\{\}'|array\[([^\]]*)\])::text\[\]\)/g)]
   .map((m) => ({ codigo: m[1], nombre: m[2].replace(/''/g, "'"), familia: m[3], disponibilidad: m[4], cert: m[5] === "true", explicita: m[6] === "true", origen: m[7] === "true", permitidos: m[8] ? [...m[8].matchAll(/'(\w+)'/g)].map((x) => x[1]) : [] }));

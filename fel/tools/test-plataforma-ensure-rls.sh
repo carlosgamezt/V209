@@ -60,11 +60,11 @@ psq ens_full -c "create table public.zz_prueba_rls (id int)" >/dev/null 2>&1
 [ "$("$PSQLB" "$BASE/ens_full" -X -At -c "select relrowsecurity from pg_class where oid = 'public.zz_prueba_rls'::regclass")" = t ] && ok "el disparador está ACTIVO de verdad: una tabla creada sin activar RLS lo recibe activado" || mal "el disparador no activó RLS"
 psq ens_full -c "drop table public.zz_prueba_rls" >/dev/null 2>&1
 n=0; for f in supabase/migrations/*.sql; do n=$((n+1)); psq ens_full -f "$f" >/dev/null 2>"/tmp/ens_err.txt" || { mal "falló la migración $(basename "$f"): $(head -c 200 /tmp/ens_err.txt)"; break; }; done
-[ "$n" = 29 ] && ok "las $n migraciones se aplican con la función real y su disparador instalados" || mal "solo se aplicaron $n migraciones"
+[ "$n" = 30 ] && ok "las $n migraciones se aplican con la función real y su disparador instalados" || mal "solo se aplicaron $n migraciones"
 res="$("$PSQLB" "$BASE/ens_full" -X -At -c "select count(*) || ' ' || count(*) filter (where relrowsecurity) from pg_class c join pg_namespace s on s.oid = c.relnamespace where s.nspname = 'public' and c.relkind in ('r','p')")"
-[ "$res" = "69 69" ] && ok "las 69 tablas de public tienen RLS" || mal "tablas y RLS: $res"
+[ "$res" = "71 71" ] && ok "las 71 tablas de public tienen RLS" || mal "tablas y RLS: $res"
 ns=0; for f in supabase/tests/*.sql; do ns=$((ns+1)); psq ens_full -f "$f" >/dev/null 2>"/tmp/ens_err.txt" || { mal "falló la suite $(basename "$f"): $(head -c 200 /tmp/ens_err.txt)"; break; }; done
-[ "$ns" = 29 ] && ok "las $ns suites SQL pasan con la función real instalada" || mal "solo corrieron $ns suites"
+[ "$ns" = 30 ] && ok "las $ns suites SQL pasan con la función real instalada" || mal "solo corrieron $ns suites"
 for t in procedimiento_excepcional_empresas verificacion_inicial_solo_lectura; do
   PSQL_CMD="$PSQLB $BASE/ens_full" bash "supabase/tests/$t.sh" >/tmp/ens_out.txt 2>&1 && ok "$t.sh pasa con la función real instalada" || { mal "$t.sh falló"; tail -3 /tmp/ens_out.txt; }
 done

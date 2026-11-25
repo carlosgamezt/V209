@@ -8,7 +8,7 @@ RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"; cd "$RAIZ"
 PSQL_BIN=${PSQL_BIN:-psql}; CONN=${CONN:?define CONN (con la marca DB entre llaves)}; M=supabase/migrations/20261114000100_fel_digifact_operaciones.sql
 MARCA="{DB}"
 Q() { local db="$1"; shift; "$PSQL_BIN" "${CONN//$MARCA/$db}" -v ON_ERROR_STOP=1 -q -X "$@"; }
-nuevo() { Q postgres -c "drop database if exists $1 with (force)" -c "create database $1" >/dev/null 2>&1; Q $1 -f tools/shim_supabase.sql >/dev/null; for f in supabase/migrations/*.sql; do case "$f" in *20261114000100*) continue;; esac; Q $1 -f "$f" >/dev/null 2>&1 || { echo "FALLO preparación: $f"; exit 1; }; done; }
+nuevo() { Q postgres -c "drop database if exists $1 with (force)" -c "create database $1" >/dev/null 2>&1; Q $1 -f tools/shim_supabase.sql >/dev/null; for f in supabase/migrations/*.sql; do case "$f" in *20261114000100*|*20261115000100*) continue;; esac; Q $1 -f "$f" >/dev/null 2>&1 || { echo "FALLO preparación: $f"; exit 1; }; done; }
 ok() { echo "OK migración-29: $1"; }; mal() { echo "FALLO migración-29: $1"; FALLOS=$((FALLOS+1)); }; FALLOS=0
 V() { Q "$1" -f docs/migracion-29/verificacion-posterior-29.sql 2>&1; }
 echo "== A. aplicar la 29 dos veces: la segunda se rechaza SIN cambiar nada (precondición)"
@@ -16,7 +16,7 @@ nuevo t_a; Q t_a -f $M >/dev/null 2>&1 && ok "primera aplicación" || mal "prime
 Q t_a -f $M 2>&1 | grep -q "PRECONDICIÓN 29: ya existen objetos" && ok "segunda aplicación rechazada con mensaje claro" || mal "segunda aplicación no se rechazó"
 V t_a | grep -q "VERIFICACION POSTERIOR 29 OK" && ok "tras el intento repetido el esquema sigue verificado" || mal "esquema alterado por el intento repetido"
 echo "== B. aplicar la 29 sin la 28 se rechaza"
-Q postgres -c "drop database if exists t_b with (force)" -c "create database t_b" >/dev/null 2>&1; Q t_b -f tools/shim_supabase.sql >/dev/null; for f in supabase/migrations/2026111*.sql; do case "$f" in *20261113000100*|*20261114000100*) continue;; esac; Q t_b -f "$f" >/dev/null 2>&1 || true; done
+Q postgres -c "drop database if exists t_b with (force)" -c "create database t_b" >/dev/null 2>&1; Q t_b -f tools/shim_supabase.sql >/dev/null; for f in supabase/migrations/2026111*.sql; do case "$f" in *20261113000100*|*20261114000100*|*20261115000100*) continue;; esac; Q t_b -f "$f" >/dev/null 2>&1 || true; done
 Q t_b -f $M 2>&1 | grep -q "PRECONDICIÓN 29: falta la migración 28" && ok "sin la 28 se rechaza" || mal "sin la 28 NO se rechazó"
 echo "== C. la verificación posterior DETECTA manipulaciones"
 for caso in "grant select on public.digifact_operaciones to service_role" "grant execute on function public.fel_sys_digifact_aplicar(uuid,uuid) to service_role" "grant select on public.digifact_artefactos to authenticated" "alter table public.digifact_operaciones disable row level security" "alter table public.digifact_artefactos disable trigger digifact_art_guarda" "alter table public.digifact_artefactos drop constraint digifact_artefactos_operacion_id_empresa_id_fkey" "drop index public.digifact_op_una_que_bloquea_uq" "create policy x on public.digifact_operaciones for select to authenticated using (true)" "alter function public.fel_digifact_op_guarda() reset search_path"; do

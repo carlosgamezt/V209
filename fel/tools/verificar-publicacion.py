@@ -112,10 +112,11 @@ else: mal("[migraciones-nube] el flujo menciona algo que despliega o que no nece
 if "supabase-hospedado.sh" in cuerpo_mg and 'migraciones-etapa' in cuerpo_mg and 'verificar-etapa' in cuerpo_mg and 'verificar-inicial' in cuerpo_mg and 'diagnostico-inicial' in cuerpo_mg and not re.search(r"supabase-hospedado\.sh[^\n]*\b(funcion|migraciones|conexion|estado|diagnostico|validar)\b(?![-\w])", cuerpo_mg): ok("[migraciones-nube] solo invoca las acciones verificar-inicial, diagnostico-inicial, verificar-etapa y migraciones-etapa del script (no «migraciones» completa ni «funcion»)")
 else: mal("[migraciones-nube] invoca acciones del script no permitidas")
 me_completo = sb[sb.index("  migraciones-etapa|verificar-etapa)"):sb.index("  funcion)")]
-# La etapa 4 (tipos de documento) es la ÚNICA que escribe sin la CLI: un solo psql en una transacción, con sus propias guardias más abajo ([tipos]). Las guardias de las etapas 1–3 se evalúan sin ese bloque.
-_i4 = me_completo.index('    if [ "$ETAPA" = "4" ]; then'); _j4 = me_completo.index('    if [ "$ETAPA" = "1" ]; then')
+# La etapa 4 (migración 30, tipos de documento) usa EXACTAMENTE el mismo mecanismo que las etapas 1–3 (carpeta temporal con las migraciones de la etapa y un único «db push» que registra la versión en el historial);
+# solo añade sus precondiciones de solo lectura, que se extraen aquí para sus propias guardias ([tipos]).
+_i4 = me_completo.index('      if [ "$ETAPA" = "4" ]; then\n        # SOLO LECTURA, ANTES de tocar nada: (a) la 30'); _j4 = me_completo.index('      if [ "$ETAPA" = "3" ]; then')
 bloque_etapa4 = me_completo[_i4:_j4]
-me = me_completo[:_i4] + me_completo[_j4:]
+me = me_completo
 me_sin_comentarios = "\n".join(l for l in me.splitlines() if not l.lstrip().startswith("#"))
 if not re.search(r"functions deploy|secrets set|wrangler|--include-all|--project-ref=|\bdb reset\b|\bdb remote\b", me_sin_comentarios): ok("[etapas] las acciones por etapas no despliegan función, no cargan secretos, no usan --include-all y no reinician la base")
 else: mal("[etapas] las acciones por etapas contienen una orden no permitida")
@@ -286,11 +287,15 @@ else: mal("[publicar-nube.sh] falta comprobar la CLI de unset/list o las lectura
 _wk = open("fel/demo-facturacion/nube/pages/worker.ts", encoding="utf-8").read()
 if not re.search(r"DIGIFACT|digifact", _wk): ok("[cloudflare] el intermediario de Cloudflare no conoce nada de Digifact: ningún secreto fiscal llega ni al navegador ni a Cloudflare")
 else: mal("[cloudflare] el worker menciona Digifact")
-# ---- migración 29 (almacén persistente de Digifact): el conjunto ejecutable son EXACTAMENTE las 28 aprobadas (inmutables, con su huella) + la 29; ninguna otra
+# ---- migraciones 29 (almacén persistente de Digifact) y 30 (tipos de documento): el conjunto ejecutable son EXACTAMENTE las 28 aprobadas (inmutables, con su huella) + la 29 + la 30; ninguna otra
 _mig = sorted(os.path.basename(f) for f in glob.glob("fel/supabase/migrations/*.sql"))
-M29 = "20261114000100_fel_digifact_operaciones.sql"
-if len(_mig) == 29 and _mig[-1] == M29 and not any(m > M29 for m in _mig): ok("[migración 29] el conjunto ejecutable son exactamente las 29 (las 28 aprobadas + la 29, la última 20261114000100)")
-else: mal(f"[migración 29] el conjunto de migraciones ejecutables cambió ({len(_mig)} archivos, última {_mig[-1] if _mig else '—'}): una migración nueva exige autorización expresa")
+M29 = "20261114000100_fel_digifact_operaciones.sql"; M30 = "20261115000100_fel_tipos_documento.sql"
+if len(_mig) == 30 and _mig[-2] == M29 and _mig[-1] == M30 and not any(m > M30 for m in _mig): ok("[migraciones 29 y 30] el conjunto ejecutable son exactamente las 30 (las 28 aprobadas + la 29 + la 30, la última 20261115000100)")
+else: mal(f"[migraciones 29 y 30] el conjunto de migraciones ejecutables cambió ({len(_mig)} archivos, última {_mig[-1] if _mig else '—'}): una migración nueva exige autorización expresa")
+_i3 = [l.split() for l in open("fel/supabase/tests/inmutables_migraciones_29_30.sha256", encoding="utf-8").read().splitlines() if l.strip()] if os.path.exists("fel/supabase/tests/inmutables_migraciones_29_30.sha256") else []
+_c3 = [r for h, r in _i3 if (not os.path.exists(r)) or hashlib.sha256(open(r, "rb").read()).hexdigest() != h]
+if [r for h, r in _i3] == ["fel/supabase/migrations/" + M29, "fel/supabase/migrations/" + M30] and not _c3: ok("[migraciones 29 y 30] la 29 y la 30 no cambiaron respecto de su huella SHA-256 registrada (una vez aplicadas en una base, son inmutables)")
+else: mal(f"[migraciones 29 y 30] cambió la 29 o la 30 respecto de su huella (o falta el archivo de huellas): {_c3}")
 _inm = [l.split() for l in open("fel/supabase/tests/inmutables_migraciones_1_28.sha256", encoding="utf-8").read().splitlines() if l.strip()]
 _cambiadas = [r for h, r in _inm if (not os.path.exists(r)) or hashlib.sha256(open(r, "rb").read()).hexdigest() != h]
 if len(_inm) == 28 and not _cambiadas: ok("[migración 29] las 28 migraciones anteriores no cambiaron (huella SHA-256 de cada archivo)")
@@ -313,23 +318,26 @@ else: mal("[migración 29] falta la etapa 3 o sus precondiciones en supabase-hos
 # ---- correo de facturas (propio, con Resend): la propuesta del historial vive fuera de supabase/migrations y NINGUNA etapa de publicación lo conoce todavía (nada de correo real se publica sin autorización)
 if os.path.exists("fel/docs/migracion-correo/20261121000100_fel_correo_envios.sql") and not any("correo" in m for m in _mig): ok("[correo] la propuesta del historial de envíos está en docs/migracion-correo, fuera de supabase/migrations")
 else: mal("[correo] la propuesta del historial de envíos debe vivir en docs/migracion-correo y no en supabase/migrations")
-# ---- tipos de documento (DTE): igual que el correo, la PROPUESTA de migración vive fuera de supabase/migrations, NINGUNA etapa de publicación la conoce y no habilita certificar nada nuevo
-_pt = "fel/docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql"
-if os.path.exists(_pt) and not any("tipos_documento" in m for m in _mig): ok("[tipos] la propuesta de tipos de documento está en docs/migracion-tipos-documento, fuera de supabase/migrations (el conjunto de 29 no cambia)")
-else: mal("[tipos] la propuesta de tipos de documento debe vivir en docs/migracion-tipos-documento y no en supabase/migrations")
+# ---- tipos de documento (DTE) = migración 30: vive en supabase/migrations, se aplica a una base hospedada SOLO con la etapa 4 y no habilita certificar nada nuevo
+_pt = "fel/supabase/migrations/20261115000100_fel_tipos_documento.sql"
+if os.path.exists(_pt) and all(os.path.exists(f"fel/docs/migracion-tipos-documento/{x}") for x in ("verificacion-tipos.sql", "reversion-tipos.sql")) and os.path.exists("fel/supabase/tests/30_tipos_documento.sql") and not os.path.exists("fel/docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql"): ok("[tipos] la migración 30 está en supabase/migrations (única copia) y existen su verificación posterior, su reversión segura y su suite SQL")
+else: mal("[tipos] la migración 30 debe estar (una sola copia) en supabase/migrations, con su verificación, su reversión y su suite SQL")
 _ptc = open(_pt, encoding="utf-8").read() if os.path.exists(_pt) else ""
-if _ptc and re.findall(r"\('(?:FACT|[A-Z]{4})',[^\n]*?'(?:implementado|en_pruebas|pendiente)',\s*true", _ptc) == ["('FACT', 'Factura', 'factura', 'implementado', true"] and "certificacion_habilitada or disponibilidad = 'implementado'" in _ptc: ok("[tipos] en la propuesta solo FACT tiene la certificación habilitada y la tabla impide habilitar un tipo que no esté implementado")
-else: mal("[tipos] la propuesta habilita certificar un tipo distinto de FACT o perdió su restricción")
-if _ptc and not re.search(r"digifact_operaciones[^;]*\b(alter|drop|delete|update|truncate)\b", _ptc, re.I) and not re.search(r"\bgrant\b[^;]*\bto\b[^;]*\b(anon|authenticated)\b[^;]*function|grant execute on function[^;]*\bto\b[^;]*(anon|authenticated)", _ptc, re.I): ok("[tipos] la propuesta no toca la tabla de la migración 29 ni abre funciones a anon/authenticated")
-else: mal("[tipos] la propuesta toca la tabla de la 29 o abre funciones a la API")
+if _ptc and re.findall(r"\('(?:FACT|[A-Z]{4})',[^\n]*?'(?:implementado|en_pruebas|pendiente)',\s*true", _ptc) == ["('FACT', 'Factura', 'factura', 'implementado', true"] and "certificacion_habilitada or disponibilidad = 'implementado'" in _ptc: ok("[tipos] en la migración 30 solo FACT tiene la certificación habilitada y la tabla impide habilitar un tipo que no esté implementado")
+else: mal("[tipos] la migración 30 habilita certificar un tipo distinto de FACT o perdió su restricción")
+_ptcs = re.sub(r"--[^\n]*", "", _ptc)
+# («truncate» también aparece como evento de un disparador: solo cuenta como sentencia al inicio de línea)
+if _ptc and not re.search(r"digifact_operaciones[^;]*\b(alter|drop|delete|update|truncate)\b", _ptcs, re.I) and not re.search(r"\bdrop\s+(table|function|trigger|policy|index|column)\b(?!\s+if\s+exists\s+public\.fel_tipos)", _ptcs, re.I) and not re.search(r"(?m)^\s*truncate\b|\bdelete\s+from\b", _ptcs, re.I) and not re.search(r"\bgrant\b[^;]*\bto\b[^;]*\b(anon|authenticated)\b[^;]*function|grant execute on function[^;]*\bto\b[^;]*(anon|authenticated)", _ptcs, re.I): ok("[tipos] la migración 30 es aditiva: no toca la tabla de la 29, no borra ni vacía nada y no abre funciones a anon/authenticated")
+else: mal("[tipos] la migración 30 toca la tabla de la 29, borra algo o abre funciones a la API")
 _pub = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml", "fel/tools/supabase-hospedado.sh") if os.path.exists(f))
 _pub_directa = " ".join(open(f, encoding="utf-8").read() for f in ("fel/tools/publicar-nube.sh", ".github/workflows/publicar-nube.yml") if os.path.exists(f))
-if not re.search(r"migracion-tipos-documento|fel_tipos_dte|FEL_TIPOS", _pub_directa): ok("[tipos] «publicar» (script y flujo) NO conoce la propuesta de tipos: no la aplica ni la menciona; solo la etapa 4 de migraciones-nube, con confirmación literal")
-else: mal("[tipos] «publicar» menciona la propuesta de tipos de documento")
+_mig_blk = sb[sb.index("  migraciones)"):sb.index("  verificar-api-vault)")]
+if not re.search(r"migracion-tipos-documento|fel_tipos_dte|FEL_TIPOS|20261115", _pub_directa) and "PROHIBIDO: la base ya tiene $NREG migraciones registradas y hay $PEND PENDIENTE" in _mig_blk and _mig_blk.index("PROHIBIDO: la base ya tiene $NREG") < _mig_blk.index("supabase db push") and "exit 2" in _mig_blk and "no se pudo comprobar el historial" in _mig_blk: ok("[tipos] «publicar» no menciona la 30 y su paso de migraciones se NIEGA (antes del db push) si la base ya tiene historial y hay pendientes: la 30 entra solo por la etapa 4; en un proyecto nuevo se aplican todas")
+else: mal("[tipos] «publicar» podría aplicar migraciones pendientes sobre una base ya migrada")
 _sh4 = bloque_etapa4
 _sh4_sc = "\n".join(l for l in _sh4.splitlines() if not l.lstrip().startswith("#"))
-if "--single-transaction" in _sh4_sc and "db push" not in _sh4 and _sh4_sc.count('psql "host=') == 1 and "-f \"$ARCHIVO_TIPOS\"" in _sh4_sc and 'EXACTAMENTE las 29' in _sh4_sc and "fel_tipos_dte') is null" in _sh4_sc and "verificacion &&" in _sh4_sc and "functions deploy" not in _sh4_sc and "secrets set" not in _sh4_sc: ok("[tipos] la etapa 4 exige las 29 registradas y la propuesta ausente, aplica en UNA transacción con un único psql y sin la CLI de migraciones, y verifica después (la confirmación literal APLICAR-MIGRACIONES se exige antes, como en las demás etapas)")
-else: mal("[tipos] la etapa 4 no tiene sus precondiciones, su transacción única o su verificación posterior")
+if "4) HASTA=20261115000100; ESPERADAS=30" in sb and "fel_tipos_dte') is null" in _sh4_sc and "to_regclass('public.digifact_operaciones') is not null" in _sh4_sc and "ro_f docs/migracion-29/verificacion-posterior-29.sql" in _sh4_sc and _sh4_sc.count("exit 2") >= 3 and "psql" not in _sh4_sc.replace("ro_f", "") and "db push" not in _sh4_sc and "functions deploy" not in _sh4_sc and "secrets set" not in _sh4_sc and 'ARCH="docs/migracion-tipos-documento/verificacion-tipos.sql"' in sb and "verificacion && echo" in sb: ok("[tipos] la etapa 4 usa el mismo mecanismo que las 1–3 (HASTA=20261115000100, ESPERADAS=30: las 29 anteriores exactas, la 30 ausente, dependencias presentes y el catálogo de la 29 sano, todo en solo lectura ANTES del push) y verifica los tipos y el catálogo de la 29 después")
+else: mal("[tipos] la etapa 4 no tiene sus precondiciones, su verificación posterior o usa un mecanismo distinto")
 _mn = open(".github/workflows/migraciones-nube.yml", encoding="utf-8").read()
 if 'options: ["1", "2", "3", "4"]' in _mn and "case \"$ETAPA\" in 1|2|3|4)" in _mn and "inputs.accion == 'migraciones-etapa' && inputs.confirmar != 'APLICAR-MIGRACIONES'" in _mn and "environment: demo-privada" in _mn: ok("[tipos] migraciones-nube admite la etapa 4 con el mismo entorno protegido y la misma confirmación literal")
 else: mal("[tipos] migraciones-nube no admite la etapa 4 con su protección")
@@ -402,6 +410,8 @@ if os.path.exists(RB) and os.path.exists(RS):
     else: mal("[recuperación] el orden de verificación (huellas antes de descifrar y de restaurar) no es el previsto")
     if _rr and all(x in _rr for x in ("relrowsecurity", "pg_policies", "verificacion-posterior-29.sql", "schema_migrations", "tablas/filas restauradas", "shutil.rmtree(trabajo", "b\"\\0\" * n")): ok("[recuperación] verifica tablas, filas, historial de migraciones, RLS y políticas y el catálogo de la 29, y al terminar sobrescribe y borra el volcado descifrado")
     else: mal("[recuperación] faltan verificaciones (tablas, filas, migraciones, RLS, catálogo de la 29) o el borrado seguro")
+    if '30) CON29=1; CON30=1; HASTA_V=20261115000100' in _rs and '28) CON29=0; HASTA_V=20261113000100' in _rs and '29) CON29=1; HASTA_V=20261114000100' in _rs and "objetos de la migración 30 sin tenerla registrada" in _rs and "verificacion-tipos.sql" in _rs and "verificacion-tipos.sql" in _rr and 'con30 != (nm == "30")' in _rr and "docs/migracion-29/verificacion-posterior-29.sql" in _rs: ok("[recuperación] el ensayo y la recuperación valen para los estados 28, 29 y 30 (respaldos anteriores incluidos), rechazan la deriva entre historial y base y verifican los tipos cuando la 30 está")
+    else: mal("[recuperación] el ensayo o la recuperación no admiten los tres estados (28, 29 y 30) o no detectan la deriva")
     _dk = [l for l in _rr.splitlines() if '"docker", "run"' in l]
     if len(_dk) == 1 and '"-p"' not in _dk[0] and "--rm" in _dk[0] and "secrets.token_hex" in _rr and "docker rm" not in _rr.replace('"docker", "rm"', "") and '"docker", "rm", "-f", s.nombre' in _rr and "el nombre del contenedor ya existe" in _rr and "el archivo de informe ya existe; no se sobrescribe" in _rr and "postgres:17" in _rr: ok("[recuperación] el modo Docker crea un contenedor postgres:17 NUEVO (nombre único, --rm) sin publicar puertos, no reutiliza nada existente, lo elimina al terminar y el informe en archivo nunca sobrescribe otro")
     else: mal("[recuperación] el modo Docker podría publicar puertos, reutilizar un contenedor o sobrescribir un informe")

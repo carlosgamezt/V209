@@ -67,6 +67,15 @@ RECUPERACIÓN VERIFICADA: OK
 El **informe de recuperación** es ese archivo: contiene las mismas líneas, sin datos del contenido ni claves. Pégamelo para cerrar el paso 6.
 Si ves `FALLO`, copia ese mensaje y no sigas. Los fallos comunes: clave privada equivocada (`age no pudo descifrar`), archivo alterado (`SHA-256 … no coincide`), falta una herramienta (`REQUISITO`).
 
+## Valores esperados según el estado del respaldo
+La herramienta vale para respaldos de los tres estados de `nexa-demo` y los reconoce por el informe y el historial:
+| Estado del respaldo | Migraciones | Tablas en `public` con RLS | Comprobaciones extra |
+|---|---|---|---|
+| Anterior a la 29 | 28 | 67 | catálogo de la 28 |
+| Posterior a la 29 (el del 24/11/2026) | 29 | 69 (49 políticas) | catálogo de la 29 |
+| Posterior a la 30 (tipos de documento, tras la etapa 4) | 30 | 71 (51 políticas) | catálogo de la 29 con las cifras de la 30 **y** `verificacion-tipos.sql` |
+Un respaldo cuyo historial y objetos no coinciden (por ejemplo, 29 versiones pero con las tablas de la 30, o al revés) se rechaza como deriva.
+
 ## Qué demuestra y qué no
 - Demuestra: que el objeto en R2 es el que se subió (huellas), que se descifra con tu clave, que el volcado se restaura en un PostgreSQL 17 limpio y que tablas, filas, historial de migraciones, RLS y el catálogo de la migración 29 quedan como en el informe.
 - No demuestra: restauración en un proyecto Supabase real (sin probar); roles y membresías, extensiones, disparadores de evento de la plataforma, `auth`/`storage`/`vault` (los usuarios de Auth se sustituyen por usuarios de prueba) ni expresiones CHECK/políticas comparadas con paréntesis.

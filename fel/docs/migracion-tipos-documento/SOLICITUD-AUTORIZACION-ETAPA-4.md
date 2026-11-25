@@ -1,49 +1,63 @@
-# Solicitud de autorización · Etapa 4 (tipos de documento) en `nexa-demo`
+# Procedimiento definitivo · etapa 4 (migración 30, tipos de documento) y publicación de la demostración
 
-Estado (25/11/2026): **PREPARADA, NO EJECUTADA.** Este documento es lo que el propietario revisa para decidir. La etapa 4 solo se lanza con su autorización expresa y su aprobación en el entorno protegido `demo-privada`.
+Estado (25/11/2026): **PREPARADO Y PROBADO; NO EJECUTADO.** Nada de esto se lanza sin la autorización expresa del propietario y su aprobación en el entorno protegido `demo-privada`. Decisión técnica: `DECISION-MIGRACION-30.md`.
 
 ## 1. Qué hace la etapa 4
-Aplica a `nexa-demo` la propuesta `20261115000100_fel_tipos_documento.sql` (vive fuera de `supabase/migrations`; las 29 migraciones aprobadas no cambian):
-- **Aditiva:** crea 2 tablas (`fel_tipos_dte`, `empresa_tipos_documento`), 5 columnas nuevas en `documentos` (`tipo_dte`, `documento_origen_id`, `referencia_origen`, `motivo_ajuste`, `tipo_recibo`), 9 funciones y 3 disparadores.
-- **No modifica** ninguna función, política ni dato de las migraciones 1 a 29, ni la propia 29. Las filas existentes de `documentos` quedan como `FACT`.
-- **No habilita certificación de tipos nuevos:** solo `FACT` certifica. NCRE, NDEB y RECI se pueden elegir (borrador, revisión, vista previa) pero la base IMPIDE crear una operación fiscal para ellos.
-- RLS activa en las 2 tablas nuevas; `anon` sin acceso; `authenticated` sin escritura directa; funciones nuevas sin ejecución para `anon`/`authenticated`.
-- El historial de migraciones **no cambia** (queda en 29 versiones): la propuesta no se registra como migración 30. Es una decisión de diseño; si prefieres registrarla como migración 30, es un cambio aparte y previo.
+Aplica a `nexa-demo` la migración 30 `20261115000100_fel_tipos_documento.sql` con el **mismo mecanismo de las etapas 1–3** (carpeta temporal con las 30 migraciones y un único `supabase db push` por el Session Pooler; la CLI aplica solo la pendiente y **registra su versión**).
+- **Aditiva:** 2 tablas (`fel_tipos_dte`, `empresa_tipos_documento`), 5 columnas en `documentos` (`tipo_dte`, `documento_origen_id`, `referencia_origen`, `motivo_ajuste`, `tipo_recibo`), 10 funciones, 5 disparadores y 2 políticas.
+- **Cifras medidas:** 69 → 71 tablas · 49 → 51 políticas · 185 → 195 funciones · 61 → 66 disparadores (todas las tablas con RLS).
+- **No modifica** ninguna función, política ni dato de las migraciones 1 a 29; las filas existentes de `documentos` quedan como `FACT`.
+- **No habilita certificar tipos nuevos:** solo `FACT` certifica; NCRE, NDEB y RECI se pueden elegir (borrador, revisión, vista previa) pero la base IMPIDE crear una operación fiscal para ellos.
+- No toca NEXA principal, no despliega función, no publica la página y no carga secretos.
 
-## 2. Garantías del procedimiento (ya probadas en local y en CI)
-- **Precondiciones de solo lectura** antes de tocar nada: exactamente las 29 migraciones registradas (la 29 ya aplicada), la propuesta ausente y sus dependencias presentes. Si algo no cuadra, se detiene sin cambiar nada.
-- **Una sola transacción** (`psql --single-transaction`): si cualquier sentencia falla, no queda nada a medias.
-- **Verificación posterior automática** con `verificacion-tipos.sql` (solo lectura, todas las filas deben dar `ok = true`): catálogo de 17 tipos, solo FACT certifica, RLS, privilegios, disparadores, documentos existentes como FACT y ninguna operación fiscal sobre un tipo que no certifica.
-- Pruebas: `fel/tools/test-tipos-documento.sh` (prueba SQL, precondiciones, verificación, reversión y reaplicación en un PostgreSQL temporal) y la demostración con los tipos, en verde en el CI.
-- Exige escribir `APLICAR-MIGRACIONES` y la aprobación en `demo-privada`. Usa los secretos de las etapas anteriores; no despliega, no publica y no toca Cloudflare.
+## 2. Garantías (probadas en local y en CI)
+- **Precondiciones de solo lectura ANTES de tocar nada:** exactamente las 29 anteriores registradas, la 30 ausente (ni a medias), dependencias de la 29 presentes y **catálogo de la 29 sano**. Si algo no cuadra, se niega sin cambiar nada.
+- **Confirmación literal** `APLICAR-MIGRACIONES` + aprobación en `demo-privada`.
+- **Verificación posterior de solo lectura:** 30 versiones registradas · RLS en todas las tablas · `verificacion-tipos.sql` (todas las filas `ok = true`) · `verificacion-posterior-29.sql` con las cifras de la 30 · dependencias de Auth.
+- **Probada en la plataforma real:** la CI aplica las 30 migraciones en la pila local de Supabase (con la función `rls_auto_enable` de la plataforma), corre las 30 suites SQL y las verificaciones anteriores.
+- **«publicar» no puede aplicarla por la puerta de atrás:** se niega ante una base con historial y migraciones pendientes.
 
-## 3. Respaldo de referencia
-- Objeto: `nexa-demo/20261124-120509-b0bd6343` en el bucket privado `nexa-fel-backups` (instantánea del 24/11/2026 06:04:45, hora de Guatemala; 70 tablas, 565 filas, 29 migraciones). SHA-256 del volcado `b0bd634320e97dc9cb4ddcaef17c3e2d2c50a01c24e44faa425bcbf892eec7c8`.
-- **Recuperación verificada** en el equipo del propietario el 24/11/2026: descarga, descifrado, SHA-256, `pg_restore --list` y restauración en PostgreSQL 17 aislado, con 70 tablas, 565 filas, 29 migraciones, 69 tablas con RLS y 49 políticas (`docs/migracion-29/RECUPERACION-VERIFICADA-20261124.md`).
-- **Antigüedad:** es una fotografía de las 06:04:45 del 24/11. Si `nexa-demo` recibió cambios después, no están en ella. **Recomendación:** generar uno nuevo inmediatamente antes de aplicar (acción `respaldo-persistente`, unos 80 segundos, con tu aprobación en `demo-privada`). El flujo es el mismo ya probado; si quieres certeza total, repites la recuperación en tu equipo con el nuevo nombre (5 minutos). Es decisión tuya si el respaldo del 24/11 basta.
-- **Límites del respaldo:** no reproduce roles y membresías, extensiones, disparadores de evento de la plataforma ni `auth`/`storage`/`vault`; no se probó una restauración en un proyecto Supabase real.
+## 3. Respaldo previo (inmediatamente antes)
+- Respaldo vigente: `nexa-demo/20261124-120509-b0bd6343` (instantánea del 24/11/2026 06:04:45 hora de Guatemala; 29 migraciones), **recuperado con éxito** en el equipo del propietario (`docs/migracion-29/RECUPERACION-VERIFICADA-20261124.md`).
+- **Recomendación firme:** generar uno nuevo justo antes de aplicar, porque `nexa-demo` pudo recibir cambios desde las 06:04 del 24/11. Con la herramienta ya probada para los estados 28, 29 y 30.
 
 ## 4. Reversión
-- `reversion-tipos.sql` quita **solo** los objetos de la propuesta, en una sola sentencia, y **se niega sin borrar nada** si ya hay notas, recibos o configuración por empresa (esos datos se perderían). Si los hay, la salida es la restauración desde respaldo, con sus límites del punto anterior.
-- La reversión no la ejecuta ningún flujo automático: se hace a mano en el editor SQL de Supabase y solo con tu autorización. Con la base recién migrada y sin uso de los tipos nuevos, es segura.
+- `reversion-tipos.sql` (editor SQL de Supabase, a mano y solo con autorización) quita **solo** los objetos de la 30 **y** su versión del historial, en una sola sentencia, y **se niega sin borrar nada** si ya hay notas, recibos o configuración por empresa. Con la base recién migrada es segura.
+- Si hubiera datos de los tipos nuevos o un daño mayor: restauración desde respaldo (`PROCEDIMIENTO-RECUPERACION-DESDE-R2.md`), con sus límites (roles, extensiones, `auth`/`storage`/`vault`, restauración real en Supabase sin probar).
+- Tras cualquier restauración no se reactiva la certificación: se concilia con Digifact (`RECUPERACION-Y-CONCILIACION.md`).
 
-## 5. Riesgos
+## 5. Pasos exactos (GitHub → Actions, rama `fel-proveedores-diseno`; cada ejecución la apruebas en `demo-privada`)
+**A. Respaldo nuevo**
+1. «NEXA FEL · respaldo de nexa-demo» → `accion = respaldo-persistente`. Resultado esperado: «ENSAYO DE RESPALDO Y RESTAURACIÓN: OK» y «RESPALDO PERSISTENTE: CONSERVADO EN R2». Anota el nombre `nexa-demo/AAAAMMDD-HHMMSS-xxxxxxxx` y el SHA-256.
+2. *(Opcional, 5 minutos, certeza total)* en tu Windows: `powershell -ExecutionPolicy Bypass -File .\tools\recuperar-respaldo.ps1 -Base nexa-demo/AAAAMMDD-HHMMSS-xxxxxxxx -ShaEsperado <sha del paso 1>` → «RECUPERACIÓN VERIFICADA: OK» (29 migraciones, 69 tablas).
+
+**B. Etapa 4**
+3. «NEXA FEL · solo migraciones» → `accion = migraciones-etapa`, `etapa = 4`, `confirmar = APLICAR-MIGRACIONES`.
+4. Resultado esperado: «precondiciones de la etapa 4 … OK» · inventario previo `69 | 49 | 185 | 61 | …` · «Migraciones aplicadas» · «historial: 30 migraciones registradas» · «tipos de documento (verificacion-tipos.sql …)» OK · «catálogo de la migración 29 con la 30 aplicada» OK · «VERIFICACIÓN DE LA ETAPA 4: OK. SE DETIENE AQUÍ.»
+5. *(Recomendado)* repetir el paso 1 para tener un respaldo **posterior** a la 30 (debe decir «30 migraciones … la 30 presente»).
+
+**C. Publicar la demostración** (otra autorización; no hace falta antes de la etapa 4 para que la demostración siga funcionando como antes)
+6. «NEXA FEL · publicación privada (manual)» → `modo = verificar` (no toca nada; muestra el plan y comprueba secretos y conectividad).
+7. `modo = publicar`, `confirmar = PUBLICAR`, **`digifact = apagado`** y los `digifact_nit/cui/correo` apagados. Hace, en este orden: comprobaciones previas → Cloudflare Pages (crear o reutilizar el proyecto) → migraciones (guardia del historial: 30 registradas y 0 pendientes; el `db push` no aplica nada) → aprovisionamiento idempotente de la base y las cuentas de demostración → construcción → despliegue de la función → secretos y página → prueba de humo contra https://nexa-fel-demo.pages.dev. **Escribe datos de prueba en `nexa-demo`** (la prueba de humo crea una factura simulada).
+8. Resultado esperado: «LISTO: https://nexa-fel-demo.pages.dev».
+
+**D. Pruebas funcionales desde la web y el móvil** (checklist en `docs/tipos-documento.md`)
+- FACT: crear, revisar, vista previa, PDF y certificación **simulada**.
+- NCRE y NDEB: exigen una FACT certificada de la misma empresa y receptor como origen; borrador, revisión y vista previa; **la certificación está bloqueada**.
+- RECI: habilitarlo por empresa en Configuración; borrador, revisión y vista previa; **certificación bloqueada**.
+- El resto de tipos aparece como «pendiente» y no se puede elegir.
+
+## 6. Riesgos pendientes
 | Riesgo | Mitigación |
 |---|---|
-| Un fallo a mitad de la aplicación | Transacción única: no queda nada a medias |
-| La base cambió desde el respaldo del 24/11 | Respaldo nuevo antes de aplicar (recomendado) |
-| La aplicación rompe algo existente | Es aditiva; verificación posterior; pruebas locales y CI; reversión segura mientras no haya datos nuevos |
-| Los tipos nuevos se usan antes de tiempo | NCRE/NDEB/RECI no certifican: la base lo impide |
-| La demostración publicada no conoce la base nueva | La demostración degrada a solo Factura si la base no la tiene; **publicar el código es otro paso con su propia autorización** |
+| Fallo durante `db push` | La CLI aplica la migración en una transacción; si falla no queda nada a medias. Las precondiciones se comprueban antes. |
+| `nexa-demo` cambió desde el respaldo del 24/11 | Respaldo nuevo antes de aplicar (paso 1) |
+| Restauración real en Supabase sin probar; roles, extensiones, `auth`/`storage`/`vault` no están en el respaldo | Límite declarado; la reversión SQL cubre el caso normal |
+| Token de R2 con lectura y escritura; falta bloqueo de retención | Pendiente del propietario (token de solo lectura para recuperar; retención del bucket) |
+| La publicación escribe datos de prueba en `nexa-demo` | Es la demostración simulada; Digifact y correo quedan apagados |
 
-## 6. Pasos exactos si autorizas (todos en GitHub → Actions, rama `fel-proveedores-diseno`)
-1. *(Recomendado)* Lanzar **«NEXA FEL · respaldo de nexa-demo»** con `accion = respaldo-persistente`, aprobarlo en `demo-privada` y confirmar «RESPALDO PERSISTENTE: CONSERVADO EN R2». Anotar el nuevo nombre del objeto.
-2. Lanzar **«NEXA FEL · solo migraciones»** con `accion = migraciones-etapa`, `etapa = 4`, `confirmar = APLICAR-MIGRACIONES`, y aprobarlo en `demo-privada`.
-3. Resultado esperado: «precondiciones de la etapa 4 … OK» y «VERIFICACIÓN DE LA ETAPA 4: OK. SE DETIENE AQUÍ.»
-4. Después, y solo con autorización aparte: publicar el código de la demostración y comprobar los tipos en https://nexa-fel-demo.pages.dev.
-
-## 7. Lo que NO incluye esta solicitud
-Publicar la aplicación, habilitar la certificación de NCRE/NDEB/RECI, emitir documentos reales, enviar correos, ni aplicar el rol restringido `nexa_fel_app`.
+## 7. Lo que NO incluye
+Habilitar la certificación de NCRE/NDEB/RECI, emitir documentos reales, enviar correos, ni aplicar el rol restringido `nexa_fel_app`.
 
 ## 8. Decisión que se pide
-Autorizo la etapa 4 sobre `nexa-demo` (☐ con respaldo nuevo previo · ☐ con el respaldo del 24/11/2026).
+Autorizo (☐ el respaldo nuevo y la etapa 4) · (☐ después, la publicación de la demostración con Digifact y correo apagados).

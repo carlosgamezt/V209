@@ -22,8 +22,7 @@ psq nexa_plantilla -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do psq nexa_plantilla -f "$f" >/dev/null; done
 # PROPUESTA del historial de correos (fuera de supabase/migrations): solo en esta plantilla de pruebas; el conjunto de 29 migraciones no cambia.
 for f in docs/migracion-correo/2[0-9]*_*.sql; do psq nexa_plantilla -f "$f" >/dev/null; done   # solo el archivo de migración (prefijo numérico), no la reversión ni la verificación
-# PROPUESTA de TIPOS DE DOCUMENTO (fuera de supabase/migrations): solo en esta plantilla de pruebas; el conjunto de 29 migraciones no cambia.
-psq nexa_plantilla -f docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql >/dev/null
+# La migración 30 (tipos de documento) ya viene en supabase/migrations: el bucle de arriba la aplicó.
 echo "plantilla lista; ejecutando las pruebas de la demostración contra PostgreSQL real…"
 cd demo-facturacion
 if [ "${1:-}" = "--e2e" ]; then

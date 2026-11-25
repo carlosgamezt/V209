@@ -258,6 +258,12 @@ def principal(a, informe_ruta):
             ok(f"historial de migraciones: {nm} versiones, idénticas a supabase/migrations del repositorio (última {vers[-1]})")
         else:
             ok(f"historial de migraciones: {nm} versiones (última {vers[-1]}; sin repositorio para compararlas)")
+        # la migración 30 (tipos de documento) debe estar exactamente cuando el historial la registra (30 versiones): ni a medias ni sin registrar
+        dos = pg.consulta(BD, "select (to_regclass('public.fel_tipos_dte') is not null) || '/' || (to_regclass('public.empresa_tipos_documento') is not null)")
+        if dos not in ("true/true", "false/false", "t/t", "f/f"): falla(f"la migración 30 está a medias en lo restaurado (tablas presentes: {dos})")
+        con30 = dos in ("true/true", "t/t")
+        if con30 != (nm == "30"): falla(f"deriva entre el historial ({nm} migraciones) y la base (la migración 30 {'presente' if con30 else 'ausente'})")
+        if con30: ok("la migración 30 (tipos de documento) está registrada en el historial y presente en lo restaurado")
         sin_rls = pg.consulta(BD, "select string_agg(c.relname, ', ') from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity")
         ncon = pg.consulta(BD, "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relrowsecurity"); npol = pg.consulta(BD, "select count(*) from pg_policies where schemaname = 'public'")
         if sin_rls or int(ncon) == 0 or int(npol) == 0: falla(f"RLS incompleta: tablas de public sin RLS: {sin_rls or 'ninguna'} · con RLS: {ncon} · políticas: {npol}")
@@ -269,6 +275,13 @@ def principal(a, informe_ruta):
             rc, o, e = pg.psql(BD, entrada="\\set ON_ERROR_STOP on\nbegin transaction read only;\n" + open(ver29, encoding="utf-8").read() + "\n")
             if rc or "VERIFICACION POSTERIOR 29 OK" not in o + e: falla("el catálogo de la migración 29 no pasa en lo restaurado: " + (e or o).strip()[-200:])
             ok("catálogo de la migración 29 sano en lo restaurado (políticas, funciones, disparadores y privilegios; transacción de solo lectura)")
+        if con30:
+            ver30 = os.path.join(fel, "docs", "migracion-tipos-documento", "verificacion-tipos.sql")
+            if not os.path.isfile(ver30): falla("falta docs/migracion-tipos-documento/verificacion-tipos.sql (indica --repo con la carpeta fel del repositorio actualizado)")
+            rc, o, e = pg.psql(BD, "-tA", "-F", "|", entrada="\\set ON_ERROR_STOP on\nbegin transaction read only;\n" + open(ver30, encoding="utf-8").read() + "\n")
+            filas = [l for l in o.splitlines() if l.count("|") >= 3]
+            if rc or not filas or any(l.endswith("|f") for l in filas) or not any(l.endswith("|t") for l in filas): falla("la verificación de la migración 30 no pasa en lo restaurado: " + (e or o).strip()[-200:].replace("\n", " "))
+            ok(f"verificación de la migración 30 sana en lo restaurado ({len(filas)} controles de tipos de documento, todos con ok = true; solo lectura)")
         say("  LIMITACIONES (no son prueba): roles y membresías, extensiones, disparadores de evento de la plataforma, auth/storage/vault y expresiones CHECK/políticas no se reproducen; los usuarios de Auth son de prueba")
         say(f"== INFORME (sin datos): {a.base} · {len(tablas)} tablas · {total} filas · {nm} migraciones · RLS {ncon} tablas / {npol} políticas · SHA-256 {s}")
         return 0, "RECUPERACIÓN VERIFICADA: OK"

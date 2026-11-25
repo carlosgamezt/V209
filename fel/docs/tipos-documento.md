@@ -8,7 +8,7 @@ Estado: **implementado y probado en local; sin aplicar a ninguna base hospedada,
 | Catálogo (única fuente de verdad) | `proveedores/src/catalogo_dte.ts` | 17 tipos con código SAT, nombre, régimen/condición, campos, complementos, disponibilidad, motivo pendiente y pendientes por verificar; habilitación y predeterminado por empresa; validaciones por tipo |
 | Constructor NUC | `proveedores/src/nuc_gt.ts` | Construye FACT (idéntico a siempre), NCRE/NDEB (complemento con el documento de origen, estructura del ejemplo oficial «NUC 4 - NCRE») y RECI (adenda «Tipo»). Rechaza los pendientes |
 | Servicio de emisión | `proveedores/src/felgt_servicio.ts` | `validar` funciona para todos (sin red, avisa si el tipo aún no certifica); `preparar` y `certificar` rechazan todo tipo no implementado (`TIPO_NO_HABILITADO`) |
-| Base (PROPUESTA, fuera de `supabase/migrations`) | `docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql` | Catálogo en solo lectura, habilitación por empresa, columnas del documento, guardianes (tipo inmutable al revisar, origen certificado, tope, duplicados, recibo≠factura) y bloqueo de operaciones fiscales de tipos no implementados |
+| Base (migración 30) | `supabase/migrations/20261115000100_fel_tipos_documento.sql` | Catálogo en solo lectura, habilitación por empresa, columnas del documento, guardianes (tipo inmutable al revisar, origen certificado, tope, duplicados, recibo≠factura) y bloqueo de operaciones fiscales de tipos no implementados |
 | API | `demo-facturacion/src/api.ts` | `GET/POST /api/tipos-documento`, `GET /api/documentos/origenes`, `tipo_dte` en el guardado y en el listado |
 | Interfaz | `demo-facturacion/web/js/{tipos,factura,lista,config,vista_previa}.js` | «Nuevo documento», selector compacto, campos del tipo, pestaña «Tipos de documento» en Configuración, tipo en historial y filtro |
 | PDF | `demo-facturacion/src/pdf_demo.ts` | Título del tipo, referencia de la nota, aviso de recibo |
@@ -34,17 +34,17 @@ Un tipo solo sale de «pendiente» con sus reglas SAT verificadas **y** probadas
 - **Operaciones fiscales:** `fel_operacion_tipo_guard` impide crear una operación para un tipo sin `certificacion_habilitada`. Esa bandera solo puede ser `true` en un tipo «implementado» (restricción de la tabla) y el catálogo no se puede modificar sin una migración.
 - Habilitación por empresa (`fel_op_tipos_empresa_guardar`, permiso `empresa.editar`): FACT siempre; NCRE/NDEB/RECI solo si la empresa los habilita; los pendientes nunca.
 
-## Propuesta de migración (`docs/migracion-tipos-documento/`) — **NO aplicada a ninguna base hospedada**
-Igual que la del correo, **vive fuera de `supabase/migrations`**: el conjunto de 29 migraciones aprobadas no cambia, la guardia de publicación (`verificar-publicacion.py`) lo vigila y ninguna etapa de publicación la conoce. Se aplica **a mano, con autorización, después de la 29** (28 → 29 → esta).
-- Archivos: `20261115000100_fel_tipos_documento.sql` (la propuesta), `verificacion-tipos.sql` (solo lectura, todas las filas `ok = true`), `reversion-tipos.sql` (se niega si hay notas, recibos o configuración), `prueba-tipos-documento.sql` (prueba SQL).
-- Crea 2 tablas, 5 columnas en `documentos`, 9 funciones y 3 disparadores. No modifica funciones, políticas ni datos existentes; no toca la 29. Los documentos existentes quedan como FACT.
-- Si la 29 se aplica **después**: `select public.fel_tipos_instalar_guardian_digifact();` instala el guardián en `digifact_operaciones` (idempotente; en las bases que ya tienen la 29 lo instala la propia propuesta).
-- **La demostración funciona igual sin ella** (solo Factura): `tipos_disponibles.ts` detecta si existe y, si no, no consulta ninguna columna ni función nueva y rechaza los tipos nuevos con un mensaje claro. La demostración EN MEMORIA (PGlite) la trae aplicada (se apaga con `FEL_TIPOS=0`) y `tools/test-demo-pg.sh` la aplica a su plantilla.
-- Prueba completa: `bash fel/tools/test-tipos-documento.sh` (PostgreSQL temporal: migraciones aprobadas → propuesta → prueba → verificación → reversión negada con datos → reversión en limpio → reaplicación).
+## Migración 30 (`supabase/migrations/20261115000100_fel_tipos_documento.sql`) — **aún NO aplicada a `nexa-demo`**
+Es la migración 30 del proyecto (decisión y comparación en `docs/migracion-tipos-documento/DECISION-MIGRACION-30.md`). Se aplica **después de la 29** (28 → 29 → 30) y su versión **queda registrada** en el historial. En una base hospedada solo entra por la **etapa 4** de «solo migraciones» (entorno protegido, confirmación literal, respaldo previo); «publicar» se niega a aplicarla sobre una base ya migrada.
+- Archivos: `supabase/migrations/20261115000100_fel_tipos_documento.sql` (la migración), `supabase/tests/30_tipos_documento.sql` (suite SQL), `docs/migracion-tipos-documento/verificacion-tipos.sql` (solo lectura, todas las filas `ok = true`) y `reversion-tipos.sql` (se niega si hay notas, recibos o configuración; retira también la versión del historial).
+- Crea **2 tablas, 5 columnas en `documentos`, 10 funciones, 5 disparadores y 2 políticas** (medido: el esquema pasa de 69 a 71 tablas, de 49 a 51 políticas, de 185 a 195 funciones y de 61 a 66 disparadores). No modifica funciones, políticas ni datos existentes; no toca la 29. Los documentos existentes quedan como FACT.
+- Si la 29 se aplica **después**: `select public.fel_tipos_instalar_guardian_digifact();` instala el guardián en `digifact_operaciones` (idempotente; con la 29 ya aplicada lo instala la propia migración).
+- **La demostración funciona igual sin ella** (solo Factura): `tipos_disponibles.ts` detecta si existe y, si no, no consulta ninguna columna ni función nueva y rechaza los tipos nuevos con un mensaje claro. La demostración EN MEMORIA (PGlite) la trae aplicada con las demás migraciones (se simula una base sin ella con `FEL_TIPOS=0`).
+- Pruebas: `bash fel/tools/test-tipos-documento.sh` (PostgreSQL temporal: 29 → catálogo de la 29 sano → 30 en una transacción → verificación → cifras 71/51/195/66 → reversión negada con datos → reversión en limpio con su versión → reaplicación) y, en el CI, las 30 suites SQL y la verificación sobre la pila local real de Supabase.
 
 ## Pruebas (todas locales; nada toca la red, Supabase hospedado ni Digifact)
 - `proveedores/pruebas/catalogo_dte_test.ts`, `nuc_tipos_test.ts`, `felgt_servicio_test.ts` (tipos); `demo-facturacion/tests/catalogo_migracion_test.ts` (catálogo del código = catálogo de la base).
-- `docs/migracion-tipos-documento/prueba-tipos-documento.sql` (+ verificación y reversión) vía `tools/test-tipos-documento.sh`.
+- `supabase/tests/30_tipos_documento.sql` (+ verificación y reversión en `docs/migracion-tipos-documento/`) vía `tools/test-tipos-documento.sh`.
 - `demo-facturacion/tests/tipos_documento_api_test.ts` (API real en proceso, PGlite; con y sin la propuesta aplicada).
 - `demo-facturacion/tests/e2e_tipos.cjs` (navegador, 390 y 1100 px).
 

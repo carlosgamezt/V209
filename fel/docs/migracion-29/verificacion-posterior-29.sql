@@ -68,17 +68,19 @@ do $$ declare t text[]; begin
   assert not exists (select 1 from pg_constraint c where c.contype = 'f' and c.conrelid in ('public.digifact_operaciones'::regclass, 'public.digifact_artefactos'::regclass) and c.confdeltype <> 'a'), 'las claves foráneas de la 29 no deben tener acciones en cascada';
 end $$;
 
--- 7. cifras exactas del esquema 1–28 + 29: 69 tablas (todas con RLS), 49 políticas, 185 funciones, 61 disparadores; la 29 no abrió ningún privilegio a la API
-do $$ declare n int; plat int; begin
-  select count(*) into n from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p'); assert n = 69, 'tablas en public: ' || n || ' (se esperaban 69)';
+-- 7. cifras exactas del esquema 1–28 + 29: 69 tablas (todas con RLS), 49 políticas, 185 funciones, 61 disparadores; la 29 no abrió ningún privilegio a la API.
+-- COMPATIBLE CON LA MIGRACIÓN 30 (tipos de documento): si la base ya la tiene (sus dos tablas existen), las cifras esperadas suben EXACTAMENTE lo que ella añade (+2 tablas, +2 políticas, +10 funciones, +5 disparadores);
+-- una base con la 30 a medias (solo una de sus tablas) o con otra diferencia sigue fallando. Una base sin la 30 (respaldos anteriores, etapa 3) se verifica con las cifras de siempre.
+do $$ declare n int; plat int; t30 int := case when to_regclass('public.fel_tipos_dte') is not null and to_regclass('public.empresa_tipos_documento') is not null then 1 else 0 end; begin
+  select count(*) into n from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p'); assert n = 69 + 2 * t30, 'tablas en public: ' || n || ' (se esperaban ' || (69 + 2 * t30) || ')';
   select count(*) into n from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p') and not c.relrowsecurity; assert n = 0, 'tablas sin RLS: ' || n;
-  select count(*) into n from pg_policies where schemaname = 'public'; assert n = 49, 'políticas en public: ' || n || ' (se esperaban 49)';
+  select count(*) into n from pg_policies where schemaname = 'public'; assert n = 49 + 2 * t30, 'políticas en public: ' || n || ' (se esperaban ' || (49 + 2 * t30) || ')';
   -- 185 funciones del proyecto (182 de las migraciones 1–28 + 3 de la 29) + la función de la PLATAFORMA public.rls_auto_enable() si existe (nexa-demo la trae; la verificación inicial ya comprobó su huella):
   -- solo se reconoce con propietario postgres/supabase_admin, SECURITY DEFINER, sin argumentos, devuelve event_trigger y con el disparador de evento «ensure_rls» apuntando a ella. Cualquier OTRA función de más sigue fallando.
   plat := (select count(*) from pg_proc p join pg_roles r on r.oid = p.proowner where p.pronamespace = 'public'::regnamespace and p.proname = 'rls_auto_enable' and p.pronargs = 0 and p.prorettype = 'event_trigger'::regtype and p.prosecdef
                          and r.rolname in ('postgres', 'supabase_admin') and exists (select 1 from pg_event_trigger e where e.evtname = 'ensure_rls' and e.evtfoid = p.oid));
-  select count(*) into n from pg_proc p where p.pronamespace = 'public'::regnamespace; assert n = 185 + plat, 'funciones propias en public: ' || n || ' (se esperaban ' || (185 + plat) || ')';
-  select count(*) into n from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'public'::regnamespace and not t.tgisinternal; assert n = 61, 'disparadores en public: ' || n || ' (se esperaban 61)';
+  select count(*) into n from pg_proc p where p.pronamespace = 'public'::regnamespace; assert n = 185 + plat + 10 * t30, 'funciones propias en public: ' || n || ' (se esperaban ' || (185 + plat + 10 * t30) || ')';
+  select count(*) into n from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'public'::regnamespace and not t.tgisinternal; assert n = 61 + 5 * t30, 'disparadores en public: ' || n || ' (se esperaban ' || (61 + 5 * t30) || ')';
   assert not has_table_privilege('service_role', 'public.empresas', 'DELETE') and not has_table_privilege('service_role', 'public.empresas', 'TRUNCATE'), 'service_role puede borrar o vaciar empresas';
 end $$;
 

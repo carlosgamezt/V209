@@ -30,7 +30,7 @@ do $$ declare f record; publicas text[]; anon_ text[]; auth_ text[]; faltan text
   select coalesce(array_agg(p.proname::text order by p.proname), '{}') into faltan
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname like 'fel\_%' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype
-     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__borrar_sesiones_auth', 'fel__margen_reloj_s', 'fel__rango', 'fel_sys_digifact_aplicar')
+     and p.proname not in ('fel_bootstrap_primer_maestro', 'fel_agregar_maestro_adicional', 'fel__validar_candidato_maestro', 'fel__puede_resolver_mfa', 'fel_registrar_recuperacion_manual', 'fel__borrar_sesiones_auth', 'fel__margen_reloj_s', 'fel__rango', 'fel_sys_digifact_aplicar', 'fel_tipos_instalar_guardian_digifact')
      and not has_function_privilege('service_role', p.oid, 'EXECUTE');
   assert faltan = '{}', 'funciones que service_role no puede ejecutar: ' || faltan::text;
   assert not has_function_privilege('service_role', 'public.fel_bootstrap_primer_maestro(text)', 'EXECUTE'), 'service_role puede crear maestros';
@@ -39,6 +39,7 @@ do $$ declare f record; publicas text[]; anon_ text[]; auth_ text[]; faltan text
   assert not has_function_privilege('service_role', 'public.fel_registrar_recuperacion_manual(text,text)', 'EXECUTE'), 'service_role registra recuperaciones manuales';
   assert not has_function_privilege('service_role', 'public.fel__borrar_sesiones_auth(uuid)', 'EXECUTE'), 'service_role borra sesiones directamente';
   assert not has_function_privilege('service_role', 'public.fel_sys_digifact_aplicar(uuid,uuid)', 'EXECUTE'), 'service_role aplica certificaciones de Digifact (migración 29: solo el propietario)';
+  assert not has_function_privilege('service_role', 'public.fel_tipos_instalar_guardian_digifact()', 'EXECUTE'), 'service_role instala guardianes (migración 30: solo el propietario)';
   assert not has_function_privilege('authenticated', 'public.fel_sesion_revocada_desde(uuid)', 'EXECUTE'), 'authenticated consulta marcas de revocación';
 end $$;
 

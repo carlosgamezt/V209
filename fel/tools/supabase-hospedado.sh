@@ -181,6 +181,22 @@ case "${1:-}" in
     for n in "${SECRETOS_DIGIFACT[@]}"; do printf '  %-34s %s\n' "$n" "$(if secreto_presente "$n"; then echo presente; else echo ausente; fi)"; done;;
   migraciones)
     derivar_url_sesion
+    # GUARDIA: «publicar» solo migra un proyecto NUEVO (sin historial). Si la base ya tiene migraciones registradas y hay alguna PENDIENTE (p. ej. la 30 antes de su etapa 4), se niega: esas se aplican SOLO con
+    # «solo migraciones» (entorno protegido, confirmación literal, respaldo previo). Si no se puede leer el historial, también se niega.
+    command -v psql >/dev/null || { echo "PROHIBIDO: falta psql para comprobar el historial antes de migrar. No se hace nada."; exit 2; }
+    CLAVE_URL="$(P="$CLAVE_BD" python3 -c 'import os,urllib.parse;print(urllib.parse.unquote(os.environ["P"]),end="")')"
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::add-mask::$CLAVE_URL"; fi
+    HIST="$(ro_c "select to_regclass('supabase_migrations.schema_migrations') is not null" 2>/dev/null)" || HIST=""
+    case "$HIST" in
+      f) echo "  OK    la base no tiene historial de migraciones: proyecto nuevo, se aplican todas";;
+      t) REG="$(ro_c "select coalesce(string_agg(version, ' ' order by version), '') from supabase_migrations.schema_migrations" 2>/dev/null)" || REG="?"
+         [ "$REG" != "?" ] || { echo "PROHIBIDO: no se pudo leer el historial de migraciones. No se migra."; exit 2; }
+         LOC="$(for f in supabase/migrations/*.sql; do b="$(basename "$f")"; echo "${b%%_*}"; done | sort)"
+         PEND="$(comm -23 <(printf '%s\n' "$LOC") <(printf '%s' "$REG" | tr ' ' '\n' | sort) | grep -c . || true)"; NREG="$(printf '%s' "$REG" | wc -w | tr -d ' ')"
+         if [ "$NREG" != "0" ] && [ "$PEND" != "0" ]; then echo "PROHIBIDO: la base ya tiene $NREG migraciones registradas y hay $PEND PENDIENTE(S). «publicar» no aplica migraciones sobre una base ya migrada: úsalas con «solo migraciones» (etapas, con su respaldo y su aprobación). No se hace nada."; exit 2; fi
+         echo "  OK    historial: $NREG registradas, $PEND pendientes";;
+      *) echo "PROHIBIDO: no se pudo comprobar el historial de migraciones. No se migra."; exit 2;;
+    esac
     supabase link --project-ref "$REF" --workdir . >/dev/null
     supabase db push --remote="$URL_SESION" --yes --workdir .;;
   verificar-api-vault)
@@ -299,7 +315,7 @@ print(r)')"
       1) HASTA=20261112001000; ESPERADAS=27; DESCRIPCION="etapa 1: migraciones 1 a 27";;
       2) HASTA=20261113000100; ESPERADAS=28; DESCRIPCION="etapa 2: migración 28";;
       3) HASTA=20261114000100; ESPERADAS=29; DESCRIPCION="etapa 3: migración 29 (almacén persistente de Digifact)";;
-      4) HASTA=20261114000100; ESPERADAS=29; DESCRIPCION="etapa 4: tipos de documento (propuesta fuera de supabase/migrations; las 29 migraciones no cambian)";;
+      4) HASTA=20261115000100; ESPERADAS=30; DESCRIPCION="etapa 4: migración 30 (tipos de documento)";;
       *) echo "Uso: supabase-hospedado.sh $ACCION 1|2|3|4"; exit 2;;
     esac
     derivar_url_sesion
@@ -352,6 +368,9 @@ print(r)')"
       # catálogo y conteos de solo lectura: etapa 1 = V1 reforzada (67 tablas, 49 políticas, 182 funciones, 57 disparadores, privilegios efectivos, 0 filas de negocio); etapa 2 = catálogo de la 28
       local ARCH="docs/migracion-28/verificacion-posterior-27.sql" NOMBRE="V1 reforzada (etapa 1)"; [ "$ETAPA" = "2" ] && { ARCH="docs/migracion-28/verificacion-posterior-28.sql"; NOMBRE="catálogo de la migración 28"; }; [ "$ETAPA" = "3" ] && { ARCH="docs/migracion-29/verificacion-posterior-29.sql"; NOMBRE="catálogo de la migración 29"; }
       [ "$ETAPA" = "4" ] && { ARCH="docs/migracion-tipos-documento/verificacion-tipos.sql"; NOMBRE="tipos de documento (verificacion-tipos.sql: todas las filas ok = true)"; }
+      if [ "$ETAPA" = "4" ]; then   # además de los tipos, el catálogo de la 29 (compatible con la 30: cifras +2 tablas, +2 políticas, +10 funciones, +5 disparadores) debe seguir sano
+        local sal29; if sal29="$(ro_f docs/migracion-29/verificacion-posterior-29.sql 2>&1)"; then echo "  OK    catálogo de la migración 29 con la 30 aplicada (verificacion-posterior-29.sql, solo lectura)"; else sal29="$(printf '%s' "$sal29" | grep -m1 -E 'ERROR|error' || true)"; sal29="${sal29//"$CLAVE_URL"/***}"; echo "  FALLO catálogo de la migración 29 con la 30: ${sal29:0:200}"; fallo=1; fi
+      fi
       if true; then
         local sal; if sal="$(ro_f "$ARCH" 2>&1)" && { [ "$ETAPA" != "4" ] || ! grep -Eq '\| +f *$' <<< "$sal"; }; then echo "  OK    $NOMBRE ($(basename "$ARCH"), solo lectura)"; else sal="$(printf '%s' "$sal" | grep -m1 -E 'ERROR|error' || true)"; sal="${sal//"$CLAVE_URL"/***}"; echo "  FALLO $NOMBRE: ${sal:0:200}"; fallo=1; fi
       fi
@@ -360,31 +379,23 @@ print(r)')"
     if [ "$ACCION" = "verificar-etapa" ]; then verificacion && echo "VERIFICACIÓN DE LA ETAPA $ETAPA: OK" || { echo "VERIFICACIÓN DE LA ETAPA $ETAPA: FALLÓ"; exit 1; }; exit 0; fi
     # ---- aplicar: confirmación literal y precondiciones exactas de ESTA etapa
     [ "${FEL_CONFIRMAR_MIGRACIONES:-}" = "APLICAR-MIGRACIONES" ] || { echo "PROHIBIDO: falta la confirmación literal APLICAR-MIGRACIONES. No se hace nada."; exit 2; }
-    if [ "$ETAPA" = "4" ]; then
-      # Etapa 4 = propuesta de TIPOS DE DOCUMENTO (docs/migracion-tipos-documento). No usa la CLI de migraciones (el archivo vive fuera de supabase/migrations y no cambia el historial): se aplica con psql en UNA transacción.
-      # Precondiciones (solo lectura): EXACTAMENTE las 29 registradas (la 29 aplicada), la propuesta ausente y las funciones que da por supuestas.
-      [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort | grep -c .)" = "29" ] && [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort)" = "$(printf '%s\n' "$LOCALES_ETAPA")" ] \
-        || { echo "PROHIBIDO: la etapa 4 exige que estén registradas EXACTAMENTE las 29 migraciones (la 29 ya aplicada); registradas: $NAPL. No se hace nada."; exit 2; }
-      LIBRE="$(qro "select to_regclass('public.fel_tipos_dte') is null and to_regclass('public.empresa_tipos_documento') is null and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'documentos' and column_name in ('tipo_dte','documento_origen_id','referencia_origen','motivo_ajuste','tipo_recibo'))")"
-      [ "$LIBRE" = "t" ] || { echo "PROHIBIDO: la base ya tiene objetos de la propuesta de tipos (o no se pudo comprobar). No se hace nada. $LIBRE"; exit 2; }
-      DEP="$(qro "select to_regclass('public.documentos') is not null and to_regprocedure('public.fel_auditar(uuid,uuid,text,text,text,jsonb,text)') is not null and to_regclass('public.digifact_operaciones') is not null")"
-      [ "$DEP" = "t" ] || { echo "PROHIBIDO: faltan objetos que la propuesta da por supuestos (documentos, fel_auditar o la tabla de la 29). No se hace nada. $DEP"; exit 2; }
-      echo "  OK    precondiciones de la etapa 4: 29 registradas (la 29 aplicada), la propuesta ausente y sus dependencias presentes (solo lectura)"
-      echo "  INFO  inventario previo (tablas | documentos | empresas): $(qro "select (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')) || ' | ' || (select count(*) from public.documentos) || ' | ' || (select count(*) from public.empresas)")"
-      ARCHIVO_TIPOS="docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql"
-      echo "== Aplicando $(basename "$ARCHIVO_TIPOS") en UNA transacción (si algo falla, no queda nada)"
-      PGPASSWORD="$CLAVE_URL" PGCONNECT_TIMEOUT=20 psql "host=$HOST_BD port=5432 dbname=postgres user=postgres.$REF sslmode=require" -X -q -v ON_ERROR_STOP=1 --single-transaction -f "$ARCHIVO_TIPOS" >/dev/null \
-        || { echo "FALLÓ la aplicación de la propuesta de tipos (la transacción se deshizo; no cambió nada)."; exit 1; }
-      echo "== Propuesta aplicada. Verificación de solo lectura:"
-      verificacion && echo "VERIFICACIÓN DE LA ETAPA 4: OK. SE DETIENE AQUÍ." || { echo "VERIFICACIÓN DE LA ETAPA 4: FALLÓ. No se sigue (reversión segura: docs/migracion-tipos-documento/reversion-tipos.sql)."; exit 1; }
-      exit 0
-    fi
     if [ "$ETAPA" = "1" ]; then
       [ "$NAPL" = "0" ] && [ "$NTAB" = "0" ] || { echo "PROHIBIDO: la etapa 1 exige una base VACÍA y sin historial (registradas: $NAPL, tablas: $NTAB). No se hace nada."; exit 2; }
     else
       ANT=$((ESPERADAS - 1))   # etapa 2: las 27 anteriores · etapa 3: las 28 anteriores (exactamente las que aprobamos, ni una más ni una menos)
       [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort | grep -c .)" = "$ANT" ] && [ "$(printf '%s' "$APLICADAS" | tr ' ' '\n' | sort)" = "$(printf '%s\n' "$LOCALES_ETAPA" | grep -v "^$HASTA$")" ] \
         || { echo "PROHIBIDO: la etapa $ETAPA exige que estén registradas EXACTAMENTE las $ANT migraciones anteriores (registradas: $NAPL). No se hace nada."; exit 2; }
+      if [ "$ETAPA" = "4" ]; then
+        # SOLO LECTURA, ANTES de tocar nada: (a) la 30 no está ya (ni a medias) en la base; (b) las dependencias que da por supuestas existen; (c) el catálogo de la 29 está sano; (d) inventario previo para comparar después
+        LIBRE="$(qro "select to_regclass('public.fel_tipos_dte') is null and to_regclass('public.empresa_tipos_documento') is null and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'documentos' and column_name in ('tipo_dte','documento_origen_id','referencia_origen','motivo_ajuste','tipo_recibo')) and not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('fel_tipos_empresa','fel_op_documento_tipo','fel_op_documento_origenes','fel_op_tipos_empresa_guardar','fel_documento_tipo_guard','fel_operacion_tipo_guard','fel_tipos_dte_inmutable','fel__tipo_no_habilitado','fel__receptor_id','fel_tipos_instalar_guardian_digifact'))")"
+        [ "$LIBRE" = "t" ] || { echo "PROHIBIDO: la base ya tiene objetos de la migración 30 (o no se pudo comprobar). No se hace nada. $LIBRE"; exit 2; }
+        DEP="$(qro "select to_regclass('public.documentos') is not null and to_regprocedure('public.fel_auditar(uuid,uuid,text,text,text,jsonb,text)') is not null and to_regclass('public.digifact_operaciones') is not null")"
+        [ "$DEP" = "t" ] || { echo "PROHIBIDO: faltan objetos que la migración 30 da por supuestos (documentos, fel_auditar o la tabla de la 29). No se hace nada. $DEP"; exit 2; }
+        local_ok=1; PREV="$(ro_f docs/migracion-29/verificacion-posterior-29.sql 2>&1)" || local_ok=0
+        [ "$local_ok" = 1 ] || { PREV="$(printf '%s' "$PREV" | grep -m1 -E 'ERROR|error' || true)"; PREV="${PREV//"$CLAVE_URL"/***}"; echo "PROHIBIDO: el catálogo de la migración 29 NO está sano antes de la 30 (${PREV:-sin detalle}). No se hace nada."; exit 2; }
+        echo "  OK    precondiciones de la etapa 4: 29 registradas, la 30 ausente, sus dependencias presentes y el catálogo de la 29 sano (solo lectura)"
+        echo "  INFO  inventario previo (tablas | políticas | funciones | disparadores | empresas | documentos): $(qro "select (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')) || ' | ' || (select count(*) from pg_policies where schemaname = 'public') || ' | ' || (select count(*) from pg_proc where pronamespace = 'public'::regnamespace) || ' | ' || (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid where c.relnamespace = 'public'::regnamespace and not t.tgisinternal) || ' | ' || (select count(*) from public.empresas) || ' | ' || (select count(*) from public.documentos)")"
+      fi
       if [ "$ETAPA" = "3" ]; then
         # SOLO LECTURA, ANTES de tocar nada: (a) la 29 no está ya (ni a medias) en la base; (b) el catálogo de la 28 está sano (si no lo está, la 29 no se aplica sobre un esquema dudoso); (c) inventario previo para comparar después
         LIBRE="$(qro "select to_regclass('public.digifact_operaciones') is null and to_regclass('public.digifact_artefactos') is null and not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('fel_digifact_op_guarda', 'fel_digifact_art_guarda', 'fel_sys_digifact_aplicar'))")"

@@ -141,8 +141,8 @@ env_base; export FAKE_CURL_CUERPO='{"pitr_enabled":false,"backups":[]}'; : > "$R
 echo "== B. ensayo-respaldo"
 prepara_origen() {   # base «origen» = nexa-demo simulado: shim + las 28 migraciones + datos + historial
   DB=postgres P -c "drop database if exists origen with (force)" -c "create database origen" >/dev/null; DB=origen P -f "$R/tools/shim_supabase.sql" >/dev/null
-  for f in "$R"/supabase/migrations/*.sql; do case "$f" in *20261114000100*) ;; *) DB=origen P -f "$f" >/dev/null 2>&1 || { echo "no se pudo aplicar $f"; return 1; };; esac; done
-  DB=origen P -c "create schema if not exists supabase_migrations; create table supabase_migrations.schema_migrations (version text primary key, name text, statements text[])" -c "insert into supabase_migrations.schema_migrations (version) values $(ls "$R/supabase/migrations" | grep -v 20261114000100 | sed "s/_.*//; s/.*/('&')/" | paste -sd,)" >/dev/null
+  for f in "$R"/supabase/migrations/*.sql; do case "$f" in *20261114000100*|*20261115000100*) ;; *) DB=origen P -f "$f" >/dev/null 2>&1 || { echo "no se pudo aplicar $f"; return 1; };; esac; done
+  DB=origen P -c "create schema if not exists supabase_migrations; create table supabase_migrations.schema_migrations (version text primary key, name text, statements text[])" -c "insert into supabase_migrations.schema_migrations (version) values $(ls "$R/supabase/migrations" | grep -v -e 20261114000100 -e 20261115000100 | sed "s/_.*//; s/.*/('&')/" | paste -sd,)" >/dev/null
   DB=origen P -c "insert into auth.users (id, email, email_confirmed_at) values ('30000000-0000-0000-0000-0000000000a1', 'actor@prueba.local', now())" \
     -c "insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id) select '10000000-0000-0000-0000-0000000000a1', 'Empresa R', 'Empresa R S.A.', '9900001-1', id from public.regimenes_fiscales where codigo = 'general'" \
     -c "insert into public.documentos (id, empresa_id, numero_borrador, estado_preparacion, creado_por) select ('20000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid, '10000000-0000-0000-0000-0000000000a1', n, 'borrador', '30000000-0000-0000-0000-0000000000a1' from generate_series(1,5) n" \
@@ -203,7 +203,7 @@ Pr() { DB=origen P "$@"; }; Pr -c "do \$\$ begin if not exists (select 1 from pg
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 0 ] && grep -q "LIMITACIÓN: la copia menciona roles que el destino no tenía (zz_externo); se crearon vacíos: sus atributos y membresías NO se reproducen" "$W/salida.txt" && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && ok "un rol del origen que el destino no tiene → se crea vacío y se declara como LIMITACIÓN (no como prueba aprobada); los permisos restaurados coinciden" || { mal "el rol ausente en el destino no se maneja o no se declara"; tail -6 "$W/salida.txt"; }
 Pr -c "revoke select on public.empresas from zz_externo" >/dev/null
 DB=origen P -c "delete from supabase_migrations.schema_migrations where version = (select min(version) from supabase_migrations.schema_migrations)" >/dev/null
-env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "NO tiene exactamente 28 migraciones" "$W/salida.txt" && ok "historial con 27 migraciones → falla" || mal "historial incompleto no hace fallar"
+env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "NO tiene exactamente 28, 29 ni 30 migraciones" "$W/salida.txt" && ok "historial con 27 migraciones → falla" || mal "historial incompleto no hace fallar"
 prepara_origen >/dev/null; DB=origen P -f "$R/supabase/migrations/20261114000100_fel_digifact_operaciones.sql" >/dev/null 2>&1
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "la migración 29 ya existe en el origen" "$W/salida.txt" && ok "la 29 ya aplicada en el origen → falla (el ensayo es previo a la 29)" || mal "la 29 presente no hace fallar"
 # -- origen con las 29 migraciones (la 29 aplicada Y registrada): el ensayo vale para ese estado, con el catálogo de la 29 sobre lo restaurado
@@ -219,8 +219,24 @@ prepara_origen29; DB=origen P -c "create function public.zz_funcion_ajena() retu
 # -- 29 registradas pero sin las tablas de la 29 → falla; 30 registradas → falla
 prepara_origen29; DB=origen P -c "drop table public.digifact_artefactos" >/dev/null 2>&1; env_base; r=$(sale ensayo-respaldo)
 [ "$r" = 1 ] && grep -q "faltan las tablas de la migración 29" "$W/salida.txt" && ok "29 registradas sin las tablas de la 29 → falla" || mal "29 sin tablas no hace fallar"
+# -- origen con las 30 migraciones (la 30 = tipos de documento aplicada Y registrada): el ensayo vale también para ese estado, con el catálogo de la 29 (cifras +2/+2/+10/+5) y la verificación de la 30
+prepara_origen30() { prepara_origen29; DB=origen P -f "$R/supabase/migrations/20261115000100_fel_tipos_documento.sql" >/dev/null 2>&1 && DB=origen P -c "insert into supabase_migrations.schema_migrations (version) values ('20261115000100')" >/dev/null; }
+prepara_origen30; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 0 ] && grep -q "ENSAYO DE RESPALDO Y RESTAURACIÓN: OK" "$W/salida.txt" && grep -q "30 migraciones iguales a las del repositorio · la 29 presente · la 30 presente" "$W/salida.txt" && grep -q "historial restaurado: las 30 migraciones" "$W/salida.txt" && grep -q "la migración 30 está presente en lo restaurado" "$W/salida.txt" && grep -q "catálogo de la migración 29 sano en lo restaurado (71 tablas" "$W/salida.txt" && grep -q "verificación de la migración 30 sana en lo restaurado" "$W/salida.txt" && ok "origen con las 30 migraciones → el ensayo termina OK (historial, 30 presente, catálogo de la 29 con las cifras de la 30 y verificación de los tipos)" || { mal "el ensayo con la 30 aplicada no termina OK"; tail -12 "$W/salida.txt"; }
+# compatibilidad hacia atrás: los respaldos de los estados 28 y 29 siguen valiendo (casos de arriba) y dicen «la 30 ausente»
+prepara_origen29; env_base; r=$(sale ensayo-respaldo); [ "$r" = 0 ] && grep -q "la 29 presente · la 30 ausente" "$W/salida.txt" && ok "un origen en el estado 29 (respaldos anteriores a la 30) sigue pasando el ensayo y declara la 30 ausente" || mal "el estado 29 dejó de valer"
+prepara_origen; env_base; r=$(sale ensayo-respaldo); [ "$r" = 0 ] && grep -q "la 29 ausente · la 30 ausente" "$W/salida.txt" && ok "un origen en el estado 28 (respaldos anteriores a la 29) sigue pasando el ensayo" || mal "el estado 28 dejó de valer"
+# -- estados inconsistentes → falla
 prepara_origen29; DB=origen P -c "insert into supabase_migrations.schema_migrations (version) values ('20261115000100')" >/dev/null; env_base; r=$(sale ensayo-respaldo)
-[ "$r" = 1 ] && grep -q "NO tiene exactamente 28 migraciones" "$W/salida.txt" && ok "30 migraciones registradas → falla (solo valen 28 o 29)" || mal "30 migraciones no hacen fallar"
+[ "$r" = 1 ] && grep -q "registra la migración 30 pero le faltan sus tablas" "$W/salida.txt" && ok "30 registradas sin las tablas de la 30 → falla" || mal "30 sin tablas no hace fallar"
+prepara_origen29; DB=origen P -f "$R/supabase/migrations/20261115000100_fel_tipos_documento.sql" >/dev/null 2>&1; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -q "objetos de la migración 30 sin tenerla registrada" "$W/salida.txt" && ok "las tablas de la 30 sin registrarla en el historial (deriva) → falla" || mal "la deriva entre historial y base no hace fallar"
+prepara_origen30; DB=origen P -c "insert into supabase_migrations.schema_migrations (version) values ('20261116000100')" >/dev/null; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -q "NO tiene exactamente 28, 29 ni 30 migraciones" "$W/salida.txt" && ok "31 migraciones registradas → falla (solo valen 28, 29 o 30)" || mal "31 migraciones no hacen fallar"
+prepara_origen30; DB=origen P -c "create function public.zz_funcion_ajena() returns int language sql as 'select 1'" >/dev/null; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -q "NO pasa el catálogo de la migración 29" "$W/salida.txt" && ok "con la 30, una función ajena de más sigue haciendo fallar el catálogo (la tolerancia es exacta)" || mal "con la 30 una función ajena no hace fallar el catálogo"
+prepara_origen30; DB=origen P -c "grant select on public.fel_tipos_dte to anon" >/dev/null; env_base; r=$(sale ensayo-respaldo)
+[ "$r" = 1 ] && grep -qE "verificación de la migración 30 en lo restaurado tiene filas con ok = false|NO pasa la verificación de la migración 30" "$W/salida.txt" && ok "con la 30, un privilegio abierto a anon en sus tablas hace fallar su verificación" || mal "la verificación de la 30 no detecta un privilegio abierto"
 prepara_origen >/dev/null
 prepara_origen >/dev/null; DB=origen P -c "grant select on public.empresas to anon" >/dev/null
 env_base; r=$(sale ensayo-respaldo); [ "$r" = 1 ] && grep -q "NO pasa el catálogo de la migración 28" "$W/salida.txt" && ok "un origen con un permiso de más (anon puede leer empresas) → la copia restaurada no pasa el catálogo de la 28 y el ensayo FALLA" || { mal "un origen con permisos de más no hace fallar"; tail -3 "$W/salida.txt"; }
@@ -344,6 +360,32 @@ else echo "INFO  Docker no está en marcha en este equipo: el modo --docker se p
 [ -n "$RECDIR" ] && rm -rf "$RECDIR"
 # -- una segunda corrida con el mismo contenido NO sobrescribe nada (nombre con fecha: objeto nuevo) y no toca los anteriores
 sleep 1; env_base; env_r2; r=$(sale respaldo-persistente); [ "$r" = 0 ] && [ "$(ls "$R2D/objetos" | wc -l)" = 6 ] && ok "una segunda corrida crea objetos NUEVOS (6 en total) sin tocar los anteriores" || mal "la segunda corrida no creó objetos nuevos"
+# ---- C3. respaldo persistente + recuperación en el estado 30 (con tipos de documento) y en el 28 (respaldos anteriores): la herramienta de recuperación es compatible con todos
+echo "== C3. respaldo persistente y recuperación en los estados 30 y 28"
+RECDIR="/tmp/fel-recuperacion-test"; [ -n "$RECDIR" ] && rm -rf "$RECDIR"; mkdir -p "$RECDIR"; chmod 777 "$RECDIR"; cp "$W/age-privada.txt" "$RECDIR/clave.txt"; chmod 644 "$RECDIR/clave.txt"
+cat > "$RECDIR/rec.sh" <<SH
+#!/usr/bin/env bash
+export TMPDIR="$RECDIR" R2_ACCOUNT_ID=$R2ID R2_ACCESS_KEY_ID=$R2KID R2_SECRET_ACCESS_KEY=$R2SEC FEL_R2_ENDPOINT_PRUEBA="http://127.0.0.1:$R2PORT"
+exec python3 "$R/tools/recuperar-respaldo.py" --pgbin "$PGBIN" --repo "$R" --pg-mayor $PGMAYOR "\$@"
+SH
+chmod 755 "$RECDIR/rec.sh"
+for ESTADO in 30 28; do
+  vacia_r2; if [ "$ESTADO" = 30 ]; then prepara_origen30; else prepara_origen; fi; env_base; env_r2; r=$(sale respaldo-persistente)
+  [ "$r" = 0 ] && grep -q "RESPALDO PERSISTENTE: CONSERVADO EN R2" "$W/salida.txt" && ok "respaldo-persistente con el origen en el estado $ESTADO → conservado en R2" || { mal "respaldo-persistente en el estado $ESTADO falló"; tail -8 "$W/salida.txt"; continue; }
+  OBJ2="$(ls "$R2D/objetos"/*.dump.age | head -1)"; BN2="$(basename "$OBJ2" .dump.age)"; BASE2="nexa-demo/${BN2#*__nexa-demo__}"; SHA2="$(cut -d' ' -f1 "$R2D/objetos/${BN2}.dump.sha256")"
+  r=$(as_pg "'$RECDIR/rec.sh' --base '$BASE2' --bucket $BUCKET --clave '$RECDIR/clave.txt' --descargar --sha-esperado $SHA2 > '$RECDIR/salida.txt' 2>&1; echo \$?")
+  if [ "$ESTADO" = 30 ]; then
+    [ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$RECDIR/salida.txt" && grep -q "historial de migraciones: 30 versiones, idénticas" "$RECDIR/salida.txt" && grep -q "la migración 30 (tipos de documento) está registrada en el historial" "$RECDIR/salida.txt" && grep -q "verificación de la migración 30 sana en lo restaurado" "$RECDIR/salida.txt" && grep -q "RLS: las 71 tablas" "$RECDIR/salida.txt" && grep -q "catálogo de la migración 29 sano" "$RECDIR/salida.txt" && ok "recuperar-respaldo con un respaldo en el estado 30: 30 versiones, la 30 registrada y verificada, 71 tablas con RLS y el catálogo de la 29 con sus cifras" || { mal "la recuperación del estado 30 no termina OK"; tail -14 "$RECDIR/salida.txt"; }
+  else
+    [ "$r" = 0 ] && grep -q "RECUPERACIÓN VERIFICADA: OK" "$RECDIR/salida.txt" && grep -q "historial de migraciones: 28 versiones, idénticas" "$RECDIR/salida.txt" && ! grep -q "migración 30" "$RECDIR/salida.txt" && ok "recuperar-respaldo con un respaldo ANTERIOR (estado 28): sigue funcionando y no exige la 29 ni la 30" || { mal "la recuperación del estado 28 no termina OK"; tail -14 "$RECDIR/salida.txt"; }
+  fi
+done
+# un respaldo del estado 30 cuyo historial dice 29 (deriva) se rechaza en la recuperación
+vacia_r2; prepara_origen30; env_base; env_r2; r=$(sale respaldo-persistente); OBJ2="$(ls "$R2D/objetos"/*.dump.age | head -1)"; BN2="$(basename "$OBJ2" .dump.age)"
+CARPX="$RECDIR/carpetax"; mkdir -p "$CARPX"; for e in dump.age dump.sha256 informe.txt; do cp "$R2D/objetos/${BN2}.$e" "$CARPX/${BN2#*__nexa-demo__}.$e"; done
+sed -i -E 's/ · 30 migraciones/ · 29 migraciones/' "$CARPX/${BN2#*__nexa-demo__}.informe.txt"; chmod -R a+rX "$CARPX"
+r=$(as_pg "'$RECDIR/rec.sh' --base 'nexa-demo/${BN2#*__nexa-demo__}' --clave '$RECDIR/clave.txt' --carpeta '$CARPX' > '$RECDIR/salida.txt' 2>&1; echo \$?"); [ "$r" = 1 ] && grep -qE "historial restaurado tiene 30 migraciones y el informe 29|deriva entre el historial" "$RECDIR/salida.txt" && ok "un informe que dice 29 migraciones sobre un volcado de 30 → la recuperación falla (no se da por buena)" || { mal "una deriva de historial no se detecta en la recuperación"; tail -5 "$RECDIR/salida.txt"; }
+[ -n "$RECDIR" ] && rm -rf "$RECDIR"; vacia_r2
 # -- protecciones
 for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET AGE_PUBLIC_KEY; do prepara_origen29; env_base; env_r2; vacia_r2; export "$v="; r=$(sale respaldo-persistente); [ "$r" = 2 ] && grep -q "falta $v" "$W/salida.txt" && [ ! -d "$R2D/objetos" ] && ok "sin $v → se niega antes de hacer nada" || mal "sin $v no se niega"; done
 env_base; env_r2; export AGE_PUBLIC_KEY="$(grep -o 'AGE-SECRET-KEY-[A-Z0-9]*' "$W/age-privada.txt")"; r=$(sale respaldo-persistente); [ "$r" = 2 ] && grep -q "clave PÚBLICA" "$W/salida.txt" && ! grep -q "AGE-SECRET-KEY" "$W/salida.txt" && ok "una clave PRIVADA de age como destinatario se rechaza (y no se imprime)" || mal "se aceptó una clave privada de age"

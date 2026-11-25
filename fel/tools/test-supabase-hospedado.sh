@@ -12,7 +12,7 @@ echo "$*" >> "$REGISTRO"
 if [ "$1 $2" = "db push" ]; then
   wd=""; yes=0; dry=0; prev=""; for a in "$@"; do [ "$prev" = "--workdir" ] && wd="$a"; [ "$a" = "--yes" ] && yes=1; [ "$a" = "--dry-run" ] && dry=1; prev="$a"; done
   if [ -n "$wd" ] && [ -d "$wd/supabase/migrations" ] && [ "$yes" = 1 ] && [ "$dry" = 0 ]; then   # simula la aplicación: guarda qué se «aplicó» y deja el estado resultante para el psql falso
-    ls "$wd/supabase/migrations" | sort > "${LISTADO:-/dev/null}"; ls "$wd/supabase/migrations" | sed 's/_.*//' | tr '\n' ' ' > "${ESTADO_VERS:-/dev/null}"; if [ "$(ls "$wd/supabase/migrations" | wc -l | tr -d ' ')" = 29 ]; then echo 69 > "${ESTADO_TAB:-/dev/null}"; else echo 67 > "${ESTADO_TAB:-/dev/null}"; fi
+    ls "$wd/supabase/migrations" | sort > "${LISTADO:-/dev/null}"; ls "$wd/supabase/migrations" | sed 's/_.*//' | tr '\n' ' ' > "${ESTADO_VERS:-/dev/null}"; case "$(ls "$wd/supabase/migrations" | wc -l | tr -d ' ')" in 30) echo 71 > "${ESTADO_TAB:-/dev/null}";; 29) echo 69 > "${ESTADO_TAB:-/dev/null}";; *) echo 67 > "${ESTADO_TAB:-/dev/null}";; esac
   fi
 fi
 if [ "$1 $2" = "secrets set" ]; then for a in "$@"; do case "$a" in --env-file) tomar=1;; *) [ "${tomar:-}" = 1 ] && { cat "$a" > "$ENV_COPIA"; cut -d= -f1 "$a" >> "$ESTADO_SECRETOS"; sort -u "$ESTADO_SECRETOS" -o "$ESTADO_SECRETOS"; tomar=0; };; esac; done; fi
@@ -47,6 +47,7 @@ if [ "${PGPASSWORD:-}" = "$CLAVE_BUENA" ]; then
         if [ "${FAKE_CATALOGO_RC:-0}" != 0 ]; then echo "psql:verificacion-posterior-28.sql:86: ERROR:  service_role puede borrar empresas ($PGPASSWORD)" >&2; exit 3; fi; exit 0;;
       *requisitos_29*) echo "${FAKE_REQ29:-ok}";;
       *"comprobacion = 'DELETE"*) echo "${FAKE_DEPCHK:-1/1/16}";;   # presencia de la comprobación excluida y de la del privilegio DELETE / total
+      *fel_tipos_dte*) echo "${FAKE_LIBRE30:-t}";;   # precondición de la etapa 4: ¿la migración 30 está ausente?
       *digifact_operaciones*) echo "${FAKE_LIBRE:-t}";;
       *to_regclass*) echo "${FAKE_HIST:-f}";;
       *"string_agg(version"*) echo -n "$vers";;
@@ -79,7 +80,7 @@ rm -f "$REGISTRO"; base "$REF" conexion; r=$?
 [ "$(cat "$REGISTRO")" = "db push --remote=$URL_SES --dry-run --workdir ." ] && ok "conexion: UNA sola orden, «db push --dry-run» por el Session Pooler (5432), sin --yes (solo lectura)" || { mal "conexion: orden inesperada"; cat "$REGISTRO"; }
 ! grep -E "secrets|functions|--yes|link" "$REGISTRO" >/dev/null && ok "conexion no usa link, secretos, funciones ni --yes" || mal "conexion hace más de lo debido"
 # --- migraciones
-rm -f "$REGISTRO"; base "$REF" migraciones; [ $? = 0 ] && ok "migraciones: termina bien" || mal "migraciones fallaron"
+rm -f "$REGISTRO"; FAKE_ETAPAS=1 FAKE_HIST=f base "$REF" migraciones; [ $? = 0 ] && ok "migraciones: termina bien" || mal "migraciones fallaron"
 grep -qx "link --project-ref $REF --workdir \." "$REGISTRO" && ok "link con el proyecto fijado" || mal "link"
 grep -qx "db push --remote=$URL_SES --yes --workdir \." "$REGISTRO" && ok "db push por el Session Pooler (puerto 5432 derivado de 6543: mismo host, usuario y contraseña) con --yes" || mal "db push sin la URL de sesión"
 ! grep -q -- "--dry-run" <(grep -x "db push --remote=$URL_SES --yes --workdir \." "$REGISTRO") && ok "las migraciones reales no llevan --dry-run" || mal "mezcla de dry-run"
@@ -238,10 +239,10 @@ FAKE_EMPRESA_ANA="10000000-0000-0000-0000-0000000000d0,10000000-0000-0000-0000-0
 cp "$W/psql_viejo" "$W/psql"
 nit_limpiar
 # --- ocultación en el registro de GitHub Actions
-rm -f "$REGISTRO"; ACTIONS=1 base "$REF" migraciones
+rm -f "$REGISTRO"; ACTIONS=1 FAKE_ETAPAS=1 FAKE_HIST=f base "$REF" migraciones
 sin_mascara="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"
 [ "$sin_mascara" = 0 ] && grep -q "^::add-mask::$URL_SES$" "$W/salida.txt" && grep -q "^::add-mask::$CLAVE$" "$W/salida.txt" && ok "en Actions la URL derivada y la contraseña se registran como enmascaradas; fuera de esas órdenes no aparecen en la salida" || mal "enmascarado en Actions"
-unset ACTIONS; rm -f "$REGISTRO"; base "$REF" migraciones
+unset ACTIONS; rm -f "$REGISTRO"; FAKE_ETAPAS=1 FAKE_HIST=f base "$REF" migraciones
 ! grep -q "$CLAVE" "$W/salida.txt" && ok "fuera de Actions la salida no contiene la contraseña" || mal "contraseña en la salida (sin Actions)"
 # --- destinos: nada de lo ajeno llega a la CLI
 for malo in abcdefghijklmnopqrst "${REF}x" "${REF^^}" "" "../x"; do rm -f "$REGISTRO"; base "$malo" migraciones; r=$?; [ $r = 2 ] && nollamo && ok "referencia «${malo:-vacía}» rechazada sin llamar a la CLI" || mal "referencia «${malo}» aceptada"; done
@@ -299,7 +300,7 @@ base "$REF" validar "$URL_TX"; [ $? = 0 ] && ok "explicación: una cadena correc
 # --- migraciones POR ETAPAS (solo migraciones, con parada) y su verificación de solo lectura
 export FAKE_ETAPAS=1 LISTADO="$W/listado.txt" ESTADO_VERS="$W/estado_vers.txt" ESTADO_TAB="$W/estado_tab.txt"
 V1="$(cd "$R" && for f in supabase/migrations/*.sql; do b="$(basename "$f")"; v="${b%%_*}"; [ "$v" -le 20261112001000 ] && echo "$v"; done | sort | tr '\n' ' ')"
-reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE FAKE_REQ29 FAKE_ESCRIBE FAKE_TX FAKE_DEF FAKE_DEPCHK; }
+reinicia() { rm -f "$REGISTRO" "$REG_PSQL" "$LISTADO" "$ESTADO_VERS" "$ESTADO_TAB"; unset FAKE_HIST FAKE_VERSIONS FAKE_TABLAS FAKE_RLS FAKE_DEP FAKE_CATALOGO_RC FAKE_LIBRE FAKE_LIBRE30 FAKE_REQ29 FAKE_ESCRIBE FAKE_TX FAKE_DEF FAKE_DEPCHK; }
 etapa() { # $1 ref, $2 acción, $3 etapa, $4 confirmación (opcional)
   env -u GITHUB_ACTIONS PATH="$W:$PATH" SUPABASE_DB_PASSWORD="$CLAVE" FEL_DEMO_PROYECTO_REF="$1" FEL_DEMO_BD_URL="$URL_TX" ${4:+FEL_CONFIRMAR_MIGRACIONES=$4} ${ACTIONS:+GITHUB_ACTIONS=true} bash "$S" "$2" "$3" >"$W/salida.txt" 2>&1; }
 solo_lectura() { ! grep -v "default_transaction_read_only=on" "$REG_PSQL" | grep -q .; }
@@ -344,7 +345,7 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="20261110000100 " FAKE_TABLAS=0; etap
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; etapa "$REF" migraciones-etapa 2 APLICAR-MIGRACIONES; r=$?
 [ $r = 2 ] && grep -q "etapa 2 exige que estén registradas EXACTAMENTE las 27" "$W/salida.txt" && nollamo && ok "etapa 2 sin las 27 anteriores → se niega (no se puede saltar la etapa 1)" || mal "etapa 2 aceptó una base sin las 27"
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$(echo "$V1" | awk '{$NF=""; print}') " FAKE_TABLAS=60; etapa "$REF" migraciones-etapa 2 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && ok "etapa 2 con solo 26 de las 27 → se niega" || mal "etapa 2 aceptó 26 migraciones"
-reinicia; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && ok "una etapa que no existe se rechaza" || mal "etapa 4 aceptada"
+reinicia; etapa "$REF" migraciones-etapa 5 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && ok "una etapa que no existe se rechaza" || mal "etapa 5 aceptada"
 reinicia; etapa "abcdefghijklmnopqrst" migraciones-etapa 1 APLICAR-MIGRACIONES; [ $? = 2 ] && nollamo && [ ! -e "$REG_PSQL" ] && ok "con otra referencia de proyecto se rechaza sin conectar ni llamar a la CLI" || mal "otra referencia aceptada"
 # aplicar etapa 1 de verdad (CLI falsa): carpeta temporal con SOLO las 27, un único push, verificación y parada
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; etapa "$REF" migraciones-etapa 1 APLICAR-MIGRACIONES; r=$?
@@ -385,6 +386,36 @@ grep -q "precondiciones de la etapa 3" "$W/salida.txt" && grep -q "inventario pr
 [ "$(wc -l < "$LISTADO" | tr -d ' ')" = 29 ] && grep -q "digifact_operaciones" "$LISTADO" && ok "etapa 3: la carpeta aplicada tiene las 29 (28 ya registradas + la 29: la CLI solo empuja la pendiente)" || { mal "etapa 3: contenido"; cat "$LISTADO"; }
 ! grep -E "^(secrets|functions)" "$REGISTRO" >/dev/null && ! grep -q -- "--include-all" "$REGISTRO" && ok "etapa 3: no carga secretos, no despliega función y no usa --include-all" || mal "etapa 3 hace más de lo debido"
 grep -q "catálogo de la migración 29" "$W/salida.txt" && grep -q "VERIFICACIÓN DE LA ETAPA 3: OK. SE DETIENE AQUÍ" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "etapa 3: verifica el catálogo de la 29 en solo lectura, se detiene y no imprime la contraseña" || { mal "etapa 3: verificación"; cat "$W/salida.txt"; }
+# ---- etapa 4 = migración 30 (tipos de documento): misma CLI y mismo historial que las etapas 1–3
+V4="${V3}20261115000100 "
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V4" FAKE_TABLAS=71; etapa "$REF" verificar-etapa 4; r=$?
+[ $r = 0 ] && grep -q "VERIFICACIÓN DE LA ETAPA 4: OK" "$W/salida.txt" && grep -q "historial: 30 migraciones registradas" "$W/salida.txt" && grep -q -- "-f docs/migracion-tipos-documento/verificacion-tipos.sql" "$REG_PSQL" && grep -q -- "-f docs/migracion-29/verificacion-posterior-29.sql" "$REG_PSQL" && grep -q "catálogo de la migración 29 con la 30 aplicada" "$W/salida.txt" && nollamo && solo_lectura && ok "verificar-etapa 4: 30 registradas, verificacion-tipos.sql y el catálogo de la 29 (compatible con la 30), todo en solo lectura y sin CLI" || { mal "verificar-etapa 4"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; etapa "$REF" verificar-etapa 4; r=$?
+[ $r = 1 ] && grep -q "FALLO historial: 29 registradas, se esperaban 30" "$W/salida.txt" && ok "verificar-etapa 4 con solo 29 registradas → FALLA (la 30 aún no está)" || mal "verificar-etapa 4 con 29 no falla"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V4" FAKE_TABLAS=71 FAKE_CATALOGO_RC=3; etapa "$REF" verificar-etapa 4; r=$?
+[ $r = 1 ] && grep -q "FALLO tipos de documento" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "verificar-etapa 4: si la verificación de los tipos falla → FALLA y no imprime la contraseña" || mal "verificacion-tipos fallida no falla"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; etapa "$REF" migraciones-etapa 4; r=$?
+[ $r = 2 ] && nollamo && ok "etapa 4 sin la confirmación literal → se niega sin llamar a la CLI" || mal "etapa 4 sin confirmación"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V2" FAKE_TABLAS=67; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "la etapa 4 exige que estén registradas EXACTAMENTE las 29 migraciones anteriores" "$W/salida.txt" && ok "etapa 4 con solo 28 registradas → se niega (no se puede saltar la etapa 3)" || mal "etapa 4 aceptó 28"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V4" FAKE_TABLAS=71; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "EXACTAMENTE las 29" "$W/salida.txt" && ok "etapa 4 con la 30 ya registrada → se niega (no se aplica dos veces)" || mal "etapa 4 se aplicaría dos veces"
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69 FAKE_LIBRE30=f; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "la base ya tiene objetos de la migración 30" "$W/salida.txt" && ok "etapa 4 con objetos de la 30 ya presentes (deriva) → se niega ANTES de tocar nada" || { mal "etapa 4 con la 30 a medias"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69 FAKE_LIBRE=f; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "faltan objetos que la migración 30 da por supuestos" "$W/salida.txt" && ok "etapa 4 sin las dependencias de la 29 → se niega ANTES de tocar nada" || { mal "etapa 4 sin dependencias"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69 FAKE_CATALOGO_RC=3; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; r=$?
+[ $r = 2 ] && nollamo && grep -q "catálogo de la migración 29 NO está sano antes de la 30" "$W/salida.txt" && ! grep -q "$CLAVE" "$W/salida.txt" && ok "etapa 4 con el catálogo de la 29 dudoso → se niega ANTES de tocar nada (y sin imprimir la contraseña)" || { mal "etapa 4 con catálogo 29 dudoso"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; etapa "$REF" migraciones-etapa 4 APLICAR-MIGRACIONES; r=$?
+[ $r = 0 ] && grep -q "precondiciones de la etapa 4" "$W/salida.txt" && grep -q "inventario previo" "$W/salida.txt" && grep -q "VERIFICACIÓN DE LA ETAPA 4: OK. SE DETIENE AQUÍ" "$W/salida.txt" && ok "migraciones-etapa 4: precondiciones, inventario previo, aplicación y verificación posterior → OK y se detiene" || { mal "migraciones-etapa 4 falló"; cat "$W/salida.txt"; }
+[ "$(grep -c '^db push' "$REGISTRO")" = 1 ] && grep -qE "^db push --remote=$URL_SES --yes --workdir /" "$REGISTRO" && [ "$(wc -l < "$LISTADO" | tr -d ' ')" = 30 ] && grep -q "fel_tipos_documento" "$LISTADO" && ! grep -E "^(secrets|functions)" "$REGISTRO" >/dev/null && ! grep -q -- "--include-all" "$REGISTRO" && solo_lectura_menos_push=1 && ok "etapa 4: UN solo «db push» por el Session Pooler sobre una carpeta temporal con las 30 (la CLI solo empuja la pendiente y la REGISTRA en el historial); no carga secretos ni despliega" || { mal "etapa 4: push inesperado"; cat "$REGISTRO"; cat "$LISTADO"; }
+# «publicar» NO aplica migraciones pendientes sobre una base ya migrada (p. ej. la 30 antes de su etapa 4); en un proyecto NUEVO sí aplica todas
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; rm -f "$REGISTRO"; base "$REF" migraciones; r=$?
+[ $r = 2 ] && nollamo && grep -q "PROHIBIDO: la base ya tiene 29 migraciones registradas y hay 1 PENDIENTE" "$W/salida.txt" && ok "«publicar»: con 29 registradas y la 30 pendiente se NIEGA y no llama a la CLI (la 30 solo entra por la etapa 4)" || { mal "publicar aplicaría la 30 sin su etapa"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V4" FAKE_TABLAS=71; rm -f "$REGISTRO"; base "$REF" migraciones; r=$?
+[ $r = 0 ] && grep -q "historial: 30 registradas, 0 pendientes" "$W/salida.txt" && grep -q "^db push" "$REGISTRO" && ok "«publicar» con las 30 registradas y 0 pendientes → continúa (no hay nada que migrar)" || { mal "publicar con 30 registradas"; cat "$W/salida.txt"; }
+reinicia; export FAKE_HIST=f FAKE_TABLAS=0; rm -f "$REGISTRO"; base "$REF" migraciones; r=$?
+[ $r = 0 ] && grep -q "proyecto nuevo, se aplican todas" "$W/salida.txt" && grep -q "^db push" "$REGISTRO" && ok "«publicar» en un proyecto NUEVO (sin historial) aplica todas las migraciones" || mal "publicar en proyecto nuevo"
 # GitHub Actions: la contraseña y la URL se enmascaran
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; ACTIONS=1 etapa "$REF" migraciones-etapa 1 APLICAR-MIGRACIONES; sm="$(grep -v '^::add-mask::' "$W/salida.txt" | grep -c "$CLAVE" || true)"; [ "$sm" = 0 ] && grep -q "^::add-mask::" "$W/salida.txt" && ok "etapas en GitHub Actions: se enmascaran la contraseña y la URL derivada" || mal "etapas sin enmascarar"
 unset FAKE_ETAPAS

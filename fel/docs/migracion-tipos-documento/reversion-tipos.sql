@@ -1,4 +1,4 @@
--- NEXA FEL · REVERSIÓN SEGURA de la propuesta de tipos de documento (solo estos objetos; NO es una restauración de respaldo). Se ejecuta como «postgres» en el editor SQL, DENTRO de una sola sentencia.
+-- NEXA FEL · REVERSIÓN SEGURA de la migración 30, tipos de documento (solo sus objetos y su versión en el historial; NO es una restauración de respaldo). Se ejecuta como «postgres» en el editor SQL, DENTRO de una sola sentencia.
 -- SE NIEGA (y no borra nada) si ya hay notas, recibos o configuración por empresa: esos datos se perderían. Los documentos que son FACT quedan intactos (solo se quitan las 5 columnas nuevas, todas vacías en una FACT).
 do $r$
 declare a int; b int;
@@ -18,5 +18,7 @@ begin
   drop table public.empresa_tipos_documento;
   drop table public.fel_tipos_dte;   -- sus disparadores se van con la tabla
   drop function public.fel_tipos_dte_inmutable();
+  -- la 30 es una migración REGISTRADA: al quitar sus objetos se quita también su versión del historial (si existe), para que la base y el historial sigan diciendo lo mismo
+  if to_regclass('supabase_migrations.schema_migrations') is not null then execute 'delete from supabase_migrations.schema_migrations where version = ''20261115000100'''; end if;
 end
 $r$;

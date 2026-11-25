@@ -205,7 +205,8 @@ end $$;
 -- 8. el resto del esquema no cambió: toda tabla de public sigue con RLS y ninguna tabla/función nueva quedó abierta a la API
 do $$ declare t text[]; begin
   select array_agg(c.relname::text order by c.relname) into t from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p') and not c.relrowsecurity; assert t is null, 'tablas sin RLS: ' || t::text;
-  assert (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')) = 69, 'se esperaban 69 tablas (67 + 2)';
+  -- 69 = 67 + las 2 de la 29; con la migración 30 (tipos de documento) aplicada, +2 (esta suite corre antes y después de ella)
+  assert (select count(*) from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','p')) = 69 + case when to_regclass('public.fel_tipos_dte') is not null and to_regclass('public.empresa_tipos_documento') is not null then 2 else 0 end, 'se esperaban 69 tablas (67 + 2) o 71 con la migración 30';
 end $$;
 
 rollback;

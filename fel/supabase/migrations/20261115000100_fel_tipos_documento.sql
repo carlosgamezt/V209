@@ -1,8 +1,9 @@
--- NEXA FEL · PROPUESTA de migración: TIPOS DE DOCUMENTO (DTE) — catálogo, habilitación por empresa, notas con referencia y recibos.
--- ESTA PROPUESTA VIVE FUERA DE supabase/migrations (como la del correo): el conjunto de 29 migraciones aprobadas NO cambia y ninguna etapa de publicación la conoce. NO está aplicada en ninguna base hospedada;
--- se aplica a mano, con autorización, DESPUÉS de la 29 (28 → 29 → esta). La demostración funciona igual sin ella (solo Factura).
--- ADITIVA: crea 2 tablas, 5 columnas en `documentos`, 9 funciones y 3 disparadores. No modifica ninguna función, política ni dato de las migraciones 1–29, y NO toca la migración 29.
--- Verificación posterior: verificacion-tipos.sql · reversión segura: reversion-tipos.sql (misma carpeta).
+-- NEXA FEL · MIGRACIÓN 30: TIPOS DE DOCUMENTO (DTE) — catálogo, habilitación por empresa, notas con referencia y recibos.
+-- Es la migración 30 del proyecto (20261115000100): se aplica DESPUÉS de la 29 (28 → 29 → 30) y su versión queda REGISTRADA en el historial de migraciones. En una base hospedada solo se aplica con la etapa 4 de
+-- «solo migraciones» (entorno protegido, confirmación literal, respaldo previo); una vez aplicada, este archivo es inmutable (su huella está en supabase/tests/inmutables_migraciones_29_30.sha256).
+-- ADITIVA: crea 2 tablas, 5 columnas en `documentos`, 10 funciones, 5 disparadores y 2 políticas (cifras medidas: el esquema pasa de 69 a 71 tablas, de 49 a 51 políticas, de 185 a 195 funciones y de 61 a 66 disparadores).
+-- No modifica ninguna función, política ni dato de las migraciones 1–29, y NO toca la migración 29.
+-- Verificación posterior: docs/migracion-tipos-documento/verificacion-tipos.sql · reversión segura: docs/migracion-tipos-documento/reversion-tipos.sql.
 -- NO habilita ningún tipo nuevo para certificar: solo FACT tiene certificacion_habilitada = true. NCRE, NDEB y RECI se pueden elegir (borrador, revisión, vista previa), pero la base IMPIDE crear una operación fiscal
 -- para cualquier tipo no habilitado. Habilitar la certificación de un tipo es una migración futura explícita (tras verificar sus reglas SAT), nunca una configuración de empresa.
 --
