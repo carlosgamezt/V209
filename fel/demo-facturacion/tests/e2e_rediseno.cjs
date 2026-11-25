@@ -111,7 +111,11 @@ async function arrancar() {
       const caja = await m.p.evaluate(([i, n]) => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { id: r(i), n: r(n) }; }, [ID, ".rc-card .rc-l1"]);
       assert.ok(caja.id.b <= caja.n.t + 1 && caja.n.r <= w + 1 && caja.id.r <= w + 1, `${w}px: identificación y nombre en orden y dentro de la pantalla`);
       const seg = await m.p.locator(".seg-tipo").boundingBox(); assert.ok(seg.x >= 0 && seg.x + seg.width <= w, `${w}px: el control segmentado cabe`);
-      for (const t of ["NIT", "CUI", "CF", "EXT"]) assert.ok((await m.p.locator(`.seg-tipo [data-tipo="${t}"]`).boundingBox()).height >= 40, `${w}px: segmento ${t} táctil`);
+      for (const t of ["NIT", "CUI", "CF", "EXT"]) {
+        const hh = (await m.p.locator(`.seg-tipo [data-tipo="${t}"]`).boundingBox()).height;
+        const diag = hh >= 40 ? "" : JSON.stringify(await m.p.evaluate((tt) => { const e = document.querySelector(`.seg-tipo [data-tipo="${tt}"]`), cs = getComputedStyle(e), pa = e.parentElement.getBoundingClientRect(); return { alto: e.getBoundingClientRect().height, css: cs.height, min: cs.minHeight, box: cs.boxSizing, display: cs.display, padre: pa.height, padreDisplay: getComputedStyle(e.parentElement).display, zoom: devicePixelRatio, escala: visualViewport?.scale }; }, t));   // diagnóstico para Firefox/WebKit
+        assert.ok(hh >= 40 - 0.5, `${w}px: segmento ${t} táctil (${hh}) ${diag}`);
+      }
       const tt = await m.p.locator("h1").boundingBox(), vp2 = await m.p.locator("#previa-titulo").boundingBox(); assert.ok(Math.abs((tt.y + tt.height / 2) - (vp2.y + vp2.height / 2)) < 20, `${w}px: título, estado y «Vista previa» en una sola fila`); assert.ok(vp2.x >= 0 && vp2.x + vp2.width <= w && vp2.height >= 40, `${w}px: «Vista previa» visible y táctil`); if (w < 380) assert.ok(vp2.width <= 44, `${w}px: «Vista previa» pasa a icono`); else assert.ok(vp2.width > 70, `${w}px: «Vista previa» con texto`);
       await foto(m.p, `n${w}-nombre-largo.png`);
       // importes grandes en una factura guardada: la fila del ítem, el resumen y la barra no se salen ni se cortan
