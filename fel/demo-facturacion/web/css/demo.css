@@ -529,3 +529,4 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 /* Buscador del historial: el campo no lleva marco propio (lo da la caja) y la barra de acciones secundarias es más baja para no tapar el contenido. */
 .barra-compacta .buscador input[type=search]{border:0!important;box-shadow:none!important;padding:0!important;background:transparent!important;min-height:0;height:100%;border-radius:0}
 .barra-acciones .acciones-sec .btn{min-height:40px}
+.seg-tipo button{min-height:40px}
