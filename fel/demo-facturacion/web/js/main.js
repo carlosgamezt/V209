@@ -76,7 +76,7 @@ async function iniciar(estadoInicial) {
 
   async function cargarPendientes() {
     if (maestro) { pendientes = []; return; }
-    try { const ds = await api.documentos(); pendientes = ds.filter((d) => d.estado_fiscal === "por_verificar" || d.alertas > 0 || (d.estado_fiscal === "pendiente_certificacion")); } catch { pendientes = []; }
+    try { const r = await api.documentosPagina("pagina=1&tam=25&categoria=pendientes"); pendientes = r.items; pendientes.total = r.total; } catch { pendientes = []; }   // solo la primera página de pendientes (no todos los documentos)
   }
   function pintarMenu() {
     const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin));

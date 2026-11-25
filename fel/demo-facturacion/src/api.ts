@@ -6,6 +6,7 @@ import { ErrorBd } from "../../proveedores/src/rpc.ts";
 import { aInterno, calcular, type LineaEntrada } from "../../supabase/functions/fel-api/lib/calculo.ts";
 import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
+import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
 import type { Autorizador } from "../../proveedores/src/autorizacion_humana.ts";
@@ -304,6 +305,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       return json(await bd.rpc("fel_op_documento_origenes", { p_actor: a.id, p_empresa: emp(), p_tipo: tipo, p_cliente: cli && uuidOk(cli) ? cli : null, p_buscar: q ? q.slice(0, 40) : null }));
     }
     if (m === "GET" && ruta === "/api/documentos") {
+      if (url.searchParams.has("pagina")) return json(await listarDocumentos(bd, emp(), leerFiltros(url.searchParams), await tiposDisponibles(bd)));   // paginado y filtrado en el servidor
       return json(await bd.filas("select d.id, d.numero_borrador, " + ((await tiposDisponibles(bd)) ? "d.tipo_dte, d.documento_origen_id, d.referencia_origen->>'serie' as origen_serie, d.referencia_origen->>'numero' as origen_numero, " : "") + "d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [emp()]));
     }
     if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)$/.exec(ruta))) return json(await detalle(id(r[1])));

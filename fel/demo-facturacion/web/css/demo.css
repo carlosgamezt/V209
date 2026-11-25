@@ -493,3 +493,11 @@ input[readonly]{background:var(--soft);color:var(--mut)}
  .nav-movil .hoja-mas .nv.act::before{display:none}
 }
 .estado-cert-compacto{font-size:12px;margin:4px 0;line-height:1.4}
+
+/* Historial: categorías, filtros y paginación del servidor. */
+.pestanas{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--borde,#D0D2DC);margin:4px 0 10px}.pestanas::-webkit-scrollbar{display:none}
+.pestana{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;background:none;border:0;border-bottom:2px solid transparent;color:var(--tinta-suave,#8B8D9B);font:inherit;font-weight:600;cursor:pointer}
+.pestana.act{color:var(--azul,#4654F5);border-bottom-color:var(--azul,#4654F5)}.pestana .n{font-size:12px;background:#EDEEF9;color:#19191D;border-radius:999px;padding:1px 7px}.pestana-aviso .n{background:#FF5967;color:#fff}
+.filtros-mas{margin:0 0 8px}.filtros-mas summary{cursor:pointer;color:var(--azul,#4654F5);font-weight:600;min-height:32px;display:flex;align-items:center}
+.filtros-grid{flex-wrap:wrap;gap:8px;align-items:flex-end}.filtros-grid>*{min-width:0}.campo-fecha{display:flex;flex-direction:column;gap:2px;font-size:12px}
+.pager{justify-content:center;align-items:center;gap:12px;margin:12px 0}

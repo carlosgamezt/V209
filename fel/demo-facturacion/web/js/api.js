@@ -34,6 +34,7 @@ export const api = {
   origenes: (tipo, cliente, q) => llamar("GET", `/api/documentos/origenes?tipo=${encodeURIComponent(tipo)}${cliente ? `&cliente=${encodeURIComponent(cliente)}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
   guardarEstablecimiento: (e) => llamar("POST", "/api/establecimientos", e),
   documentos: () => llamar("GET", "/api/documentos"),
+  documentosPagina: (qs) => llamar("GET", "/api/documentos?" + qs),
   documento: (id) => llamar("GET", `/api/documentos/${id}`),
   guardar: (d) => llamar("POST", "/api/documentos", d),
   estadoPreparacion: (id, estado, version, motivo) => llamar("POST", `/api/documentos/${id}/estado`, { estado, version, motivo }),

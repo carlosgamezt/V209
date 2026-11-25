@@ -5,8 +5,6 @@ import { icono } from "/app/js/icons.js";
 import { api } from "./api.js";
 import { PREPARACION, FISCAL, codigoBorrador } from "/app/js/formato.js";
 
-const FILTROS = [["todas", "Todas"], ["borrador", "Borradores"], ["revisado", "Revisadas"], ["certificado", "Emitidos (TEST / simulados)"], ["por_verificar", "Por verificar"], ["rechazado", "Rechazadas"], ["anulado", "Anuladas"]];
-const coincide = (d, f) => f === "todas" || d.estado_preparacion === f || d.estado_fiscal === f;
 // Un documento certificado con una autorización que NO empieza por «SIM-» salió del certificador de PRUEBAS (Digifact TEST): se rotula TEST, nunca como simulado ni como real.
 export const esTest = (d) => d.estado_fiscal !== "ninguno" && !!d.autorizacion_sat && !String(d.autorizacion_sat).toUpperCase().startsWith("SIM-");
 export const esSimulado = (d) => !esTest(d) && (d.canal_ambiente ?? "simulado") === "simulado";
@@ -23,31 +21,50 @@ export function etiquetasEstado(d) {
   return tags;
 }
 
+const CATEGORIAS = [["emitidos", "Emitidos"], ["borradores", "Borradores"], ["anulados", "Anulados"], ["pendientes", "Pendientes"]];
+const ESTADOS = [["", "Todos los estados"], ["certificado", "Certificado"], ["por_verificar", "Por verificar"], ["pendiente_certificacion", "Pendiente de certificación"], ["rechazado", "Rechazado"], ["anulacion_solicitada", "Anulación solicitada"], ["anulado", "Anulado"], ["revisado", "Revisado"], ["borrador", "Borrador"]];
+const TAM = 25;
+
 export function pantallaLista(ctx) {
-  let filtro = "todas", busqueda = "", todos = [], filtroTipo = "todos", tiposDoc = null;
-  const lista = h("div", { class: "lista", "aria-live": "polite" }), resumen = h("span", { class: "mut resumen-lista" });
+  // Paginación y filtros EN EL SERVIDOR: cada cambio pide una sola página de 25 (con sus conteos), nunca todos los documentos. La vista predeterminada es «Emitidos».
+  let categoria = "emitidos", busqueda = "", pagina = 1, filtroTipo = "", filtroEstado = "", desde = "", hasta = "", nit = "", datos = { items: [], total: 0, paginas: 1, conteos: {} }, tiposDoc = null, peticion = 0, temporizador = null;
+  const lista = h("div", { class: "lista", "aria-live": "polite" }), resumen = h("span", { class: "mut resumen-lista" }), pestanas = h("div", { class: "pestanas", role: "tablist", "aria-label": "Categorías de documentos" }), pager = h("div", { class: "barra barra-compacta pager", role: "navigation", "aria-label": "Páginas de documentos" });
   const puedeCrear = ctx.tiene("borradores.crear");
-  const selFiltro = h("select", { "aria-label": "Estado de los documentos", class: "sel-tipo", onchange: (e) => { filtro = e.target.value; pintar(); } });
-  const selTipo = h("select", { "aria-label": "Tipo de documento", class: "sel-tipo", id: "filtro-tipo", onchange: (e) => { filtroTipo = e.target.value; pintar(); } });
+  const selEstado = h("select", { "aria-label": "Estado de los documentos", class: "sel-tipo", onchange: (e) => { filtroEstado = e.target.value; pagina = 1; cargar(); } }, ...ESTADOS.map(([v, t]) => h("option", { value: v }, t)));
+  const selTipo = h("select", { "aria-label": "Tipo de documento", class: "sel-tipo", id: "filtro-tipo", onchange: (e) => { filtroTipo = e.target.value; pagina = 1; cargar(); } });
+  const campoFecha = (etiqueta, set) => h("label", { class: "campo-fecha" }, h("span", { class: "mut" }, etiqueta), h("input", { type: "date", "aria-label": etiqueta, onchange: (e) => { set(e.target.value); pagina = 1; cargar(); } }));
+  const campoNit = h("input", { type: "search", placeholder: "NIT del cliente", "aria-label": "NIT del cliente", autocomplete: "off", oninput: (e) => { nit = e.target.value.trim(); pagina = 1; esperar(); } });
   const nombreTipo = (c) => tiposDoc?.tipos?.find((t) => t.codigo === c)?.corto ?? c;
-  function pintarFiltroTipo() {
-    const presentes = [...new Set(todos.map((d) => d.tipo_dte ?? "FACT"))];
-    poner(selTipo, h("option", { value: "todos" }, `Todos los tipos (${todos.length})`), ...presentes.map((c) => h("option", { value: c }, `${nombreTipo(c)} (${todos.filter((d) => (d.tipo_dte ?? "FACT") === c).length})`))); selTipo.value = presentes.includes(filtroTipo) ? filtroTipo : "todos"; filtroTipo = selTipo.value; selTipo.hidden = presentes.length <= 1;
+  function pintarTipos() {
+    const codigos = (tiposDoc?.tipos ?? []).filter((t) => t.disponibilidad !== "pendiente").map((t) => t.codigo);
+    poner(selTipo, h("option", { value: "" }, "Todos los tipos"), ...(codigos.length ? codigos : ["FACT"]).map((c) => h("option", { value: c }, nombreTipo(c)))); selTipo.value = filtroTipo;
   }
-  function pintarFiltro() {
-    poner(selFiltro, ...FILTROS.map(([v, t]) => h("option", { value: v, selected: v === filtro }, `${t} (${todos.filter((d) => coincide(d, v)).length})`)));
-    selFiltro.value = filtro;
+  function pintarPestanas() {
+    poner(pestanas, ...CATEGORIAS.filter(([v]) => v !== "pendientes" || (datos.conteos?.pendientes ?? 0) > 0 || categoria === "pendientes").map(([v, t]) => {
+      const n = datos.conteos?.[v]; const act = v === categoria;
+      return h("button", { type: "button", role: "tab", class: `pestana${act ? " act" : ""}${v === "pendientes" ? " pestana-aviso" : ""}`, "aria-selected": act ? "true" : "false", "data-categoria": v, onclick: () => { if (categoria !== v) { categoria = v; pagina = 1; cargar(); } } }, t, n === undefined ? null : h("span", { class: "n" }, String(n)));
+    }));
   }
+  const parametros = () => { const p = new URLSearchParams({ pagina: String(pagina), tam: String(TAM), categoria }); for (const [k, v] of [["q", busqueda], ["tipo", filtroTipo], ["estado", filtroEstado], ["desde", desde], ["hasta", hasta], ["nit", nit]]) if (v) p.set(k, v); return p; };
+  function esperar() { clearTimeout(temporizador); temporizador = setTimeout(cargar, 300); }   // la búsqueda espera a que se deje de escribir
   async function cargar() {
-    try { [todos, tiposDoc] = await Promise.all([api.documentos(), api.tiposDocumento().catch(() => null)]); pintarFiltro(); pintarFiltroTipo(); pintar(); } catch (e) { poner(lista, h("p", { class: "err", role: "alert" }, mensajeError(e))); }
+    const mia = ++peticion; lista.setAttribute("aria-busy", "true");
+    try {
+      const [r, t] = await Promise.all([api.documentosPagina(parametros().toString()), tiposDoc ? Promise.resolve(tiposDoc) : api.tiposDocumento().catch(() => null)]);
+      if (mia !== peticion) return;   // llegó una respuesta más nueva: esta se descarta
+      datos = r; pagina = r.pagina; if (!tiposDoc && t) { tiposDoc = t; pintarTipos(); }
+      pintarPestanas(); pintar();
+    } catch (e) { if (mia === peticion) poner(lista, h("p", { class: "err", role: "alert" }, mensajeError(e))); }
+    finally { if (mia === peticion) lista.removeAttribute("aria-busy"); }
   }
-  const visibles = () => todos.filter((d) => coincide(d, filtro) && (filtroTipo === "todos" || (d.tipo_dte ?? "FACT") === filtroTipo) && (!busqueda || `${codigoBorrador(d.numero_borrador)} ${d.cliente_nombre ?? ""} ${d.serie ?? ""} ${d.numero_fiscal ?? ""} ${d.autorizacion_sat ?? ""}`.toLowerCase().includes(busqueda.toLowerCase())));
+  const hayFiltros = () => !!(busqueda || filtroTipo || filtroEstado || desde || hasta || nit);
   function pintar() {
-    const datos = visibles();
-    poner(resumen, `${datos.length} de ${todos.length} documentos`);
-    poner(lista, ...(datos.length ? [h("div", { class: "fila fila-fac-cab fila-cab", "aria-hidden": "true" }, ...["Documento / Cliente", "Fecha", "Importe", "Estado", "Canal de emisión", "Acciones"].map((t, i) => h("span", { class: i === 2 ? "der" : "" }, t))), ...datos.map(fila)]
-      : [vacio("file", "No hay documentos", filtro === "todas" && !busqueda ? "Crea un documento para recorrer el proceso completo en simulación." : "Ningún documento coincide con los filtros.",
-        puedeCrear && filtro === "todas" && !busqueda ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null)]));
+    const { items, total, paginas } = datos, ini = (pagina - 1) * TAM;
+    poner(resumen, total ? `${ini + 1}–${ini + items.length} de ${total}` : "0 documentos");
+    poner(lista, ...(items.length ? [h("div", { class: "fila fila-fac-cab fila-cab", "aria-hidden": "true" }, ...["Documento / Cliente", "Fecha", "Importe", "Estado", "Canal de emisión", "Acciones"].map((t, i) => h("span", { class: i === 2 ? "der" : "" }, t))), ...items.map(fila)]
+      : [vacio("file", "No hay documentos", hayFiltros() ? "Ningún documento coincide con los filtros." : categoria === "emitidos" ? "Aún no hay documentos emitidos. Los borradores están en la pestaña Borradores." : "No hay documentos en esta categoría.",
+        puedeCrear && !hayFiltros() ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null)]));
+    poner(pager, paginas > 1 ? [boton("Anterior", { tipo: "sec", id: "pag-anterior", disabled: pagina <= 1, onclick: () => { pagina--; cargar(); } }), h("span", { class: "mut" }, `Página ${pagina} de ${paginas}`), boton("Siguiente", { tipo: "sec", id: "pag-siguiente", disabled: pagina >= paginas, onclick: () => { pagina++; cargar(); } })] : null);
   }
   async function revisar(d) {
     let m;
@@ -80,6 +97,8 @@ export function pantallaLista(ctx) {
   return h("section", { class: "pantalla" },
     cabecera({ icon: "file", titulo: "Documentos", subtitulo: "Consulta tus documentos guardados, emitidos en TEST y simulados.",
       accion: puedeCrear ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null }),
-    h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar cliente, serie, número o UUID…", "aria-label": "Buscar documentos", oninput: (e) => { busqueda = e.target.value.trim(); pintar(); } })), selFiltro, selTipo, resumen),
-    lista);
+    pestanas,
+    h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar cliente, serie, número o UUID…", "aria-label": "Buscar documentos", oninput: (e) => { busqueda = e.target.value.trim(); pagina = 1; esperar(); } })), resumen),
+    h("details", { class: "filtros-mas" }, h("summary", {}, "Filtros"), h("div", { class: "barra barra-compacta filtros-grid" }, selEstado, selTipo, campoNit, campoFecha("Desde", (v) => { desde = v; }), campoFecha("Hasta", (v) => { hasta = v; }))),
+    lista, pager);
 }

@@ -148,7 +148,7 @@ async function arrancar() {
   // ============ 10. canal asistido (futuro Playwright)
   const id8 = await crear("Canal asistido", "1", "12"); await revisar(); await enviar("accion_humana"); await p.waitForSelector('[data-estado="pendiente"]');
   assert.match(await p.locator('[data-estado="pendiente"]').innerText(), /persona/); await p.click("#completar-humana"); await p.waitForSelector('[data-estado="certificado"]');
-  await foto("08-lista-final.png"); await p.goto(srv.url); await p.waitForSelector(".fila-fac"); assert.ok(await p.locator(".fila-fac").count() >= 8); await foto("09-lista.png");
+  await foto("08-lista-final.png"); await p.goto(srv.url); await p.waitForSelector(".fila-fac"); assert.ok(await p.locator(".fila-fac").count() >= 3); await foto("09-lista.png");
 
   // ============ 10b. clientes, conceptos y configuración (datos reales de la base; permisos por persona)
   await como("ana"); await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores");
@@ -180,24 +180,26 @@ async function arrancar() {
   // ============ 10c. ajustes de la Fase 2: facturas (filtros, canal, estados simulados, acciones), clientes frecuentes y estado, conceptos, empresa y canales
   await como("ana");
   const idB = await crear("Borrador para la lista", "1", "5"); await p.goto(`${srv.url}/#/`); await p.waitForSelector(".fila-fac");
-  assert.ok(await p.locator(".fila-fac").count() >= 9);
+  assert.ok(await p.locator(".fila-fac").count() >= 5, "la vista predeterminada es Emitidos");
   const cert = p.locator('.fila-fac:has([data-simulado])').first(); assert.match(await cert.innerText(), /SIM · Certificado/); assert.match(await cert.innerText(), /Proveedor simulado/); assert.match(await cert.innerText(), /Q\s?[\d,]+\.\d\d/);
-  await p.selectOption('select[aria-label="Estado de los documentos"]', "certificado"); const nCert = await p.locator(".fila-fac").count(); assert.ok(nCert >= 5 && await p.locator(".fila-fac:not(:has([data-simulado]))").count() === 0, "todas las certificadas se marcan como simuladas");
-  await p.selectOption('select[aria-label="Estado de los documentos"]', "todas"); await p.fill('input[aria-label="Buscar documentos"]', "zzzz-no-existe"); await p.waitForSelector("text=Ningún documento coincide"); await p.fill('input[aria-label="Buscar documentos"]', "Cliente del catálogo"); await p.fill('input[aria-label="Buscar documentos"]', "");
+  await p.locator("details.filtros-mas summary").click(); await p.selectOption('select[aria-label="Estado de los documentos"]', "certificado"); await p.waitForFunction(() => !document.querySelector(".lista[aria-busy]")); const nCert = await p.locator(".fila-fac").count(); assert.ok(nCert >= 5 && await p.locator(".fila-fac:not(:has([data-simulado]))").count() === 0, "todas las certificadas se marcan como simuladas");
+  await p.selectOption('select[aria-label="Estado de los documentos"]', ""); await p.fill('input[aria-label="Buscar documentos"]', "zzzz-no-existe"); await p.waitForSelector("text=Ningún documento coincide"); await p.fill('input[aria-label="Buscar documentos"]', "Cliente del catálogo"); await p.fill('input[aria-label="Buscar documentos"]', "");
+  const categoriaLista = async (c) => { await p.locator(`.pestana[data-categoria="${c}"]`).click(); await p.waitForFunction((x) => document.querySelector(`.pestana[data-categoria="${x}"]`)?.classList.contains("act") && !document.querySelector(".lista[aria-busy]"), c); };
+  await p.locator("details.filtros-mas summary").evaluate((d) => d.parentElement.open = false); await categoriaLista("borradores");
   const filaB = p.locator(".fila-fac", { hasText: "Borrador para la lista" }).first().or(p.locator(".fila-fac", { has: p.locator('[data-accion="revisar"]') }).first());
   assert.equal(await filaB.locator('[data-accion="continuar"]').count(), 1); assert.equal(await filaB.locator('[data-accion="revisar"]').count(), 1); assert.equal(await filaB.locator('[data-accion="consultar"]').count(), 1);
   assert.match(await filaB.innerText(), /Sin enviar/, "un borrador aún no tiene canal"); { const cajas = await p.evaluate(() => [...document.querySelectorAll(".fila-fac")].flatMap((f) => [...f.querySelectorAll(".acciones-fac > *")].map((b) => { const r = b.getBoundingClientRect(); return { slot: b.className.match(/slot-(\d)/)?.[1], w: Math.round(r.width), h: Math.round(r.height), izq: Math.round(r.left) }; })));
-    assert.ok(cajas.length >= 10); assert.ok(cajas.every((c) => c.h === 34), "todos los botones de acción miden lo mismo de alto");
+    assert.ok(cajas.length >= 3); assert.ok(cajas.every((c) => c.h === 34), "todos los botones de acción miden lo mismo de alto");
     for (const s of ["1", "2"]) assert.equal(new Set(cajas.filter((c) => c.slot === s).map((c) => c.w)).size, 1, `ranura ${s}: mismo ancho`); assert.equal(new Set(cajas.filter((c) => c.slot === "3").map((c) => c.izq)).size, 1, "el botón «Consultar» queda alineado en todas las filas"); assert.equal(new Set(cajas.filter((c) => c.slot === "1").map((c) => c.izq)).size, 1, "la acción principal queda alineada"); }
   await foto("12-facturas.png");
   await filaB.locator('[data-accion="revisar"]').click(); await p.click("#confirmar-revision"); await toast("marcado como revisado");
   await p.waitForSelector('.fila-fac [data-accion="enviar"]'); assert.equal(await api("GET", `/api/documentos/${idB}`).then((d) => d.documento.estado_preparacion), "revisado");
   const idV = await crear("Por verificar desde la lista", "1", "6"); await p.click('button:has-text("Marcar como revisado")'); await p.waitForSelector('.doc-cab .tag:has-text("Revisado")');
-  await api("POST", `/api/documentos/${idV}/certificar`, { clave: "clave-lista-0123456789", escenario: "timeout_antes" }); await p.goto(`${srv.url}/#/`); await p.waitForSelector('.fila-fac [data-accion="resolver"]');
+  await api("POST", `/api/documentos/${idV}/certificar`, { clave: "clave-lista-0123456789", escenario: "timeout_antes" }); await p.goto(`${srv.url}/#/`); await categoriaLista("pendientes"); await p.waitForSelector('.fila-fac [data-accion="resolver"]');
   assert.match(await p.locator(".fila-fac", { has: p.locator('[data-accion="resolver"]') }).first().innerText(), /Por verificar/);
   await p.locator('.fila-fac [data-accion="consultar"]').first().click(); await p.waitForSelector(".doc-cab");
   await como("marta"); await p.goto(`${srv.url}/#/`); await p.waitForSelector(".fila-fac"); assert.equal(await p.locator('[data-accion="revisar"]').count(), 0, "el emisor no revisa"); assert.equal(await p.locator('[data-accion="resolver"]').count(), 0, "el emisor no resuelve");
-  await como("pedro"); await p.goto(`${srv.url}/#/`); await p.waitForSelector(".fila-fac"); for (const a of ["continuar", "revisar", "enviar", "resolver"]) assert.equal(await p.locator(`[data-accion="${a}"]`).count(), 0, `el lector no ve «${a}»`); assert.ok(await p.locator('[data-accion="consultar"]').count() >= 9);
+  await como("pedro"); await p.goto(`${srv.url}/#/`); await p.waitForSelector(".fila-fac"); for (const a of ["continuar", "revisar", "enviar", "resolver"]) assert.equal(await p.locator(`[data-accion="${a}"]`).count(), 0, `el lector no ve «${a}»`); assert.ok(await p.locator('[data-accion="consultar"]').count() >= 3);
   // clientes: frecuentes persistentes, orden al elegir receptor, edición, desactivar y reactivar
   await como("ana"); await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores");
   await p.fill('input[aria-label="Buscar clientes"]', "Tornillo"); const estr = p.locator('[data-estrella="7654321-4"]'); assert.equal(await estr.getAttribute("aria-pressed"), "false"); await estr.click(); await p.waitForSelector('[data-estrella="7654321-4"][aria-pressed="true"]');
