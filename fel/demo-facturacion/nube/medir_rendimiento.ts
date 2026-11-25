@@ -41,22 +41,30 @@ for (const [nombre, ruta] of lecturas) {
   const med = (g: (x: Medida) => number | undefined) => mediana(ms.map(g).filter((x): x is number => x !== undefined) as number[]);
   console.log(fila(nombre + " (mediana de 3)", { ms: med((x) => x.ms), fn: med((x) => x.fn), db: med((x) => x.db), n: ms[0].n, status: ms[0].status, json: {} }));
 }
-// ---- ciclo completo ×3
+// ---- ciclo completo con facturas VÁLIDAS (receptor CF), SIN correo y CON correo (Digifact envía el correo al certificar), alternados, 3 de cada uno
 const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date());
-const cliente = (est.clientes ?? []).find((c: J) => c.tipo_identificacion === "NIT") ?? (est.clientes ?? [])[0], estab = (est.establecimientos ?? [])[0];
+const cliente = (est.clientes ?? []).find((c: J) => c.tipo_identificacion === "CF") ?? (est.clientes ?? [])[0], estab = (est.establecimientos ?? [])[0];
 if (!cliente || !estab) { console.error("Sin cliente o establecimiento para la prueba."); Deno.exit(1); }
-const totales: number[] = [], dfxs: number[] = [];
-for (let i = 1; i <= 3; i++) {
-  console.log(`-- ciclo ${i} --`); let acum = 0, dfxEnv = 0, dfxTok = 0;
-  const reg = (nombre: string, m: Medida) => { console.log(fila(nombre, m)); acum += m.ms; dfxEnv += m.dfxEnvio ?? 0; dfxTok += m.dfxToken ?? 0; };
-  const d = await ll("POST", "/api/documentos", { cliente_id: cliente.id, establecimiento_id: estab.id, fecha: hoy, observaciones: `MEDICIÓN RENDIMIENTO ${i}`, lineas: [{ descripcion: "Servicio de prueba de medición", cantidad: "1", precio_unitario: "100" }] }); reg("POST /api/documentos (guardar)", d); if (d.status !== 200) { console.error("No se pudo guardar el borrador."); Deno.exit(1); }
+// destinatario AUTORIZADO (lista cerrada del despliegue; nunca se imprime): la primera dirección exacta, o «prueba@dominio» si la lista trae un dominio
+const primero = (Deno.env.get("FEL_MEDIR_DESTINATARIO") ?? "").trim();
+const destinatario = primero ? (primero.startsWith("@") ? `prueba.rendimiento${primero}` : primero) : "";
+console.log(`escenario con correo: ${destinatario ? "destinatario autorizado disponible" : "SIN destinatario autorizado (no se mide)"}`);
+const res: Record<string, { total: number[]; cert: number[]; dfx: number[]; prev: number[]; nexa: number[]; envio: number[]; pdf: number[] }> = { "sin correo": { total: [], cert: [], dfx: [], prev: [], nexa: [], envio: [], pdf: [] }, "con correo": { total: [], cert: [], dfx: [], prev: [], nexa: [], envio: [], pdf: [] } };
+const orden = destinatario ? ["sin correo", "con correo", "sin correo", "con correo", "sin correo", "con correo"] : ["sin correo", "sin correo", "sin correo"];
+let n = 0;
+for (const esc of orden) {
+  n++; console.log(`-- ciclo ${n} (${esc}) --`); let acum = 0; const conCorreo = esc === "con correo", extra = conCorreo ? { enviar_correo: true, correo: destinatario } : {};
+  const reg = (nombre: string, m: Medida) => { console.log(fila(nombre, m)); acum += m.ms; };
+  const d = await ll("POST", "/api/documentos", { cliente_id: cliente.id, establecimiento_id: estab.id, fecha: hoy, observaciones: `MEDICION RENDIMIENTO ${n}`, lineas: [{ descripcion: "Servicio de prueba TEST (medicion)", cantidad: "1", precio_unitario: "100.00" }] }); reg("POST /api/documentos (guardar)", d); if (d.status !== 200) { console.error("No se pudo guardar el borrador."); Deno.exit(1); }
   const id = d.json.documento.id as string;
   reg("POST …/estado (revisado)", await ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: d.json.documento.version }));
-  const prep = await ll("POST", `/api/documentos/${id}/digifact/preparar`, {}); reg("POST …/digifact/preparar", prep);
-  const cer = await ll("POST", `/api/documentos/${id}/digifact/certificar`, { operacionId: prep.json.operacionId, confirmacion: "CERTIFICAR-TEST", referencia: prep.json.referencia, huellaEmisor: prep.json.huellaEmisor }); reg("POST …/digifact/certificar", cer);
-  console.log(`      certificar: estado ${cer.json.operacion?.estado ?? "?"}, tiempo de Digifact medido por la función ${cer.json.tiempoDigifactMs ?? "–"} ms (de ello, chequeo previo ${cer.json.prevueloMs ?? "–"} ms), documento_actualizado ${cer.json.documento_actualizado ? "sí" : "no"}`);
-  if (!cer.json.documento_actualizado) reg("GET /api/documentos/:id (recarga)", await ll("GET", `/api/documentos/${id}`));
-  const dfx = Number(cer.json.tiempoDigifactMs ?? dfxEnv + dfxTok); totales.push(acum); dfxs.push(dfx);
-  console.log(`      CICLO ${i}: total ${f(acum)} ms · Digifact ${f(dfx)} ms · atribuible a NEXA/red ${f(acum - dfx)} ms`);
+  const prep = await ll("POST", `/api/documentos/${id}/digifact/preparar`, extra); reg("POST …/digifact/preparar", prep);
+  const cer = await ll("POST", `/api/documentos/${id}/digifact/certificar`, { operacionId: prep.json.operacionId, confirmacion: "CERTIFICAR-TEST", referencia: prep.json.referencia, huellaEmisor: prep.json.huellaEmisor, ...(conCorreo ? { ...extra, correo_ref: prep.json.correoRef } : {}) }); reg("POST …/digifact/certificar", cer);
+  const estado = cer.json.operacion?.estado ?? "?"; console.log(`      certificar: estado ${estado}, Digifact (chequeo previo + envío) ${cer.json.tiempoDigifactMs ?? "–"} ms (chequeo previo ${cer.json.prevueloMs ?? "–"} ms), documento_actualizado ${cer.json.documento_actualizado ? "sí" : "no"}`);
+  if (estado !== "certificada") { console.log("      (no certificada: se descarta del resumen)"); continue; }
+  const pdf = await ll("GET", `/api/documentos/${id}/pdf-demo?formato=carta`); console.log(fila("GET …/pdf-demo (listo para imprimir)", pdf));
+  const r = res[esc]; r.total.push(acum); r.cert.push(cer.ms); r.dfx.push(Number(cer.json.tiempoDigifactMs ?? 0)); r.prev.push(Number(cer.json.prevueloMs ?? 0)); r.envio.push(cer.dfxEnvio ?? 0); r.nexa.push(acum - Number(cer.json.tiempoDigifactMs ?? 0)); r.pdf.push(pdf.ms);
+  console.log(`      CICLO ${n} (${esc}): total ${f(acum)} ms · Digifact ${f(Number(cer.json.tiempoDigifactMs ?? 0))} ms · NEXA/red ${f(acum - Number(cer.json.tiempoDigifactMs ?? 0))} ms`);
 }
-console.log(`\nRESUMEN (3 ciclos): total mediana ${f(mediana(totales))} ms (mín ${f(Math.min(...totales))}, máx ${f(Math.max(...totales))}) · Digifact mediana ${f(mediana(dfxs))} ms · NEXA/red ${f(mediana(totales) - mediana(dfxs))} ms`);
+console.log("\nRESUMEN COMPARATIVO (mediana; mín–máx) · solo facturas certificadas");
+for (const [esc, r] of Object.entries(res)) { if (!r.total.length) { console.log(`  ${esc}: sin ciclos certificados`); continue; } const mm = (v: number[]) => `${f(mediana(v))} (${f(Math.min(...v))}–${f(Math.max(...v))})`; console.log(`  ${esc} (${r.total.length}): ciclo ${mm(r.total)} · certificar HTTP ${mm(r.cert)} · Digifact total ${mm(r.dfx)} (chequeo previo ${mm(r.prev)}, llamada de envío ${mm(r.envio)}) · NEXA/red ${mm(r.nexa)} · PDF listo ${mm(r.pdf)}`); }
