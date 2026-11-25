@@ -11,13 +11,19 @@ const uuid = () => crypto.randomUUID();
 export interface Mundo { empresa: string; propietario: string; admin2: string; emisor: string; lector: string; establecimiento: string; canal: string; cliente: string }
 
 export async function nuevoMundo(cx: ConexionPg): Promise<Mundo> {
-  const { sql } = cx, n = 1_000_000 + (++secuencia + crypto.getRandomValues(new Uint32Array(1))[0]) % 8_900_000, nit = `${String(n).padStart(7, "0")}-${n % 10}`;   // NIT ficticio aleatorio de 7 dígitos: sin colisiones entre archivos de prueba que comparten la base
+  const { sql } = cx;
+  let n = 0;   // número del NIT de la empresa; el cliente de prueba deriva el suyo de él
+  const nuevoNit = () => { n = 1_000_000 + (++secuencia + crypto.getRandomValues(new Uint32Array(1))[0]) % 8_900_000; return `${String(n).padStart(7, "0")}-${n % 10}`; };   // NIT ficticio aleatorio de 7 dígitos: sin colisiones entre archivos de prueba que comparten la base
   const m: Mundo = { empresa: uuid(), propietario: uuid(), admin2: uuid(), emisor: uuid(), lector: uuid(), establecimiento: "", canal: "", cliente: "" };
   for (const [k, id] of Object.entries({ propietario: m.propietario, admin2: m.admin2, emisor: m.emisor, lector: m.lector })) {
     await sql.unsafe("insert into auth.users (id, email) values ($1, $2)", [id, `${k}-${id.slice(0, 8)}@fel.test`]);
     await sql.unsafe("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [id]);
   }
-  await sql.unsafe("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) select $1, 'Empresa de prueba', 'Empresa de prueba S.A.', $2, id, 'habilitada' from public.regimenes_fiscales where codigo = 'general'", [m.empresa, nit]);
+  // Los NIT son aleatorios de 7 dígitos y todas las pruebas comparten la base: con cientos de empresas la colisión es improbable pero posible (fallo intermitente visto en CI). Se reintenta con otro NIT.
+  for (let intento = 0; ; intento++) {
+    try { await sql.unsafe("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) select $1, 'Empresa de prueba', 'Empresa de prueba S.A.', $2, id, 'habilitada' from public.regimenes_fiscales where codigo = 'general'", [m.empresa, nuevoNit()]); break; }
+    catch (e) { if (intento >= 8 || !String((e as Error).message).includes("empresas_nit_key")) throw e; }
+  }
   for (const [uid, rol] of [[m.propietario, "propietario"], [m.admin2, "administrador"], [m.emisor, "emisor"], [m.lector, "lector"]] as const) {
     await sql.unsafe("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, $3)", [m.empresa, uid, rol]);
   }
