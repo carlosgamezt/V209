@@ -115,6 +115,7 @@ sleep 10
 if [ "${FEL_DEMO_PRUEBA_DIGIFACT:-}" = "habilitado" ]; then   # solo si la persona lo eligió en esta ejecución Y Digifact TEST está habilitado con el ciclo autorizado
   paso "9/9 · certificación de PRUEBA en Digifact TEST (documentos sin valor fiscal)"
   ( cd demo-facturacion && FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/prueba_digifact.ts )
-  paso "medición de rendimiento (Digifact TEST, documentos de prueba)"; ( cd demo-facturacion && FEL_MEDIR_DESTINATARIO="$(printf '%s' "${__DG_FEL_DIGIFACT_CORREO_DESTINATARIOS:-}" | cut -d, -f1 | tr -d ' ')" FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/medir_rendimiento.ts ) || true   # solo mide: un fallo aquí no revierte ni invalida la publicación
+  paso "medición de rendimiento (Digifact TEST, documentos de prueba)"; ( cd demo-facturacion && FEL_MEDIR_DESTINATARIO="$(printf '%s' "${__DG_FEL_DIGIFACT_CORREO_DESTINATARIOS:-}" | cut -d, -f1 | tr -d ' ')" FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" deno run -A nube/medir_rendimiento.ts ) || true   # solo mide
+  paso "medición de la interfaz real (toque → «Documento emitido»; computadora y teléfono con red móvil)"; ( _PW="${RUNNER_TEMP:-/tmp}/pwcore"; mkdir -p "$_PW"; npm i --no-save --no-audit --no-fund --prefix "$_PW" playwright-core@1.49.1 >/dev/null 2>&1; cd demo-facturacion && NODE_PATH="$_PW/node_modules" FEL_DEMO_URL="https://$FEL_DEMO_HOSTS" node nube/medir_ui_real.cjs ) || true: un fallo aquí no revierte ni invalida la publicación
 fi
 echo; echo "LISTO: https://$FEL_DEMO_HOSTS (privada: solo entra quien tenga una cuenta). Siguiente: probarla desde el teléfono."

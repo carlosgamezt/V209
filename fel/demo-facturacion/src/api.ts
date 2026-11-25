@@ -97,7 +97,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     const p = Promise.resolve(bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as Promise<string[]>); permisosCache.set(k, { hasta: t + 5000, p }); p.catch(() => permisosCache.delete(k)); return p;
   };
   // Escrituras de datos de NEGOCIO: no cambian roles ni permisos ni el estado de los simuladores, así que no vacían lo reutilizado ni necesitan la sección crítica de los simuladores.
-  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
+  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|certificar-todo|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
   const LECTURA_SIN_SIM = /^\/api\/(estado|sesion|fecha-emision|tipos-documento|clientes|conceptos|correo\/estado|digifact\/estado)$|^\/api\/documentos$|^\/api\/documentos\/[^/]+\/correos$/;
 
   async function detalle(docId: string) {

@@ -69,10 +69,12 @@ const json = (r, o, status = 200) => r.fulfill({ status, contentType: "applicati
       assert.match(await p.locator(".totales").innerText(), /IVA 12 % incluido/, `${donde}: el resumen muestra el IVA incluido`); assert.ok(!/pendientes de régimen/.test(await p.locator(".totales").innerText()));
 
       // ---- 2) Certificar en TEST (sin ventanas intermedias): se guarda, se revisa, se prepara y se certifica de corrido, en la misma pantalla; el documento queda guardado ANTES de enviar nada
+      const vistas = []; p.on("request", (rq) => { if (/\/api\//.test(rq.url())) vistas.push(`${rq.method()} ${rq.url().replace(srv.url, "").replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ":id")}`); });
       const antes = (await listaApi()).length;
       await toque("#guardar-certificar");
       await hasta(() => env.llamadas.some((l) => l.accion === "certificar-todo"), "se certifica tras pulsar el botón");
       assert.equal(await p.locator(".modal").count(), 0, `${donde}: no se abre ninguna ventana adicional`);
+      { const ic = vistas.findIndex((x) => /certificar-todo/.test(x)), previas = vistas.slice(0, ic); assert.ok(ic > 0, `${donde}: se pidió certificar-todo`); assert.equal(previas.filter((x) => x === "GET /api/documentos/:id").length, 0, `${donde}: antes de certificar NO se vuelve a pedir el documento (ya vino al guardarlo): ${previas.join(" | ")}`); assert.equal(previas.filter((x) => x === "GET /api/estado").length <= 1, true, `${donde}: la recarga del estado general no es un paso previo en serie`); }
       assert.deepEqual(env.llamadas.map((l) => l.accion), ["certificar-todo"], `${donde}: UNA sola petición (revisar, preparar y certificar en el servidor), sin viajes intermedios`);
       assert.equal((await listaApi()).length, antes + 1, `${donde}: el documento quedó GUARDADO`);
       const cert = env.llamadas.find((l) => l.accion === "certificar-todo").cuerpo;

@@ -28,14 +28,14 @@ const TOPE_CF = "2500";   // SAT: «Consumidor final» solo en facturas por mont
 const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).";
 
 // Tras guardar un documento NUEVO la pantalla se reconstruye con su id: estas banderas continúan lo que la persona pidió (abrir la vista previa, o certificar en TEST).
-let previaPendiente = null, certificarPendiente = null, correoPendiente = null;   // lo elegido en la pantalla de «Nueva factura» pasa a la pantalla del documento ya guardado
+let previaPendiente = null, certificarPendiente = null, correoPendiente = null, detallePrecargado = null;   // lo elegido en la pantalla de «Nueva factura» pasa a la pantalla del documento ya guardado
 const CONFIRMACION_TEST = "CERTIFICAR-TEST";
 
 let calentadoEn = 0;
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
-    try { const [tipos, ventana, dg, detalle] = await Promise.all([api.tiposDocumento(), api.ventanaFecha().catch(() => null), api.digifactEstado().catch(() => null), id ? api.documento(id) : Promise.resolve(null)]); ctx.tiposDoc = tipos; poner(raiz, construir(detalle, tipos, ventana, dg)); }
+    try { const [tipos, ventana, dg, detalle] = await Promise.all([api.tiposDocumento(), api.ventanaFecha().catch(() => null), api.digifactEstado().catch(() => null), id ? (detallePrecargado?.documento?.id === id ? Promise.resolve(detallePrecargado) : api.documento(id)) : Promise.resolve(null)]); detallePrecargado = null; ctx.tiposDoc = tipos; poner(raiz, construir(detalle, tipos, ventana, dg)); }
     catch (e) { poner(raiz, h("p", { class: "err", role: "alert" }, mensajeError(e)), boton("Volver", { tipo: "sec", onclick: () => ctx.ir("/") })); }
   })();
   return raiz;
@@ -436,7 +436,12 @@ export function pantallaFactura(ctx, id) {
         const cuerpo = { id: doc.id, version: doc.version, establecimiento_id: f.establecimiento_id, fecha: f.fecha, observaciones: f.observaciones, lineas: f.lineas,
           tipo_dte: f.tipo_dte, documento_origen_id: f.documento_origen_id || undefined, motivo_ajuste: f.motivo_ajuste || undefined, tipo_recibo: f.tipo_recibo || undefined,
           ...(f.nuevo ? { cliente_nuevo: { tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre } } : { cliente_id: f.cliente_id }) };
-        const r = await api.guardar(cuerpo); await ctx.recargarEstado(); toast(`Borrador ${codigoBorrador(r.documento.numero_borrador)} guardado`);
+        const r = await api.guardar(cuerpo);
+        if (nuevo && opc.certificar) {   // camino rápido de «Guardar y certificar»: no se espera la recarga del estado general ni se vuelve a pedir el documento (ya viene en la respuesta); la certificación sale de inmediato
+          const cid = r.documento.cliente_id; if (f.nuevo && cid && !ctx.estado.clientes.some((c) => c.id === cid)) ctx.estado.clientes.push({ id: cid, tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre, direccion: null, email: null, telefono: null, frecuente: false });
+          detallePrecargado = r; ctx.recargarEstado().catch(() => {});   // el estado se refresca en segundo plano
+        } else await ctx.recargarEstado();
+        toast(`Borrador ${codigoBorrador(r.documento.numero_borrador)} guardado`);
         if (nuevo) { if (opc.previa) previaPendiente = r.documento.id; if (opc.certificar) { certificarPendiente = r.documento.id; correoPendiente = { activo: correoFac.activo, texto: correoFac.texto }; } ctx.ir(`/f/${r.documento.id}`, { reemplazar: true }); return r; }
         await recargar(r); return r;
       } catch (e) { err.textContent = mensajeError(e); if (e.codigo === "FEL_CONFLICTO" || e.status === 409) err.append(" ", h("button", { type: "button", class: "link", onclick: () => recargar() }, "Recargar")); if (b) b.disabled = false; return null; }

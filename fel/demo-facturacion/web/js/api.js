@@ -33,7 +33,7 @@ export async function llamar(metodo, ruta, cuerpo, opciones = {}) {
     escrituras++;
     const antes = generacion;
     try { return await pedir(metodo, ruta, cuerpo, opciones); }
-    finally { if (antes === generacion && !/^\/api\/documentos(\/|$)/.test(ruta)) vaciarCache(); else if (/^\/api\/sesion\//.test(ruta)) vaciarCache(); }   // una escritura de configuración, clientes, sesión… invalida lo leído
+    finally { if (antes === generacion && !/^\/api\/(documentos(\/|$)|digifact\/calentar$)/.test(ruta)) vaciarCache(); else if (/^\/api\/sesion\//.test(ruta)) vaciarCache(); }   // una escritura de configuración, clientes, sesión… invalida lo leído
   }
   const ttl = TTL_MS[ruta.split("?")[0]], clave = `${generacion}|${usuario}|${ruta}`;
   if (ttl && !opciones.signal) { const c = CACHE.get(clave); if (c && c.hasta > Date.now()) { estadisticasCache.aciertos++; return structuredClone(c.datos); } }
