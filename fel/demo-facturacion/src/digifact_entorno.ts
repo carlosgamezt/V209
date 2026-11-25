@@ -29,8 +29,10 @@ export async function crearDigifactDesdeEntorno(env: Entorno, o: { almacen?: Alm
   const usuario = env("DIGIFACT_TEST_USERNAME"), nit = env("DIGIFACT_TEST_NIT"); if (!usuario || !env("DIGIFACT_TEST_PASSWORD") || !nit) return { motivo: "Faltan las credenciales de Digifact TEST (usuario, contraseña o NIT)." };
   // el emisor llega como JSON o, desde el despliegue, como BASE64 del JSON (su domicilio puede traer comillas y barras que no deben pasar crudas por un archivo .env)
   let datos: DatosEmisor; try { const crudo = (env("FEL_DIGIFACT_TEST_EMISOR") ?? "").trim(); datos = JSON.parse(crudo.startsWith("{") ? crudo : new TextDecoder().decode(Uint8Array.from(atob(crudo), (c) => c.charCodeAt(0)))); } catch { return { motivo: "FEL_DIGIFACT_TEST_EMISOR no es un JSON válido (ni base64 de un JSON)." }; }
-  if (!datos?.nit || !datos.nombre || !datos.direccion || !Array.isArray(datos.frases)) return { motivo: "FEL_DIGIFACT_TEST_EMISOR no trae los datos del emisor." };
-  if (String(Number(datos.nit)) !== String(Number(nit))) return { motivo: "El NIT del emisor no coincide con el NIT de las credenciales de TEST." };
+  if (!datos?.nombre || !datos.direccion || !Array.isArray(datos.frases)) return { motivo: "FEL_DIGIFACT_TEST_EMISOR no trae los datos del emisor." };
+  // FUENTE ÚNICA del NIT: DIGIFACT_TEST_NIT. El NIT del emisor NO se duplica en el JSON (si el JSON trae «nit», se IGNORA). La huella aprobada incluye ese NIT: si no es el del emisor del DTE aceptado por Digifact TEST del que se
+  // leyeron estos datos («datos-emisor»), la huella no coincide y no se habilita. Así el NIT de las credenciales y el del emisor no pueden divergir, y un NIT ajeno se rechaza igual que antes.
+  datos = { ...datos, nit: nit.trim() };
   const huella = await huellaEmisor(datos); if (huella !== env("FEL_DIGIFACT_TEST_HUELLA")) return { motivo: "La huella aprobada de los datos del emisor no coincide: no se habilita." };
   let cliente; try { cliente = crearDigifactGt({ ambiente: "test", nit, usuario, obtenerClave: () => env("DIGIFACT_TEST_PASSWORD") ?? "", fetchImpl: o.fetchImpl }); } catch (e) { return { motivo: `No se pudo crear el cliente de Digifact: ${(e as Error).message}` }; }
   const emisor = { emisor: emisorDeDatos(datos), huella };

@@ -16,17 +16,17 @@ Estado (25/11/2026). Revisión hecha leyendo el flujo `publicar-nube.yml`, `publ
 |---|---|
 | `DEMO_DIGIFACT_TEST_EMPRESA` | `10000000-0000-0000-0000-0000000000d0` |
 | `DEMO_DIGIFACT_TEST_HUELLA` | `04a1a7f8ff9a922f` |
-| `DEMO_DIGIFACT_TEST_EMISOR` | El JSON de abajo, **en una sola línea**, sustituyendo `<TU_NIT>` por **exactamente el mismo texto** que tienes en `DEMO_DIGIFACT_TEST_NIT` |
+| `DEMO_DIGIFACT_TEST_EMISOR` | El JSON de abajo, **en una sola línea**, tal cual (**sin NIT**: el NIT sale solo de `DEMO_DIGIFACT_TEST_NIT`) |
 
 ```
-{"nit":"<TU_NIT>","nombre":"TEST GENS","nombreComercial":"ESTABLECIMIENTO \"TEST GEN\"","afiliacionIva":"GEN","codigoEstablecimiento":"2","correo":"","direccion":{"direccion":"0 AVENIDA APTO. \\108\\ \"CONDOMINIO NIMAJUYU I\" ZONA 21","codigoPostal":"01021","municipio":"Guatemala","departamento":"GUATEMALA","pais":"GT"},"frases":[{"tipo":1,"escenario":2}]}
+{"nombre":"TEST GENS","nombreComercial":"ESTABLECIMIENTO \"TEST GEN\"","afiliacionIva":"GEN","codigoEstablecimiento":"2","correo":"","direccion":{"direccion":"0 AVENIDA APTO. \\108\\ \"CONDOMINIO NIMAJUYU I\" ZONA 21","codigoPostal":"01021","municipio":"Guatemala","departamento":"GUATEMALA","pais":"GT"},"frases":[{"tipo":1,"escenario":2}]}
 ```
-Notas: las barras y comillas del domicilio ya están escapadas (JSON válido): cópialo tal cual. El despliegue lo envía a la función **codificado en base64**, así que no depende de cómo se interprete el archivo `.env`. El NIT del DTE coincide con el de las credenciales (el registro lo enmascaró), por eso debe ser idéntico al secreto.
+Notas: las barras y comillas del domicilio ya están escapadas (JSON válido): cópialo tal cual. El despliegue lo envía a la función **codificado en base64**, así que no depende de cómo se interprete el archivo `.env`. **El NIT ya no se duplica:** se toma siempre de `DEMO_DIGIFACT_TEST_NIT`. Si tu secreto actual todavía trae un campo `"nit"`, se **ignora** (no hace falta editarlo). Protección independiente: la huella aprobada incluye el NIT del emisor del DTE aceptado por Digifact TEST; si el NIT de las credenciales no es ese, la huella no coincide y no se habilita. Además la verificación en seco hace un inicio de sesión de solo lectura en Digifact TEST con ese NIT y usuario (solo entra una cuenta que exista allí).
 
 **Cómo crearlos de forma segura:** GitHub → Settings → Environments → `demo-privada` → *Add environment secret* (nombre y valor; se guardan cifrados, nunca en el chat ni en el repositorio). No uses secretos de repositorio: el flujo solo lee los del entorno protegido.
 
 ## 3. Verificación en seco antes de publicar
-Con los 3 secretos creados, lanza `publicar-nube` con `modo=verificar`, `digifact=habilitado`, `digifact_referencia=CICLO-TEST` (solo lectura). Ahora esa ejecución corre `nube/verificar_digifact.ts`, que aplica las mismas reglas que la función y responde SI/NO por requisito (existencia, UUID, empresa de «ana», huella de 16 hex, sin comillas simples ni saltos de línea, NIT del emisor = NIT de las credenciales, huella aprobada = huella calculada). Termina con «configuración COMPLETA» o con la lista de lo que falla; **no publica nada**. Solo con «COMPLETA» se lanza la publicación real.
+Con los 3 secretos creados, lanza `publicar-nube` con `modo=verificar`, `digifact=habilitado`, `digifact_referencia=CICLO-TEST` (solo lectura). Ahora esa ejecución corre `nube/verificar_digifact.ts`, que aplica las mismas reglas que la función y responde SI/NO por requisito (existencia, UUID, empresa de «ana», huella de 16 hex, sin comillas simples ni saltos de línea, huella aprobada = huella calculada con el NIT de las credenciales, e inicio de sesión de solo lectura en Digifact TEST). Termina con «configuración COMPLETA» o con la lista de lo que falla; **no publica nada**. Solo con «COMPLETA» se lanza la publicación real.
 
 ## 4. Entradas del flujo `publicar-nube` (no son secretos)
 `modo=publicar` · `confirmar=PUBLICAR` · `digifact=habilitado` · `digifact_referencia=CICLO-TEST` · `digifact_prueba=habilitado`. Las demás (`digifact_nit`, `digifact_cui`, `digifact_correo`) quedan en `apagado`.
@@ -35,7 +35,7 @@ Con los 3 secretos creados, lanza `publicar-nube` con `modo=verificar`, `digifac
 1. Los seis secretos de Digifact (EMPRESA, USERNAME, PASSWORD, NIT, EMISOR, HUELLA) deben existir.
 2. `EMPRESA` debe ser un UUID; `HUELLA` exactamente 16 hexadecimales.
 3. `EMISOR` debe ser un JSON válido (una sola línea). Ya admite comillas y barras: viaja a la función en base64. Los demás valores no admiten comilla simple ni salto de línea.
-4. El NIT del emisor debe coincidir con `DEMO_DIGIFACT_TEST_NIT`, y la huella calculada de `EMISOR` con `DEMO_DIGIFACT_TEST_HUELLA` (si se edita el JSON a mano, la huella cambia y no se habilita).
+4. El NIT del emisor se toma de `DEMO_DIGIFACT_TEST_NIT`; la huella calculada (datos del emisor + ese NIT) debe coincidir con `DEMO_DIGIFACT_TEST_HUELLA` (si se edita el JSON a mano, la huella cambia y no se habilita).
 5. Almacén persistente: la migración 29 ya está aplicada en `nexa-demo` (30 migraciones registradas). No se aplica ninguna migración.
 6. `digifact_referencia` solo vale con `digifact=habilitado`; admite un GUID (una sola prueba) o `CICLO-TEST` (el ciclo de pruebas).
 
