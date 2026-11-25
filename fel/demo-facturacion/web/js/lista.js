@@ -68,7 +68,7 @@ export function pantallaLista(ctx) {
     poner(resumen, total ? `${ini + 1}–${ini + items.length} de ${total}` : "0 documentos");
     poner(lista, ...(items.length ? [h("div", { class: "fila fila-fac-cab fila-cab", "aria-hidden": "true" }, ...["Documento / Cliente", "Fecha", "Importe", "Estado", "Canal de emisión", "Acciones"].map((t, i) => h("span", { class: i === 2 ? "der" : "" }, t))), ...items.map(fila)]
       : [vacio("file", "No hay documentos", hayFiltros() ? "Ningún documento coincide con los filtros." : categoria === "emitidos" ? "Aún no hay documentos emitidos. Los borradores están en la pestaña Borradores." : "No hay documentos en esta categoría.",
-        puedeCrear && !hayFiltros() ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null)]));
+        puedeCrear && !hayFiltros() ? boton("Nueva factura", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null)]));
     poner(pager, paginas > 1 ? [boton("Anterior", { tipo: "sec", id: "pag-anterior", disabled: pagina <= 1, onclick: () => { pagina--; cargar(); } }), h("span", { class: "mut" }, `Página ${pagina} de ${paginas}`), boton("Siguiente", { tipo: "sec", id: "pag-siguiente", disabled: pagina >= paginas, onclick: () => { pagina++; cargar(); } })] : null);
   }
   async function revisar(d) {
@@ -101,8 +101,8 @@ export function pantallaLista(ctx) {
 
   cargar();
   return h("section", { class: "pantalla" },
-    cabecera({ icon: "file", titulo: "Documentos", subtitulo: "Consulta tus documentos guardados, emitidos en TEST y simulados.",
-      accion: puedeCrear ? boton("Nuevo documento", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null }),
+    cabecera({ icon: "file", titulo: "Facturas emitidas", subtitulo: "Consulta tus facturas guardadas, emitidas en TEST y simuladas.",
+      accion: puedeCrear ? boton("Nueva factura", { icon: "plus", onclick: () => ctx.ir("/nueva") }) : null }),
     pestanas,
     h("div", { class: "barra barra-compacta" }, h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar cliente, serie, número o UUID…", "aria-label": "Buscar documentos", oninput: (e) => { busqueda = e.target.value.trim(); pagina = 1; esperar(); } })), resumen),
     h("details", { class: "filtros-mas" }, h("summary", {}, "Filtros"), h("div", { class: "barra barra-compacta filtros-grid" }, selEstado, selTipo, campoNit, campoFecha("Desde", (v) => { desde = v; }), campoFecha("Hasta", (v) => { hasta = v; }))),

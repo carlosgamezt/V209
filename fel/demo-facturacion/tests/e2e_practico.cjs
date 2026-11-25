@@ -109,7 +109,7 @@ const CLAVE = (u) => CLAVES_E2E[u] ?? "demo1234";
   await entrar(p, "marta", CLAVE("marta")); await p.waitForSelector("text=Usuario o contraseña incorrectos."); await entrar(p, "marta", "clave-marta-nueva-1"); await p.waitForSelector(".cab-demo"); await p.click("#cerrar-sesion"); await p.waitForSelector("#login-usuario");
 
   // plataforma
-  await entrar(p, "maestro"); await p.waitForSelector('[data-panel="empresas"]'); assert.equal(await p.locator('.nav a:has-text("Nuevo documento")').count(), 0); await foto(p, "pc-10-plataforma.png");
+  await entrar(p, "maestro"); await p.waitForSelector('[data-panel="empresas"]'); assert.equal(await p.locator('.nav a:has-text("Nueva factura")').count(), 0); await foto(p, "pc-10-plataforma.png");
   await p.click("#nueva-empresa"); await p.fill('input[aria-label="Nombre comercial"]', "Taller Rivera"); await p.fill('input[aria-label="Razón social"]', "Taller Rivera, S.A. (FICTICIA)"); await p.fill('input[aria-label="NIT"]', "9990003-1");
   await p.fill('input[aria-label="Nombre del propietario"]', "Rita Rivera"); await p.fill('input[aria-label="Usuario del propietario"]', "rita"); await p.fill('input[aria-label="Contraseña del propietario"]', "clave-rita-1234"); await p.click("#guardar-formulario");
   await p.waitForSelector('[data-empresa="Taller Rivera"]'); await p.click('[data-empresa="Taller Rivera"]'); await p.waitForSelector("#asignar-plan");

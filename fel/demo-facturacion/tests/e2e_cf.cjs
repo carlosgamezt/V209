@@ -37,6 +37,8 @@ async function arrancar() {
       await toque(NOMBRE); await p.keyboard.press("Control+A"); await p.keyboard.press("Delete"); await p.locator(ID).focus();   // vacío y se sale del campo
       assert.match((await campoNombre.inputValue()).toUpperCase(), /CONSUMIDOR FINAL/, `${donde}: vacío vuelve a «Consumidor Final»`); assert.equal(await tipoActual(p), "CF"); assert.equal(await p.inputValue(ID), "CF");
       await toque(NOMBRE); await p.keyboard.type("Juan Pérez García"); await p.locator("body").click({ position: { x: 5, y: 5 } }); assert.equal(await tipoActual(p), "CF");
+      // 2c) la identificación «CF» es fija: no se puede escribir en ella (así el tipo nunca pasa a NIT/CUI por error); intentarlo no cambia nada
+      assert.equal(await p.locator(ID).evaluate((e) => e.readOnly), true, `${donde}: en CF la identificación es de solo lectura`); await p.locator(ID).click({ force: true }).catch(() => {}); await p.keyboard.type("xyz"); assert.equal(await p.inputValue(ID), "CF"); assert.equal(await tipoActual(p), "CF", `${donde}: escribir en la identificación de CF no cambia el tipo`);
       // ---- 3) guardar: se conserva CF + nombre; recargar la pantalla del documento los muestra igual (no «NIT»)
       await conItem(); await p.click("#guardar, #guardar-certificar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}/); const id = (/#\/f\/([0-9a-f-]{36})/.exec(p.url()) ?? [])[1]; assert.ok(id, `${donde}: se guardó`);
       const det = (await api("GET", `/api/documentos/${id}`)).j; assert.equal(det.documento.cliente_nombre ?? det.cliente?.nombre ?? "Juan Pérez García", "Juan Pérez García");

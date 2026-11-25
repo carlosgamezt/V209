@@ -39,8 +39,8 @@ async function arrancar() {
     const cab = await altura(p, ".cab-fila"), banda = await altura(p, ".banda-simulado"), navH = await altura(p, ".nav-movil");
     assert.ok(Math.abs(cab - 48) <= 1, `encabezado de 48 px (${cab})`); assert.ok(banda >= 21 && banda <= 24, `franja de una línea de 22 px (${banda})`); assert.ok(navH >= 56 && navH <= 60, `navegación de 56 px (${navH})`);
     assert.match(await p.locator(".banda-simulado").innerText(), /SIMULADO - SIN VALOR FISCAL/); assert.equal(await p.locator(".cab-marca").isVisible(), true); assert.equal(await p.locator(".cab-der").isHidden(), true, "sin la fila de empresa/usuario/campana del encabezado de PC");
-    assert.deepEqual((await p.locator(".nav-movil > a").allInnerTexts()).map((t) => t.trim()), ["Panel", "Nuevo", "Documentos", "Clientes"], "cuatro accesos con etiqueta corta + «Más»"); assert.equal(await p.locator("#nav-mas").count(), 1);
-    assert.equal(await p.locator('.nav-movil a[aria-current="page"]').getAttribute("aria-label"), "Nuevo documento", "el acceso activo conserva su nombre completo para lectores de pantalla");
+    assert.deepEqual((await p.locator(".nav-movil > a").allInnerTexts()).map((t) => t.trim()), ["Panel", "Nueva", "Facturas emitidas", "Clientes"], "cuatro accesos con etiqueta corta + «Más»"); assert.equal(await p.locator("#nav-mas").count(), 1);
+    assert.equal(await p.locator('.nav-movil a[aria-current="page"]').getAttribute("aria-label"), "Nueva factura", "el acceso activo conserva su nombre completo para lectores de pantalla");
     await foto(p, "m1-marco-vacio.png");
     // menú de la cuenta: nombre, empresa, DEMO, pendientes y «Cerrar sesión»; se cierra tocando fuera y con Escape; objetivo táctil ≥ 40 px
     assert.ok((await altura(p, "#menu-cuenta")) >= 40, "avatar táctil"); await p.click("#menu-cuenta"); await p.waitForSelector(".menu-cuenta:not([hidden])");

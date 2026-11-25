@@ -37,9 +37,9 @@ async function arrancar() {
     for (const [w, h] of [[390, 844], [1100, 800]]) {
       const p = await ctxPag(w, h); await entrar(p); const donde = `${w}px`;
       // ================= 1. «Nuevo documento»: con solo Factura habilitada la captura rápida no cambia (etiqueta, sin selector ni campos extra)
-      assert.match(await p.locator('.nav a[href="#/nueva"], .nav-movil a[href="#/nueva"]').first().innerText(), /Nuevo/, "el acceso se llama «Nuevo documento»");
+      assert.match(await p.locator('.nav a[href="#/nueva"], .nav-movil a[href="#/nueva"]').first().innerText(), /Nueva/, "el acceso se llama «Nuevo documento»");
       await p.goto(srv.url + "/#/nueva"); await esperarNueva(p);
-      assert.equal((await p.locator(".doc-tit h1").innerText()).trim(), "Nuevo documento"); assert.equal((await p.locator("#tipo-actual").innerText()).trim(), "Factura");
+      assert.equal((await p.locator(".doc-tit h1").innerText()).trim(), "Nueva factura"); assert.equal((await p.locator("#tipo-actual").innerText()).trim(), "Factura");
       assert.equal(await p.locator("#tipo-documento").count(), 0, "con un solo tipo habilitado no hay selector"); assert.equal(await p.locator(".card-tipo").count(), 0);
       await sinDesborde(p, `Nuevo documento ${donde}`);
       if (w === 1100) {
@@ -94,7 +94,7 @@ async function arrancar() {
       await p.goto(srv.url + "/#/"); await p.locator("details.filtros-mas summary").click(); await p.locator("#filtro-tipo option").nth(1).waitFor({ state: "attached" }); await p.locator("#filtro-tipo").waitFor({ state: "visible" }); await p.locator('.pestana[data-categoria="borradores"]').click(); await p.locator(".lista:not([aria-busy])").waitFor({ state: "attached" });
       const opts = (await p.locator("#filtro-tipo option").allInnerTexts()).map((t) => t.trim().replace(/\s*\(\d+\)$/, "")); assert.ok(opts.includes("Recibo") && opts.includes("Factura"), JSON.stringify(opts));
       await p.selectOption("#filtro-tipo", "RECI"); await p.locator(".lista:not([aria-busy])").waitFor({ state: "attached" }); assert.ok((await p.locator('.fila-fac [data-tipo="RECI"]').count()) >= 1); assert.equal(await p.locator('.fila-fac:not(:has([data-tipo="RECI"]))').count(), 0, "el filtro solo deja recibos");
-      assert.match(await p.locator("h1, .ph-t").first().innerText(), /Documentos/); await sinDesborde(p, `historial ${donde}`);
+      assert.match(await p.locator("h1, .ph-t").first().innerText(), /Facturas emitidas/); await sinDesborde(p, `historial ${donde}`);
       // ================= 6. configuración por empresa
       await p.goto(srv.url + "/#/config"); await p.waitForSelector('[data-tab="tipos"]'); await p.click('[data-tab="tipos"]'); await p.waitForSelector('[data-tipo-cfg="FACT"]');
       for (const c of ["FACT", "NCRE", "NDEB", "RECI"]) assert.ok(await p.locator(`[data-tipo-cfg="${c}"]`).isVisible(), c);

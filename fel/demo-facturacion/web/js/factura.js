@@ -96,7 +96,7 @@ export function pantallaFactura(ctx, id) {
     function pintarCab() {
       const [pt, ptono] = PREPARACION[doc.estado_preparacion];
       const sim = insignia("SIMULADO", "ambar"); sim.classList.add("tag-solo-pc");   // en el teléfono la franja de simulación ya lo dice
-      poner(cab, h("div", { class: "doc-tit" }, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : "Nuevo documento"),
+      poner(cab, h("div", { class: "doc-tit" }, h("h1", { class: "mono", title: "Número interno de borrador: no es un número fiscal" }, doc.numero_borrador ? codigoBorrador(doc.numero_borrador) : (f.tipo_dte && f.tipo_dte !== "FACT" ? "Nuevo documento" : "Nueva factura")),
         h("div", { class: "celda-tags" }, doc.numero_borrador && f.tipo_dte !== "FACT" ? insignia(tituloDocumento(tipos, f), "gris") : null, insignia(pt, ptono), doc.estado_fiscal !== "ninguno" ? insignia(FISCAL[doc.estado_fiscal][0], FISCAL[doc.estado_fiscal][1]) : null, sim)),
         h("button", { type: "button", class: "btn btn-sec btn-previa", id: "previa-titulo", "aria-label": "Vista previa", title: "Vista previa e impresión", onclick: abrirPrevia }, icono("eye"), h("span", { class: "bp-txt" }, "Vista previa")));
     }
@@ -125,7 +125,7 @@ export function pantallaFactura(ctx, id) {
       nit.seg = h("div", { class: "seg-tipo", role: "radiogroup", "aria-label": "Tipo de identificación" },
         ...TIPOS.map(([v, t]) => h("button", { type: "button", role: "radio", class: "st-op", "data-tipo": v, disabled: !ed, "aria-checked": String(f.tipo === v), title: v === "EXT" ? "Extranjero u otro tipo de identificación" : null, onclick: () => elegirTipo(v) }, t)));
       // ---- identificación
-      nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": "rc-sug", maxlength: 30, disabled: !ed, autocomplete: "off", enterkeyhint: "next", placeholder: textoDe(f.tipo),
+      nit.numero = h("input", { value: f.numero, "aria-label": "Identificación del receptor", role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": "rc-sug", maxlength: 30, disabled: !ed, readOnly: f.tipo === "CF", autocomplete: "off", enterkeyhint: "next", placeholder: textoDe(f.tipo),
         oninput: (e) => alEscribir(e.target.value), onfocus: () => mostrarSugerencias(), onblur: () => { setTimeout(ocultarSugerencias, 120); if (f.nuevo && ctrl) ctrl.alSalirIdentificacion(); },
         onkeydown: (e) => { if (e.key === "Escape") { ocultarSugerencias(); return; } if (e.key !== "Enter" || e.isComposing) return; e.preventDefault(); ocultarSugerencias(); if (f.nuevo && ctrl) { ctrl.alConfirmarIdentificacion(); nit.nombre?.focus(); } } });
       nit.ok = h("span", { class: "rc-ok", hidden: true, "aria-hidden": "true" }, icono("check"));
@@ -168,7 +168,8 @@ export function pantallaFactura(ctx, id) {
       function actualizarOk() { nit.ok.hidden = !(f.cliente_id || nit.info?.fase === "ok" || (f.tipo === "CF" && f.nuevo)); }
       function sincronizar() {   // vuelca el modelo en los campos (lo llama el controlador y las acciones de esta función)
         for (const b of nit.seg.querySelectorAll(".st-op")) b.setAttribute("aria-checked", String(b.dataset.tipo === f.tipo));
-        nit.numero.placeholder = textoDe(f.tipo); nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text");
+        nit.numero.placeholder = textoDe(f.tipo); nit.numero.readOnly = f.tipo === "CF";   // en CF la identificación es fija («CF»): escribir ahí nunca cambia el tipo; para otro tipo se usa el selector
+         nit.numero.setAttribute("inputmode", f.tipo === "CUI" ? "numeric" : "text");
         if (f.nuevo && nit.numero.value !== f.numero) nit.numero.value = f.numero;
         nit.nombre.value = f.nombre; nit.chip.hidden = f.tipo === "CF" && modo() === "nuevo";
         pintarTarjeta(); actualizarOk(); actualizarNombre();

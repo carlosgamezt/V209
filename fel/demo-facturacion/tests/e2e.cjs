@@ -173,7 +173,7 @@ async function arrancar() {
   await p.click('[data-tab="canal"]'); const canales = await p.locator(".tab-cuerpo").innerText(); assert.match(canales, /Habilitado · simulado/); assert.match(canales, /Bloqueado en esta fase/); assert.equal(await p.locator("input[type=password], input[aria-label*=Contraseña i], button:has-text('Probar conexión')").count(), 0, "sin campos de credenciales de SAT ni «Probar conexión»"); await foto("11-config-canal.png");
   await p.click('[data-tab="establecimientos"]'); await p.click("#nuevo-establecimiento"); await p.fill('input[aria-label="Código del establecimiento"]', "3"); await p.fill('input[aria-label="Nombre del establecimiento"]', "Bodega ficticia"); await p.click("#guardar-establecimiento"); await toast("Establecimiento creado"); await p.waitForSelector(`[data-establecimiento="3"]`);
   await como("pedro"); await p.goto(`${srv.url}/#/clientes`); await p.waitForSelector(".indicadores"); assert.equal(await p.locator("#nuevo-cliente").count(), 0, "el lector no crea clientes");
-  assert.equal(await p.locator('a.nv:has-text("Nuevo documento")').count(), 0, "el lector no ve «Nuevo documento»");
+  assert.equal(await p.locator('a.nv:has-text("Nueva factura")').count(), 0, "el lector no ve «Nueva factura»");
   await p.goto(`${srv.url}/#/config`); await p.click('[data-tab="establecimientos"]'); assert.equal(await p.locator("#nuevo-establecimiento").count(), 0, "el lector no crea establecimientos");
   await como("ana");
 

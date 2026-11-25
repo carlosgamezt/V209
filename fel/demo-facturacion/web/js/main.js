@@ -9,6 +9,9 @@ import { pantallaLogin } from "./login.js";
 // Carga diferida de pantallas: el navegador solo descarga el código de la pantalla que se abre (la carga inicial trae solo el marco, la lista y el inicio de sesión).
 const MODULOS = { pantallaFactura: "./factura.js", pantallaClientes: "./clientes.js", pantallaConceptos: "./conceptos.js", pantallaConfig: "./config.js", pantallaPlan: "./plan.js", pantallaPanel: "./panel.js", pantallaCuenta: "./cuenta.js", pantallaUsuarios: "./usuarios.js",
   pantallaEmpresas: "./plataforma.js", pantallaEmpresa: "./plataforma.js", pantallaPlanes: "./plataforma.js", pantallaBolson: "./plataforma.js" };
+// «Nueva factura» arrastra una cadena de módulos (factura + proceso + vista previa + …): se piden TODOS en paralelo desde que carga la página (el usuario aún está escribiendo su clave), así que al abrirla ya están.
+const CADENA_FACTURA = ["factura", "proceso", "vista_previa", "emitido", "iva", "item_editor", "tipos", "receptor_nit", "anular", "correo", "descarga", "digifact", "dinero"].map((m) => `/web/js/${m}.js`).concat(["/app/js/calculo.js"]);
+setTimeout(() => { for (const u of CADENA_FACTURA) { const l = document.createElement("link"); l.rel = "modulepreload"; l.href = u; document.head.append(l); } }, 0);
 let moduloPrecargado = false;
 function precargarPantallas() {   // tras pintar la primera pantalla y con el navegador libre: se descargan EN PARALELO (con sus dependencias) las pantallas diferidas, para que abrirlas no espere una cascada de archivos
   if (moduloPrecargado) return; moduloPrecargado = true;
@@ -35,8 +38,8 @@ async function copiar(texto) {
 let alCambiarRuta = null;
 const NAV = [
   { ruta: "/panel", titulo: "Panel", icon: "file", permiso: "borradores.ver", practico: true },
-  { ruta: "/nueva", titulo: "Nuevo documento", corto: "Nuevo", icon: "plus", permiso: "borradores.crear" },
-  { ruta: "/", titulo: "Documentos", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
+  { ruta: "/nueva", titulo: "Nueva factura", corto: "Nueva", icon: "plus", permiso: "borradores.crear" },
+  { ruta: "/", titulo: "Facturas emitidas", icon: "file", permiso: "borradores.ver", exacta: true, tambien: ["/f/"] },
   { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
   { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
   { ruta: "/usuarios", titulo: "Usuarios", icon: "users", permiso: "usuarios.ver", practico: true },
