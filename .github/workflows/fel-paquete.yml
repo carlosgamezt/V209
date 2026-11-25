@@ -25,7 +25,7 @@ jobs:
           mkdir -p ../../dist
           for t in x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu; do
             ext=""; [ "$t" = "x86_64-pc-windows-msvc" ] && ext=".exe"
-            deno compile -A --target "$t" --include web --include ../app/css --include ../app/js --include ../supabase/migrations --include ../docs/migracion-tipos-documento/20261115000100_fel_tipos_documento.sql --include ../tools/shim_supabase.sql \
+            deno compile -A --target "$t" --include web --include ../app/css --include ../app/js --include ../supabase/migrations --include ../tools/shim_supabase.sql \
               -o "../../dist/$t/nexa-fel-demo$ext" servidor.ts
           done
           ls -la ../../dist/*
