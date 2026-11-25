@@ -80,9 +80,9 @@ async function arrancar() {
         await q.click("#ed-cancelar"); await q.setViewportSize(vp);
         // la barra de acciones no se superpone con la navegación inferior ni consigo misma; el menú «Más acciones» cabe en la pantalla
         await q.evaluate(() => window.scrollTo(0, 0)); await q.waitForTimeout(150);
-        const caj = await q.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r("#mas-acciones") }; });
+        const caj = await q.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r(".acciones-sec") }; });
         assert.ok(caj.barra.b <= caj.nav.t + 1, `${nom}: la barra de acciones queda sobre la navegación inferior (${caj.barra.b} ≤ ${caj.nav.t})`); assert.ok(caj.prim.r <= caj.mas.l + 1 || caj.mas.r <= caj.prim.l + 1 || caj.prim.b <= caj.mas.t + 1 || caj.mas.b <= caj.prim.t + 1, `${nom}: la acción principal y «Más acciones» no se superponen`);
-        await q.click("#mas-acciones"); const mn = await q.locator(".menu-mas").boundingBox(); assert.ok(mn.x >= 0 && mn.x + mn.width <= vp.width + 1 && mn.y >= 0, `${nom}: el menú «Más acciones» cabe en la pantalla`); await q.keyboard.press("Escape");
+        assert.equal(await q.locator("#mas-acciones").count(), 0, `${nom}: sin menú «Más» en las acciones de facturación`);
       }
       await r.close();
     }

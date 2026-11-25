@@ -55,7 +55,7 @@ export function pantallaFactura(ctx, id) {
 
     const cardDatos = h("div", { class: "card card-datos" }), cardItems = h("div", { class: "card card-items" });
     const cab = h("div", { class: "doc-cab" }), err = h("p", { class: "err area-msg", role: "alert" });
-    const cuerpoReceptor = h("div", { class: "form" }), cuerpoLineas = h("div", { class: "lineas-d" }), totales = h("aside", { class: "totales" }), barra = h("div", { class: "barra-acciones" }), proceso = h("div", { class: "area-proceso" });
+    const cuerpoReceptor = h("div", { class: "form" }), cuerpoLineas = h("div", { class: "lineas-d" }), totales = h("aside", { class: "totales" }), barra = h("div", { class: "barra-acciones" }), accionesDoc = h("div", { class: "acciones-doc" }), proceso = h("div", { class: "area-proceso" });
 
     // ---------------------------------------------------------------- validación local (vista previa; el servidor y la base vuelven a validar)
     function problemas() {
@@ -351,7 +351,7 @@ export function pantallaFactura(ctx, id) {
     // ---------------------------------------------------------------- barra: una acción principal + «Más acciones»
     let cerrarMenu = () => {};
     function pintarBarra() {
-      cerrarMenu();
+      cerrarMenu(); queueMicrotask(() => { try { pintarProceso(); } catch { /* aún no existe */ } });
       const ed = editable(), prep = doc.estado_preparacion;
       const puedeRevisar = doc.id && prep === "borrador" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.revisar");
       let principal;
@@ -363,24 +363,21 @@ export function pantallaFactura(ctx, id) {
       else if (doc.id && !sucio && puedeCertificarAhora() && ["borrador", "revisado"].includes(prep)) principal = boton("Certificar en TEST", { icon: "shield", id: "certificar-test", onclick: certificarEnTest });
       else if (puedeRevisar) principal = boton("Marcar como revisado", { icon: "circleCheck", id: "revisar", onclick: () => cambiar("revisado") });
       else principal = boton("Vista previa e impresión", { icon: "eye", id: "ver-previa", onclick: abrirPrevia });
-      const items = [{ t: "Vista previa e impresión", i: "eye", id: "mi-previa", f: abrirPrevia }];
-      if (puedeRevisar) items.push({ t: "Validar con el proveedor", i: "shield", id: "mi-validar", f: validar, off: sucio, tip: "Guarda los cambios antes de validar" });
-      if (puedeRevisar && principal.id !== "revisar") items.push({ t: "Marcar como revisado", i: "circleCheck", id: "mi-revisar", f: () => cambiar("revisado"), off: sucio, tip: "Guarda los cambios antes de revisar" });
-      if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) items.push({ t: "Volver a borrador", i: "undo", id: "mi-borrador", f: () => cambiar("borrador") });
-      if (doc.id && prep !== "archivado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.archivar")) items.push({ t: "Archivar", i: "archive", id: "mi-archivar", f: archivar, peligro: true });
-      items.push({ t: "Volver a documentos", i: "undo", id: "mi-volver", f: () => ctx.ir("/") });
-      const menu = h("div", { class: "menu-mas", role: "menu", "aria-label": "Más acciones", hidden: true },
-        ...items.map((x) => h("button", { type: "button", role: "menuitem", class: `mi${x.peligro ? " mi-peligro" : ""}`, id: x.id, disabled: !!x.off, title: x.off ? x.tip : null, onclick: () => { cerrar(); x.f(); } }, icono(x.i), h("span", {}, x.t))));
-      const bMas = h("button", { type: "button", class: "btn btn-sec btn-mas", id: "mas-acciones", "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": "Más acciones", onclick: (e) => { e.stopPropagation(); menu.hidden ? abrir() : cerrar(); } }, h("span", {}, "Más"), h("span", { class: "mas-largo" }, " acciones"), h("span", { "aria-hidden": "true", class: "mas-flecha" }, "▴"));
-      const fuera = (e) => { if (!wrap.contains(e.target)) cerrar(); }, tecla = (e) => { if (e.key === "Escape") { cerrar(); bMas.focus(); } };
-      function abrir() { menu.hidden = false; bMas.setAttribute("aria-expanded", "true"); document.addEventListener("click", fuera); document.addEventListener("keydown", tecla); menu.querySelector("button:not([disabled])")?.focus(); }
-      function cerrar() { menu.hidden = true; bMas.setAttribute("aria-expanded", "false"); document.removeEventListener("click", fuera); document.removeEventListener("keydown", tecla); }
-      cerrarMenu = cerrar;
-      const wrap = h("div", { class: "mas-wrap" }, bMas, menu);
-      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, secundaria, principal, wrap);
+      // Sin menú «Más»: acción principal a todo el ancho, debajo las secundarias (Guardar borrador · Vista previa) y, en texto discreto, las acciones propias del documento.
+      const btn2 = (t, ik, id, fn, off, tip) => boton(t, { tipo: "sec", icon: ik, id, onclick: fn, disabled: !!off, title: off ? tip : null });
+      const previa = principal.id === "ver-previa" ? null : btn2("Vista previa", "eye", "mi-previa", abrirPrevia);
+      const extra = [];
+      const enlace = (t, id, fn, off, tip, peligro) => h("button", { type: "button", class: `enlace-doc${peligro ? " mi-peligro" : ""}`, id, disabled: !!off, title: off ? tip : null, onclick: fn }, t);
+      if (puedeRevisar) extra.push(enlace("Validar con el proveedor", "mi-validar", validar, sucio, "Guarda los cambios antes de validar"));
+      if (puedeRevisar && principal.id !== "revisar") extra.push(enlace("Marcar como revisado", "mi-revisar", () => cambiar("revisado"), sucio, "Guarda los cambios antes de revisar"));
+      if (doc.id && prep === "revisado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.editar")) extra.push(enlace("Volver a borrador", "mi-borrador", () => cambiar("borrador")));
+      if (doc.id && prep !== "archivado" && doc.estado_fiscal === "ninguno" && ctx.tiene("borradores.archivar")) extra.push(enlace("Archivar", "mi-archivar", archivar, false, "", true));
+      extra.push(enlace("Volver a documentos", "mi-volver", () => ctx.ir("/")));
+      poner(barra, sucio && doc.id ? h("span", { class: "sucio" }, "Cambios sin guardar") : null, principal, h("div", { class: "acciones-sec" }, secundaria, previa));
+      poner(accionesDoc, ...extra);   // fuera de la barra fija: no le quita espacio a la pantalla
     }
     function pintarProceso() {
-      poner(proceso, puedeCertificarAhora() ? h("p", { class: "mut estado-cert-compacto" }, "El guardado y la revisión técnica se realizan al certificar en TEST.") : doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
+      poner(proceso, puedeCertificarAhora() ? (() => { const n = problemas().length; return h("p", { class: `estado-cert-compacto ${n ? "mut" : "ok-val"}`, id: "estado-cert", role: "status" }, n ? `${n} dato${n > 1 ? "s" : ""} por completar` : "Datos completos · Listo para certificar"); })() : doc.id ? panelProceso({ ctx, det: d, sucio: () => sucio, recargar, avisar: (t, tipo) => toast(t, tipo), mostrarError: (e) => { err.textContent = mensajeError(e); } }) : h("div", { class: "card" }, h("h2", { class: "card-t" }, "Proceso"), h("p", { class: "mut" }, "Guarda el borrador para poder validarlo, revisarlo y enviarlo a la certificación simulada.")));
     }
 
     // ---------------------------------------------------------------- acciones
@@ -433,6 +430,6 @@ export function pantallaFactura(ctx, id) {
     if (doc.id && certificarPendiente === doc.id) { certificarPendiente = null; setTimeout(certificarEnTest, 0); }   // venía de «Guardar y certificar»
     return h("div", { class: "pf" }, cab, barraTipo,
       avisoDoc,
-      h("div", { class: "doc-grid" }, cardTipo, cardDatos, cardItems, totales, err, proceso), barra);
+      h("div", { class: "doc-grid" }, cardTipo, cardDatos, cardItems, totales, err, proceso, accionesDoc), barra);
   }
 }

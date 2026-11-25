@@ -53,7 +53,7 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       // ---- una sola pantalla: receptor + ítems + resumen, una acción principal y «Más acciones», sin botón flotante «+»
       await p.goto(srv.url + "/#/nueva"); await esperarNueva(p);
       assert.equal(await p.locator("li.paso, .stepper").count(), 0, donde("sin asistente de pasos")); assert.equal(await p.locator("#fab-agregar, .ab-fab").count(), 0, donde("sin botón flotante +"));
-      assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, donde("una acción principal")); assert.equal(await p.locator("#mas-acciones").count(), 1);
+      assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, donde("una acción principal")); assert.equal(await p.locator("#mas-acciones").count(), 0); assert.equal(await p.locator(".barra-acciones .acciones-sec").count(), 1);
       assert.ok(await p.locator('input[aria-label="Identificación del receptor"]').isVisible() && await p.locator("#agregar-item").count() === 1, donde("datos e ítems en la misma pantalla"));
       await sinDesborde("nueva factura vacía"); await foto("01-nueva"); await textoVisible("nueva factura vacía");
       await elegirReceptor(p); await p.selectOption('select[aria-label="Establecimiento"]', { index: 1 });
@@ -94,15 +94,15 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       assert.equal(await p.locator("button.it").count(), 3, donde("tres ítems como filas compactas")); await sinDesborde("lista de ítems"); await foto("04-lista");
       assert.ok((await p.locator("#agregar-item").boundingBox()).y > (await p.locator("button.it").last().boundingBox()).y, donde("«Agregar ítem» al final de la lista"));
       assert.match(await p.locator(".totales").innerText(), /Subtotal\s*Q 686\.50[\s\S]*Descuentos\s*Q 30\.10[\s\S]*Total provisional\s*Q 656\.40/, donde("resumen compacto: subtotal y total provisional"));
-      for (const s of ["#agregar-item", "#guardar", "#mas-acciones", 'input[aria-label="Identificación del receptor"]']) await libre(s, `acción accesible ${s}`);
+      for (const s of ["#agregar-item", "#guardar", "#mi-previa", 'input[aria-label="Identificación del receptor"]']) await libre(s, `acción accesible ${s}`);
       await textoVisible("barra de acciones");
 
       // ---- «Más acciones»: el menú cabe en pantalla; la barra no pisa la navegación inferior ni a sí misma
       await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(120);
-      const c = await p.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r("#mas-acciones") }; });
+      const c = await p.evaluate(() => { const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { barra: r(".barra-acciones"), nav: r(".nav-movil"), prim: r(".barra-acciones > .btn"), mas: r(".acciones-sec") }; });
       if (!(c.prim.r <= c.mas.l + 1 || c.prim.b <= c.mas.t + 1)) console.log(`DIAGNÓSTICO ${NAV} ${w}px: barra de acciones ${JSON.stringify({ barra: c.barra, prim: c.prim, mas: c.mas })}`);
       assert.ok(c.barra.b <= c.nav.t + 1, donde(`la barra queda sobre la navegación inferior (${c.barra.b} ≤ ${c.nav.t})`)); assert.ok(c.prim.r <= c.mas.l + 1 || c.prim.b <= c.mas.t + 1, donde("acción principal y «Más acciones» sin superponerse (en una fila o apiladas)"));
-      await p.click("#mas-acciones"); const mn = await p.locator(".menu-mas").boundingBox(); assert.ok(mn.x >= 0 && mn.x + mn.width <= w + 1 && mn.y >= 0, donde("el menú cabe en la pantalla")); await sinDesborde("menú Más acciones"); await foto("05-mas-acciones"); await textoVisible("menú"); await p.keyboard.press("Escape");
+      await sinDesborde("acciones del documento"); await foto("05-acciones"); await textoVisible("acciones del documento");
 
       // ---- guardar (el borrador no pierde nada), recargar y recuperar
       await p.click("#guardar"); await p.waitForURL(/#\/f\/[0-9a-f-]{36}$/); await p.waitForSelector(".doc-cab"); const url = p.url();
@@ -111,7 +111,7 @@ const caja = (pdf) => { const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)
       assert.match(await p.locator(".totales").innerText(), /Total provisional\s*Q 741\.90/, donde("edición guardada y recalculada")); await sinDesborde("factura guardada"); await foto("06-guardada");
 
       // ---- vista previa limpia con impresión: HOJA CARTA y TICKET 80 MM, PDF de cada una
-      await p.click("#mas-acciones"); await p.click("#mi-previa"); await p.waitForSelector(".previa-modal"); await sinDesborde("vista previa carta"); await foto("07-previa-carta");
+      await p.click("#mi-previa"); await p.waitForSelector(".previa-modal"); await sinDesborde("vista previa carta"); await foto("07-previa-carta");
       const pm = await p.locator(".previa-modal").boundingBox(); assert.ok(pm.x >= 0 && pm.x + pm.width <= w + 1, donde("la vista previa cabe en la pantalla"));
       for (const [fmt, cajaEsperada] of [["carta", { w: 612, h: 792 }], ["ticket", { w: 226 }]]) {
         await p.check(`input[name="formato-impresion"][value="${fmt}"]`); await p.waitForSelector(`.papel[data-formato="${fmt}"]`); await sinDesborde(`vista previa ${fmt}`); if (fmt === "ticket") await foto("08-previa-ticket");

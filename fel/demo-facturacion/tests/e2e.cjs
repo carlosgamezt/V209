@@ -39,7 +39,7 @@ async function arrancar() {
     if (dsc) { await p.selectOption('.hoja-item [aria-label="Tipo de descuento"]', dsc[0]); await p.fill('.hoja-item [aria-label="Valor del descuento"]', dsc[1]); }
     await p.click("#ed-guardar"); await p.waitForSelector(".hoja-item", { state: "detached" });
   };
-  const menu = async (id) => { await p.click("#mas-acciones"); await p.click(id); };   // acción del menú «Más acciones»
+  const menu = async (id) => { await p.click(id); };   // acciones del documento: visibles, sin menú «Más»
   const abrirPrevia = async () => { if (await p.locator("#ver-previa").count()) await p.click("#ver-previa"); else await menu("#mi-previa"); await p.waitForSelector('[data-vista="previa"]'); };
   const crear = async (desc = "Servicio de consultoría", cant = "2", precio = "100") => {   // crea un borrador guardado y devuelve su id
     await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p);
@@ -63,7 +63,7 @@ async function arrancar() {
   await p.goto(`${srv.url}/#/nueva`); await esperarNueva(p);
   assert.match(await p.locator(".totales").innerText(), /SIMULADO · SIN VALOR FISCAL/); assert.match(await p.locator(".totales").innerText(), /dato.* por completar/);
   await p.click("#guardar"); await p.waitForSelector(".validacion"); assert.match(await p.locator(".validacion").innerText(), /Indica el receptor/); assert.match(await p.locator(".validacion").innerText(), /Agrega al menos un ítem/);
-  assert.equal(await p.locator("li.paso").count(), 0, "una sola pantalla: sin pasos"); assert.equal(await p.locator("#fab-agregar").count(), 0, "sin botón flotante «+»"); assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, "una acción principal"); assert.equal(await p.locator("#mas-acciones").count(), 1, "y un menú «Más acciones»");
+  assert.equal(await p.locator("li.paso").count(), 0, "una sola pantalla: sin pasos"); assert.equal(await p.locator("#fab-agregar").count(), 0, "sin botón flotante «+»"); assert.equal(await p.locator(".barra-acciones > .btn").count(), 1, "una acción principal"); assert.equal(await p.locator("#mas-acciones").count(), 0, "sin menú «Más» en las acciones de facturación"); assert.equal(await p.locator(".barra-acciones .acciones-sec").count(), 1, "y las secundarias debajo");
   await p.click("#agregar-item"); await p.waitForSelector(".hoja-item"); await p.fill('.hoja-item [aria-label="Descripción"]', "Línea de prueba"); await p.fill('.hoja-item [aria-label="Cantidad"]', "abc"); await p.click("#ed-guardar"); assert.match(await p.locator(".hoja-item .err").innerText(), /cantidad/); await p.click("#ed-cancelar"); await p.waitForSelector(".hoja-item", { state: "detached" });
   assert.equal(await p.locator("button.it").count(), 0, "cancelar no agrega nada");
   await agregarItem("Servicio de consultoría", "2", "100");

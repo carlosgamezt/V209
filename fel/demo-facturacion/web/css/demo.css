@@ -501,3 +501,15 @@ input[readonly]{background:var(--soft);color:var(--mut)}
 .filtros-mas{margin:0 0 8px}.filtros-mas summary{cursor:pointer;color:var(--azul,#4654F5);font-weight:600;min-height:32px;display:flex;align-items:center}
 .filtros-grid{flex-wrap:wrap;gap:8px;align-items:flex-end}.filtros-grid>*{min-width:0}.campo-fecha{display:flex;flex-direction:column;gap:2px;font-size:12px}
 .pager{justify-content:center;align-items:center;gap:12px;margin:12px 0}
+
+/* Acciones de facturación sin menú «Más»: principal a todo el ancho, secundarias en dos columnas (apiladas en pantallas muy angostas) y acciones del documento en texto. */
+.barra-acciones{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.barra-acciones>.btn:first-child,.barra-acciones>.btn{width:100%;min-height:48px}
+.barra-acciones .acciones-sec{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.barra-acciones .acciones-sec:has(>:only-child){grid-template-columns:minmax(0,1fr)}.barra-acciones .acciones-sec:empty{display:none}
+.barra-acciones .acciones-sec .btn{width:100%;min-width:0;white-space:normal}
+@media(max-width:340px){.barra-acciones .acciones-sec{grid-template-columns:minmax(0,1fr)}}
+.acciones-doc{display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:center}
+.enlace-doc{background:none;border:0;padding:8px 6px;min-height:44px;font:inherit;font-size:13px;color:var(--azul,#4654F5);cursor:pointer;text-decoration:underline;text-underline-offset:2px}.enlace-doc:disabled{color:var(--tinta-suave,#8B8D9B);cursor:not-allowed;text-decoration:none}.enlace-doc.mi-peligro{color:#FF5967}
+.ok-val.estado-cert-compacto{color:#19191D}
+.barra-acciones .acciones-sec,.barra-acciones .acciones-doc,.barra-acciones .sucio{grid-column:1/-1!important;grid-row:auto!important}
+.barra-acciones>#guardar-certificar,.barra-acciones>#certificar-test{grid-column:1/-1;grid-row:auto}
