@@ -413,7 +413,7 @@ reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; etapa "$REF" mi
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V3" FAKE_TABLAS=69; rm -f "$REGISTRO"; base "$REF" migraciones; r=$?
 [ $r = 2 ] && nollamo && grep -q "PROHIBIDO: la base ya tiene 29 migraciones registradas y hay 1 PENDIENTE" "$W/salida.txt" && ok "«publicar»: con 29 registradas y la 30 pendiente se NIEGA y no llama a la CLI (la 30 solo entra por la etapa 4)" || { mal "publicar aplicaría la 30 sin su etapa"; cat "$W/salida.txt"; }
 reinicia; export FAKE_HIST=t FAKE_VERSIONS="$V4" FAKE_TABLAS=71; rm -f "$REGISTRO"; base "$REF" migraciones; r=$?
-[ $r = 0 ] && grep -q "historial: 30 registradas, 0 pendientes" "$W/salida.txt" && grep -q "^db push" "$REGISTRO" && ok "«publicar» con las 30 registradas y 0 pendientes → continúa (no hay nada que migrar)" || { mal "publicar con 30 registradas"; cat "$W/salida.txt"; }
+[ $r = 0 ] && grep -q "historial: 30 registradas, 0 pendientes" "$W/salida.txt" && ! grep -qE "^(db push|link)" "$REGISTRO" 2>/dev/null && ok "«publicar» con las 30 registradas y 0 pendientes → continúa SIN enlazar ni ejecutar db push (no hay nada que migrar)" || { mal "publicar con 30 registradas"; cat "$W/salida.txt"; }
 reinicia; export FAKE_HIST=f FAKE_TABLAS=0; rm -f "$REGISTRO"; base "$REF" migraciones; r=$?
 [ $r = 0 ] && grep -q "proyecto nuevo, se aplican todas" "$W/salida.txt" && grep -q "^db push" "$REGISTRO" && ok "«publicar» en un proyecto NUEVO (sin historial) aplica todas las migraciones" || mal "publicar en proyecto nuevo"
 # GitHub Actions: la contraseña y la URL se enmascaran

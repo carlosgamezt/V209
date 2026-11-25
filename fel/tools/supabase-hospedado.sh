@@ -194,9 +194,11 @@ case "${1:-}" in
          LOC="$(for f in supabase/migrations/*.sql; do b="$(basename "$f")"; echo "${b%%_*}"; done | sort)"
          PEND="$(comm -23 <(printf '%s\n' "$LOC") <(printf '%s' "$REG" | tr ' ' '\n' | sort) | grep -c . || true)"; NREG="$(printf '%s' "$REG" | wc -w | tr -d ' ')"
          if [ "$NREG" != "0" ] && [ "$PEND" != "0" ]; then echo "PROHIBIDO: la base ya tiene $NREG migraciones registradas y hay $PEND PENDIENTE(S). «publicar» no aplica migraciones sobre una base ya migrada: úsalas con «solo migraciones» (etapas, con su respaldo y su aprobación). No se hace nada."; exit 2; fi
-         echo "  OK    historial: $NREG registradas, $PEND pendientes";;
+         echo "  OK    historial: $NREG registradas, $PEND pendientes"
+         [ "$NREG" != "0" ] && [ "$PEND" = "0" ] && SIN_PENDIENTES=1;;
       *) echo "PROHIBIDO: no se pudo comprobar el historial de migraciones. No se migra."; exit 2;;
     esac
+    if [ "${SIN_PENDIENTES:-0}" = 1 ]; then echo "  OK    no hay migraciones pendientes: no se enlaza ni se ejecuta «db push» (no se necesita el permiso de lectura del proyecto)"; exit 0; fi
     supabase link --project-ref "$REF" --workdir . >/dev/null
     supabase db push --remote="$URL_SESION" --yes --workdir .;;
   verificar-api-vault)
