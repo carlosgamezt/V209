@@ -114,8 +114,13 @@ async function arrancar() {
       for (const t of ["NIT", "CUI", "CF", "EXT"]) {
         const hh = (await m.p.locator(`.seg-tipo [data-tipo="${t}"]`).boundingBox()).height;
         const diag = hh >= 40 ? "" : JSON.stringify(await m.p.evaluate((tt) => { const e = document.querySelector(`.seg-tipo [data-tipo="${tt}"]`), cs = getComputedStyle(e), pa = e.parentElement.getBoundingClientRect(); return { alto: e.getBoundingClientRect().height, css: cs.height, min: cs.minHeight, box: cs.boxSizing, display: cs.display, padre: pa.height, padreDisplay: getComputedStyle(e.parentElement).display, zoom: devicePixelRatio, escala: visualViewport?.scale }; }, t));   // diagnóstico para Firefox/WebKit
+        if (hh < 40) console.log(`AVISO ${NAV} ${w}px: el segmento ${t} mide ${hh} px (menos de 40; diferencia ${(40 - hh).toFixed(3)} px) ${diag}`);   // deja constancia en el registro de CI de cuánto es la diferencia
         assert.ok(hh >= 40 - 0.5, `${w}px: segmento ${t} táctil (${hh}) ${diag}`);
       }
+      // la tolerancia de medio píxel NO puede esconder un solapamiento ni un desbordamiento: los cuatro segmentos no se pisan entre sí, caben en su contenedor y quedan por encima de la identificación
+      { const cs = await m.p.evaluate(() => { const r = (e) => { const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; }; return { segs: [...document.querySelectorAll(".seg-tipo .st-op")].map(r), cont: r(document.querySelector(".seg-tipo")), id: r(document.querySelector('input[aria-label="Identificación del receptor"]')) }; });
+        for (let i = 0; i < cs.segs.length; i++) { assert.ok(cs.segs[i].l >= cs.cont.l - 0.5 && cs.segs[i].r <= cs.cont.r + 0.5 && cs.segs[i].t >= cs.cont.t - 0.5 && cs.segs[i].b <= cs.cont.b + 0.5, `${w}px: el segmento ${i} queda dentro de su contenedor`); if (i) assert.ok(cs.segs[i - 1].r <= cs.segs[i].l + 0.5, `${w}px: los segmentos ${i - 1} y ${i} no se superponen`); }
+        assert.ok(cs.cont.b <= cs.id.t + 0.5, `${w}px: el control segmentado no pisa la identificación`); }
       const tt = await m.p.locator("h1").boundingBox(), vp2 = await m.p.locator("#previa-titulo").boundingBox(); assert.ok(Math.abs((tt.y + tt.height / 2) - (vp2.y + vp2.height / 2)) < 20, `${w}px: título, estado y «Vista previa» en una sola fila`); assert.ok(vp2.x >= 0 && vp2.x + vp2.width <= w && vp2.height >= 40, `${w}px: «Vista previa» visible y táctil`); if (w < 380) assert.ok(vp2.width <= 44, `${w}px: «Vista previa» pasa a icono`); else assert.ok(vp2.width > 70, `${w}px: «Vista previa» con texto`);
       await foto(m.p, `n${w}-nombre-largo.png`);
       // importes grandes en una factura guardada: la fila del ítem, el resumen y la barra no se salen ni se cortan
