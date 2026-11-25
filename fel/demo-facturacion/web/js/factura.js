@@ -28,7 +28,7 @@ const TOPE_CF = "2500";   // SAT: «Consumidor final» solo en facturas por mont
 const MENSAJE_TOPE_CF = "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).";
 
 // Tras guardar un documento NUEVO la pantalla se reconstruye con su id: estas banderas continúan lo que la persona pidió (abrir la vista previa, o certificar en TEST).
-let previaPendiente = null, certificarPendiente = null;
+let previaPendiente = null, certificarPendiente = null, correoPendiente = null;   // lo elegido en la pantalla de «Nueva factura» pasa a la pantalla del documento ya guardado
 const CONFIRMACION_TEST = "CERTIFICAR-TEST";
 
 export function pantallaFactura(ctx, id) {
@@ -108,7 +108,7 @@ export function pantallaFactura(ctx, id) {
     let verObs = false;
     function pintarReceptor() {
       const ed = editable() && !esNota(); nit.render = null;   // en una nota el receptor es el del documento de origen
-      const cambio = () => { sucio = true; pintarBarra(); pintarTotales(); };
+      const cambio = () => { sucio = true; pintarBarra(); pintarTotales(); pintarCorreoFac(); };
       const asegurarCtrl = () => {
         if (ctrl && ctrlModelo === f) return; ctrlModelo = f;
         ctrl = crearAutollenado({ modelo: f, consultar: (n, o) => (o.tipo === "CUI" ? api.receptorCui(n, o) : api.receptorNit(n, o)),
@@ -306,7 +306,31 @@ export function pantallaFactura(ctx, id) {
     const certificaEnTest = () => !!dg && dg.habilitado && dg.certificacion && dg.empresaConCanal && dg.ciclo && dg.almacenamiento === "persistente" && ctx.tiene("fiscal.certificar")
       && (f.tipo_dte === "FACT" || !!infoTipoCert()?.certificacion_habilitada);
     const puedeCertificarAhora = () => certificaEnTest() && doc.estado_fiscal === "ninguno" && ["borrador", "revisado"].includes(doc.estado_preparacion) && (doc.id || editable());
-    function confirmarCertificacion(prep, ocupadaPor) {
+    // ---- correo de la factura al certificar: lo envía DIGIFACT (con su plantilla), solo si el servidor lo habilita para esta empresa. Apagado por defecto; el destinatario se precarga del cliente
+    // registrado y se puede editar. El servidor valida permiso, lista de destinatarios autorizados y que el correo coincida con lo preparado (correo_ref); aquí solo se pide.
+    const RE_CORREO_FAC = /^[^\s@<>,;'"()\[\]\\]{1,40}@[A-Za-z0-9.-]{1,40}\.[A-Za-z]{2,10}$/;
+    const correoFac = { activo: false, texto: "", cli: "?" };
+    const correoFacOk = () => correoFac.texto.trim().length <= 50 && RE_CORREO_FAC.test(correoFac.texto.trim());
+    const aplicaCorreoFac = () => certificaEnTest() && !!dg.correoDigifact?.habilitado && doc.estado_fiscal === "ninguno" && ["borrador", "revisado"].includes(doc.estado_preparacion);
+    const correoFacEntrada = h("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "none", spellcheck: "false", maxlength: 50, id: "correo-fac-texto", "aria-label": "Correo del destinatario de la factura", placeholder: "correo@ejemplo.com",
+      oninput: (e) => { correoFac.texto = e.target.value; correoFacNota(); } });
+    const correoFacNotaEl = h("small", { class: "campo-ayuda", id: "correo-fac-nota", role: "status" });
+    const correoFacCampo = h("div", { class: "form", hidden: true }, campo("Correo del destinatario", correoFacEntrada), correoFacNotaEl);
+    const correoFacChk = h("input", { type: "checkbox", id: "correo-fac-chk", onchange: (e) => { correoFac.activo = e.target.checked; correoFacCampo.hidden = !correoFac.activo; correoFacNota(); } });
+    const correoCaja = h("div", { class: "correo-fac", id: "correo-fac", hidden: true }, h("label", { class: "chk-correo" }, correoFacChk, h("span", {}, h("b", {}, "Enviar factura por correo"), h("small", {}, "Digifact envía el correo al certificar. Solo se puede pedir ahora; luego puedes reenviarla desde el documento."))), correoFacCampo);
+    function correoFacNota() {
+      const t = correoFac.texto.trim(); correoFacNotaEl.className = !correoFac.activo || correoFacOk() ? "campo-ayuda" : "err";
+      correoFacNotaEl.textContent = !correoFac.activo ? "" : !t ? "Escribe el correo del destinatario (el cliente no tiene uno registrado)." : correoFacOk() ? "El servidor comprobará que el destinatario esté autorizado." : "Escribe un correo válido (hasta 50 caracteres).";
+    }
+    function pintarCorreoFac() {
+      const aplica = aplicaCorreoFac(); correoCaja.hidden = !aplica;
+      if (!aplica) { correoFac.activo = false; correoFacChk.checked = false; correoFacCampo.hidden = true; correoCaja.remove(); return; }   // fuera de la página cuando no aplica
+      if (!correoCaja.isConnected) cardDatos.append(correoCaja);
+      const cli = f.cliente_id ?? "nuevo";
+      if (correoFac.cli !== cli) { correoFac.cli = cli; correoFac.texto = est.clientes.find((x) => x.id === f.cliente_id)?.email ?? ""; correoFacEntrada.value = correoFac.texto; correoFacNota(); }   // jamás se conserva el correo de OTRO cliente
+    }
+    const extraCorreoFac = () => (correoFac.activo && aplicaCorreoFac() ? { enviar_correo: true, correo: correoFac.texto.trim() } : {});
+    function confirmarCertificacion(prep, ocupadaPor, correoDestino) {
       return new Promise((resolve) => {
         const c0 = calcularSeguro(), iv = c0.ok ? ivaIncluido(c0.r.lineas.map((x) => x.neto)) : null, q2 = (t) => quetzales(Number(t).toFixed(2));
         const fila = (et, v) => h("div", { class: "cc-fila" }, h("span", {}, et), h("strong", { class: "mono" }, v));
@@ -314,7 +338,7 @@ export function pantallaFactura(ctx, id) {
         const si = boton("Certificar en TEST", { id: "confirmar-certificar-test", onclick: () => { m.cerrar(); resolve(true); } });
         m = modal({ titulo: "Certificar en Digifact TEST", ancho: "sm",
           contenido: [h("p", { class: "aviso aviso-azul", role: "note" }, icono("info"), h("span", {}, "Se enviará UNA sola vez al ambiente de PRUEBAS de Digifact. Es un documento de prueba: no tiene valor fiscal.")),
-            fila("Receptor", prep.receptor?.nombre ?? "—"), fila("Fecha de emisión", dmy(String(prep.fechaEmision ?? "").slice(0, 10))), fila("Total", q2(prep.total)), iv ? fila("IVA 12 % incluido (estimado)", quetzales(iv.iva)) : null, fila("Referencia", String(prep.referencia ?? "").slice(0, 8) + "…")],
+            fila("Receptor", prep.receptor?.nombre ?? "—"), fila("Fecha de emisión", dmy(String(prep.fechaEmision ?? "").slice(0, 10))), fila("Total", q2(prep.total)), iv ? fila("IVA 12 % incluido (estimado)", quetzales(iv.iva)) : null, fila("Referencia", String(prep.referencia ?? "").slice(0, 8) + "…"), correoDestino ? fila("Correo (lo envía Digifact)", correoDestino.replace(/^(.).*@/, "$1***@")) : null],
           pie: [boton("Ahora no", { tipo: "sec", id: "cancelar-certificar-test", onclick: () => { m.cerrar(); resolve(false); } }), si] });
       });
     }
@@ -327,9 +351,11 @@ export function pantallaFactura(ctx, id) {
           if (!ctx.tiene("borradores.revisar")) { err.textContent = "Tu rol no puede marcar el documento como revisado, paso previo a certificar. El borrador quedó guardado."; return; }
           const r = await api.estadoPreparacion(doc.id, "revisado", doc.version); await recargar(r);
         }
-        const prep = await api.digifactPreparar(doc.id, {});   // no envía nada
-        if (!(await confirmarCertificacion(prep))) { toast("No se certificó. El documento quedó guardado y revisado."); await recargar(); return; }
-        const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: CONFIRMACION_TEST, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor });
+        const extra = extraCorreoFac();
+        if (extra.enviar_correo && !correoFacOk()) { await recargar(); err.textContent = "Escribe un correo válido o desmarca «Enviar factura por correo». El documento quedó guardado."; return; }
+        const prep = await api.digifactPreparar(doc.id, extra);   // no envía nada
+        if (!(await confirmarCertificacion(prep, null, extra.correo))) { toast("No se certificó. El documento quedó guardado y revisado."); await recargar(); return; }
+        const r = await api.digifactCertificar(doc.id, { operacionId: prep.operacionId ?? prep.id, confirmacion: CONFIRMACION_TEST, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor }, extra.enviar_correo ? { ...extra, correo_ref: prep.correoRef } : {});
         await recargar();
         const op = r.operacion?.estado;
         if (r.error) err.textContent = `No se envió a Digifact: ${r.error.mensaje} El documento quedó guardado.`;
@@ -403,7 +429,7 @@ export function pantallaFactura(ctx, id) {
           tipo_dte: f.tipo_dte, documento_origen_id: f.documento_origen_id || undefined, motivo_ajuste: f.motivo_ajuste || undefined, tipo_recibo: f.tipo_recibo || undefined,
           ...(f.nuevo ? { cliente_nuevo: { tipo_identificacion: f.tipo, numero_identificacion: f.numero, nombre: f.nombre } } : { cliente_id: f.cliente_id }) };
         const r = await api.guardar(cuerpo); await ctx.recargarEstado(); toast(`Borrador ${codigoBorrador(r.documento.numero_borrador)} guardado`);
-        if (nuevo) { if (opc.previa) previaPendiente = r.documento.id; if (opc.certificar) certificarPendiente = r.documento.id; ctx.ir(`/f/${r.documento.id}`, { reemplazar: true }); return r; }
+        if (nuevo) { if (opc.previa) previaPendiente = r.documento.id; if (opc.certificar) { certificarPendiente = r.documento.id; correoPendiente = { activo: correoFac.activo, texto: correoFac.texto }; } ctx.ir(`/f/${r.documento.id}`, { reemplazar: true }); return r; }
         await recargar(r); return r;
       } catch (e) { err.textContent = mensajeError(e); if (e.codigo === "FEL_CONFLICTO" || e.status === 409) err.append(" ", h("button", { type: "button", class: "link", onclick: () => recargar() }, "Recargar")); if (b) b.disabled = false; return null; }
     }
@@ -427,7 +453,7 @@ export function pantallaFactura(ctx, id) {
     function pintarAviso() { poner(avisoDoc, !editable() && doc.id ? h("p", { class: "aviso" }, icono("lock"), h("span", {}, doc.estado_fiscal === "anulado" ? "Documento ANULADO (simulación): es definitivo y no se puede editar ni volver a emitir." : doc.estado_fiscal === "anulacion_solicitada" ? "Anulación solicitada: queda pendiente de conciliar con el proveedor. El documento no se puede editar." : doc.estado_fiscal !== "ninguno" ? "Este documento tiene vida fiscal (simulada) y su contenido ya no se puede editar." : doc.estado_preparacion === "borrador" ? "Tu rol no permite editar este borrador." : "El contenido está congelado porque fue revisado. Vuelve a borrador para editarlo.")) : null); }
     function todo() {
       pintarAviso(); pintarCab(); pintarTipo(); pintarReceptor(); pintarLineas(); pintarBarra(); pintarProceso();
-      poner(cardDatos, cuerpoReceptor);
+      poner(cardDatos, cuerpoReceptor); pintarCorreoFac();
       poner(cardItems, h("div", { class: "card-fila" }, h("h2", { class: "card-t" }, "Ítems"), cuerpoCatalogo()), cuerpoLineas);
     }
     todo();
@@ -435,7 +461,11 @@ export function pantallaFactura(ctx, id) {
     const avisoSalir = (e) => { if (!document.body.contains(raiz)) { window.removeEventListener("beforeunload", avisoSalir); return; } if (sucio && editable()) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", avisoSalir);
     if (doc.id && previaPendiente === doc.id) { previaPendiente = null; setTimeout(mostrarPrevia, 0); }   // venía de «Vista previa» con un documento nuevo: ya está guardado
-    if (doc.id && certificarPendiente === doc.id) { certificarPendiente = null; setTimeout(certificarEnTest, 0); }   // venía de «Guardar y certificar»
+    if (doc.id && certificarPendiente === doc.id) {
+      certificarPendiente = null;
+      if (correoPendiente) { Object.assign(correoFac, correoPendiente, { cli: f.cliente_id ?? "nuevo" }); correoFacChk.checked = correoFac.activo; correoFacEntrada.value = correoFac.texto; correoFacCampo.hidden = !correoFac.activo; correoFacNota(); correoPendiente = null; }
+      setTimeout(certificarEnTest, 0);
+    }   // venía de «Guardar y certificar»
     return h("div", { class: "pf" }, cab, barraTipo,
       avisoDoc,
       h("div", { class: "doc-grid" }, cardTipo, cardDatos, cardItems, totales, err, proceso, accionesDoc), barra);
