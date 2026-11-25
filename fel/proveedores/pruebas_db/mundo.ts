@@ -7,22 +7,26 @@ export function conexion(): ConexionPg {
 }
 
 let secuencia = 0;
+// Semilla de los NIT ficticios: aleatoria por ejecución (entre ejecuciones no chocan con datos previos de la base compartida) o fija con FEL_TEST_SEMILLA para repetir una ejecución exacta.
+const SEMILLA_NIT = Number(Deno.env.get("FEL_TEST_SEMILLA") ?? crypto.getRandomValues(new Uint32Array(1))[0]) >>> 0;
 const uuid = () => crypto.randomUUID();
 export interface Mundo { empresa: string; propietario: string; admin2: string; emisor: string; lector: string; establecimiento: string; canal: string; cliente: string }
 
 export async function nuevoMundo(cx: ConexionPg): Promise<Mundo> {
   const { sql } = cx;
   let n = 0;   // número del NIT de la empresa; el cliente de prueba deriva el suyo de él
-  const nuevoNit = () => { n = 1_000_000 + (++secuencia + crypto.getRandomValues(new Uint32Array(1))[0]) % 8_900_000; return `${String(n).padStart(7, "0")}-${n % 10}`; };   // NIT ficticio aleatorio de 7 dígitos: sin colisiones entre archivos de prueba que comparten la base
+  // NIT ficticio de 7 dígitos y REPRODUCIBLE: dentro de una ejecución todos son distintos (el paso 7919 es primo con el tamaño del espacio, 8.900.000 = 2^5·5^5·89) y entre ejecuciones cambian con la semilla.
+  const nuevoNit = (salto = 0) => { n = 1_000_000 + (SEMILLA_NIT + ++secuencia * 7919 + salto) % 8_900_000; return `${String(n).padStart(7, "0")}-${n % 10}`; };
   const m: Mundo = { empresa: uuid(), propietario: uuid(), admin2: uuid(), emisor: uuid(), lector: uuid(), establecimiento: "", canal: "", cliente: "" };
   for (const [k, id] of Object.entries({ propietario: m.propietario, admin2: m.admin2, emisor: m.emisor, lector: m.lector })) {
     await sql.unsafe("insert into auth.users (id, email) values ($1, $2)", [id, `${k}-${id.slice(0, 8)}@fel.test`]);
     await sql.unsafe("insert into public.perfiles (user_id) values ($1) on conflict (user_id) do nothing", [id]);
   }
-  // Los NIT son aleatorios de 7 dígitos y todas las pruebas comparten la base: con cientos de empresas la colisión es improbable pero posible (fallo intermitente visto en CI). Se reintenta con otro NIT.
+  // Con la semilla de ejecución los NIT no se repiten entre sí; solo pueden chocar con empresas que ya estuvieran en la base compartida (de otra ejecución). Ese ÚNICO caso (violación 23505 de «empresas_nit_key»)
+  // se reintenta, como máximo 8 veces; cualquier otro error de base de datos se propaga sin tocar.
   for (let intento = 0; ; intento++) {
-    try { await sql.unsafe("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) select $1, 'Empresa de prueba', 'Empresa de prueba S.A.', $2, id, 'habilitada' from public.regimenes_fiscales where codigo = 'general'", [m.empresa, nuevoNit()]); break; }
-    catch (e) { if (intento >= 8 || !String((e as Error).message).includes("empresas_nit_key")) throw e; }
+    try { await sql.unsafe("insert into public.empresas (id, nombre_comercial, razon_social, nit, regimen_id, estado) select $1, 'Empresa de prueba', 'Empresa de prueba S.A.', $2, id, 'habilitada' from public.regimenes_fiscales where codigo = 'general'", [m.empresa, nuevoNit(intento === 0 ? 0 : crypto.getRandomValues(new Uint32Array(1))[0])]); break; }
+    catch (e) { const pg = e as { code?: string; constraint_name?: string }; if (intento >= 8 || pg.code !== "23505" || pg.constraint_name !== "empresas_nit_key") throw e; console.log(`NIT de prueba repetido (${intento + 1}); semilla ${SEMILLA_NIT}: se reintenta con otro`); }
   }
   for (const [uid, rol] of [[m.propietario, "propietario"], [m.admin2, "administrador"], [m.emisor, "emisor"], [m.lector, "lector"]] as const) {
     await sql.unsafe("insert into public.miembros (empresa_id, user_id, rol) values ($1, $2, $3)", [m.empresa, uid, rol]);
