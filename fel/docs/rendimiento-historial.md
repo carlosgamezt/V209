@@ -64,3 +64,9 @@ Correcciones: sesión+persona en una consulta y una vez por petición; sin secci
 | Tiempo atribuible a NEXA + red | ≈17 000 ms | ≈9 700 ms | ≈940 ms |
 
 El resto del ciclo es Digifact TEST (chequeo previo ≈1,1–1,3 s con las 8 consultas a la vez, envío ≈0,35 s; en frío el chequeo tardó 4,9 s). En la prueba de certificación completa (con descarga de XML/PDF) Digifact respondió entre 2,6 s y 13,5 s según el documento: esa variación es de Digifact, no de NEXA.
+
+## Cierre de la etapa de rendimiento (26/11/2026, publicación #55)
+
+- Estado final: optimizaciones de #38–#55 conservadas; calentamiento ampliado de Digifact **activo por defecto en TEST** (interruptor local `nexa_calentar_consulta=0` lo apaga en un navegador). Medido en la #54 (3 rondas, 10 min de inactividad, teléfono emulado): primera certificación 4,87 s (solo token) → 3,90 s (con consulta anticipada), −0,97 s de mediana; 1 consulta de solo lectura extra por calentamiento.
+- **Observación pendiente (no es regresión confirmada ni problema resuelto):** en la medición de la #55, justo tras desplegar, el teléfono emulado dio mediana 3,44 s (2,88–3,91 s) contra 2,87 s en la #53; dos de tres corridas pagaron el token (instancias nuevas). La computadora quedó en 2,81 s. No se repitió la medición por decisión del propietario.
+- No se harán más cambios de velocidad salvo un problema funcional o una regresión reproducible.
