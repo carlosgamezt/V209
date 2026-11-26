@@ -48,6 +48,11 @@ on:
         description: "Solo con digifact_correo=habilitado: UUID de LA ÚNICA empresa de demostración que puede pedir el envío por correo"
         type: string
         default: ""
+      medir_frio:
+        description: "Solo medición (modo «probar»): primera certificación tras inactividad (10 min de espera antes de cada una, 4 rondas ≈ 45 min), con y sin calentamiento. No cambia nada publicado"
+        type: choice
+        options: [no, si]
+        default: no
       digifact_prueba:
         description: "Tras publicar (o en el modo «probar»): crea y certifica documentos de PRUEBA en Digifact TEST con la API real y valida XML, impuestos, UUID, serie y número. Solo con digifact=habilitado y digifact_referencia=CICLO-TEST. Apagado por defecto"
         type: choice
@@ -67,7 +72,7 @@ jobs:
     name: Publicación privada (Supabase + Cloudflare Pages)
     if: github.ref == 'refs/heads/fel-proveedores-diseno'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 80
     environment: demo-privada
     steps:
       - name: Confirmación explícita
@@ -105,6 +110,7 @@ jobs:
           FEL_DIGIFACT_TEST_EMISOR: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_EMISOR || '' }}
           FEL_DIGIFACT_TEST_HUELLA: ${{ inputs.digifact == 'habilitado' && secrets.DEMO_DIGIFACT_TEST_HUELLA || '' }}
           FEL_DIGIFACT_AUTORIZA_REFERENCIA: ${{ inputs.digifact == 'habilitado' && inputs.digifact_referencia || '' }}
+          FEL_MEDIR_FRIO: ${{ inputs.medir_frio == 'si' && 'si' || '' }}
           FEL_DEMO_PRUEBA_DIGIFACT: ${{ inputs.digifact_prueba == 'habilitado' && 'habilitado' || '' }}
           # Consulta de NIT (independiente): solo usuario, contraseña y NIT de TEST; NUNCA el emisor, su huella ni la autorización de una referencia. Si la certificación ya los carga, son los mismos secretos.
           FEL_DIGIFACT_NIT: ${{ inputs.digifact_nit == 'habilitado' && 'habilitado' || '' }}

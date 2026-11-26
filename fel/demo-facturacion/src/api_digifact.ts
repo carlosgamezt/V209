@@ -2,6 +2,7 @@
 // el navegador solo habla con estas rutas (misma sesión, misma cabecera de la demostración) y NUNCA recibe credenciales, tokens ni documentos en bruto.
 // La empresa, la persona y los permisos salen de la SESIÓN y de la base de datos; nunca de lo que mande el navegador.
 import type { BdDemo } from "./bd.ts";
+import { marcar } from "./medicion.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
 import { ErrorFelGt, type ContextoFel, type DocumentoFel, type ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import { consultarReceptorNit, crearLimitador, ErrorReceptorNit, TOPE_REAL_GLOBAL, TOPE_REAL_POR_EMPRESA } from "./receptor_nit.ts";
@@ -128,6 +129,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       }
       const prep = await svc.preparar(ctx, d0, { correo: pc.correo });
       const res = await svc.certificar(ctx, d0, { operacionId: prep.operacionId, confirmacion: b.confirmacion, referencia: prep.referencia, huellaEmisor: prep.huellaEmisor, correo: pc.correo, formatos: b.formatos });
+      { const r = res as { prevueloMs?: number; tiempoDigifactMs?: number }; if (typeof r.prevueloMs === "number") marcar("prevuelo", r.prevueloMs); if (typeof r.tiempoDigifactMs === "number") marcar("dfx_total", r.tiempoDigifactMs); }   // tiempos de PARED (no sumas de llamadas en paralelo): chequeo previo y total de Digifact
       let actualizado: unknown; if (c.detalle) { try { actualizado = await c.detalle(docId); } catch { /* la pantalla lo pedirá como siempre */ } }
       return c.json({ ...res, preparacion: { operacionId: prep.operacionId, referencia: prep.referencia }, ...(actualizado ? { documento_actualizado: actualizado } : {}) });
     }
