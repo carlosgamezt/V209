@@ -12,6 +12,8 @@ import { LimiteTasaPg } from "../src/limite_pg.ts";
 import { crearEndurecimiento } from "../src/endurecimiento.ts";
 import { leerConfigPublicada } from "../src/publicado.ts";
 import { crearApi } from "../src/api.ts";
+import { lectorDeAlcanceBd } from "../src/alcance_establecimientos.ts";
+import { adminDeBd } from "../src/admin_establecimientos.ts";
 import { crearDigifactParaBd } from "../src/digifact_entorno.ts";
 import { crearConsultorNitDesdeEntorno } from "../src/digifact_nit_entorno.ts";
 import { crearConsultorCuiDesdeEntorno } from "../src/digifact_cui_entorno.ts";
@@ -43,7 +45,8 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     console.log(`Correo por Digifact: ${correoDg.politica ? "habilitado para una empresa y destinatarios de prueba" : "apagado"}`);   // nunca valores
     const correo = crearCorreoDesdeEntorno((k) => env.get(k), bd);   // sin FEL_CORREO no existe; con «habilitado» exige remitente, lista de destinatarios de prueba y RESEND_API_KEY
     console.log(`Correo: ${correo.motivo}`);   // nunca valores
-    const api = crearApi(bd, mundo, { sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor, digifactCui: cui.consultor, digifactCorreo: correoDg.politica, correo: correo.servicio });
+    const estabPorUsuario = env.get("FEL_ESTABLECIMIENTO_POR_USUARIO") === "1";   // APAGADO por defecto: exige M-F, M-G y M-H aplicadas (propuestas, NO están en supabase/migrations)
+    const api = crearApi(bd, mundo, { ...(estabPorUsuario ? { alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor, digifactCui: cui.consultor, digifactCorreo: correoDg.politica, correo: correo.servicio });
     const endurecer = crearEndurecimiento({ publicado: true, hosts: cfg.hosts, hostDe: (r) => (r.headers.get("x-nexa-host") ?? "").toLowerCase(), ipDe: (r) => r.headers.get("x-nexa-ip") ?? "?",
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo
       limiteApi: new LimiteTasa(Number(env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });

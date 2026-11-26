@@ -7,7 +7,7 @@ import { pantallaLista } from "./lista.js";
 import { pantallaLogin } from "./login.js";
 
 // Carga diferida de pantallas: el navegador solo descarga el código de la pantalla que se abre (la carga inicial trae solo el marco, la lista y el inicio de sesión).
-const MODULOS = { pantallaFactura: "./factura.js", pantallaClientes: "./clientes.js", pantallaConceptos: "./conceptos.js", pantallaConfig: "./config.js", pantallaPlan: "./plan.js", pantallaPanel: "./panel.js", pantallaCuenta: "./cuenta.js", pantallaUsuarios: "./usuarios.js",
+const MODULOS = { pantallaFactura: "./factura.js", pantallaClientes: "./clientes.js", pantallaConceptos: "./conceptos.js", pantallaConfig: "./config.js", pantallaPlan: "./plan.js", pantallaPanel: "./panel.js", pantallaCuenta: "./cuenta.js", pantallaUsuarios: "./usuarios.js", pantallaEstablecimientos: "./establecimientos.js",
   pantallaEmpresas: "./plataforma.js", pantallaEmpresa: "./plataforma.js", pantallaPlanes: "./plataforma.js", pantallaBolson: "./plataforma.js" };
 // «Nueva factura» arrastra una cadena de módulos (factura + proceso + vista previa + …): se piden TODOS en paralelo desde que carga la página (el usuario aún está escribiendo su clave), así que al abrirla ya están.
 const CADENA_FACTURA = ["factura", "proceso", "vista_previa", "emitido", "iva", "item_editor", "tipos", "receptor_nit", "anular", "correo", "descarga", "digifact", "dinero"].map((m) => `/web/js/${m}.js`).concat(["/app/js/calculo.js"]);
@@ -43,6 +43,7 @@ const NAV = [
   { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
   { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
   { ruta: "/usuarios", titulo: "Usuarios", icon: "users", permiso: "usuarios.ver", practico: true },
+  { ruta: "/establecimientos", titulo: "Establecimientos", corto: "Sucursales", icon: "building", permiso: "establecimientos.asignar", practico: true },
   { ruta: "/plan", titulo: "Plan y consumo", icon: "package", permiso: "facturacion.ver", practico: true },
   { ruta: "/config", titulo: "Configuración", icon: "building", permiso: "empresa.ver" },
   { ruta: "/cuenta", titulo: "Mi cuenta", icon: "lock", permiso: "borradores.ver", practico: true, login: true },
@@ -161,6 +162,7 @@ async function iniciar(estadoInicial) {
     else if (ruta === "/panel" && estado.practico) vista = perezosa("pantallaPanel", ctx);
     else if (ruta === "/cuenta" && conLogin) vista = perezosa("pantallaCuenta", ctx);
     else if (ruta === "/usuarios" && estado.practico) vista = perezosa("pantallaUsuarios", ctx);
+    else if (ruta === "/establecimientos" && estado.practico && (estado.permisos ?? []).includes("establecimientos.asignar")) vista = perezosa("pantallaEstablecimientos", ctx);
     else if (ruta === "/config") vista = perezosa("pantallaConfig", ctx);
     else vista = pantallaLista(ctx);
     poner(contenido, vista); pintarMenu(); precargarPantallas();

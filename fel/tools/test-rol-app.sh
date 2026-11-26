@@ -15,7 +15,7 @@ PSQLAPP() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U nexa_app -d "$1" -v ON_ERROR_
 PSQL postgres -c "create database nexa_plantilla"
 PSQL nexa_plantilla -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do PSQL nexa_plantilla -f "$f" >/dev/null 2>&1; done
-for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-E_rol_app; do PSQL nexa_plantilla --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done
+for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-E_rol_app; do PSQL nexa_plantilla --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done
 PSQL postgres -c "alter role nexa_app login password 'prueba-local'" ; echo "OK    M-D, M-A, M-B, M-C y M-E aplicadas; nexa_app habilitado SOLO en este PostgreSQL temporal"
 PSQL postgres -c "create database nexa_sesion template nexa_plantilla"   # copia con los datos de prueba de sesiones; la plantilla queda limpia para la prueba de compatibilidad de la aplicación
 # datos de prueba persistentes + pruebas COMO nexa_app con sesiones validadas (suplantación, otra empresa, MFA, permisos, establecimientos, maestro)
@@ -28,6 +28,7 @@ grep -q "DEFINER sin search_path fijo: ninguna" <<< "$SAL" && grep -q "DEFINER c
 # pruebas COMO nexa_app (conexión real)
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-rol-app.sql | grep -q "PRUEBAS DEL ROL nexa_app OK" && echo "OK    pruebas de seguridad conectadas como nexa_app" || { echo "FALLO: pruebas como nexa_app"; exit 1; }
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-sesion-admin.sql 2>&1 | tee /tmp/sesion_admin.log | grep -q "PRUEBAS DE SESIÓN VALIDADA OK" && echo "OK    pruebas conectadas como nexa_app con sesión validada (suplantación, MFA, establecimientos, maestro)" || { grep -E "ERROR|ESPERABA|CONTEXT" /tmp/sesion_admin.log | head -4; echo "FALLO: pruebas de sesión validada"; exit 1; }
+PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-admin-establecimientos.sql 2>&1 | tee /tmp/admin_est.log | grep -q "PRUEBAS DE ADMINISTRACIÓN DE ESTABLECIMIENTOS OK" && echo "OK    administración de establecimientos como nexa_app (sesión validada, otra empresa, nombre interno, reasignación, supervisión)" || { echo "FALLO: administración de establecimientos"; tail -8 /tmp/admin_est.log; exit 1; }
 # una tabla nueva con RLS y sin política es invisible para nexa_app (falla cerrado)
 PSQL nexa_sesion -c "create table public.zz_nueva (x int); alter table public.zz_nueva enable row level security; insert into public.zz_nueva values (1); grant select on public.zz_nueva to nexa_app;"
 [ "$(PGPASSWORD=prueba-local PSQLAPP nexa_sesion -At -c 'select count(*) from public.zz_nueva')" = 0 ] && echo "OK    tabla nueva con RLS y sin política: nexa_app ve 0 filas (falla cerrado)"

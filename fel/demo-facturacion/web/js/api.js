@@ -78,6 +78,8 @@ export const api = {
   conciliarAnulacion: (op) => llamar("POST", `/api/operaciones/${op}/conciliar-anulacion`, {}),
   plan: () => llamar("GET", "/api/plan"),
   cambiarClave: (actual, nueva) => llamar("POST", "/api/cuenta/clave", { actual, nueva }),
+  adminEstablecimientos: () => llamar("GET", "/api/admin/establecimientos"), adminNombreEstablecimiento: (id, nombre) => llamar("POST", `/api/admin/establecimientos/${id}/nombre`, { nombre }),
+  adminAsignar: (usuario, establecimiento_id, predeterminado, motivo) => llamar("POST", "/api/admin/asignaciones", { usuario, establecimiento_id, predeterminado, motivo }), adminSupervisor: (usuario, valor, motivo) => llamar("POST", "/api/admin/supervisor", { usuario, valor, motivo }),
   panel: () => llamar("GET", "/api/panel"), usuarios: () => llamar("GET", "/api/usuarios"), crearUsuario: (u) => llamar("POST", "/api/usuarios", u), actualizarUsuario: (id, cambios) => llamar("POST", `/api/usuarios/${id}/actualizar`, cambios),
   // Digifact TEST: el navegador solo habla con NEXA; el servidor es quien llama a Digifact
   digifactCalentar: (consulta) => llamar("POST", "/api/digifact/calentar", consulta ? { consulta: true } : {}),

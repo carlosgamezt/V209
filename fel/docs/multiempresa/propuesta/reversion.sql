@@ -12,7 +12,7 @@ drop function if exists public.fel_adm_datos_excepcionales_configuracion(text, u
   public.fel_adm_acceso_solicitar(text, uuid, text, text, uuid, integer), public.fel_adm_empresas_resumen(text), public.fel_adm_estado(text), public.fel_adm_digifact_suspender(text),
   public.fel_adm_digifact_interruptores(text, boolean, boolean, boolean, boolean, integer), public.fel_adm_digifact_registrar_prueba(text, boolean), public.fel_adm_digifact_conectar(text, text, bytea, smallint, integer),
   public.fel_adm_emisor_aprobar(text, uuid, integer, text), public.fel_adm_emisor_guardar(text, uuid, text, text, text, text, jsonb, text, text, text, text, text, text), public.fel_adm_borrador_trasladar(text, uuid, uuid, text),
-  public.fel_adm_asignacion_revocar(text, uuid, uuid, text), public.fel_adm_asignar(text, uuid, uuid, boolean, text), public.fel_adm_establecimiento_activo(text, uuid), public.fel_adm_contexto(text),
+  public.fel_adm_asignacion_revocar(text, uuid, uuid, text), public.fel_adm_asignar(text, uuid, uuid, boolean, text), public.fel_adm_asignaciones_listar(text), public.fel_adm_establecimiento_nombre(text, uuid, text), public.fel_adm_supervisor(text, uuid, boolean, text), public.fel_adm_establecimiento_activo(text, uuid), public.fel_adm_contexto(text),
   public.fel__sesion_maestro(text), public.fel__sesion_empresa(text), public.fel__sesion(text);
 drop table if exists public.sesion_establecimiento_activo;
 drop policy if exists documentos_alcance_leer on public.documentos;

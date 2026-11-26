@@ -9,6 +9,7 @@ import { aInterno, calcular, type LineaEntrada } from "../../supabase/functions/
 import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
 import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
+import type { AdminEst } from "./admin_establecimientos.ts";
 import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
@@ -53,7 +54,7 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string; alc: Alcance | null }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
@@ -99,7 +100,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     const p = Promise.resolve(bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as Promise<string[]>); permisosCache.set(k, { hasta: t + 5000, p }); p.catch(() => permisosCache.delete(k)); return p;
   };
   // Escrituras de datos de NEGOCIO: no cambian roles ni permisos ni el estado de los simuladores, así que no vacían lo reutilizado ni necesitan la sección crítica de los simuladores.
-  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/establecimientos\/[^/]+\/nombre$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|certificar-todo|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
+  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/establecimientos\/[^/]+\/nombre$/, /^\/api\/admin\/(establecimientos\/[^/]+\/nombre|asignaciones|asignaciones\/revocar|supervisor)$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|certificar-todo|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
   const LECTURA_SIN_SIM = /^\/api\/(estado|sesion|fecha-emision|tipos-documento|clientes|conceptos|correo\/estado|digifact\/estado)$|^\/api\/documentos$|^\/api\/documentos\/[^/]+\/correos$/;
 
   async function detalle(docId: string) {
@@ -274,6 +275,16 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
       const [cont] = await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [emp()]);
       return json({ empresa: { ...empr, ...(await empresaDatos()) }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
+    }
+    // ---- ADMINISTRACIÓN de establecimientos y asignaciones (solo con el puerto activado). Jamás se lee un «actor» ni una «empresa» del cuerpo: la identidad es la de la sesión y la valida la base.
+    if (extras.adminEst && ruta.startsWith("/api/admin/")) {
+      const AD = extras.adminEst, motivo = (x: unknown, min = 5) => { const t = typeof x === "string" ? x.trim() : ""; if (t.length < min || t.length > 300) throw new ErrorHttp(422, `Indica el motivo (entre ${min} y 300 caracteres)`, "entrada_invalida"); return t; };
+      if (m === "GET" && ruta === "/api/admin/establecimientos") return json(await AD.listar(req));
+      if (m === "POST" && (r = /^\/api\/admin\/establecimientos\/([^/]+)\/nombre$/.exec(ruta))) { const b = await cuerpo(); await AD.nombre(req, id(r[1]), texto(b.nombre, 1, 120, "Nombre")); return json({ ok: true }); }
+      if (m === "POST" && ruta === "/api/admin/asignaciones") { const b = await cuerpo(); return json(await AD.asignar(req, id(String(b.usuario ?? "")), id(String(b.establecimiento_id ?? "")), b.predeterminado !== false, motivo(b.motivo))); }
+      if (m === "POST" && ruta === "/api/admin/asignaciones/revocar") { const b = await cuerpo(); await AD.revocar(req, id(String(b.usuario ?? "")), id(String(b.establecimiento_id ?? "")), motivo(b.motivo)); return json({ ok: true }); }
+      if (m === "POST" && ruta === "/api/admin/supervisor") { const b = await cuerpo(); if (typeof b.valor !== "boolean") throw new ErrorHttp(422, "Indica si se concede o se retira", "entrada_invalida"); await AD.supervisor(req, id(String(b.usuario ?? "")), b.valor, motivo(b.motivo)); return json({ ok: true }); }
+      throw new ErrorHttp(404, "No existe", "no_encontrado");
     }
     if (m === "POST" && (r = /^\/api\/establecimientos\/([^/]+)\/nombre$/.exec(ruta))) {   // cambia SOLO el nombre INTERNO (el que ven las personas en NEXA FEL): el código SAT/Digifact, la dirección, el estado y los datos fiscales NO se tocan, ni siquiera si la petición los trae
       const eid = id(r[1]); const b = await cuerpo(); const [x] = await bd.filas<{ codigo_sat: string; direccion: string | null; estado: string }>("select codigo_sat, direccion, estado from public.establecimientos where id = $1 and empresa_id = $2", [eid, emp()]);

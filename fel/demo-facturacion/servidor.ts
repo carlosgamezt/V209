@@ -13,6 +13,8 @@ import { LimiteTasa } from "./src/limite.ts";
 import { crearEndurecimiento } from "./src/endurecimiento.ts";
 import { leerConfigPublicada } from "./src/publicado.ts";
 import { crearApi } from "./src/api.ts";
+import { lectorDeAlcanceBd } from "./src/alcance_establecimientos.ts";
+import { adminDeBd } from "./src/admin_establecimientos.ts";
 import { crearDigifactParaBd } from "./src/digifact_entorno.ts";
 import { montarAgente } from "./src/agente_demo.ts";
 import { crearCorreoDesdeEntorno } from "./src/correo/entorno.ts";
@@ -41,8 +43,10 @@ const bd = BD_URL ? crearBdPg(BD_URL) : await (await import("./src/bd_memoria.ts
 let mundo;
 try { mundo = await prepararBase(bd, { sembrar: true, aviso: (m) => console.log(`  ${m}`) }); }
 catch (e) { if (e instanceof ErrorAprovisionar) { console.error(e.message); Deno.exit(1); } throw e; }
+const ESTAB_LOCAL = Deno.env.get("FEL_DEMO_ESTABLECIMIENTOS") === "1" && !PUBLICADO && !BD_URL;   // SOLO pruebas locales: establecimientos 2 y 67, asignación fija por persona y panel de administración (apagado por defecto)
+if (ESTAB_LOCAL) { const { activarEstablecimientosLocal } = await import("./src/demo_establecimientos.ts"); const x = await activarEstablecimientosLocal(bd); console.log(`  Establecimientos de prueba: 2 «Sucursal Principal» (marta) y 67 «Sucursal 2» (sin facturador: créalo y asígnalo desde Establecimientos)`); void x; }
 const ALEATORIAS = !PUBLICADO && (LAN || Deno.env.get("FEL_DEMO_CLAVE_ALEATORIA") === "1");   // acceso desde otros equipos / remoto: nunca contraseñas públicas
-const sesiones = LOGIN ? new Sesiones(undefined, bd.tipo === "pg" ? new AlmacenPg(bd) : new AlmacenMemoria(PERSONAS)) : undefined;
+const sesiones = LOGIN ? new Sesiones(undefined, bd.tipo === "pg" || ESTAB_LOCAL ? new AlmacenPg(bd) : new AlmacenMemoria(PERSONAS)) : undefined;
 // auditoría de la autenticación en el registro de auditoría de NEXA FEL (nunca contraseñas ni códigos)
 if (sesiones) sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch (e) { console.error("auditoría:", (e as Error).message); } };
 const CLAVES: Record<string, string> = {};
@@ -71,7 +75,7 @@ const correoDg = crearPoliticaCorreoDigifactDesdeEntorno((k) => Deno.env.get(k))
 console.log(`  Correo por Digifact: ${correoDg.politica ? "habilitado para una empresa y destinatarios de prueba" : "apagado"}`);
 const correo = crearCorreoDesdeEntorno((k) => Deno.env.get(k), bd);
 console.log(`  Correo: ${correo.motivo}`);
-const api = crearApi(bd, mundo, { supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio, digifactCorreo: correoDg.politica, correo: correo.servicio });
+const api = crearApi(bd, mundo, { ...(ESTAB_LOCAL ? { alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio, digifactCorreo: correoDg.politica, correo: correo.servicio });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;
