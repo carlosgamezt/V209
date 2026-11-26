@@ -107,7 +107,7 @@ jobs:
           DIGIFACT_CORREO_PRUEBA: ${{ (inputs.paso == 'credenciales-presentes' || (inputs.con_correo == 'si' && (inputs.paso == 'datos-emisor' || inputs.paso == 'certificar-test'))) && secrets.DEMO_DIGIFACT_CORREO_PRUEBA || '' }}
           DIGIFACT_CORREO_DESTINATARIOS: ${{ (inputs.paso == 'credenciales-presentes' || (inputs.con_correo == 'si' && (inputs.paso == 'datos-emisor' || inputs.paso == 'certificar-test'))) && secrets.DEMO_DIGIFACT_CORREO_DESTINATARIOS || '' }}
         run: |
-          case "$PASO" in autenticar|credenciales-presentes|consultar-nit-privado|consultar-cui-privado|validar-nuc|datos-emisor|certificar-test|consulta-posterior|descargar) ;; *) echo "Paso no válido"; exit 2;; esac
+          case "$PASO" in autenticar|credenciales-presentes|consultar-nit-privado|consultar-cui-privado|validar-nuc|datos-emisor|listar-establecimientos|certificar-test|consulta-posterior|descargar) ;; *) echo "Paso no válido"; exit 2;; esac
           cd fel/proveedores
           deno run --allow-net=testnucgt.digifact.com --allow-env=DIGIFACT_TEST_USERNAME,DIGIFACT_TEST_PASSWORD,DIGIFACT_TEST_NIT,DIGIFACT_CUI_PRUEBA,DIGIFACT_CONFIRMAR,DIGIFACT_NIT_CONSULTA,DIGIFACT_AUTORIZACION,DIGIFACT_ESQUEMA,DIGIFACT_SALIDA,DIGIFACT_REFERENCIA,DIGIFACT_HUELLA_EMISOR,DIGIFACT_CON_CORREO,DIGIFACT_CONFIRMAR_CORREO,DIGIFACT_CORREO_PRUEBA,DIGIFACT_CORREO_DESTINATARIOS --allow-read --allow-write=./salida digifact_prueba.ts "$PASO"
       # solo los documentos de TEST de una certificación; se borran al día siguiente
