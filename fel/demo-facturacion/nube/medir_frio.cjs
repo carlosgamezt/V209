@@ -1,7 +1,7 @@
 // PRIMERA CERTIFICACIÓN TRAS INACTIVIDAD, con el calentamiento actual (solo token) y con la ampliación (token + consulta anticipada de solo lectura al reporte de acuses), contra la demostración publicada (modo «probar», solo si se pide):
 //   FEL_DEMO_URL=https://<nombre>.pages.dev FEL_DEMO_CLAVES='ana=…' FEL_MEDIR_INACTIVIDAD_S=600 node nube/medir_frio.cjs   (requiere playwright-core y Chrome)
 // Cada ronda espera la inactividad con el navegador cerrado (nada mantiene caliente la función), luego repite el recorrido completo de la persona (entrar, abrir «Nueva factura», elegir CF, agregar concepto, esperar
-// FEL_MEDIR_ESPERA_MS como quien escribe) y pulsa «Guardar y certificar en TEST». Condición «token»: calentamiento actual (solo token). Condición «consulta»: se enciende el interruptor local de la ampliación. Después de cada primera, una certificación «siguiente» sin inactividad.
+// FEL_MEDIR_ESPERA_MS como quien escribe) y pulsa «Guardar y certificar en TEST». Condición «token»: se apaga la ampliación con el interruptor local (solo token). Condición «consulta»: la ampliación (activa por defecto). Después de cada primera, una certificación «siguiente» sin inactividad.
 // Teléfono emulado (+120 ms, 5/2 Mbps, CPU 4×). Documentos de PRUEBA (Digifact TEST). No imprime contraseñas, tokens ni cookies.
 const { chromium } = require("playwright-core");
 const url = (process.env.FEL_DEMO_URL ?? "").replace(/\/$/, ""), clave = Object.fromEntries((process.env.FEL_DEMO_CLAVES ?? "").split(",").filter(Boolean).map((x) => [x.slice(0, x.indexOf("=")), x.slice(x.indexOf("=") + 1)])).ana;
@@ -13,7 +13,7 @@ async function lanzar() { for (const o of [...(process.env.FEL_CHROME ? [{ execu
 async function una(nav, consulta) {
   const ctx = await nav.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "es-GT" }), p = await ctx.newPage();
   await p.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.fulfill({ status: 200, contentType: "text/css", body: "" }));
-  if (consulta) await ctx.addInitScript(() => { try { localStorage.setItem("nexa_calentar_consulta", "1"); } catch { /* sin almacenamiento */ } });
+  await ctx.addInitScript((v) => { try { localStorage.setItem("nexa_calentar_consulta", v); } catch { /* sin almacenamiento */ } }, consulta ? "1" : "0");   // «0» apaga la ampliación (calentamiento solo con token)
   let calentar = null; p.on("response", async (r) => { if (/\/api\/digifact\/calentar/.test(r.url())) { const st = await r.headerValue("server-timing").catch(() => null); calentar = { fn: num(st, "fn"), token: num(st, "dfx_token"), consulta: num(st, "dfx_otro") }; } });
   await p.goto(url); await p.waitForSelector("#login-usuario"); await p.selectOption("#login-usuario", "ana"); await p.fill("#login-clave", clave); await p.click("#login-entrar"); await p.waitForSelector(".cab-demo");
   await p.goto(url + "/#/nueva"); await p.waitForSelector('input[aria-label="Identificación del receptor"]'); await p.click('.seg-tipo [data-tipo="CF"]');

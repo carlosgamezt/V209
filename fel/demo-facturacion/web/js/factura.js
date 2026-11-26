@@ -32,8 +32,8 @@ let previaPendiente = null, certificarPendiente = null, correoPendiente = null, 
 const CONFIRMACION_TEST = "CERTIFICAR-TEST";
 
 let calentadoEn = 0;
-// Ampliación del calentamiento (consulta anticipada de solo lectura a Digifact): APAGADA por defecto; solo se enciende con el interruptor local «nexa_calentar_consulta» (lo usa la medición) hasta que se autorice activarla.
-function calentarConConsulta() { try { return globalThis.localStorage?.getItem("nexa_calentar_consulta") === "1"; } catch { return false; } }
+// Ampliación del calentamiento (consulta anticipada de solo lectura a Digifact mientras se llena la factura): ACTIVA por defecto tras comprobarse (−0,5 a −1,0 s en la primera certificación tras inactividad). Se apaga en ese navegador con el interruptor local «nexa_calentar_consulta» = «0».
+function calentarConConsulta() { try { return globalThis.localStorage?.getItem("nexa_calentar_consulta") !== "0"; } catch { return true; } }
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
