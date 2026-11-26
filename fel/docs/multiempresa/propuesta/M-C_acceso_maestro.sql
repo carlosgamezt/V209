@@ -59,7 +59,7 @@ begin
   return query select d.id, d.estado_preparacion, d.estado_fiscal, d.creado_en from public.documentos d where d.empresa_id = p_empresa order by d.creado_en desc limit v_n;
 end $$;
 
--- Configuración (sin credenciales): emisor aprobado y estado de la conexión.
+-- Configuración (sin credenciales): emisores aprobados (uno por establecimiento) y estado de la conexión.
 create or replace function public.fel_admin_datos_excepcionales_configuracion(p_actor uuid, p_empresa uuid) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare v_acc uuid; r jsonb;
@@ -69,7 +69,7 @@ begin
   if v_acc is null then raise exception 'FEL_NO_AUTORIZADO: no hay un acceso excepcional vigente para esta empresa y alcance'; end if;
   perform public.fel_auditar(p_empresa, p_actor, 'maestro.lectura_excepcional', 'configuracion', v_acc::text, jsonb_build_object('alcance', 'configuracion'));
   select jsonb_build_object(
-    'emisor', (select to_jsonb(e) from public.empresa_emisor_versiones e where e.empresa_id = p_empresa and e.estado = 'aprobada'),
+    'emisores', coalesce((select jsonb_agg(to_jsonb(e) order by e.codigo_establecimiento) from public.empresa_emisor_versiones e where e.empresa_id = p_empresa and e.estado = 'aprobada'), '[]'::jsonb),
     'digifact', (select jsonb_build_object('estado', c.estado, 'ambiente', c.ambiente, 'tiene_credencial', c.credencial_cifrada is not null, 'ultima_prueba_ok', c.ultima_prueba_ok,
                  'consulta_nit', c.consulta_nit, 'consulta_cui', c.consulta_cui, 'certificar', c.certificar, 'correo_digifact', c.correo_digifact)
                  from public.empresa_digifact_config c where c.empresa_id = p_empresa)) into r;

@@ -5,7 +5,7 @@ import type { BdDemo } from "./bd.ts";
 
 export const TAM_POR_OMISION = 25, TAM_MAXIMO = 100;
 export type Categoria = "todos" | "emitidos" | "borradores" | "anulados" | "pendientes";
-export interface FiltrosLista { categoria: Categoria; q: string; tipo: string; estado: string; desde: string; hasta: string; nit: string; pagina: number; tam: number }
+export interface FiltrosLista { categoria: Categoria; q: string; tipo: string; estado: string; desde: string; hasta: string; nit: string; pagina: number; tam: number; /** Alcance de establecimientos de la persona (solo si está restringida): el filtro se aplica en SQL. */ establecimientos?: string[] }
 
 const CATEGORIAS: Categoria[] = ["todos", "emitidos", "borradores", "anulados", "pendientes"];
 const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
@@ -43,6 +43,7 @@ const escapar = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
 function donde(f: FiltrosLista, empresa: string, conTipos: boolean, conCategoria: boolean): { sql: string; args: unknown[] } {
   const args: unknown[] = [empresa]; const w = ["d.empresa_id = $1"]; const add = (v: unknown) => { args.push(v); return `$${args.length}`; };
   if (conCategoria && f.categoria !== "todos") w.push(CAT_SQL[f.categoria]);
+  if (f.establecimientos) w.push(`d.establecimiento_id = any(${add(f.establecimientos)}::uuid[])`);
   if (f.tipo && conTipos) w.push(`d.tipo_dte = ${add(f.tipo)}`); else if (f.tipo && f.tipo !== "FACT") w.push("false");   // sin la migración 30 todo es FACT
   if (f.estado) w.push(ESTADOS_PREPARACION.includes(f.estado) ? `(d.estado_preparacion = ${add(f.estado)} and d.estado_fiscal = 'ninguno')` : `d.estado_fiscal = ${add(f.estado)}`);
   if (f.desde) w.push(`d.fecha_emision_prevista >= ${add(f.desde)}::date`);

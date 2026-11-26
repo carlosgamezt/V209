@@ -9,6 +9,7 @@ import { aInterno, calcular, type LineaEntrada } from "../../supabase/functions/
 import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
 import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
+import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
 import type { Autorizador } from "../../proveedores/src/autorizacion_humana.ts";
@@ -52,10 +53,11 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo } = {}) {
+export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
-  const alcance = new AsyncLocalStorage<{ empresa: string }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
+  const alcance = new AsyncLocalStorage<{ empresa: string; alc: Alcance | null }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
+  const alc = () => alcance.getStore()?.alc ?? null;   // alcance de establecimientos de la persona de ESTA petición (null = sin restricción)
   const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, digifactCorreo: extras.digifactCorreo, correo: extras.correo }) : null;
   // estado de los simuladores en la base real (solo modo PostgreSQL con versión práctica): sobrevive a reinicios y es común a todas las instancias
   const simPersist = pr ? new PersistenciaSimuladores(bd, { mock, ...Object.fromEntries(pr.registro.listar().filter((x) => x.persistible).map((x) => [x.id, x.persistible!])) }) : null;
@@ -159,6 +161,13 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
 
   async function guardar(a: { id: string }, b: Obj) {
     const tp = await prevalidarTipo(a, b);   // antes de tocar nada
+    // ESTABLECIMIENTO (antes de escribir nada: una petición rechazada no modifica el documento). Restringido: el pedido solo vale si es el suyo; uno ajeno se RECHAZA (nunca se cambia en silencio); un documento que ya tiene establecimiento no lo cambia.
+    let estPedido: string | undefined;
+    try {
+      estPedido = establecimientoNuevo(alc(), uuidOk(b.establecimiento_id) ? String(b.establecimiento_id) : undefined);
+      if (restringido(alc()) && uuidOk(b.id)) { const [cur] = await bd.filas<{ establecimiento_id: string | null }>("select establecimiento_id from public.documentos where id = $1 and empresa_id = $2", [b.id, emp()]);
+        if (cur?.establecimiento_id) { if (uuidOk(b.establecimiento_id) && b.establecimiento_id !== cur.establecimiento_id) throw new ErrorAlcance(403, "establecimiento_no_autorizado", "El establecimiento de un documento no se puede cambiar."); estPedido = undefined; } }
+    } catch (e) { if (e instanceof ErrorAlcance) throw new ErrorHttp(e.status, e.message, e.codigo); throw e; }
     const lineasEntrada = b.lineas; if (!Array.isArray(lineasEntrada) || lineasEntrada.length < 1 || lineasEntrada.length > 50) throw new ErrorHttp(400, "Debe haber de 1 a 50 líneas", "entrada_invalida");
     const lineas = lineasEntrada.map((x: unknown, i: number) => {
       const l = x as Obj; const d = texto(l.descripcion, 1, 300, `Línea ${i + 1}: descripción`);
@@ -208,7 +217,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       const v = validarFechaEmision(fecha, ahoraSrv);
       await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::text::jsonb)", [emp(), a.id, previaFecha ? "documento.fecha_emision_cambiada" : "documento.fecha_emision_fijada", doc.id, JSON.stringify({ anterior: previaFecha, nueva: fecha, dias_atras: v.ok ? v.diasAtras : null, mes_anterior: v.ok ? v.mesAnterior : null, hoy_servidor: hoyGt(ahoraSrv) })]);
     }
-    if (uuidOk(b.establecimiento_id)) await bd.rpc("fel_op_documento_establecimiento", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_est: b.establecimiento_id });
+    if (estPedido) await bd.rpc("fel_op_documento_establecimiento", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_est: estPedido });   // ya validado ANTES de escribir; con la función encendida el establecimiento lo decide el servidor
     // el tipo se asigna DESPUÉS (la base copia el receptor y la referencia fiscal del origen y valida habilitación, origen certificado, tope y duplicados)
     if (!tp.mantener) {
       const [ver] = await bd.filas<{ version: number; tipo_dte: string }>("select version, tipo_dte from public.documentos where id = $1 and empresa_id = $2", [doc.id, emp()]);
@@ -329,7 +338,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       return json(await bd.rpc("fel_op_documento_origenes", { p_actor: a.id, p_empresa: emp(), p_tipo: tipo, p_cliente: cli && uuidOk(cli) ? cli : null, p_buscar: q ? q.slice(0, 40) : null }));
     }
     if (m === "GET" && ruta === "/api/documentos") {
-      if (url.searchParams.has("pagina")) return json(await listarDocumentos(bd, emp(), leerFiltros(url.searchParams), await tiposDisponibles(bd)));   // paginado y filtrado en el servidor
+      if (url.searchParams.has("pagina") || restringido(alc())) return json(await listarDocumentos(bd, emp(), { ...leerFiltros(url.searchParams), ...(restringido(alc()) ? { establecimientos: alc()!.ids } : {}) }, await tiposDisponibles(bd)));   // paginado y filtrado en el servidor
       return json(await bd.filas("select d.id, d.numero_borrador, " + ((await tiposDisponibles(bd)) ? "d.tipo_dte, d.documento_origen_id, d.referencia_origen->>'serie' as origen_serie, d.referencia_origen->>'numero' as origen_numero, " : "") + "d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [emp()]));
     }
     if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)$/.exec(ruta))) return json(await detalle(id(r[1])));
@@ -413,7 +422,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       try { await o.solicitar({ actor: a.id, empresa: emp(), documento: docId, clave: texto(b.clave, 16, 80, "Clave"), canal: await canalBase() }); } catch (e) { if (e instanceof ProcesoCaido) caido = true; else throw e; }
       return json({ caido, punto, ...(await detalle(docId)) });
     }
-    if (pr) { const x = await pr.rutasEmpresa({ req, url, a, ruta, m, cuerpo, id, json, canalDe, detalle, permisos: () => permisosDe(a), revisar: async (docId, version) => { await exigirFechaVigente(docId); await bd.rpc("fel_op_documento_preparacion", { p_actor: a.id, p_empresa: emp(), p_id: docId, p_nuevo: "revisado", p_motivo: null, p_version: version }); } }); if (x) return x; }
+    if (pr) { const x = await pr.rutasEmpresa({ req, url, a, ruta, m, cuerpo, id, json, canalDe, detalle, permisos: () => permisosDe(a), alcance: alc(), revisar: async (docId, version) => { await exigirFechaVigente(docId); await bd.rpc("fel_op_documento_preparacion", { p_actor: a.id, p_empresa: emp(), p_id: docId, p_nuevo: "revisado", p_motivo: null, p_version: version }); } }); if (x) return x; }
     throw new ErrorHttp(404, "Ruta no encontrada", "no_encontrado");
   }
 
@@ -426,7 +435,14 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       if (req.method === "POST" && !negocio) permisosCache.clear();   // puede cambiar roles o membresías: los permisos reutilizados no sobreviven
       const atender = async () => {
         if (pr && esMaestro(a.clave)) return await pr.rutasMaestro(req, url, a);   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
-        return await alcance.run({ empresa: (await personaDe(a.clave))?.empresa ?? EMPRESA }, () => manejar(req, url));
+        const empresaP = (await personaDe(a.clave))?.empresa ?? EMPRESA, alcP = extras.alcance ? await extras.alcance(req, a, empresaP) : null;   // la identidad y el alcance salen de la sesión validada, no de la petición
+        return await alcance.run({ empresa: empresaP, alc: alcP }, async () => {
+          if (restringido(alcP)) {   // un documento fuera del alcance de establecimientos de la persona NO EXISTE para ella (lectura, modificación, certificación, descargas, correo…)
+            const mDoc = /^\/api\/documentos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i.exec(url.pathname);
+            if (mDoc && !/\/digifact\//.test(url.pathname)) { const [r] = await bd.filas<{ establecimiento_id: string | null }>("select establecimiento_id from public.documentos where id = $1 and empresa_id = $2", [mDoc[1], empresaP]); if (r && !enAlcance(alcP, r.establecimiento_id)) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado"); }
+          }
+          return await manejar(req, url);
+        });
       };
       if (!simPersist?.activa) return await atender();
       if (negocio) return await atender();   // no toca el estado de los simuladores: se evita la sección crítica (bloqueo, lectura y escritura del estado de cada simulador = una decena de viajes a la base)

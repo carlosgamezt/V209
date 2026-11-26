@@ -16,13 +16,14 @@ D=${FEL_PROPUESTA:-docs/multiempresa/propuesta}
 for f in supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f" >/dev/null; done
 echo "migraciones aplicadas: $(ls supabase/migrations/*.sql | wc -l)"
 [ "$(Q "select count(*) from pg_tables where schemaname='public' and tablename in ('empresa_digifact_config','empresa_emisor_versiones','empresa_digifact_eventos','acceso_maestro_datos')")" = 0 ] && echo "OK    antes: sin tablas multiempresa"
-aplicar() { for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro; do "${PSQL[@]}" --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done; }
-aplicar; echo "OK    M-D, M-A, M-B y M-C aplicadas (una transacción cada una)"
+aplicar() { for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin; do "${PSQL[@]}" --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done; }
+aplicar; echo "OK    M-D, M-A, M-B, M-C, M-F y M-G aplicadas (una transacción cada una)"
 if "${PSQL[@]}" --single-transaction -f $D/M-A_emisor_fiscal.sql >/dev/null 2>&1; then echo "FALLO: M-A se aplicó dos veces"; exit 1; else echo "OK    reaplicar falla sin cambiar nada"; fi
 printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\i $D/verificacion.sql" > /tmp/multi_$$.sql
 SAL=$("$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -f /tmp/multi_$$.sql)
 if grep -Eq '\| +f *$' <<< "$SAL"; then echo "$SAL"; echo "FALLO: verificación con filas ok = f"; exit 1; fi; echo "OK    verificación posterior (solo lectura): todas las filas ok"
 "${PSQL[@]}" -f $D/prueba-multiempresa.sql | grep -q "PRUEBAS MULTIEMPRESA OK" && echo "OK    pruebas funcionales (PRUEBAS MULTIEMPRESA OK)" || { echo "FALLO: pruebas funcionales"; exit 1; }
+"${PSQL[@]}" -f $D/prueba-establecimientos.sql | grep -q "PRUEBAS ESTABLECIMIENTOS OK" && echo "OK    pruebas del establecimiento por usuario (PRUEBAS ESTABLECIMIENTOS OK)" || { echo "FALLO: pruebas de establecimientos"; exit 1; }
 # la prueba termina con ROLLBACK: no deja datos. Para probar la reversión CON datos se crea una conexión y se vuelve a ejecutar.
 "${PSQL[@]}" -c "insert into auth.users (id,email) values ('00000000-0000-0000-0000-0000000000f1','u@fel.test'); insert into public.empresas (id,nombre_comercial,razon_social,nit,regimen_id,estado) select '10000000-0000-0000-0000-0000000000f1','E','E S.A.','9999999-9',id,'habilitada' from public.regimenes_fiscales where codigo='general'; insert into public.empresa_digifact_config (empresa_id) values ('10000000-0000-0000-0000-0000000000f1');" >/dev/null
 if "${PSQL[@]}" -f $D/reversion.sql >/dev/null 2>&1; then echo "FALLO: la reversión no se negó con datos"; exit 1; else echo "OK    reversión se niega con datos de configuración"; fi

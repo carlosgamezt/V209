@@ -29,6 +29,8 @@ export interface ContextoFel { empresaId: string; actorId: string; permisos: rea
 /** Documento ya leído de la base, de la empresa del contexto. */
 export interface DocumentoFel {
   id: string; empresaId: string; estadoPreparacion: string; estadoFiscal: string;
+  /** Establecimiento del documento (leído de la base, nunca del navegador): id y código SAT numérico. */
+  establecimientoId?: string; establecimientoCodigo?: number;
   receptor: ReceptorGt;
   /** Tipo de DTE del documento (catálogo central). Ausente = «FACT» (documentos de antes de existir el selector). */
   tipoDte?: "FACT" | "NCRE" | "NDEB" | "RECI" | string;
@@ -109,7 +111,9 @@ export interface DepsFelGt {
   /** Cliente de Digifact TEST de ESA empresa, o null si la empresa no tiene canal habilitado. Las credenciales se resuelven aquí, por empresa. */
   clienteDe: (empresaId: string) => ClienteGt | null;
   /** Datos del emisor APROBADOS para esa empresa (y su huella), o null. */
-  emisorDe: (empresaId: string) => DatosEmisorEmpresa | null;
+  emisorDe: (empresaId: string, establecimientoCodigo?: number) => DatosEmisorEmpresa | null;
+  /** Multiempresa: el emisor depende del ESTABLECIMIENTO del documento (cada establecimiento tiene su emisor aprobado). Un documento sin establecimiento NO tiene emisor (falla cerrado). Sin esto (demostración de una sola empresa) todo sigue como siempre. */
+  emisorPorEstablecimiento?: boolean;
   almacen: AlmacenGt;
   /** Referencia que la persona responsable autorizó para ESTA prueba (nada más se envía). null = ninguna autorizada. */
   /** Autorización de la persona responsable: o la referencia de UNA prueba (GUID), o «CICLO-TEST» (ciclo de pruebas en TEST publicado con su aprobación: vale para cualquier documento de la empresa de demostración mientras esté publicado). */
@@ -212,9 +216,14 @@ export class ServicioFelGt {
     this.#calentadas.set(ctx.empresaId, t);
     try { await cliente.conciliarPorReferencia(this.#ahora().toISOString().slice(0, 10), crypto.randomUUID(), emisor.emisor.establecimiento.codigo); } catch { /* es solo un calentamiento: la certificación hará su propio chequeo */ }
   }
-  #canal(ctx: ContextoFel): { cliente: ClienteGt; emisor: DatosEmisorEmpresa } {
-    const cliente = this.d.clienteDe(ctx.empresaId), emisor = this.d.emisorDe(ctx.empresaId);
-    if (!cliente || !emisor) throw new ErrorFelGt("SIN_CANAL", "Esta empresa no tiene un canal Digifact TEST habilitado");
+  #emisorDe(empresaId: string, doc?: DocumentoFel): DatosEmisorEmpresa | null {
+    if (!this.d.emisorPorEstablecimiento || !doc) return this.d.emisorDe(empresaId);
+    if (typeof doc.establecimientoCodigo !== "number") return null;   // sin establecimiento no hay emisor
+    return this.d.emisorDe(empresaId, doc.establecimientoCodigo);
+  }
+  #canal(ctx: ContextoFel, doc?: DocumentoFel): { cliente: ClienteGt; emisor: DatosEmisorEmpresa } {
+    const cliente = this.d.clienteDe(ctx.empresaId), emisor = this.#emisorDe(ctx.empresaId, doc);
+    if (!cliente || !emisor) throw new ErrorFelGt("SIN_CANAL", doc && this.d.emisorPorEstablecimiento ? "El establecimiento de este documento no tiene un emisor aprobado y un canal Digifact TEST habilitado" : "Esta empresa no tiene un canal Digifact TEST habilitado");
     return { cliente, emisor };
   }
 
@@ -236,7 +245,7 @@ export class ServicioFelGt {
   async validar(ctx: ContextoFel, doc: DocumentoFel, o: { fechaEmision?: string; referencia?: string; correo?: unknown } = {}) {
     this.#exigir(ctx, "borradores.ver");
     this.#mismaEmpresa(ctx, doc);
-    const e = this.d.emisorDe(ctx.empresaId); if (!e) throw new ErrorFelGt("SIN_CANAL", "Esta empresa no tiene datos de emisor aprobados para Digifact TEST");
+    const e = this.#emisorDe(ctx.empresaId, doc); if (!e) throw new ErrorFelGt("SIN_CANAL", "Esta empresa (o el establecimiento del documento) no tiene datos de emisor aprobados para Digifact TEST");
     const errores: { campo: string; mensaje: string }[] = [];
     if (doc.estadoPreparacion !== "revisado") errores.push({ campo: "documento", mensaje: "El documento debe estar revisado antes de certificarlo" });
     if (!["ninguno", "rechazado"].includes(doc.estadoFiscal)) errores.push({ campo: "documento", mensaje: `El documento ya está en estado fiscal «${doc.estadoFiscal}»` });
@@ -269,7 +278,7 @@ export class ServicioFelGt {
   async preparar(ctx: ContextoFel, doc: DocumentoFel, o: { correo?: unknown } = {}): Promise<ResumenPreparacion> {
     this.#exigir(ctx, "fiscal.certificar"); this.#mismaEmpresa(ctx, doc); this.#exigirTipoCertificable(doc);
     const correo = this.#correo(o.correo);   // solo se valida y se repite enmascarado: el correo NO entra en la huella, así que la referencia y la operación preparada no cambian
-    const { emisor } = this.#canal(ctx);
+    const { emisor } = this.#canal(ctx, doc);
     const previas = await this.d.almacen.deDocumento(ctx.empresaId, doc.id);
     const bloquea = previas.find((o) => BLOQUEAN.includes(o.estado));
     if (bloquea) throw new ErrorFelGt("ESTADO", bloquea.estado === "certificada" ? "Este documento ya fue certificado" : `Este documento tiene una operación «${bloquea.estado}»: no se prepara otra (concilia primero)`);
@@ -317,7 +326,7 @@ export class ServicioFelGt {
     }
     if (op0.estado !== "preparada") throw new ErrorFelGt("ESTADO", `La operación está «${op0.estado}»: prepara el documento de nuevo`);
     if (this.#vencida(op0, this.#ahora().getTime())) throw new ErrorFelGt("ESTADO", "La preparación caducó: vuelve a prepararla (se renueva sin cambiar la referencia)");
-    const { cliente, emisor } = this.#canal(ctx);
+    const { cliente, emisor } = this.#canal(ctx, doc);
     if (c.confirmacion !== CONFIRMACION_TEST) throw new ErrorFelGt("CONFIRMACION", `Falta la confirmación explícita: escribe ${CONFIRMACION_TEST}`);
     if (c.referencia !== op0.referencia) throw new ErrorFelGt("CONFIRMACION", "La referencia escrita no coincide con la de la operación preparada");
     if (c.huellaEmisor !== op0.huellaEmisor) throw new ErrorFelGt("CONFIRMACION", "La huella del emisor escrita no coincide con la aprobada");

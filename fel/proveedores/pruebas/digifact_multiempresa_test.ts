@@ -15,31 +15,32 @@ type K = keyof typeof E;
 const SECRETOS: Record<K, { usuario: string; clave: string; nit: string }> = { A: { usuario: "usuario-A-ZX1", clave: "clave-A-secreta-#1", nit: "5888492" }, B: { usuario: "usuario-B-ZX2", clave: "clave-B-secreta-#2", nit: "5888493" }, C: { usuario: "usuario-C-ZX3", clave: "clave-C-secreta-#3", nit: "5888494" } };
 const entornoLlaves = { FEL_CREDENCIALES_LLAVE_ACTUAL: "1", FEL_CREDENCIALES_LLAVE_V1: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))) };
 const ctx = (k: K): ContextoFel => ({ empresaId: E[k], actorId: "u-" + k, permisos: ["borradores.ver", "clientes.ver", "fiscal.ver", "fiscal.certificar"] });
-const doc = (k: K, id: string): DocumentoFel => ({ id, empresaId: E[k], estadoPreparacion: "revisado", estadoFiscal: "ninguno", receptor: { tipoId: "CF", id: "CF", nombre: "CONSUMIDOR FINAL" },
+const doc = (k: K, id: string, codigo = 10): DocumentoFel => ({ id, empresaId: E[k], establecimientoCodigo: codigo, establecimientoId: `est-${k}-${codigo}`, estadoPreparacion: "revisado", estadoFiscal: "ninguno", receptor: { tipoId: "CF", id: "CF", nombre: "CONSUMIDOR FINAL" },
   lineas: [{ tipo: "Servicio", descripcion: "Servicio de prueba NEXA FEL", cantidad: "1", precioUnitario: "100", descuento: "0", unidad: "SER" }] });
-const filaEmisor = async (k: K): Promise<FilaEmisor> => {
-  const f: Omit<FilaEmisor, "huella"> = { version: 1, nit: SECRETOS[k].nit, nombre_fiscal: `Empresa ${k}, S.A.`, nombre_comercial: null, afiliacion_iva: "GEN", frases: [{ tipo: 1, escenario: 2 }], correo: null, codigo_establecimiento: 1, direccion: "Calle 1", codigo_postal: "01001", municipio: "Guatemala", departamento: "Guatemala" };
+const filaEmisor = async (k: K, codigo = 10): Promise<FilaEmisor> => {
+  const f: Omit<FilaEmisor, "huella"> = { establecimiento_id: `est-${k}-${codigo}`, version: 1, nit: SECRETOS[k].nit, nombre_fiscal: `Empresa ${k}, S.A.`, nombre_comercial: `Sucursal ${codigo}`, afiliacion_iva: "GEN", frases: [{ tipo: 1, escenario: 2 }], correo: null, codigo_establecimiento: codigo, direccion: `Calle ${codigo}`, codigo_postal: "01001", municipio: "Guatemala", departamento: "Guatemala" };
   return { ...f, huella: await huellaEmisor(datosDeFila({ ...f, huella: "" })) };
 };
 
 async function mundo() {
   const llaves = await llavesDeEntorno((k) => (entornoLlaves as Record<string, string>)[k]);
   const tienda = new Map<string, LecturaEmpresa>(); let lecturas = 0; const registro: string[] = [];
-  const trafico: { k: K; ruta: string; usuario?: string; auth?: string; taxid?: string }[] = []; const envios: Record<K, number> = { A: 0, B: 0, C: 0 }; let seq = 0;
-  const conectar = async (k: K, o: { certificar?: boolean; consultaNit?: boolean; version?: number } = {}) => {
+  const trafico: { k: K; ruta: string; usuario?: string; auth?: string; taxid?: string; sucursal?: string; direccion?: string }[] = []; const envios: Record<K, number> = { A: 0, B: 0, C: 0 }; let seq = 0;
+  const conectar = async (k: K, o: { certificar?: boolean; consultaNit?: boolean; version?: number; codigos?: number[] } = {}) => {
     const c = await cifrarCredencial(llaves, E[k], { usuario: SECRETOS[k].usuario, clave: SECRETOS[k].clave });
     const cred: FilaCredencial = { digifact_nit: SECRETOS[k].nit, credencial_cifrada: c.bytes, llave_version: c.version, consulta_nit: o.consultaNit ?? false, consulta_cui: false, certificar: o.certificar ?? true, correo_digifact: false, version: o.version ?? 1 };
-    tienda.set(E[k], { credencial: cred, emisor: await filaEmisor(k) });
+    tienda.set(E[k], { credencial: cred, emisores: await Promise.all((o.codigos ?? [10]).map((c2) => filaEmisor(k, c2))) });
   };
   const reloj = { t: 1_000_000 };
   const res = new ResolvedorDigifact({
-    leer: async (id) => { lecturas++; return tienda.get(id) ?? { credencial: null, emisor: null }; }, llaves, ahora: () => reloj.t, ttlMs: 60_000, ttlNegativoMs: 30_000, ttlErrorMs: 5_000,
+    leer: async (id) => { lecturas++; return tienda.get(id) ?? { credencial: null, emisores: [] }; }, llaves, ahora: () => reloj.t, ttlMs: 60_000, ttlNegativoMs: 30_000, ttlErrorMs: 5_000,
     registrar: (ev, id, cod) => { registro.push(`${ev}|${id}|${cod}`); },
     crearCliente: ({ nit, usuario, clave }) => {
       const k = (Object.keys(SECRETOS) as K[]).find((x) => SECRETOS[x].nit === nit)!;
       const transporte = async (p: PeticionHttp): Promise<RespuestaHttp> => {
         const q = new URL("https://x" + p.ruta).searchParams;
-        trafico.push({ k, ruta: p.ruta.split("?")[0], usuario: p.ruta === "/login/get_token" ? (JSON.parse(p.cuerpo!).Username as string) : undefined, auth: p.cabeceras["authorization"] ?? p.cabeceras["Authorization"], taxid: q.get("TAXID") ?? undefined });
+        const nuc = p.ruta.startsWith("/v2/transform/nuc_json") && p.cuerpo ? JSON.parse(p.cuerpo) : null;
+        trafico.push({ k, ruta: p.ruta.split("?")[0], sucursal: nuc?.Seller?.BranchInfo?.Code, direccion: nuc?.Seller?.BranchInfo?.AddressInfo?.Address, usuario: p.ruta === "/login/get_token" ? (JSON.parse(p.cuerpo!).Username as string) : undefined, auth: p.cabeceras["authorization"] ?? p.cabeceras["Authorization"], taxid: q.get("TAXID") ?? undefined });
         if (p.ruta === "/login/get_token") { assert.equal(JSON.parse(p.cuerpo!).Password, clave, "el inicio de sesión usa la clave de ESA empresa"); return ok({ token: jwt(k) }); }
         if (p.ruta.startsWith("/v2/transform/nuc_json")) { envios[k]++; await new Promise((r) => setTimeout(r, 5)); const n = ++seq; return ok({ code: "1", message: "Procesado Correctamente", authNumber: `AAAAAAAA-0000-4000-8000-${String(n).padStart(12, "0")}`, batch: "A001", serial: String(n), enrolledTimeStamp: "2026-11-16T10:00:05", responseData1: "PD94bWw=", responseData3: "JVBERi0x" }); }
         if (p.ruta.startsWith("/Shared")) { const t = new URL("https://x" + p.ruta).searchParams.get("DATA1"); if (t === "SHARED_GETINFONITcom") return ok({ RESPONSE: [{ NIT: "44653948", NOMBRE: "EMPRESA DE PRUEBA, S.A." }] }); return ok({ REQUEST_DATA: [{ Respuesta: "0" }], RESPONSE: [] }); }
@@ -48,7 +49,7 @@ async function mundo() {
     },
   });
   const multi = crearServicioMultiempresa(res, { almacen: AlmacenGtMemoria.persistenteSimulado(), ahora: () => new Date("2026-11-16T16:00:00Z") });
-  const certificar = async (k: K, id: string) => { const p = await multi.preparar(ctx(k), doc(k, id)); return await multi.certificar(ctx(k), doc(k, id), { operacionId: p.operacionId, confirmacion: CONFIRMACION_TEST, referencia: p.referencia, huellaEmisor: p.huellaEmisor }); };
+  const certificar = async (k: K, id: string, codigo = 10) => { const p = await multi.preparar(ctx(k), doc(k, id, codigo)); return await multi.certificar(ctx(k), doc(k, id, codigo), { operacionId: p.operacionId, confirmacion: CONFIRMACION_TEST, referencia: p.referencia, huellaEmisor: p.huellaEmisor }); };
   return { res, multi, conectar, tienda, lecturas: () => lecturas, registro, trafico, envios, reloj, certificar, llaves };
 }
 const rechaza = async (p: Promise<unknown>, codigo: string) => { await assert.rejects(p, (e: unknown) => e instanceof ErrorFelGt && e.codigo === codigo, `se esperaba ${codigo}`); };
@@ -88,7 +89,7 @@ Deno.test("caché: una sola carga a la vez, sin consultas con la caché vigente,
   m.reloj.t += 61_000; await m.res.asegurar(E.A); assert.equal(m.lecturas(), 2, "al vencer se vuelve a leer UNA vez");
   await m.certificar("A", "x2"); assert.equal(logins(), 1, "misma configuración: se conserva el cliente y su token (sin nuevo inicio de sesión)");
   // acotado
-  const pequeno = new ResolvedorDigifact({ leer: async () => ({ credencial: null, emisor: null }), llaves: m.llaves, crearCliente: () => { throw new Error("no"); }, maxEmpresas: 3 });
+  const pequeno = new ResolvedorDigifact({ leer: async () => ({ credencial: null, emisores: [] }), llaves: m.llaves, crearCliente: () => { throw new Error("no"); }, maxEmpresas: 3 });
   for (let i = 0; i < 10; i++) await pequeno.asegurar(`10000000-0000-0000-0000-0000000000${(10 + i)}`); assert.ok(pequeno.tamano() <= 3);
   assert.equal(await m.res.asegurar("no-es-uuid"), null);
 });
@@ -103,7 +104,7 @@ Deno.test("empresa nueva sin reiniciar ni redesplegar; suspendida o con credenci
   await m.certificar("A", "a8"); assert.equal(m.trafico.filter((t) => t.k === "A" && t.ruta === "/login/get_token").length, 1);
   await m.conectar("A", { version: 2 }); m.reloj.t += 61_000;
   await m.certificar("A", "a9"); assert.equal(m.trafico.filter((t) => t.k === "A" && t.ruta === "/login/get_token").length, 2, "credenciales nuevas: cliente nuevo, nuevo inicio de sesión");
-  m.tienda.set(E.A, { credencial: null, emisor: null }); m.reloj.t += 61_000; await rechaza(m.certificar("A", "a10"), "SIN_CANAL");   // suspendida
+  m.tienda.set(E.A, { credencial: null, emisores: [] }); m.reloj.t += 61_000; await rechaza(m.certificar("A", "a10"), "SIN_CANAL");   // suspendida
 });
 
 Deno.test("interruptores por empresa: sin «certificar» no se envía nada; la consulta de NIT solo si la empresa la tiene", async () => {
@@ -122,7 +123,7 @@ Deno.test("fallos cerrados y sin secretos: cifrado alterado, copiado de otra emp
   await rechaza(m.certificar("A", "a1"), "SIN_CANAL"); await rechaza(m.certificar("B", "b1"), "SIN_CANAL");
   assert.equal(m.envios.A + m.envios.B, 0, "no se envió nada");
   assert.ok(m.registro.some((r) => r.startsWith(`resolucion_fallida|${E.A}|AUTENTICACION`)) && m.registro.some((r) => r.startsWith(`resolucion_fallida|${E.B}|AUTENTICACION`)));
-  await m.conectar("C"); const c = m.tienda.get(E.C)!; m.tienda.set(E.C, { ...c, emisor: { ...c.emisor!, nombre_fiscal: "Otro nombre" } });   // datos que ya no coinciden con la huella aprobada
+  await m.conectar("C"); const c = m.tienda.get(E.C)!; m.tienda.set(E.C, { ...c, emisores: [{ ...c.emisores[0], nombre_fiscal: "Otro nombre" }] });   // datos que ya no coinciden con la huella aprobada
   await rechaza(m.certificar("C", "c1"), "SIN_CANAL"); assert.ok(m.registro.some((r) => r.includes("huella_no_coincide")));
   const roto = new ResolvedorDigifact({ leer: async () => { throw new Error(`fallo con ${SECRETOS.A.clave}`); }, llaves: m.llaves, crearCliente: () => { throw new Error("no"); }, registrar: (e, i, c2) => m.registro.push(`${e}|${i}|${c2}`) });
   assert.equal(await roto.asegurar(E.A), null);
@@ -134,4 +135,41 @@ Deno.test("una empresa no puede certificar el documento de otra", async () => {
   const p = await m.multi.preparar(ctx("A"), doc("A", "dA"));
   await assert.rejects(m.multi.certificar(ctx("B"), doc("A", "dA"), { operacionId: p.operacionId, confirmacion: CONFIRMACION_TEST, referencia: p.referencia, huellaEmisor: p.huellaEmisor }));
   assert.equal(m.envios.A + m.envios.B, 0);
+});
+
+Deno.test("dos establecimientos de la misma empresa: cada documento sale con SU emisor (código y dirección), mismas credenciales y mismo token; concurrencia sin mezclarse", async () => {
+  const m = await mundo(); await m.conectar("A", { codigos: [10, 20] });
+  const [a, b, a2, b2] = await Promise.all([m.certificar("A", "d10", 10), m.certificar("A", "d20", 20), m.certificar("A", "d10b", 10), m.certificar("A", "d20b", 20)]);
+  for (const r of [a, b, a2, b2]) assert.equal(r.operacion.estado, "certificada");
+  const envios = m.trafico.filter((t) => t.ruta.startsWith("/v2/transform/nuc_json"));
+  assert.equal(envios.length, 4); assert.deepEqual(envios.map((t) => `${t.sucursal}|${t.direccion}`).sort(), ["10|Calle 10", "10|Calle 10", "20|Calle 20", "20|Calle 20"], "el NUC lleva el establecimiento y la dirección de ese establecimiento");
+  assert.equal(m.trafico.filter((t) => t.ruta === "/login/get_token").length, 1, "mismas credenciales: UN solo inicio de sesión y un solo token para ambos establecimientos");
+  assert.equal(new Set([a, b, a2, b2].map((r) => r.operacion.referencia)).size, 4, "referencias distintas");
+});
+
+Deno.test("establecimiento sin emisor aprobado, o documento sin establecimiento: sin canal y no se envía nada; el emisor de un establecimiento no sirve a otro ni a otra empresa", async () => {
+  const m = await mundo(); await m.conectar("A", { codigos: [10, 20] }); await m.conectar("B");
+  await rechaza(m.certificar("A", "x30", 30), "SIN_CANAL");   // A no tiene emisor para el 30
+  await rechaza(m.certificar("B", "b20", 20), "SIN_CANAL");   // el 20 es de A: B no lo usa
+  const sin = { ...doc("A", "sin"), establecimientoCodigo: undefined, establecimientoId: undefined } as DocumentoFel;
+  await rechaza(m.multi.preparar(ctx("A"), sin), "SIN_CANAL");
+  assert.equal(m.envios.A + m.envios.B, 0, "no se envió nada");
+  // solo el establecimiento con huella alterada queda sin canal
+  const a = m.tienda.get(E.A)!; m.tienda.set(E.A, { ...a, emisores: [a.emisores[0], { ...a.emisores[1], nombre_comercial: "Alterada" }] }); m.res.invalidar(E.A);
+  assert.equal((await m.certificar("A", "ok10", 10)).operacion.estado, "certificada"); await rechaza(m.certificar("A", "mal20", 20), "SIN_CANAL");
+  assert.ok(m.registro.some((r) => r.startsWith(`huella_no_coincide|${E.A}`)));
+});
+
+Deno.test("idempotencia por establecimiento: el mismo documento dos veces a la vez = un envío; el mismo contenido en otro establecimiento es otra referencia", async () => {
+  const m = await mundo(); await m.conectar("A", { codigos: [10, 20] });
+  const p10 = await m.multi.preparar(ctx("A"), doc("A", "igual", 10)), p20 = await m.multi.preparar(ctx("A"), doc("A", "igual", 20));
+  assert.notEqual(p10.referencia, p20.referencia, "otro establecimiento = otra referencia (y otra huella de emisor)"); assert.notEqual(p10.huellaEmisor, p20.huellaEmisor);
+  const c = { operacionId: p10.operacionId, confirmacion: CONFIRMACION_TEST, referencia: p10.referencia, huellaEmisor: p10.huellaEmisor };
+  const r = await Promise.allSettled([m.multi.certificar(ctx("A"), doc("A", "igual", 10), c), m.multi.certificar(ctx("A"), doc("A", "igual", 10), c)]);
+  assert.equal(m.envios.A, 1, "un solo envío"); assert.ok(r.some((x) => x.status === "fulfilled"));
+  // la preparación del 10 no se puede certificar presentándola como del 20 (la huella aprobada y el contenido no coinciden)
+  assert.equal(m.envios.A, 1);
+  const pn = await m.multi.preparar(ctx("A"), doc("A", "otro", 10));
+  await assert.rejects(m.multi.certificar(ctx("A"), doc("A", "otro", 20), { operacionId: pn.operacionId, confirmacion: CONFIRMACION_TEST, referencia: pn.referencia, huellaEmisor: pn.huellaEmisor }), (e: unknown) => e instanceof ErrorFelGt, "presentar la preparación del 10 con un documento del 20 se rechaza");
+  assert.equal(m.envios.A, 1, "y no se envió nada");
 });

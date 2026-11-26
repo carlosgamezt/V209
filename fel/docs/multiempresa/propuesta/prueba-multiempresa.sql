@@ -40,16 +40,17 @@ do $$ begin
 end $$;
 
 -- ================= 2. emisor: guardar, aprobar, inmutabilidad, aislamiento
-select pg_temp.espera_error($$select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000c2', '10000000-0000-0000-0000-00000000000a', '1111111', 'Empresa A, S.A.', null, 'GEN', '[]', null, 1, 'Calle 1', '01001', 'Guatemala', 'Guatemala', 'aaaaaaaaaaaaaaaa')$$, 'FEL_NO_AUTORIZADO');
-select pg_temp.espera_error($$select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000a', '1111111', 'Empresa A, S.A.', null, 'GEN', '[]', null, 1, 'Calle 1', '01001', 'Guatemala', 'Guatemala', 'aaaaaaaaaaaaaaaa')$$, 'FEL_NO_AUTORIZADO');   -- el propietario de B no toca A
-select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', '1111111', 'Empresa A, S.A.', null, 'GEN', '[{"tipo":1,"escenario":2}]', null, 1, 'Calle 1', '01001', 'Guatemala', 'Guatemala', 'aaaaaaaaaaaaaaaa');
-select pg_temp.espera_error($$select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', 1, 'aaaaaaaaaaaaaaaa')$$, 'FEL_NO_AUTORIZADO');   -- el administrador no aprueba
-select pg_temp.espera_error($$select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', 1, 'bbbbbbbbbbbbbbbb')$$, 'FEL_REGLA');   -- huella distinta
-select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', 1, 'aaaaaaaaaaaaaaaa');
+create temp table t_e10 as select (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, '10', 'Sucursal 10', 'Dirección 10', 'activo')).id a;
+select pg_temp.espera_error($$select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000c2', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), '1111111', 'Empresa A, S.A.', null, 'GEN', '[]', null, 'Calle 1', '01001', 'Guatemala', 'Guatemala', 'aaaaaaaaaaaaaaaa')$$, 'FEL_NO_AUTORIZADO');
+select pg_temp.espera_error($$select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), '1111111', 'Empresa A, S.A.', null, 'GEN', '[]', null, 'Calle 1', '01001', 'Guatemala', 'Guatemala', 'aaaaaaaaaaaaaaaa')$$, 'FEL_NO_AUTORIZADO');   -- el propietario de B no toca A
+select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), '1111111', 'Empresa A, S.A.', null, 'GEN', '[{"tipo":1,"escenario":2}]', null, 'Calle 1', '01001', 'Guatemala', 'Guatemala', 'aaaaaaaaaaaaaaaa');
+select pg_temp.espera_error($$select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c4', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), 1, 'aaaaaaaaaaaaaaaa')$$, 'FEL_NO_AUTORIZADO');   -- el administrador no aprueba
+select pg_temp.espera_error($$select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), 1, 'bbbbbbbbbbbbbbbb')$$, 'FEL_REGLA');   -- huella distinta
+select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), 1, 'aaaaaaaaaaaaaaaa');
 select pg_temp.espera_error($$update public.empresa_emisor_versiones set nombre_fiscal = 'Otro' where empresa_id = '10000000-0000-0000-0000-00000000000a' and version = 1$$, 'FEL_REGLA');
 select pg_temp.espera_error($$delete from public.empresa_emisor_versiones where empresa_id = '10000000-0000-0000-0000-00000000000a' and version = 1$$, 'FEL_REGLA');
-select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', '1111111', 'Empresa A, S.A.', 'A', 'GEN', '[]', null, 1, 'Calle 2', '01001', 'Guatemala', 'Guatemala', 'cccccccccccccccc');
-select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', 2, 'cccccccccccccccc');
+select public.fel_op_emisor_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), '1111111', 'Empresa A, S.A.', 'A', 'GEN', '[]', null, 'Calle 2', '01001', 'Guatemala', 'Guatemala', 'cccccccccccccccc');
+select public.fel_op_emisor_aprobar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', (select a from t_e10), 2, 'cccccccccccccccc');
 do $$ begin
   assert (select count(*) from public.empresa_emisor_versiones where empresa_id = '10000000-0000-0000-0000-00000000000a' and estado = 'aprobada') = 1, 'una sola versión vigente';
   assert (select estado from public.empresa_emisor_versiones where empresa_id = '10000000-0000-0000-0000-00000000000a' and version = 1) = 'reemplazada', 'la anterior queda reemplazada';
@@ -87,7 +88,7 @@ select public.fel_op_digifact_suspender('00000000-0000-0000-0000-0000000000c1', 
 do $$ begin assert (select estado = 'suspendido' and not certificar from public.empresa_digifact_config where empresa_id = '10000000-0000-0000-0000-00000000000a'), 'suspendido'; assert (select count(*) from public.fel_sys_digifact_credencial('10000000-0000-0000-0000-00000000000a')) = 0, 'suspendida: el servicio no entrega credencial'; end $$;
 select public.fel_op_digifact_registrar_prueba('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', true);
 -- el NIT no cambia tras la primera operación
-create temp table t_est as select (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, '1', 'Casa matriz A', 'Dirección', 'activo')).id a;
+create temp table t_est as select a from t_e10;
 select public.fel_op_cliente_guardar('00000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-00000000000a', null, 'NIT', '3333333-3', 'Cliente A1', null, null, null, null);
 create temp table t_doc as select (public.fel_op_documento_guardar('00000000-0000-0000-0000-0000000000c3', '10000000-0000-0000-0000-00000000000a', null,
   (select id from public.clientes where empresa_id = '10000000-0000-0000-0000-00000000000a' limit 1), current_date, 'prueba',
@@ -176,7 +177,7 @@ do $$ declare j jsonb; begin
   j := public.fel_admin_datos_excepcionales_configuracion('00000000-0000-0000-0000-0000000000a1', '10000000-0000-0000-0000-00000000000a');
   assert j -> 'digifact' ->> 'tiene_credencial' = 'true', 'indica que hay credencial';
   assert j::text !~* '(credencial_cifrada|llave_version|abababab)', 'la lectura excepcional JAMÁS devuelve la credencial';
-  assert j -> 'emisor' ->> 'huella' = 'cccccccccccccccc', 'devuelve el emisor aprobado';
+  assert j -> 'emisores' -> 0 ->> 'huella' = 'cccccccccccccccc', 'devuelve el emisor aprobado';
 end $$;
 -- vence y se revoca
 update public.acceso_maestro_datos set creada_en = now() - interval '3 hours', expira_en = now() - interval '1 hour' where id = (select a from t_acc);

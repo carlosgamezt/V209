@@ -10,10 +10,11 @@ import { descifrarCredencial, type LlavesCredenciales } from "./credenciales_emp
 import type { EmisorGt } from "./nuc_gt.ts";
 
 export interface FilaCredencial { digifact_nit: string; credencial_cifrada: Uint8Array; llave_version: number; consulta_nit: boolean; consulta_cui: boolean; certificar: boolean; correo_digifact: boolean; version: number }
-export interface FilaEmisor { version: number; nit: string; nombre_fiscal: string; nombre_comercial: string | null; afiliacion_iva: string; frases: Array<{ tipo: number; escenario: number }>; correo: string | null;
+export interface FilaEmisor { establecimiento_id: string; version: number; nit: string; nombre_fiscal: string; nombre_comercial: string | null; afiliacion_iva: string; frases: Array<{ tipo: number; escenario: number }>; correo: string | null;
   codigo_establecimiento: number; direccion: string; codigo_postal: string; municipio: string; departamento: string; huella: string }
-export interface LecturaEmpresa { credencial: FilaCredencial | null; emisor: FilaEmisor | null }
-export interface Resuelto { empresaId: string; version: number; consultaNit: boolean; consultaCui: boolean; certificar: boolean; correoDigifact: boolean; cliente: ClienteGt; emisor: DatosEmisorEmpresa }
+/** `emisores`: UN emisor aprobado vigente por establecimiento de la empresa. */
+export interface LecturaEmpresa { credencial: FilaCredencial | null; emisores: FilaEmisor[] }
+export interface Resuelto { empresaId: string; version: number; firma: string; consultaNit: boolean; consultaCui: boolean; certificar: boolean; correoDigifact: boolean; cliente: ClienteGt; emisores: ReadonlyMap<number, DatosEmisorEmpresa> }
 export interface DepsResolvedor {
   /** Lee, en UN viaje, la configuración activa y el emisor aprobado de ESA empresa (null si no hay). Debe respetar `fel_sys_digifact_credencial` y `fel_sys_emisor_vigente`. */
   leer: (empresaId: string) => Promise<LecturaEmpresa>;
@@ -41,6 +42,12 @@ export class ResolvedorDigifact {
   #ahora() { return (this.#d.ahora ?? Date.now)(); }
   /** Lo ya resuelto, SIN consultar nada (incluso si venció: solo `asegurar` decide la frescura). */
   sincrono(empresaId: string): Resuelto | null { return this.#ok.get(empresaId.toLowerCase())?.r ?? null; }
+  /** Emisor aprobado del ESTABLECIMIENTO (código SAT). Sin código (operaciones que no son de un documento): el de menor código; nunca uno de otra empresa. */
+  emisorDe(empresaId: string, codigo?: number): DatosEmisorEmpresa | null {
+    const r = this.sincrono(empresaId); if (!r) return null;
+    if (typeof codigo === "number") return r.emisores.get(codigo) ?? null;
+    const menor = [...r.emisores.keys()].sort((a, b) => a - b)[0]; return menor === undefined ? null : r.emisores.get(menor)!;
+  }
   invalidar(empresaId: string) { this.#ok.delete(empresaId.toLowerCase()); }
   tamano() { return this.#ok.size; }
   /** Garantiza una resolución vigente de la empresa (caché → una sola carga a la vez). Nunca lanza con datos sensibles: ante cualquier fallo, la empresa queda SIN canal. */
@@ -59,24 +66,28 @@ export class ResolvedorDigifact {
     };
     let lec: LecturaEmpresa;
     try { lec = await d.leer(id); } catch { d.registrar?.("lectura_fallida", id, "BD"); return guardar(null, err); }
-    if (!lec.credencial || !lec.emisor) return guardar(null, neg);   // sin conexión activa o sin emisor aprobado: sin canal
-    const c = lec.credencial, em = lec.emisor, previo = this.#ok.get(id)?.r;
-    if (previo && previo.version === c.version && previo.emisor.huella === em.huella) return guardar(previo, ttl);   // misma configuración: se conserva el cliente (y su token)
+    if (!lec.credencial || !lec.emisores?.length) return guardar(null, neg);   // sin conexión activa o sin ningún emisor aprobado: sin canal
+    const c = lec.credencial, firma = lec.emisores.map((x) => `${x.codigo_establecimiento}:${x.version}:${x.huella}`).sort().join(","), previo = this.#ok.get(id)?.r;
+    if (previo && previo.version === c.version && previo.firma === firma) return guardar(previo, ttl);   // misma configuración: se conserva el cliente (y su token)
     try {
       const claro = await descifrarCredencial(d.llaves, id, c.credencial_cifrada, c.llave_version);
-      const datos = datosDeFila(em);
-      if ((await huellaEmisor(datos)) !== em.huella) { d.registrar?.("huella_no_coincide", id, "EMISOR"); return guardar(null, err); }   // los datos aprobados no coinciden con su huella: no se usa
-      const emisor = emisorGtDeDatos(datos);
+      const emisores = new Map<number, DatosEmisorEmpresa>();
+      for (const em of lec.emisores) {   // cada establecimiento con SU emisor; el que no coincide con su huella aprobada (o está repetido) se descarta y solo ese establecimiento queda sin canal
+        const datos = datosDeFila(em);
+        if ((await huellaEmisor(datos)) !== em.huella || emisores.has(em.codigo_establecimiento)) { d.registrar?.("huella_no_coincide", id, "EMISOR"); continue; }
+        emisores.set(em.codigo_establecimiento, { emisor: emisorGtDeDatos(datos), huella: em.huella });
+      }
+      if (!emisores.size) return guardar(null, err);
       const cliente = d.crearCliente({ nit: c.digifact_nit, usuario: claro.usuario, clave: claro.clave });
-      return guardar({ empresaId: id, version: c.version, consultaNit: c.consulta_nit, consultaCui: c.consulta_cui, certificar: c.certificar, correoDigifact: c.correo_digifact, cliente, emisor: { emisor, huella: em.huella } }, ttl);
+      return guardar({ empresaId: id, version: c.version, firma, consultaNit: c.consulta_nit, consultaCui: c.consulta_cui, certificar: c.certificar, correoDigifact: c.correo_digifact, cliente, emisores }, ttl);
     } catch (e) { d.registrar?.("resolucion_fallida", id, (e as { codigo?: string })?.codigo ?? "ERROR"); return guardar(null, err); }
     void t;
   }
 }
 
 /** Fachada con la misma interfaz que usan las rutas: antes de cada llamada asegura la resolución de LA empresa del contexto y delega en UN ServicioFelGt compartido, que solo ve el cliente y el emisor de esa empresa. */
-export function crearServicioMultiempresa(res: ResolvedorDigifact, base: Omit<DepsFelGt, "clienteDe" | "emisorDe" | "autorizaPrueba" | "autorizaPruebaDe">) {
-  const svc = new ServicioFelGt({ ...base, clienteDe: (e) => res.sincrono(e)?.cliente ?? null, emisorDe: (e) => res.sincrono(e)?.emisor ?? null, autorizaPrueba: () => null,
+export function crearServicioMultiempresa(res: ResolvedorDigifact, base: Omit<DepsFelGt, "clienteDe" | "emisorDe" | "emisorPorEstablecimiento" | "autorizaPrueba" | "autorizaPruebaDe">) {
+  const svc = new ServicioFelGt({ ...base, clienteDe: (e) => res.sincrono(e)?.cliente ?? null, emisorDe: (e, cod) => res.emisorDe(e, cod), emisorPorEstablecimiento: true, autorizaPrueba: () => null,
     autorizaPruebaDe: (e) => (res.sincrono(e)?.certificar ? AUTORIZACION_CICLO : null) });
   const listo = async (ctx: ContextoFel) => { await res.asegurar(ctx.empresaId); };
   const sinCanal = (m: string) => new ErrorFelGt("SIN_CANAL", m);

@@ -3,6 +3,7 @@
 // La empresa, la persona y los permisos salen de la SESIÓN y de la base de datos; nunca de lo que mande el navegador.
 import type { BdDemo } from "./bd.ts";
 import { marcar } from "./medicion.ts";
+import { enAlcance, type Alcance } from "./alcance_establecimientos.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
 import { ErrorFelGt, type ContextoFel, type DocumentoFel, type ServicioFelGt } from "../../proveedores/src/felgt_servicio.ts";
 import { consultarReceptorNit, crearLimitador, ErrorReceptorNit, TOPE_REAL_GLOBAL, TOPE_REAL_POR_EMPRESA } from "./receptor_nit.ts";
@@ -17,6 +18,7 @@ export interface CtxDigifact {
   m: string; ruta: string; a: { clave: string; id: string }; empresa: string;
   cuerpo: () => Promise<Obj>; id: (x: string) => string; json: (x: unknown, s?: number) => Response; permisos: () => Promise<string[]>;
   detalle?: (id: string) => Promise<unknown>;
+  alcance?: Alcance | null;   // alcance de establecimientos de la persona (solo si la función está encendida): un documento fuera de él responde «no encontrado»
   revisar?: (id: string, version: number) => Promise<void>;   // marca el borrador como revisado (misma regla que POST …/estado)   // el documento ya armado: la respuesta de «certificar» lo lleva para que la pantalla NO tenga que pedirlo de nuevo
 }
 const limitadores = new WeakMap<BdDemo, (empresa: string) => boolean>();   // un tope de consultas de NIT por minuto y por empresa (simulador), por base de datos
@@ -27,8 +29,8 @@ const NO_HABILITADO = { codigo: "digifact_no_habilitado", mensaje: "Digifact TES
 /** Lee un documento de LA empresa indicada (nunca de otra) en la forma que necesita el servicio. */
 export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: string): Promise<DocumentoFel | null> {
   const conTipos = await tiposDisponibles(bd);   // sin la propuesta de tipos aplicada, las columnas nuevas no existen: el documento es Factura, como siempre
-  const [d] = await bd.filas<Obj>(`select d.id, d.empresa_id, d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista::text as fecha_emision_prevista, ${conTipos ? "d.tipo_dte, d.referencia_origen, d.motivo_ajuste, d.tipo_recibo," : ""} c.tipo_identificacion as c_tipo, c.numero_identificacion as c_num, c.nombre as c_nombre
-      from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2`, [docId, empresa]);
+  const [d] = await bd.filas<Obj>(`select d.id, d.empresa_id, d.estado_preparacion, d.estado_fiscal, d.establecimiento_id, es.codigo_sat as est_codigo, d.fecha_emision_prevista::text as fecha_emision_prevista, ${conTipos ? "d.tipo_dte, d.referencia_origen, d.motivo_ajuste, d.tipo_recibo," : ""} c.tipo_identificacion as c_tipo, c.numero_identificacion as c_num, c.nombre as c_nombre
+      from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos es on es.id = d.establecimiento_id and es.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2`, [docId, empresa]);
   if (!d) return null;
   const ls = await bd.filas<Obj>(`select l.descripcion, l.cantidad::text as cantidad, l.precio_unitario::text as precio_unitario, l.importes->>'descuento' as descuento, k.tipo as concepto_tipo, k.unidad_medida
       from public.documento_lineas l left join public.conceptos k on k.id = l.concepto_id and k.empresa_id = l.empresa_id where l.documento_id = $1 and l.empresa_id = $2 order by l.orden`, [docId, empresa]);
@@ -38,6 +40,7 @@ export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: strin
   return {
     id: String(d.id), empresaId: String(d.empresa_id), estadoPreparacion: String(d.estado_preparacion), estadoFiscal: String(d.estado_fiscal),
     tipoDte: String(d.tipo_dte ?? "FACT"),
+    ...(d.establecimiento_id ? { establecimientoId: String(d.establecimiento_id), ...(/^[0-9]{1,4}$/.test(String(d.est_codigo ?? "")) ? { establecimientoCodigo: Number(d.est_codigo) } : {}) } : {}),   // leído de la base, nunca del navegador
     ...(d.fecha_emision_prevista ? { fechaEmisionPrevista: String(d.fecha_emision_prevista).slice(0, 10) } : {}),   // la fecha ELEGIDA: es la que viaja en Header.IssuedDateTime
     ...(ro ? { origen: { tipo: String(ro.tipo), autorizacion: String(ro.autorizacion), fechaEmision: String(ro.fecha_emision), serie: String(ro.serie), numero: String(ro.numero), receptorId: String(ro.receptor_id) } } : {}),
     ...(d.motivo_ajuste ? { motivoAjuste: String(d.motivo_ajuste) } : {}), ...(d.tipo_recibo ? { tipoRecibo: String(d.tipo_recibo) } : {}),
@@ -107,7 +110,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
     // Tipos que la base permite certificar en TEST (migración 31, si está aplicada; si no, la lista queda vacía y solo FACT certifica).
     svc.fijarTiposTest(await tiposCertificablesTest(bd));
     const b = await c.cuerpo();
-    const doc = async () => { const x = await leerDocumentoFel(bd, c.empresa, docId); if (!x) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado"); return x; };
+    const doc = async () => { const x = await leerDocumentoFel(bd, c.empresa, docId); if (!x || !enAlcance(c.alcance, x.establecimientoId)) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado"); return x; };   // fuera del alcance de establecimientos = no existe para esa persona
     // «Enviar factura por correo»: solo si la petición lo pide Y el servidor lo habilita para esta empresa Y el destinatario está autorizado. Digifact lo envía al certificar; aquí solo se valida y se pasa el destinatario.
     const pedirCorreo = (): { correo?: string; rechazo?: Response } => {
       if (b.enviar_correo !== true) return {};

@@ -48,7 +48,7 @@ begin raise exception 'FEL_REGLA: este registro solo admite altas'; end $$;
 create trigger empresa_digifact_eventos_solo_alta before update or delete on public.empresa_digifact_eventos for each row execute function public.fel_solo_agregar();
 
 -- Reglas de la configuración: el NIT no cambia tras la primera operación; certificar exige emisor aprobado y prueba correcta; versión que avanza.
-create or replace function public.fel_digifact_config_reglas() returns trigger language plpgsql set search_path = '' as $$
+create or replace function public.fel_digifact_config_reglas() returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'UPDATE' then
     if old.digifact_nit is not null and new.digifact_nit is distinct from old.digifact_nit
