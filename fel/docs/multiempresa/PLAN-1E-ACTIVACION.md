@@ -80,3 +80,9 @@ Antes de cambiar la función, en este orden y en solo lectura donde sea posible:
 | 5 | Cerrar: retirar la conexión anterior | — |
 
 La certificación real por establecimiento queda **bloqueada** hasta completar `datos-emisor` de 2 y 67 y la aprobación de su emisor.
+
+## 8. Ensayo en el proyecto aislado «nexa-fel-test» (procedimiento)
+Prerrequisitos que coordina el titular: proyecto creado (plan Free, USD 0.00 adicional según la consulta a la organización), **sin ninguna integración, webhook, tarea programada, Resend ni correo habilitados**, y un entorno protegido de GitHub (p. ej. `ensayo-1e`, con aprobación manual) con los secretos `ENSAYO_REF`, `ENSAYO_URL_ADMIN` (session pooler 5432), `ENSAYO_URL_APP` (pooler 6543, usuario `nexa_app.<ref>`) y `ENSAYO_CLAVE_NEXA_APP`.
+Script: `tools/ensayo-1e.sh validar|aplicar|probar|todo` — guardas (exige `ENSAYO_CONFIRMO=nexa-fel-test`, se niega si el ref es el de nexa-demo o si los usuarios no corresponden), migraciones 1-30 solo si el proyecto está vacío, propuestas en orden, verificación de solo lectura, datos **simulados** (dos empresas, establecimientos 2 y 67), pruebas como `nexa_app` por el pooler, sonda R2 y comprobación de RLS sin política.
+Validado hoy contra un PostgreSQL local (no contra el pooler ni el proyecto real): todas las etapas en verde, `nexa_app` sin super ni BYPASSRLS, 108 funciones ejecutables, sonda R2 «abierto» (esperado hoy).
+Lo que solo se puede comprobar en el proyecto real: formato del usuario del pooler, `create role`/`alter role` con el administrador de Supabase, comportamiento de `auth`/`vault` y duración de las migraciones.
