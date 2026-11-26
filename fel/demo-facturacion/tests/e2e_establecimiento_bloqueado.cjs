@@ -39,6 +39,9 @@ async function arrancar() {
         } else if (caso === "supervisor") {
           assert.deepEqual(opciones.sort(), ["1", "2"], `${donde}: el supervisor elige solo entre los suyos`); assert.equal(bloqueado, false, `${donde}: el supervisor puede cambiar`); assert.equal(valor, ids.e2, `${donde}: predeterminado: el activo`);
         } else { assert.equal(bloqueado, false, `${donde}: sin alcance se puede elegir como siempre`); assert.ok(opciones.length >= 2); }
+        // interruptores coordinados: con la administración APAGADA en el servidor no hay menú ni pantalla de administración
+        assert.equal(await p.locator('a[href="#/establecimientos"]').count(), 0, `${donde}/${caso}: sin enlace de administración`);
+        await p.goto(srv.url + "/#/establecimientos"); await p.waitForTimeout(300); assert.equal(await p.locator('[data-panel="est-lista"]').count(), 0, `${donde}/${caso}: sin pantalla de administración`);
         console.log(`OK ${donde} · ${caso}: opciones [${opciones}] · elegido ${visible.slice(0, 12)} · bloqueado ${bloqueado}`);
         await c.close();
       }

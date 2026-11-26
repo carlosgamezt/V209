@@ -43,7 +43,7 @@ const NAV = [
   { ruta: "/clientes", titulo: "Clientes", icon: "users", permiso: "clientes.ver" },
   { ruta: "/conceptos", titulo: "Conceptos", icon: "package", permiso: "conceptos.ver" },
   { ruta: "/usuarios", titulo: "Usuarios", icon: "users", permiso: "usuarios.ver", practico: true },
-  { ruta: "/establecimientos", titulo: "Establecimientos", corto: "Sucursales", icon: "building", permiso: "establecimientos.asignar", practico: true },
+  { ruta: "/establecimientos", titulo: "Establecimientos", corto: "Sucursales", icon: "building", permiso: "establecimientos.asignar", practico: true, bandera: "adminEstablecimientos" },
   { ruta: "/plan", titulo: "Plan y consumo", icon: "package", permiso: "facturacion.ver", practico: true },
   { ruta: "/config", titulo: "Configuración", icon: "building", permiso: "empresa.ver" },
   { ruta: "/cuenta", titulo: "Mi cuenta", icon: "lock", permiso: "borradores.ver", practico: true, login: true },
@@ -97,7 +97,7 @@ async function iniciar(estadoInicial) {
     try { const pre = globalThis.__felPrecarga; const r = (pre && Date.now() - pre.t < 10000 && pre.pendientes && !pre.pendUsado ? (pre.pendUsado = true, await pre.pendientes) : null) ?? await api.documentosPagina("pagina=1&tam=25&categoria=pendientes"); pendientes = r.items; pendientes.total = r.total; } catch { pendientes = []; }   // solo la primera página de pendientes (no todos los documentos)
   }
   function pintarMenu() {
-    const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin));
+    const r = rutaActual(), items = maestro ? NAV_MAESTRO : NAV.filter((n) => ctx.tiene(n.permiso) && (!n.practico || estado.practico) && (!n.login || conLogin) && (!n.bandera || estado[n.bandera]));
     const enlaces = (clase) => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null }, icono(n.icon), h("span", {}, n.titulo)));
     const enlacesMovil = () => items.map((n) => h("a", { href: `#${n.ruta}`, class: `nv${activa(n, r) ? " act" : ""}`, "aria-current": activa(n, r) ? "page" : null, "aria-label": n.titulo }, icono(n.icon), h("span", {}, n.corto ?? n.titulo)));
     const todos = enlaces(), movilTodos = enlacesMovil(), principales = movilTodos.slice(0, 4), resto = todos.slice(4), restoActivo = items.slice(4).some((n) => activa(n, r));
@@ -162,7 +162,7 @@ async function iniciar(estadoInicial) {
     else if (ruta === "/panel" && estado.practico) vista = perezosa("pantallaPanel", ctx);
     else if (ruta === "/cuenta" && conLogin) vista = perezosa("pantallaCuenta", ctx);
     else if (ruta === "/usuarios" && estado.practico) vista = perezosa("pantallaUsuarios", ctx);
-    else if (ruta === "/establecimientos" && estado.practico && (estado.permisos ?? []).includes("establecimientos.asignar")) vista = perezosa("pantallaEstablecimientos", ctx);
+    else if (ruta === "/establecimientos" && estado.practico && estado.adminEstablecimientos && (estado.permisos ?? []).includes("establecimientos.asignar")) vista = perezosa("pantallaEstablecimientos", ctx);
     else if (ruta === "/config") vista = perezosa("pantallaConfig", ctx);
     else vista = pantallaLista(ctx);
     poner(contenido, vista); pintarMenu(); precargarPantallas();
