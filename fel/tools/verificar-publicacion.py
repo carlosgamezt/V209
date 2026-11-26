@@ -453,4 +453,27 @@ if os.path.exists(RB) and os.path.exists(RS):
     else: mal("[respaldo] una salida del script imprime un secreto")
 else: mal("[respaldo] faltan el flujo o el script de respaldo")
 
+# ---- ensayo 1E (proyecto de pruebas aislado «nexa-fel-test»): entorno y secretos PROPIOS; jamás los de la demostración ni sus entornos
+EN = ".github/workflows/ensayo-1e.yml"
+if os.path.exists(EN):
+    wen = yaml.safe_load(open(EN, encoding="utf-8").read()); tx = open(EN, encoding="utf-8").read(); dis = wen.get(True, wen.get("on")); jb = wen["jobs"]; j1 = next(iter(jb.values()))
+    if set(dis) == {"workflow_dispatch"} and len(jb) == 1: ok("[ensayo-1e] solo manual (workflow_dispatch) y un único trabajo")
+    else: mal("[ensayo-1e] debe ser solo workflow_dispatch con un único trabajo")
+    if j1.get("environment") == "ensayo-1e" and "demo-privada" not in tx: ok("[ensayo-1e] entorno protegido propio «ensayo-1e» (y nunca demo-privada)")
+    else: mal("[ensayo-1e] debe usar environment: ensayo-1e y no mencionar demo-privada")
+    if "refs/heads/fel-proveedores-diseno" in str(j1.get("if", "")): ok("[ensayo-1e] solo corre desde la rama fija")
+    else: mal("[ensayo-1e] falta la restricción de rama")
+    sec = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", tx)); codigo_tx = "\n".join(l for l in tx.splitlines() if not l.lstrip().startswith("#"))   # los comentarios pueden nombrar a la demostración; el código, no
+    if sec and all(n.startswith("ENSAYO_") for n in sec) and "DEMO_" not in codigo_tx and "nexa-demo" not in codigo_tx: ok(f"[ensayo-1e] los {len(sec)} secretos tienen prefijo ENSAYO_ y no se menciona ningún secreto DEMO_ ni nexa-demo")
+    else: mal(f"[ensayo-1e] secretos fuera de ENSAYO_ o referencias a la demostración: {sorted(n for n in sec if not n.startswith('ENSAYO_'))}")
+    if "secrets." not in str(j1.get("env", "")) and [s.get("name") for s in j1["steps"] if "secrets." in str(s.get("env", "")) or "secrets." in str(s.get("with", ""))] == ["Ejecutar el ensayo"]: ok("[ensayo-1e] los secretos solo se inyectan en el paso «Ejecutar el ensayo» (ni acciones de terceros ni nivel de trabajo)")
+    else: mal("[ensayo-1e] secretos en pasos no permitidos")
+    if "ENSAYAR-EN-NEXA-FEL-TEST" in tx and "inputs.confirmar" in tx: ok("[ensayo-1e] aplicar/probar exigen la confirmación literal")
+    else: mal("[ensayo-1e] falta la confirmación explícita")
+    if "upload-artifact" not in tx and "::add-mask" not in tx and "echo ${{ secrets" not in tx and "set -x" not in tx: ok("[ensayo-1e] sin artefactos, sin eco de secretos y sin trazas de comandos")
+    else: mal("[ensayo-1e] un paso podría exponer secretos")
+    sh = open("fel/tools/ensayo-1e.sh", encoding="utf-8").read()
+    if "set -x" not in sh and not re.search(r'echo[^\n]*\$\{?ENSAYO_(URL|CLAVE)', sh) and "FEL_DEMO_PROYECTO_REF" in sh: ok("[ensayo-1e] el script no imprime cadenas de conexión ni contraseñas y se niega ante el proyecto de la demostración")
+    else: mal("[ensayo-1e] el script podría imprimir secretos o no se protege de nexa-demo")
+else: mal("[ensayo-1e] falta el flujo")
 sys.exit(1 if fallos else 0)

@@ -10,6 +10,7 @@ import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
 import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
 import type { AdminEst } from "./admin_establecimientos.ts";
+import { conIdentidadDeSesion } from "./identidad_sesion.ts";
 import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
@@ -54,9 +55,11 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
+export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSesion?: boolean;  ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
-  const alcance = new AsyncLocalStorage<{ empresa: string; alc: Alcance | null }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
+  const alcance = new AsyncLocalStorage<{ empresa: string; alc: Alcance | null; token?: string | null; actor?: string | null }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
+  // IDENTIDAD DE SESIÓN (R2 · F1): con el interruptor, las funciones con envoltorio `fel_ses_*` se llaman con el token de la sesión y SIN actor ni empresa (la base los deduce); ver identidad_sesion.ts
+  const bd = extras.identidadSesion ? conIdentidadDeSesion(bdBase, () => { const x = alcance.getStore(); return x ? { token: x.token ?? null, actor: x.actor ?? null, empresa: x.empresa } : undefined; }) : bdBase;
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
   const alc = () => alcance.getStore()?.alc ?? null;   // alcance de establecimientos de la persona de ESTA petición (null = sin restricción)
   const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, digifactCorreo: extras.digifactCorreo, correo: extras.correo }) : null;
@@ -450,7 +453,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       const atender = async () => {
         if (pr && esMaestro(a.clave)) return await pr.rutasMaestro(req, url, a);   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
         const empresaP = (await personaDe(a.clave))?.empresa ?? EMPRESA, alcP = extras.alcance ? await extras.alcance(req, a, empresaP) : null;   // la identidad y el alcance salen de la sesión validada, no de la petición
-        return await alcance.run({ empresa: empresaP, alc: alcP }, async () => {
+        return await alcance.run({ empresa: empresaP, alc: alcP, token: Sesiones.idDeCookie(req), actor: a.id }, async () => {
           if (restringido(alcP)) {   // un documento fuera del alcance de establecimientos de la persona NO EXISTE para ella (lectura, modificación, certificación, descargas, correo…)
             const mDoc = /^\/api\/documentos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i.exec(url.pathname);
             if (mDoc && !/\/digifact\//.test(url.pathname)) { const [r] = await bd.filas<{ establecimiento_id: string | null }>("select establecimiento_id from public.documentos where id = $1 and empresa_id = $2", [mDoc[1], empresaP]); if (r && !enAlcance(alcP, r.establecimiento_id)) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado"); }

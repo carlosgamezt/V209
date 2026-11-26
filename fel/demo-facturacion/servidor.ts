@@ -75,7 +75,7 @@ const correoDg = crearPoliticaCorreoDigifactDesdeEntorno((k) => Deno.env.get(k))
 console.log(`  Correo por Digifact: ${correoDg.politica ? "habilitado para una empresa y destinatarios de prueba" : "apagado"}`);
 const correo = crearCorreoDesdeEntorno((k) => Deno.env.get(k), bd);
 console.log(`  Correo: ${correo.motivo}`);
-const api = crearApi(bd, mundo, { ...(ESTAB_LOCAL ? { alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio, digifactCorreo: correoDg.politica, correo: correo.servicio });
+const api = crearApi(bd, mundo, { ...(ESTAB_LOCAL ? { identidadSesion: true, alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), supervisor: agente.supervisor, metricas: agente.metricas, sesiones, practico: true, mfa: MFA, digifact: digifact.servicio, digifactCorreo: correoDg.politica, correo: correo.servicio });
 
 async function estatico(ruta: string): Promise<Response> {
   let archivo: string;

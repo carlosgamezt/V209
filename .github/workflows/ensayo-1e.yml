@@ -1,0 +1,55 @@
+# NEXA FEL · Ensayo 1E en el proyecto de pruebas AISLADO «nexa-fel-test» (nunca nexa-demo).
+# Solo se lanza a mano, desde la rama fija, en un entorno PROPIO y protegido («ensayo-1e», con aprobación obligatoria) y con secretos propios (prefijo ENSAYO_), distintos de los de la demostración (DEMO_).
+# «validar» no toca la base. «aplicar», «probar» y «todo» exigen escribir la confirmación literal. No sube artefactos, no imprime cadenas de conexión y no usa Resend, correo ni Digifact.
+name: NEXA FEL · Ensayo 1E (nexa-fel-test)
+on:
+  workflow_dispatch:
+    inputs:
+      paso:
+        description: "validar = solo comprueba la forma (no toca la base) · aplicar = migraciones + datos simulados · probar = pruebas como nexa_app · todo = aplicar y probar"
+        type: choice
+        default: validar
+        options: [validar, aplicar, probar, todo]
+      confirmar:
+        description: "Para aplicar, probar o todo escribe exactamente: ENSAYAR-EN-NEXA-FEL-TEST"
+        required: false
+        default: ""
+      r2_esperado:
+        description: "Estado esperado de la sonda R2: abierto (hoy) o cerrado (tras terminar las fases de corrección)"
+        type: choice
+        default: abierto
+        options: [abierto, cerrado]
+permissions:
+  contents: read
+concurrency:
+  group: ensayo-1e
+  cancel-in-progress: false
+jobs:
+  ensayo:
+    if: github.ref == 'refs/heads/fel-proveedores-diseno'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ensayo-1e
+    steps:
+      - name: Confirmación explícita
+        if: inputs.paso != 'validar' && inputs.confirmar != 'ENSAYAR-EN-NEXA-FEL-TEST'
+        run: |
+          echo "Para aplicar o probar hay que escribir exactamente: ENSAYAR-EN-NEXA-FEL-TEST"
+          exit 1
+      - uses: actions/checkout@v4
+      - name: Cliente de PostgreSQL
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          psql --version
+      - name: Ejecutar el ensayo
+        env:
+          PASO: ${{ inputs.paso }}
+          ENSAYO_CONFIRMO: nexa-fel-test
+          FEL_R2_ESPERADO: ${{ inputs.r2_esperado }}
+          ENSAYO_REF: ${{ secrets.ENSAYO_REF }}
+          ENSAYO_URL_ADMIN: ${{ secrets.ENSAYO_URL_ADMIN }}
+          ENSAYO_URL_APP: ${{ secrets.ENSAYO_URL_APP }}
+          ENSAYO_CLAVE_NEXA_APP: ${{ secrets.ENSAYO_CLAVE_NEXA_APP }}
+        run: |
+          case "$PASO" in validar|aplicar|probar|todo) ;; *) echo "Paso no válido"; exit 2;; esac
+          bash fel/tools/ensayo-1e.sh "$PASO"

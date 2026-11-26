@@ -16,7 +16,7 @@ D=${FEL_PROPUESTA:-docs/multiempresa/propuesta}
 for f in supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f" >/dev/null; done
 echo "migraciones aplicadas: $(ls supabase/migrations/*.sql | wc -l)"
 [ "$(Q "select count(*) from pg_tables where schemaname='public' and tablename in ('empresa_digifact_config','empresa_emisor_versiones','empresa_digifact_eventos','acceso_maestro_datos')")" = 0 ] && echo "OK    antes: sin tablas multiempresa"
-aplicar() { for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos; do "${PSQL[@]}" --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done; }
+aplicar() { for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion; do "${PSQL[@]}" --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done; }
 aplicar; echo "OK    M-D, M-A, M-B, M-C, M-F y M-G aplicadas (una transacción cada una)"
 if "${PSQL[@]}" --single-transaction -f $D/M-A_emisor_fiscal.sql >/dev/null 2>&1; then echo "FALLO: M-A se aplicó dos veces"; exit 1; else echo "OK    reaplicar falla sin cambiar nada"; fi
 printf '%s\n' '\set ON_ERROR_STOP on' 'begin transaction read only;' "\i $D/verificacion.sql" > /tmp/multi_$$.sql

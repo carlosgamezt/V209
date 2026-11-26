@@ -15,7 +15,7 @@ type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 async function entorno() {
   const bd = await crearBd(); const mundo = await prepararBase(bd, { sembrar: true }); const ids = await activarEstablecimientosLocal(bd);
   const sesiones = new Sesiones(undefined, new AlmacenPg(bd)); sesiones.claveDemoPublica = CLAVE_DEMO; for (const k of Object.keys(PERSONAS)) await sesiones.registrar(k, CLAVE_DEMO, PERSONAS[k]);
-  const api = crearApi(bd, mundo, { sesiones, practico: true, alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) });
+  const api = crearApi(bd, mundo, { identidadSesion: true, sesiones, practico: true, alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) });
   class Cli { cookie = ""; constructor(public usuario: string, public clave = CLAVE_DEMO) {}
     async ll(m: string, ruta: string, cuerpo?: unknown, sinCookie = false) {
       const r = await api(new Request("http://127.0.0.1" + ruta, { method: m, headers: { "x-demo": "1", "content-type": "application/json", ...(this.cookie && !sinCookie ? { cookie: this.cookie } : {}) }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) }));

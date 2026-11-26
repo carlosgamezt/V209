@@ -13,7 +13,7 @@ type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 Deno.test({ name: "rol nexa_app: recorrido real completo (sesión, MFA, factura, certificación simulada, PDF, anulación, maestro) con la base como nexa_app", ignore: !hay, sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const bdp = await baseDePrueba({ vacia: false }), SECRETO = claveFuerte() + claveFuerte(), [rol, clavePg] = rolApp!.split(":");
   const claves: Record<string, string> = Object.fromEntries(["maestro", "maestro2", "ana", "luis", "marta", "pedro", "sofia"].map((u) => [u, claveFuerte()])), semillas = { maestro: semillaNueva(), maestro2: semillaNueva() };
-  const base: Record<string, string> = { FEL_DEMO_CLAVES: Object.entries(claves).map(([u, c]) => `${u}=${c}`).join(","), FEL_DEMO_MFA_SEMILLAS: Object.entries(semillas).map(([u, s]) => `${u}=${s}`).join(","), FEL_DEMO_HOSTS: HOST, FEL_PROXY_SECRETO: SECRETO, FEL_DEMO_LIMITE_LOGIN: "6", FEL_DEMO_LIMITE_API: "100000" };
+  const base: Record<string, string> = { FEL_DEMO_CLAVES: Object.entries(claves).map(([u, c]) => `${u}=${c}`).join(","), FEL_DEMO_MFA_SEMILLAS: Object.entries(semillas).map(([u, s]) => `${u}=${s}`).join(","), FEL_DEMO_HOSTS: HOST, FEL_PROXY_SECRETO: SECRETO, ...(Deno.env.get("FEL_IDENTIDAD_SESION") === "1" ? { FEL_IDENTIDAD_SESION: "1" } : {}), FEL_DEMO_LIMITE_LOGIN: "6", FEL_DEMO_LIMITE_API: "100000" };
   const u = new URL(bdp.url!); u.username = rol; u.password = clavePg;
   const envAdmin: Record<string, string> = { ...base, FEL_DEMO_BD_URL: bdp.url! }, envApp: Record<string, string> = { ...base, FEL_DEMO_BD_URL: u.toString() };
   try {

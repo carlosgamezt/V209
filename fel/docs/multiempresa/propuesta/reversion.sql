@@ -7,6 +7,8 @@ do $$ begin
     raise exception 'FEL_REGLA: hay datos multiempresa; la reversión se niega (exporta y decide con el propietario)';
   end if;
 end $$;
+-- M-I (envoltorios de sesión de las fel_op_*; se retiran primero)
+do $$ declare r record; begin for r in select oid::regprocedure as f from pg_proc where pronamespace = 'public'::regnamespace and proname like 'fel\_ses\_%' loop execute format('drop function %s', r.f); end loop; end $$;
 -- M-G y M-F (se retiran primero)
 drop function if exists public.fel_adm_datos_excepcionales_configuracion(text, uuid), public.fel_adm_datos_excepcionales_documentos(text, uuid, integer), public.fel_adm_acceso_revocar(text, uuid),
   public.fel_adm_acceso_solicitar(text, uuid, text, text, uuid, integer), public.fel_adm_empresas_resumen(text), public.fel_adm_estado(text), public.fel_adm_digifact_suspender(text),

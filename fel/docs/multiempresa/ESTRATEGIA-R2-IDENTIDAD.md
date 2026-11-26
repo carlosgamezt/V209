@@ -72,3 +72,25 @@ Cuando F1 a F3 pasen todas las compuertas **y** el ensayo en `nexa-fel-test` dé
 1. Aprobar F0 y F1 como siguiente trabajo (solo local, sin tocar nexa-demo ni la base hospedada).
 2. Confirmar que **F5 (Supabase Auth)** es el objetivo final, o aceptar R1 como riesgo conocido para el piloto en TEST.
 3. Decidir si `nexa_sys` (F4) entra antes del primer cliente real o después.
+
+---
+# Anexo A · Compatibilidad de F1 con F5 (Supabase Auth) — evitar deuda técnica
+**Conclusión: F1 no duplica trabajo con F5, siempre que se mantenga una sola regla: la identidad se resuelve ÚNICAMENTE en `fel__sesion_empresa` / `fel__sesion_maestro`.**
+- Los envoltorios `fel_ses_*` (M-I) llaman a `fel__sesion_empresa(p_sesion)` y nada más para saber quién actúa y de qué empresa. Hoy `p_sesion` es el identificador opaco de la cookie (tabla `demo_sesiones`); en F5 será el JWT de Supabase Auth y **solo se reimplementa esa función** (validar firma, expiración, `aal2`, `sub` y la empresa de los metadatos). Los envoltorios, el generador, la capa del servidor (`identidad_sesion.ts`) y las pruebas por envoltorio **no cambian**.
+- Qué cambia en F5 y no en F1: la tabla de sesiones y su escritura por `nexa_app` (R1) desaparecen; el inicio de sesión pasa a Supabase Auth con MFA.
+- **Punto crítico que condiciona F5:** con conexión directa a PostgreSQL (nuestro caso, por el pooler) *nadie valida el JWT fuera de la base*. Si la función solo leyera `request.jwt.claims`, una conexión comprometida podría escribir esas claves. Por eso `fel__sesion_empresa` debe **verificar la firma del JWT dentro de la base** con material que `nexa_app` no pueda leer (clave pública del proyecto o secreto en una función `SECURITY DEFINER`). Hay que confirmar con el proyecto de pruebas si la base puede verificar la firma de las llaves asimétricas del proyecto; si no, el diseño alterno es un servicio de sesiones de confianza que firme tokens de corta vida con una clave que solo conozca la base. Es una **decisión de F5, no de F1**.
+- Deuda evitada: no se introdujo un segundo mecanismo de identidad (ni cabeceras de identidad, ni funciones por cliente, ni listas de personas autorizadas).
+- Deuda aceptada y acotada: el parámetro se llama `p_sesion` (hoy token opaco). Se documenta como «credencial de sesión»; renombrarlo en F5 sería un cambio mecánico por catálogo.
+
+# Anexo B · Módulos futuros (NEXA POS, inventarios, otros)
+- El patrón es reutilizable: cada módulo expone sus funciones con el mismo envoltorio (`<módulo>_ses_*`) y la misma resolución de identidad; los permisos nuevos se agregan al catálogo (`permisos_catalogo`/`rol_permisos`) y siguen siendo efectivos por rol, extras y revocados.
+- La empresa y el establecimiento activo salen de la sesión (`fel_adm_contexto`), por lo que un módulo de punto de venta puede reutilizar el establecimiento fijo por usuario sin una nueva fuente de verdad.
+- Los procesos sin persona (sincronización con POS, agentes) usarán el rol de sistema `nexa_sys` (F4) con credencial propia, no el rol de la aplicación.
+
+# Anexo C · Estado de las fases
+| Fase | Estado |
+|---|---|
+| F0 generador por catálogo + prueba de catálogo + sonda por clases | **hecha (local)**: `M-I` genera por catálogo; `prueba-r2-suplantacion.sql` por clases; `identidad_sesion_test.ts` compara el catálogo con la lista del servidor |
+| F1 clase C1 (34 funciones `fel_op_*` de empresa) | **hecha (local)**: 34 envoltorios, servidor con `FEL_IDENTIDAD_SESION`, `nexa_app` sin las originales, recorrido completo como `nexa_app` en verde |
+| F2 plataforma (C2) · F3 auditoría y previas a la sesión (C3, C5) · F4 `nexa_sys` · F5 Supabase Auth | pendientes |
+**R2 NO está cerrado:** la sonda sigue en «abierto» por C2 y C5 (y C3/C4/R1).
