@@ -122,10 +122,16 @@ async function main() {
       return;
     }
     case "listar-establecimientos": {   // SOLO LECTURA: qué establecimientos aparecen en el reporte de acuses de ESTA cuenta (mismo NIT y mismas credenciales); NO inventa códigos
-      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"); const filas: Awaited<ReturnType<DigifactGt["reporteAcuses"]>> = []; let consultados = 0, fallidos = 0;
-      for (let i = 0; i < 20; i++) { try { filas.push(...await c.reporteAcuses(fechaGt(-(i * 3 + 2) * 86_400_000), { hasta: fechaGt(-(i * 3) * 86_400_000), limite: 200 })); consultados++; } catch { fallidos++; } }
-      out({ prueba: "listar-establecimientos", ok: true, soloLectura: true, rangosConsultados: consultados, rangosFallidos: fallidos, filasVistas: filas.length, establecimientos: agruparEstablecimientos(filas),
-        nota: "Para leer el emisor de cada uno: paso «datos-emisor» con «autorizacion» = la autorización de ejemplo del establecimiento. Un establecimiento sin documentos recientes no aparece aquí." });
+      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"); const filas: Awaited<ReturnType<DigifactGt["reporteAcuses"]>> = [];
+      // Por etapas: 30, luego 90 y luego 180 días hacia atrás; ventanas de 3 días (máximo del reporte: 2 días de rango), sin repetir lo ya consultado; se DETIENE en cuanto aparecen ≥2 establecimientos
+      let consultados = 0, fallidos = 0, truncadas = 0, desde = 0; const etapas: Record<string, unknown>[] = []; let ests = agruparEstablecimientos(filas);
+      for (const tope of [30, 90, 180]) {
+        for (; desde < tope; desde += 3) { try { const f = await c.reporteAcuses(fechaGt(-(desde + 2) * 86_400_000), { hasta: fechaGt(-desde * 86_400_000), limite: 200 }); consultados++; if (f.length >= 200) truncadas++; filas.push(...f); } catch { fallidos++; } }
+        ests = agruparEstablecimientos(filas); etapas.push({ hastaDias: tope, filasVistas: filas.length, establecimientosVistos: ests.length });
+        if (ests.length >= 2) break;
+      }
+      out({ prueba: "listar-establecimientos", ok: true, soloLectura: true, etapas, solicitudes: consultados, solicitudesFallidas: fallidos, ventanasConPosibleTruncamiento: truncadas, filasVistas: filas.length, establecimientos: ests,
+        nota: "Para leer el emisor de cada uno: paso «datos-emisor» con «autorizacion» = la autorización de ejemplo del establecimiento. Solo aparecen los establecimientos con documentos en el periodo consultado." });
       return;
     }
     case "datos-emisor": {   // PREPARACIÓN de la certificación: SOLO LECTURA. Muestra los datos validados y la factura exacta que se enviaría
