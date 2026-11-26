@@ -55,7 +55,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
   const esCalentar = m === "POST" && ruta === "/api/digifact/calentar";
   if (esCalentar) {   // pide por adelantado el TOKEN de Digifact TEST (solo inicio de sesión: no envía ni consulta ningún documento) para que la primera certificación no espere ese paso
     const ctxK: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
-    if (svc && ctxK.permisos.includes("fiscal.certificar")) { try { await svc.calentar(ctxK); } catch { /* la certificación mostrará el motivo real */ } }
+    if (svc && ctxK.permisos.includes("fiscal.certificar")) { const b = await c.cuerpo().catch(() => ({} as Record<string, unknown>)); try { await svc.calentar(ctxK, { consulta: b.consulta === true }); } catch { /* la certificación mostrará el motivo real */ } }
     return c.json({ ok: true });
   }
   if (!esNit && !esEstado && !esReceptor && !esReceptorCui && !rd) return null;

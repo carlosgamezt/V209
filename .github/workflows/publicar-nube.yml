@@ -49,7 +49,7 @@ on:
         type: string
         default: ""
       medir_frio:
-        description: "Solo medición (modo «probar»): primera certificación tras inactividad (10 min de espera antes de cada una, 4 rondas ≈ 45 min), con y sin calentamiento. No cambia nada publicado"
+        description: "Solo medición (modo «probar»): primera certificación tras inactividad (10 min de espera antes de cada una, 3 rondas por condición ≈ 65 min), con el calentamiento actual y con la ampliación. No cambia nada publicado"
         type: choice
         options: [no, si]
         default: no
@@ -72,7 +72,7 @@ jobs:
     name: Publicación privada (Supabase + Cloudflare Pages)
     if: github.ref == 'refs/heads/fel-proveedores-diseno'
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 100
     environment: demo-privada
     steps:
       - name: Confirmación explícita

@@ -600,3 +600,22 @@ Deno.test("concurrencia: dos certificaciones simultáneas de la misma operación
   assert.ok(a.some((x) => x.status === "fulfilled" && x.value.operacion.estado === "desconocida"));
   assert.equal((await u.s.certificar(ctx(), doc(), confirmar(pu))).reutilizada, true); assert.equal(u.envios(), 1, "repetir NO reenvía");
 });
+
+Deno.test("calentamiento: solo token por defecto; con consulta hace UNA lectura al reporte (límite 1/min por empresa), sin enviar, sin tocar operaciones, sin afectar a otras empresas y sin sustituir el chequeo previo", async () => {
+  let t = AHORA.getTime();
+  const m = mundo({ ahora: () => new Date(t) });
+  const reportes = () => m.llamadas.filter((p) => decodeURIComponent(p.ruta).includes("SHARED_GETREPORTDAILYACUSES")).length;
+  await m.s.calentar(ctx()); assert.equal(reportes(), 0, "sin pedirlo no consulta el reporte"); assert.equal(m.llamadas.filter((p) => p.ruta === "/login/get_token").length, 1);
+  await m.s.calentar(ctx(), { consulta: true }); assert.equal(reportes(), 1, "una sola lectura");
+  assert.equal(m.envios(), 0, "no envía ningún documento"); assert.equal((await m.almacen.deDocumento(EMPRESA_A, "d1")).length, 0, "no crea ni toca operaciones");
+  await m.s.calentar(ctx(), { consulta: true }); assert.equal(reportes(), 1, "límite: una consulta por empresa y por minuto");
+  await m.s.calentar(ctx(EMPRESA_B), { consulta: true }); assert.equal(reportes(), 2, "el límite es por empresa");
+  t += 61_000; await m.s.calentar(ctx(), { consulta: true }); assert.equal(reportes(), 3, "pasado el minuto vuelve a poder");
+  const ref = decodeURIComponent(m.llamadas.filter((p) => decodeURIComponent(p.ruta).includes("SHARED_GETREPORTDAILYACUSES")).pop()!.ruta); assert.ok(!ref.includes("d1"), "la consulta usa una referencia al azar, no la de ningún documento");
+  const sinCanal = mundo({ sinCanalB: true }); await sinCanal.s.calentar(ctx(EMPRESA_B), { consulta: true }); assert.equal(sinCanal.llamadas.length, 0, "sin canal no se llama a Digifact");
+  const fallo = mundo({ reporte: () => ({ status: 500, cuerpo: "x" } as never) }); await fallo.s.calentar(ctx(), { consulta: true });   // un fallo del calentamiento no lanza error
+  // el chequeo previo SIGUE siendo obligatorio antes de enviar aunque se haya calentado
+  const c = mundo(); await c.s.calentar(ctx(), { consulta: true }); const antes = c.llamadas.filter((p) => decodeURIComponent(p.ruta).includes("SHARED_GETREPORTDAILYACUSES")).length;
+  const p = await c.s.preparar(ctx(), doc(), {}); c.autorizar(p.referencia); await c.s.certificar(ctx(), doc(), { ...confirmar(p) });
+  assert.ok(c.llamadas.filter((q) => decodeURIComponent(q.ruta).includes("SHARED_GETREPORTDAILYACUSES")).length > antes, "certificar hace SU propio chequeo previo aunque haya habido calentamiento");
+});

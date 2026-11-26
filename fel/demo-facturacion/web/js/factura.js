@@ -32,6 +32,8 @@ let previaPendiente = null, certificarPendiente = null, correoPendiente = null, 
 const CONFIRMACION_TEST = "CERTIFICAR-TEST";
 
 let calentadoEn = 0;
+// Ampliación del calentamiento (consulta anticipada de solo lectura a Digifact): APAGADA por defecto; solo se enciende con el interruptor local «nexa_calentar_consulta» (lo usa la medición) hasta que se autorice activarla.
+function calentarConConsulta() { try { return globalThis.localStorage?.getItem("nexa_calentar_consulta") === "1"; } catch { return false; } }
 export function pantallaFactura(ctx, id) {
   const raiz = h("section", { class: "pantalla" }, h("p", { class: "mut" }, "Cargando…"));
   (async () => {
@@ -310,7 +312,7 @@ export function pantallaFactura(ctx, id) {
     // queda guardado (y revisado) pase lo que pase con la certificación.
     const infoTipoCert = () => tipoPorCodigo(tipos, f.tipo_dte);
     // al abrir la pantalla (el usuario aún está capturando) se prepara por adelantado el canal de certificación de pruebas: así la primera certificación no espera ese paso (máx. una vez cada 8 minutos, en silencio)
-    if (!doc.estado_fiscal || doc.estado_fiscal === "ninguno") queueMicrotask(() => { if (certificaEnTest() && Date.now() - calentadoEn > 480000) { calentadoEn = Date.now(); api.digifactCalentar().catch(() => {}); } });
+    if (!doc.estado_fiscal || doc.estado_fiscal === "ninguno") queueMicrotask(() => { if (certificaEnTest() && Date.now() - calentadoEn > 480000) { calentadoEn = Date.now(); api.digifactCalentar(calentarConConsulta()).catch(() => {}); } });
     const certificaEnTest = () => !!dg && dg.habilitado && dg.certificacion && dg.empresaConCanal && dg.ciclo && dg.almacenamiento === "persistente" && ctx.tiene("fiscal.certificar")
       && (f.tipo_dte === "FACT" || !!infoTipoCert()?.certificacion_habilitada || !!infoTipoCert()?.certificacion_test);
     const puedeCertificarAhora = () => certificaEnTest() && doc.estado_fiscal === "ninguno" && ["borrador", "revisado"].includes(doc.estado_preparacion) && (doc.id || editable());

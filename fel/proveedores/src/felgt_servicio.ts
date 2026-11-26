@@ -198,7 +198,17 @@ export class ServicioFelGt {
     return { canal: !!this.d.clienteDe(empresaId) && !!this.d.emisorDe(empresaId), ciclo: this.d.autorizaPrueba() === AUTORIZACION_CICLO };
   }
   /** Inicia sesión en Digifact por adelantado (solo el token, que queda en memoria): no envía ni consulta ningún documento. Si no hay canal, no hace nada. */
-  async calentar(ctx: ContextoFel): Promise<void> { const cliente = this.d.clienteDe(ctx.empresaId); if (cliente && this.d.emisorDe(ctx.empresaId)) await (cliente as Partial<DigifactGt>).token?.(); }
+  readonly #calentadas = new Map<string, number>();
+  /** Calentamiento anticipado (NO certifica, NO toca documentos ni operaciones): pide el token y, solo si se pide, hace UNA consulta de solo lectura al mismo reporte de acuses que usa el chequeo previo, con una referencia al azar que no existe, para que Digifact esté «despierto» cuando la persona termine de llenar la factura.
+   *  Su resultado se DESCARTA: jamás sustituye al chequeo previo, que se repite siempre antes de enviar. Límite: una consulta por empresa y por minuto en cada instancia. */
+  async calentar(ctx: ContextoFel, o: { consulta?: boolean } = {}): Promise<void> {
+    const cliente = this.d.clienteDe(ctx.empresaId), emisor = this.d.emisorDe(ctx.empresaId); if (!cliente || !emisor) return;
+    await (cliente as Partial<DigifactGt>).token?.();
+    if (o.consulta !== true) return;
+    const t = this.#ahora().getTime(); if (t - (this.#calentadas.get(ctx.empresaId) ?? 0) < 60_000) return;
+    this.#calentadas.set(ctx.empresaId, t);
+    try { await cliente.conciliarPorReferencia(this.#ahora().toISOString().slice(0, 10), crypto.randomUUID(), emisor.emisor.establecimiento.codigo); } catch { /* es solo un calentamiento: la certificación hará su propio chequeo */ }
+  }
   #canal(ctx: ContextoFel): { cliente: ClienteGt; emisor: DatosEmisorEmpresa } {
     const cliente = this.d.clienteDe(ctx.empresaId), emisor = this.d.emisorDe(ctx.empresaId);
     if (!cliente || !emisor) throw new ErrorFelGt("SIN_CANAL", "Esta empresa no tiene un canal Digifact TEST habilitado");
