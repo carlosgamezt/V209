@@ -25,7 +25,7 @@ export async function rutasCorreo(c: CtxDigifact, svc: ServicioCorreo | undefine
     if (esHistorial) return c.json({ envios: await svc.historial(ctx, docId) });
     const b = await c.cuerpo();
     const res = await svc.enviar(ctx, { documentoId: docId, destinatario: typeof b.destinatario === "string" ? b.destinatario : undefined, clave: String(b.clave ?? ""),
-      reenvio: b.reenvio === true, confirmacion: typeof b.confirmacion === "string" ? b.confirmacion : undefined, origen: "manual" });
+      adjuntarXml: b.adjuntar_xml === true, reenvio: b.reenvio === true, confirmacion: typeof b.confirmacion === "string" ? b.confirmacion : undefined, origen: "manual" });
     return c.json(res, res.repetido ? 200 : 201);
   } catch (e) {
     if (e instanceof ErrorCorreo) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status);

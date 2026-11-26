@@ -35,6 +35,8 @@ export interface ConfigCorreo {
 export interface CtxCorreo { empresaId: string; actorId: string; permisos: string[] }
 export interface PeticionEnvio {
   documentoId: string;
+  /** Adjuntar también el XML fiscal (por defecto NO: solo el PDF). El XML se conserva siempre internamente, se adjunte o no. */
+  adjuntarXml?: boolean;
   /** Si no se indica, se usa el correo guardado del receptor. */
   destinatario?: string;
   /** Clave de la solicitud (la genera la pantalla por cada intento deliberado; repetirla NO envía otra vez). */
@@ -123,9 +125,10 @@ export class ServicioCorreo {
     // 7) adjuntos: el XML y el PDF de ESA certificación, íntegros
     const arts = await this.bd.filas<Obj>("select tipo, nombre, mime, sha256, contenido from public.artefactos_documento where documento_id = $1 and empresa_id = $2 and operacion_id = $3", [p.documentoId, ctx.empresaId, op.id]);
     const xml = arts.find((a) => a.tipo === "xml"), pdf = arts.find((a) => a.tipo === "pdf");
-    if (!xml || !pdf) throw new ErrorCorreo(409, "sin_adjuntos", "La factura no tiene el XML y el PDF certificados guardados.");
+    const conXml = p.adjuntarXml === true;   // por defecto solo el PDF; con el interruptor, PDF + XML
+    if (!pdf || (conXml && !xml)) throw new ErrorCorreo(409, "sin_adjuntos", conXml ? "La factura no tiene el XML y el PDF certificados guardados." : "La factura no tiene el PDF certificado guardado.");
     const adjuntos = [];
-    for (const a of [pdf, xml]) {
+    for (const a of conXml ? [pdf, xml!] : [pdf]) {
       const bytes = aBytes(a.contenido); if (!bytes.length || hex(await crypto.subtle.digest("SHA-256", bytes)) !== a.sha256) throw new ErrorCorreo(409, "adjunto_alterado", "Un archivo certificado no coincide con su huella: no se envía.");
       adjuntos.push({ nombre: String(a.nombre), mime: String(a.mime), contenido: bytes });
     }

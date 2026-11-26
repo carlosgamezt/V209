@@ -34,7 +34,7 @@ async function entorno(env: Record<string, string> = { FEL_CORREO: "simulado" },
 const enviar = (c: Cli, id: string, cuerpo: J) => c.llamar("POST", `/api/documentos/${id}/correo`, cuerpo);
 const DEST = "cliente.prueba@ejemplo.com";
 
-Deno.test({ name: "correo: envío manual con PDF y XML íntegros, rótulo de prueba, historial y auditoría sin datos sensibles", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+Deno.test({ name: "correo: envío manual con el PDF íntegro por defecto (el XML solo si se pide), rótulo de prueba, historial y auditoría sin datos sensibles", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const { bd, Cli, prov } = await entorno(); const ana = await new Cli("ana").entrar(), pedro = await new Cli("pedro").entrar();
   const id = await documento(ana, "clave-cert-correo-0001");
   assert.equal((await ana.llamar("GET", "/api/correo/estado")).json.habilitado, true);
@@ -44,9 +44,8 @@ Deno.test({ name: "correo: envío manual con PDF y XML íntegros, rótulo de pru
   assert.equal(m.para, DEST); assert.match(m.de, /^NEXA FEL </); assert.match(m.asunto, /^\[PRUEBA\] Factura .+ de /);
   // adjuntos: exactamente los de ESTA factura, byte por byte, sin modificar
   const arts = await bd.filas<{ tipo: string; nombre: string; contenido: Uint8Array }>("select a.tipo, a.nombre, a.contenido from public.artefactos_documento a join public.operaciones_fiscales o on o.id = a.operacion_id where a.documento_id = $1 and o.tipo = 'certificacion'", [id]);
-  assert.equal(arts.length, 2); assert.equal(m.adjuntos.length, 2);
-  for (const a of arts) { const x = m.adjuntos.find((y) => y.nombre === a.nombre); assert.ok(x, a.tipo); assert.deepEqual([...x.contenido], [...a.contenido], `adjunto ${a.tipo} idéntico al certificado`); }
-  assert.ok(m.adjuntos.some((a) => a.mime === "application/pdf") && m.adjuntos.some((a) => a.mime === "application/xml"));
+  assert.equal(arts.length, 2, "el XML y el PDF certificados SIEMPRE se conservan internamente"); assert.equal(m.adjuntos.length, 1, "por defecto se adjunta solo el PDF"); assert.equal(m.adjuntos[0].mime, "application/pdf");
+  { const a = arts.find((y) => y.tipo === "pdf")!, x = m.adjuntos[0]; assert.equal(x.nombre, a.nombre); assert.deepEqual([...x.contenido], [...a.contenido], "PDF idéntico al certificado"); }
   assert.ok(m.html.includes(ROTULO_PRUEBA) && m.texto.includes(ROTULO_PRUEBA), "rótulo de documento de prueba"); assert.match(m.html, /Q 2,\d{3}\.\d{2}/, "total en quetzales");
   // historial visible para quien tiene correos.ver (incluido el lector); sin contenido ni adjuntos
   for (const c of [ana, pedro]) { const h = await c.llamar("GET", `/api/documentos/${id}/correos`); assert.equal(h.status, 200); assert.equal(h.json.envios.length, 1); assert.ok(!/contenido|sha256|re_[A-Za-z0-9]/.test(h.texto)); }
@@ -55,6 +54,16 @@ Deno.test({ name: "correo: envío manual con PDF y XML íntegros, rótulo de pru
   const aud = await bd.filas<{ accion: string; datos: J }>("select accion, datos from public.auditoria where accion like 'correo.%' and entidad_id = $1", [id]);
   assert.equal(aud.length, 1); assert.equal(aud[0].accion, "correo.aceptado"); assert.equal(aud[0].datos.destinatario, enmascarar(DEST)); assert.ok(!JSON.stringify(aud[0].datos).includes("cliente.prueba"));
 }});
+
+Deno.test({ name: "correo: «Adjuntar también XML» (apagado por defecto): sin pedirlo solo el PDF; pidiéndolo, PDF + XML íntegros; el XML fiscal se conserva siempre", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const { bd, Cli, prov } = await entorno(); const ana = await new Cli("ana").entrar(); const id = await documento(ana, "clave-cert-correo-xml1");
+  const arts = await bd.filas<{ tipo: string; nombre: string; contenido: Uint8Array }>("select a.tipo, a.nombre, a.contenido from public.artefactos_documento a join public.operaciones_fiscales o on o.id = a.operacion_id where a.documento_id = $1", [id]);
+  const sin = await enviar(ana, id, { destinatario: DEST, clave: "envio-xml-0001-a", adjuntar_xml: false }); assert.equal(sin.status, 201, sin.texto); assert.deepEqual(prov.enviados[0].adjuntos.map((a) => a.mime), ["application/pdf"], "sin el interruptor, solo el PDF");
+  const con = await enviar(ana, id, { destinatario: DEST, clave: "envio-xml-0002-a", adjuntar_xml: true, reenvio: true, confirmacion: "REENVIAR" }); assert.equal(con.status, 201, con.texto);
+  const m = prov.enviados[1]; assert.deepEqual(m.adjuntos.map((a) => a.mime).sort(), ["application/pdf", "application/xml"], "con el interruptor, PDF + XML");
+  for (const a of arts) { const x = m.adjuntos.find((y) => y.nombre === a.nombre); assert.ok(x, a.tipo); assert.deepEqual([...x.contenido], [...a.contenido], `adjunto ${a.tipo} idéntico al certificado`); }
+  const despues = await bd.filas<{ tipo: string }>("select tipo from public.artefactos_documento where documento_id = $1 order by tipo", [id]); assert.deepEqual(despues.map((x) => x.tipo), ["pdf", "xml"], "el XML fiscal sigue guardado en NEXA se adjunte o no");
+} });
 
 Deno.test({ name: "correo: duplicados — la misma solicitud no envía dos veces; un segundo envío al mismo destinatario exige reenviar", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const { bd, Cli, prov } = await entorno(); const ana = await new Cli("ana").entrar();
@@ -272,7 +281,7 @@ Deno.test({ name: "correo automático: apagado por defecto; con el interruptor y
   const sinPedir = await certificarAuto(ana, "clave-auto-0002-aaaaa", undefined); assert.equal(sinPedir.r.json.correo_auto, null); assert.equal(prov.enviados.length, 0, "sin la casilla no se envía");
   const a = await certificarAuto(ana, "clave-auto-0003-aaaaa", true); assert.equal(a.r.status, 200, a.r.texto); assert.equal(a.r.json.correo_auto.estado, "aceptado"); assert.equal(prov.enviados.length, 1);
   const h = (await ana.llamar("GET", `/api/documentos/${a.id}/correos`)).json.envios; assert.equal(h.length, 1); assert.equal(h[0].origen, "automatico");
-  assert.equal(prov.enviados[0].adjuntos.length, 2, "adjunta el PDF y el XML certificados");
+  assert.equal(prov.enviados[0].adjuntos.length, 1, "por defecto adjunta solo el PDF certificado"); assert.equal(prov.enviados[0].adjuntos[0].mime, "application/pdf");
   // repetir la misma certificación (misma clave de idempotencia) no vuelve a enviar
   const rep = await ana.llamar("POST", `/api/documentos/${a.id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: "clave-auto-0003-aaaaa", enviar_correo: true }); assert.equal(rep.status, 200); assert.equal(prov.enviados.length, 1, "sin duplicados");
   assert.equal((await pedro.llamar("POST", `/api/documentos/${a.id}/certificar`, { proveedor: "digifact", clave: "clave-auto-0003-bbbbb", enviar_correo: true })).status >= 400, true, "el lector no certifica ni dispara correos");

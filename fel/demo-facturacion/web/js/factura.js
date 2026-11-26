@@ -325,7 +325,7 @@ export function pantallaFactura(ctx, id) {
     const correoFacNotaEl = h("small", { class: "campo-ayuda", id: "correo-fac-nota", role: "status" });
     const correoFacCampo = h("div", { class: "form", hidden: true }, campo("Correo del destinatario", correoFacEntrada), correoFacNotaEl);
     const correoFacChk = h("input", { type: "checkbox", id: "correo-fac-chk", onchange: (e) => { correoFac.activo = e.target.checked; correoFacCampo.hidden = !correoFac.activo; correoFacNota(); } });
-    const correoCaja = h("div", { class: "correo-fac", id: "correo-fac", hidden: true }, h("label", { class: "chk-correo" }, correoFacChk, h("span", {}, h("b", {}, "Enviar factura por correo"), h("small", {}, "Digifact envía el correo al certificar. Solo se puede pedir ahora; luego puedes reenviarla desde el documento."))), correoFacCampo);
+    const correoCaja = h("div", { class: "correo-fac", id: "correo-fac", hidden: true }, h("label", { class: "chk-correo" }, correoFacChk, h("span", {}, h("b", {}, "Enviar factura por correo"), h("small", {}, "Digifact envía el correo al certificar, con su plantilla (PDF y XML) y solo se puede pedir ahora. Después puedes enviarla tú desde el documento."))), correoFacCampo);
     function correoFacNota() {
       const t = correoFac.texto.trim(); correoFacNotaEl.className = !correoFac.activo || correoFacOk() ? "campo-ayuda" : "err";
       correoFacNotaEl.textContent = !correoFac.activo ? "" : !t ? "Escribe el correo del destinatario (el cliente no tiene uno registrado)." : correoFacOk() ? "El servidor comprobará que el destinatario esté autorizado." : "Escribe un correo válido (hasta 50 caracteres).";

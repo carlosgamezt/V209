@@ -49,7 +49,7 @@ Deno.test("cambios rápidos de NIT: se cancela la consulta anterior y su respues
 
 Deno.test("sin coincidencia: mensaje claro y entrada manual posible", async () => {
   const t = montar(); t.c.alEscribirId(A); t.rl.disparar(); t.q.llamadas[0].ok({ encontrado: false, origen: "demo", simulado: true }); await tick();
-  assert.equal(t.estados.at(-1)?.fase, "no_encontrado"); assert.match(textoEstado(t.estados.at(-1)), /No se encontró este NIT.*simulada.*manualmente/); assert.equal(t.modelo.nombre, "");
+  assert.equal(t.estados.at(-1)?.fase, "no_encontrado"); assert.match(textoEstado(t.estados.at(-1)), /consulta real de NIT no está habilitada.*solo hay datos de prueba.*manualmente/); assert.equal(t.modelo.nombre, "");
   t.c.alEscribirNombre("Nombre escrito a mano"); assert.equal(t.modelo.nombre, "Nombre escrito a mano");
 });
 

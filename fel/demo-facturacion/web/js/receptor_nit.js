@@ -34,7 +34,7 @@ export function textoEstado(info) {
   switch (info.fase) {
     case "consultando": return `Consultando ${doc}…`;
     case "ok": return info.simulado ? "Datos simulados de demostración: no provienen de SAT." : "Consulta de prueba en Digifact TEST: no es una certificación fiscal de SAT.";
-    case "no_encontrado": return `No se encontró este ${doc}${info.simulado ? " (consulta simulada)" : " en Digifact TEST"}. Escribe el nombre manualmente.`;
+    case "no_encontrado": return info.simulado ? `La consulta real de ${doc} no está habilitada para esta empresa (solo hay datos de prueba). Escribe el nombre manualmente.` : `No se encontró este ${doc} en Digifact TEST. Escribe el nombre manualmente.`;
     case "error": return `No se pudo consultar el ${doc} ahora. Puedes escribir el nombre manualmente.`;
     case "conservado": return "Se conservó el nombre que escribiste.";
     case "cf": return "Consumidor final: sin consulta. Solo para facturas menores a Q 2,500.00.";

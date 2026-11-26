@@ -121,6 +121,8 @@ jobs:
         run: node fel/demo-facturacion/tests/e2e_emitido.cjs
       - name: Receptor Consumidor Final (identificación CF fija y nombre editable sin pasar a NIT; se conserva al guardar, reabrir y revisar; PDF con el nombre; 390 y 1100 px; simulado y local)
         run: node fel/demo-facturacion/tests/e2e_cf.cjs
+      - name: Identificación del receptor en el navegador (CF, NIT, CUI y pasaporte; teléfono y computadora)
+        run: node fel/demo-facturacion/tests/e2e_identificacion.cjs
       - name: Revisión visual automática de las pantallas principales (Documentos, Nueva factura, Clientes, Conceptos, Configuración y Panel; 320/360/390/412/768/1440 px; sin desbordes y objetivos táctiles; simulado y local)
         run: node fel/demo-facturacion/tests/e2e_vistas.cjs
       - name: "Correo de facturas (proveedor SIMULADO, nada sale a la red) · servicio, Resend con fetch falso, plantilla, duplicados, permisos, aislamiento, envío automático apagado por defecto y navegador (teléfono 320–430 px)"

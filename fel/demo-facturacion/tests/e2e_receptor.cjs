@@ -39,7 +39,7 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
     demora = 900; peticiones.length = 0; await teclear(p, ID, B); await p.waitForTimeout(700); await teclear(p, ID, A); await p.waitForTimeout(700); await teclear(p, ID, B);
     await esperarValor(p, NOM, (v) => v === NOM_B); await p.waitForTimeout(1500); assert.equal(await p.inputValue(NOM), NOM_B, "gana el último NIT escrito");
     // sin coincidencia y error del proveedor: mensaje claro y entrada manual
-    demora = 50; await teclear(p, ID, "99900025"); await p.waitForSelector(`${EST}:has-text("No se encontró este NIT")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre"); await escribirNombre(p, "Escrito a mano"); assert.equal(await p.inputValue(NOM), "Escrito a mano"); assert.deepEqual(await ETQ(p), ["Ingreso manual"], "etiqueta de origen: ingreso manual");
+    demora = 50; await teclear(p, ID, "99900025"); await p.waitForSelector(`${EST}:has-text("La consulta real de NIT no está habilitada")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre"); await escribirNombre(p, "Escrito a mano"); assert.equal(await p.inputValue(NOM), "Escrito a mano"); assert.deepEqual(await ETQ(p), ["Ingreso manual"], "etiqueta de origen: ingreso manual");
     await teclear(p, ID, "99900017"); await p.waitForSelector(`${EST}:has-text("No se pudo consultar")`); assert.equal(await p.inputValue(NOM), "Escrito a mano", "el error no toca lo escrito"); await sinDesborde(p, "error del proveedor");
     // nombre escrito a mano: nunca se sobrescribe
     await p.fill(ID, ""); await escribirNombre(p, "Nombre de la casa"); await teclear(p, ID, A); await p.waitForSelector(`${EST}:has-text("Se conservó el nombre")`); assert.equal(await p.inputValue(NOM), "Nombre de la casa");
@@ -79,7 +79,7 @@ const A = "10000011", NOM_A = "CONTRIBUYENTE DE PRUEBA UNO, S.A.", B = "10000038
     pCui.length = 0; await escribirNombre(p, "Nombre de la casa"); await teclear(p, ID, C1); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("Se conservó el nombre")`); assert.equal(await p.inputValue(NOM), "Nombre de la casa");
     // CUI inválido: validación local, sin consulta; sin coincidencia y error del proveedor: ingreso manual
     pCui.length = 0; await escribirNombre(p, ""); await teclear(p, ID, "12345"); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("13 dígitos")`); assert.deepEqual(pCui, [], "un CUI inválido no se consulta");
-    await teclear(p, ID, "9990000010101"); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("No se encontró este CUI")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre");
+    await teclear(p, ID, "9990000010101"); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("La consulta real de CUI no está habilitada")`); assert.equal(await p.inputValue(NOM), "", "no se inventa un nombre");
     await escribirNombre(p, "Escrito a mano"); assert.deepEqual(await ETQ(p), ["Ingreso manual"]);
     await teclear(p, ID, C_ERR); await p.locator(ID).press("Enter"); await p.waitForSelector(`${EST}:has-text("No se pudo consultar")`); assert.equal(await p.inputValue(NOM), "Escrito a mano", "el error no toca lo escrito"); await sinDesborde(p, "error del CUI");
     assert.deepEqual(peticiones, [], "ninguna consulta de NIT por usar CUI"); p.off("request", alPedir);

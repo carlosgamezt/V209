@@ -3,6 +3,7 @@
 import { h, boton, campo, insignia, modal } from "/app/js/ui.js";
 import { api } from "./api.js";
 import { fechaHora } from "./plan.js";
+import { preferencia, archivosParaEnviar, puedeCompartirTodos } from "./adjuntos.js";
 
 // Lo que sabemos de verdad: «aceptado» = el proveedor de correo recibió la solicitud (NO prueba que llegó). «Entregado» solo si un webhook lo confirmara (no implementado).
 const ESTADO = { solicitado: ["Solicitado", "gris"], aceptado: ["Aceptado por el proveedor", "verde"], entregado: ["Entregado", "verde"], rechazado: ["Rechazado por el proveedor", "rojo"], fallido: ["Falló el envío (resultado incierto)", "ambar"] };
@@ -30,23 +31,29 @@ export function panelCorreo({ ctx, doc, mostrarError, avisar }) {
     const entrada = h("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "none", spellcheck: "false", maxlength: 254, id: "correo-destinatario", "aria-label": "Correo del destinatario", placeholder: "correo@ejemplo.com", value: RE_CORREO.test(guardado) ? guardado : "" });
     const aviso = h("p", { class: "correo-aviso", role: "status", "aria-live": "polite" });
     const titulo = `Factura ${doc.serie ?? ""} ${doc.numero_fiscal ?? ""}`.trim(), nombre = `${titulo}.pdf`.replace(/[^A-Za-z0-9._-]/g, "_");
+    const xmlChk = h("input", { type: "checkbox", id: "adjuntar-xml", checked: preferencia.xml, onchange: (e) => { preferencia.xml = e.target.checked; } });
+    const xmlFila = h("label", { class: "chk-correo", for: "adjuntar-xml" }, xmlChk, h("span", {}, h("b", {}, "Adjuntar también XML"), h("small", {}, "Por defecto se envía solo el PDF. El XML fiscal se conserva siempre en NEXA.")));
     const btn = boton("Enviar por correo", { tipo: "pri", id: "correo-enviar", onclick: async () => {
       const para = entrada.value.trim(); if (!RE_CORREO.test(para)) { aviso.textContent = "Escribe un correo válido."; entrada.focus(); return; }
       btn.disabled = true; aviso.textContent = "Preparando la factura…";
       try {
-        const r = await fetch(`/api/documentos/${doc.id}/pdf-demo?formato=carta`, { headers: { "x-demo": "1" } }); if (!r.ok) throw new Error("No se pudo generar el PDF.");
-        const blob = await r.blob(), archivo = new File([blob], nombre, { type: "application/pdf" }), texto = `Adjunto la ${titulo.toLowerCase()} (documento de prueba, sin validez fiscal).`;
-        if (navigator.canShare?.({ files: [archivo] })) { await navigator.share({ files: [archivo], title: titulo, text: `Para: ${para}\n${texto}` }); aviso.textContent = "Elige tu aplicación de correo en la ventana que se abrió."; }
-        else { const url = URL.createObjectURL(blob), a = h("a", { href: url, download: nombre }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
-          location.href = `mailto:${encodeURIComponent(para)}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent(texto + "\n\n(Adjunta el PDF que se descargó: " + nombre + ")")}`; aviso.textContent = "Se descargó el PDF y se abrió tu correo: adjúntalo y envía."; }
+        const { archivos, avisos } = await archivosParaEnviar(doc), texto = `Adjunto la ${titulo.toLowerCase()} (documento de prueba, sin validez fiscal).`; let nota = avisos.join(" ");
+        if (navigator.share && puedeCompartirTodos(archivos)) { await navigator.share({ files: archivos, title: titulo, text: `Para: ${para}\n${texto}` }); aviso.textContent = `Elige tu aplicación de correo en la ventana que se abrió.${nota ? " " + nota : ""}`; }
+        else if (navigator.share && archivos.length > 1 && puedeCompartirTodos([archivos[0]])) { await navigator.share({ files: [archivos[0]], title: titulo, text: `Para: ${para}\n${texto}` }); aviso.textContent = `Se compartió solo el PDF: este dispositivo no permite compartir el XML junto con él. Descárgalo desde el documento si lo necesitas.${nota ? " " + nota : ""}`; }
+        else {   // computadora (o navegador sin «Compartir» de archivos): se descargan los archivos y se abre un correo redactado; el correo NO puede llevar adjuntos solo
+          for (const f of archivos) { const url = URL.createObjectURL(f), a = h("a", { href: url, download: f.name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); }
+          location.href = `mailto:${encodeURIComponent(para)}?subject=${encodeURIComponent(titulo)}&body=${encodeURIComponent(texto + "\n\n(Adjunta " + (archivos.length > 1 ? "los archivos que se descargaron: " : "el archivo que se descargó: ") + archivos.map((f) => f.name).join(", ") + ")")}`;
+          aviso.textContent = `Se descargó${archivos.length > 1 ? "ron los archivos" : " el PDF"} y se abrió tu correo: adjúntalo${archivos.length > 1 ? "s" : ""} y envía.${nota ? " " + nota : ""}`;
+        }
       } catch (e) { if (e?.name !== "AbortError") aviso.textContent = e.message || "No se pudo preparar el envío."; else aviso.textContent = ""; }
       finally { btn.disabled = false; }
     } });
     cuerpo.replaceChildren(h("p", { class: "mut correo-nota" }, "Escribe o corrige el correo y envía la factura certificada cuando quieras (también si no lo pusiste al certificar). Se abre tu aplicación de correo con el PDF; el envío lo confirmas tú."),
-      h("div", { class: "form" }, campo("Correo del destinatario", entrada), h("div", { class: "acciones-fila" }, btn), aviso));
+      h("div", { class: "form" }, campo("Correo del destinatario", entrada), xmlFila, h("div", { class: "acciones-fila" }, btn), aviso));
   }
   const yaEnviado = () => envios.some((e) => e.estado === "aceptado" || e.estado === "entregado");
 
+  const xmlFilaServidor = () => h("label", { class: "chk-correo", for: "adjuntar-xml-srv" }, h("input", { type: "checkbox", id: "adjuntar-xml-srv", checked: preferencia.xml, onchange: (e) => { preferencia.xml = e.target.checked; } }), h("span", {}, h("b", {}, "Adjuntar también XML"), h("small", {}, "Por defecto se envía solo el PDF. El XML fiscal se conserva siempre en NEXA.")));
   function pintar() {
     const entrada = h("input", { type: "email", inputmode: "email", autocomplete: "off", autocapitalize: "none", spellcheck: "false", maxlength: 254, id: "correo-destinatario", "aria-label": "Correo del destinatario", placeholder: "correo@ejemplo.com", value: doc.cliente_email ?? "" });
     const aviso = h("p", { class: "correo-aviso", role: "status", "aria-live": "polite" });
@@ -56,7 +63,7 @@ export function panelCorreo({ ctx, doc, mostrarError, avisar }) {
     const accion = async (extra = {}) => {
       if (ocupado) return; ocupado = true; refrescar(); mostrarError(""); aviso.textContent = "Enviando…";
       try {
-        const r = await api.enviarCorreo(doc.id, { destinatario: entrada.value.trim(), clave: clave("envio"), ...extra });
+        const r = await api.enviarCorreo(doc.id, { destinatario: entrada.value.trim(), clave: clave("envio"), adjuntar_xml: preferencia.xml, ...extra });
         const [t] = ESTADO[r.envio.estado] ?? [r.envio.estado];
         if (r.repetido) avisar("Esa solicitud ya se había enviado: no se repitió.", "ok"); else if (r.envio.estado === "aceptado") avisar("Correo aceptado por el proveedor (no garantiza la entrega).", "ok"); else avisar(`${t}. Revisa el historial.`, "error");
       } catch (e) { mostrarError(e); aviso.textContent = ""; }
@@ -78,7 +85,7 @@ export function panelCorreo({ ctx, doc, mostrarError, avisar }) {
       return h("li", { class: "correo-fila", "data-estado": e.estado }, h("span", { class: "correo-dest" }, e.destinatario), insignia(t, tono), h("small", { class: "mut" }, `${ORIGEN[e.origen] ?? e.origen} · ${fechaHora(e.creado_en)}`)); });
     cuerpo.replaceChildren(
       h("p", { class: "mut correo-nota" }, "Ambiente de pruebas: el correo sale con el rótulo «DOCUMENTO DE PRUEBA — SIN VALIDEZ FISCAL» y solo a destinatarios autorizados. Lleva el PDF y el XML certificados, sin modificar."),
-      certificado ? (btn ? h("div", { class: "form" }, campo("Correo del destinatario", entrada), h("div", { class: "acciones-fila" }, btn), aviso) : h("p", { class: "mut" }, "Tu rol no puede enviar facturas por correo.")) : h("p", { class: "aviso" }, "La factura está anulada o con anulación solicitada: no se envía por correo."),
+      certificado ? (btn ? h("div", { class: "form" }, campo("Correo del destinatario", entrada), xmlFilaServidor(), h("div", { class: "acciones-fila" }, btn), aviso) : h("p", { class: "mut" }, "Tu rol no puede enviar facturas por correo.")) : h("p", { class: "aviso" }, "La factura está anulada o con anulación solicitada: no se envía por correo."),
       filas.length ? h("div", { class: "correo-hist" }, h("h3", { class: "correo-sub" }, "Historial de envíos"), h("ul", { class: "correo-lista", "aria-label": "Historial de envíos por correo" }, ...filas)) : h("p", { class: "mut" }, "Todavía no se ha enviado por correo."));
   }
   cargar();

@@ -77,12 +77,25 @@ async function arrancar(env = {}) {
     const sin = await ctxMovil(390); await entrar(sin.p, "ana", srvSin.url); const idS = await certificado(sin.p, "s"); await sin.p.goto(`${srvSin.url}/#/f/${idS}`); await sin.p.waitForSelector(".doc-cab"); await sin.p.waitForTimeout(800);
     // ahora la tarjeta SÍ aparece en modo manual (con la aplicación de correo de la persona): sin historial del servidor, sin llamadas de envío al servidor, con el destinatario editable y el PDF compartido
     assert.equal(await sin.p.locator(PANEL).isVisible(), true, "sin FEL_CORREO la tarjeta de correo aparece en modo manual"); assert.equal(await sin.p.locator(".correo-fila").count(), 0, "sin historial del servidor");
-    await sin.p.evaluate(() => { globalThis.__compartido = null; navigator.canShare = () => true; navigator.share = async (d) => { globalThis.__compartido = { n: d.files?.[0]?.name, t: d.files?.[0]?.type, texto: d.text, titulo: d.title }; }; });
+    await sin.p.evaluate(() => { globalThis.__compartido = null; navigator.canShare = () => true; navigator.share = async (d) => { globalThis.__compartido = { n: d.files?.[0]?.name, t: d.files?.[0]?.type, tipos: (d.files ?? []).map((f) => f.type), texto: d.text, titulo: d.title }; }; });
     const envios = []; sin.p.on("request", (r) => { if (/\/correo/.test(r.url()) && r.method() === "POST") envios.push(r.url()); });
     await sin.p.fill("#correo-destinatario", "no-es-correo"); await sin.p.tap("#correo-enviar"); assert.match(await sin.p.locator(`${PANEL} .correo-aviso`).innerText(), /correo válido/);
     await sin.p.fill("#correo-destinatario", "cliente@ejemplo.com"); await sin.p.tap("#correo-enviar");
     for (let i = 0; i < 40 && !(await sin.p.evaluate(() => globalThis.__compartido)); i++) await sin.p.waitForTimeout(100);
     const comp = await sin.p.evaluate(() => globalThis.__compartido); assert.ok(comp, "se abrió «Compartir»"); assert.equal(comp.t, "application/pdf"); assert.match(comp.n, /\.pdf$/); assert.match(comp.texto, /cliente@ejemplo\.com/, "el destinatario va en el mensaje"); assert.deepEqual(envios, [], "NEXA no envía nada por su cuenta en modo manual");
+    // ---- adjuntos: por defecto SOLO el PDF; «Adjuntar también XML» (apagado al inicio) agrega el XML certificado; si el dispositivo no puede compartir el XML junto al PDF, se comparte el PDF y se AVISA
+    assert.deepEqual(comp.tipos, ["application/pdf"], "por defecto se comparte solo el PDF"); assert.equal(await sin.p.locator("#adjuntar-xml").isChecked(), false, "«Adjuntar también XML» está apagado al inicio");
+    await sin.p.route(/\/digifact\/xml$/, (r) => r.fulfill({ status: 200, contentType: "application/xml", body: "<xml>certificado</xml>" }));
+    await sin.p.evaluate(() => { globalThis.__compartido = null; }); await sin.p.tap(".chk-correo"); assert.equal(await sin.p.locator("#adjuntar-xml").isChecked(), true); await sin.p.tap("#correo-enviar");
+    for (let i = 0; i < 40 && !(await sin.p.evaluate(() => globalThis.__compartido)); i++) await sin.p.waitForTimeout(100);
+    assert.deepEqual((await sin.p.evaluate(() => globalThis.__compartido)).tipos, ["application/pdf", "application/xml"], "con el interruptor se comparten PDF + XML");
+    await sin.p.evaluate(() => { globalThis.__compartido = null; navigator.canShare = (d) => (d.files ?? []).every((f) => f.type === "application/pdf"); }); await sin.p.tap("#correo-enviar");
+    for (let i = 0; i < 40 && !(await sin.p.evaluate(() => globalThis.__compartido)); i++) await sin.p.waitForTimeout(100);
+    assert.deepEqual((await sin.p.evaluate(() => globalThis.__compartido)).tipos, ["application/pdf"], "si el dispositivo no puede compartir el XML, se comparte solo el PDF"); assert.match(await sin.p.locator(`${PANEL} .correo-aviso`).innerText(), /solo el PDF/, "y se avisa: no se simula el adjunto");
+    await sin.p.unroute(/\/digifact\/xml$/); await sin.p.route(/\/digifact\/xml$/, (r) => r.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+    await sin.p.evaluate(() => { globalThis.__compartido = null; navigator.canShare = () => true; }); await sin.p.tap("#correo-enviar");
+    for (let i = 0; i < 40 && !(await sin.p.evaluate(() => globalThis.__compartido)); i++) await sin.p.waitForTimeout(100);
+    assert.deepEqual((await sin.p.evaluate(() => globalThis.__compartido)).tipos, ["application/pdf"], "sin XML certificado disponible solo va el PDF"); assert.match(await sin.p.locator(`${PANEL} .correo-aviso`).innerText(), /no tiene un XML certificado/, "y se avisa");
 
 
     // ================= envío AUTOMÁTICO: la casilla solo existe si el servidor lo habilita; apagada por defecto; al certificar con la casilla se envía y queda en el historial
