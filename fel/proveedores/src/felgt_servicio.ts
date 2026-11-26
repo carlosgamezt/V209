@@ -114,6 +114,8 @@ export interface DepsFelGt {
   /** Referencia que la persona responsable autorizó para ESTA prueba (nada más se envía). null = ninguna autorizada. */
   /** Autorización de la persona responsable: o la referencia de UNA prueba (GUID), o «CICLO-TEST» (ciclo de pruebas en TEST publicado con su aprobación: vale para cualquier documento de la empresa de demostración mientras esté publicado). */
   autorizaPrueba: () => string | null;
+  /** Multiempresa (opcional): autorización POR EMPRESA (reemplaza a «autorizaPrueba» cuando existe). Sin ella, todo sigue como siempre. */
+  autorizaPruebaDe?: (empresaId: string) => string | null;
   /** Tipos que SE PUEDEN certificar en Digifact TEST además de los «de verdad» (catálogo). Por omisión ninguno: solo FACT. El despliegue lo conecta a la columna certificacion_test de la base (migración 31, aún no aplicada); la base repite el bloqueo con su guardián. */
   tipoCertificableEnTest?: (codigo: string) => boolean;
   ahora?: () => Date;
@@ -185,6 +187,7 @@ async function sha256Bytes(b: Uint8Array): Promise<Uint8Array> { return new Uint
 export class ServicioFelGt {
   #nit = new Map<string, number[]>();
   constructor(private d: DepsFelGt) {}
+  #autoriza(empresaId: string): string | null { return this.d.autorizaPruebaDe ? this.d.autorizaPruebaDe(empresaId) : this.d.autorizaPrueba(); }
   #ahora() { return (this.d.ahora ?? (() => new Date()))(); }
   async #aud(evento: string, ctx: ContextoFel, detalle: Record<string, unknown>) {
     try { await this.d.auditar?.(evento, ctx, detalle); } catch { /* la auditoría no debe tumbar la operación, pero tampoco expone nada */ }
@@ -195,7 +198,7 @@ export class ServicioFelGt {
   }
   /** ¿Esta empresa tiene canal Digifact TEST, y está autorizado el CICLO de pruebas (sin fijar una referencia)? No revela nada sensible; solo lo que la interfaz necesita para ofrecer «Guardar y certificar en TEST». */
   estadoCanal(empresaId: string): { canal: boolean; ciclo: boolean } {
-    return { canal: !!this.d.clienteDe(empresaId) && !!this.d.emisorDe(empresaId), ciclo: this.d.autorizaPrueba() === AUTORIZACION_CICLO };
+    return { canal: !!this.d.clienteDe(empresaId) && !!this.d.emisorDe(empresaId), ciclo: this.#autoriza(empresaId) === AUTORIZACION_CICLO };
   }
   /** Inicia sesión en Digifact por adelantado (solo el token, que queda en memoria): no envía ni consulta ningún documento. Si no hay canal, no hace nada. */
   readonly #calentadas = new Map<string, number>();
@@ -326,7 +329,7 @@ export class ServicioFelGt {
     { const v = validarFechaEmision(op0.fechaEmision.slice(0, 10), this.#ahora()); if (!v.ok) throw new ErrorFelGt("FECHA_EMISION", `${v.mensaje} Elige otra fecha de emisión y vuelve a revisar y preparar el documento.`, [{ campo: "fechaEmision", mensaje: v.mensaje }]); }
     if (doc.estadoPreparacion !== "revisado" || !["ninguno", "rechazado"].includes(doc.estadoFiscal)) throw new ErrorFelGt("ESTADO", "El documento ya no está en un estado que permita certificar");
     if (!this.d.almacen.persistente) throw new ErrorFelGt("ALMACEN_NO_PERSISTENTE", "No hay almacén persistente de operaciones: no se envía nada real (si el proceso se reiniciara, se perdería la memoria de lo enviado)");
-    { const aut = this.d.autorizaPrueba(); if (aut !== op0.referencia && aut !== AUTORIZACION_CICLO) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada"); }
+    { const aut = this.#autoriza(ctx.empresaId); if (aut !== op0.referencia && aut !== AUTORIZACION_CICLO) throw new ErrorFelGt("PRUEBA_NO_AUTORIZADA", "Esta prueba no fue autorizada expresamente por la persona responsable: no se envió nada"); }
     // CHEQUEO PREVIO (solo lectura): Digifact NO deduplica por referencia, y la base de NEXA puede haber perdido la memoria de lo enviado (restauración de un respaldo, reversión). La referencia es DETERMINISTA, así que si Digifact ya la
     // tiene, NO se envía: la operación queda «desconocida» y una persona la concilia (se adopta el resultado que Digifact ya tiene). Si no se puede comprobar, tampoco se envía (falla cerrado; no hay reintento automático).
     const t0Digifact = performance.now();   // medición: todo lo que espera a Digifact (chequeo previo + envío); el resto es de NEXA
