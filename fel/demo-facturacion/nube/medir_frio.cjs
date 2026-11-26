@@ -22,9 +22,9 @@ async function una(nav, sinCalentar) {
   let st = null; p.on("response", async (r) => { if (/certificar-todo/.test(r.url())) st = await r.headerValue("server-timing").catch(() => null); });
   const t0 = Date.now(); await p.tap("#guardar-certificar", { timeout: 30000 }); await p.waitForSelector('[data-panel="emitido"]', { state: "visible", timeout: 90000 }); const total = Date.now() - t0;
   await p.waitForTimeout(500); await ctx.close();
-  return { total, fn: num(st, "fn"), token: num(st, "dfx_token"), envio: num(st, "dfx_envio"), otro: num(st, "dfx_otro"), prevuelo: num(st, "prevuelo"), db: num(st, "db"), arranque: num(st, "arranque"), calentar };
+  return { total, fn: num(st, "fn"), token: num(st, "dfx_token"), envio: num(st, "dfx_envio"), otro: num(st, "dfx_otro"), prevuelo: num(st, "prevuelo"), dfxTotal: num(st, "dfx_total"), db: num(st, "db"), arranque: num(st, "arranque"), calentar };
 }
-const fila = (e, r) => `  ${e.padEnd(28)} total ${String(r.total).padStart(5)} ms · certificar-todo en función ${r.fn} (token ${r.token}, envío ${r.envio}, otros Digifact ${r.otro}${r.prevuelo ? `, chequeo previo ${r.prevuelo}` : ""}, base ${r.db}, arranque ${r.arranque || "–"})${r.calentar ? ` · calentamiento: función ${r.calentar.fn}, token ${r.calentar.token}` : ""}`;
+const fila = (e, r) => `  ${e.padEnd(28)} total ${String(r.total).padStart(5)} ms · certificar-todo en función ${r.fn} (token ${r.token}, envío ${r.envio}, otros Digifact ${r.otro}${r.prevuelo ? `, chequeo previo (pared) ${r.prevuelo}` : ""}${r.dfxTotal ? `, Digifact total (pared) ${r.dfxTotal}` : ""}, base ${r.db}, arranque ${r.arranque || "–"})${r.calentar ? ` · calentamiento: función ${r.calentar.fn}, token ${r.calentar.token}` : ""}`;
 (async () => {
   const nav = await lanzar(), res = { sin: [], con: [], sig: [] };
   try {
