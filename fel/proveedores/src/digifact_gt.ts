@@ -307,6 +307,24 @@ export class DigifactGt {
     return DigifactGt.#filas(j!).map((h) => ({ autorizacion: num(h.GUID).toUpperCase(), serie: num(h.SERIE), numero: num(h.NUMERO), tipoDte: num(h.TIPO_DTE), establecimiento: num(h.NE), nombreEstablecimiento: this.#limpio(num(h.NOMBRE)), estadoAcuse: num(h.ACUSE_RECEPCION_ESTADO), fechaCertificacion: num(h.FECHA_DE_CERTIFICACION), referenciaInterna: num(h.REFERENCIA_INTERNA) }));
   }
 
+  /**
+   * DIAGNÓSTICO de solo lectura del reporte de acuses: devuelve solo la FORMA de la respuesta (nombres de claves, conteos y, por establecimiento, código, nombre y cantidad). Nunca valores de receptores, importes ni autorizaciones.
+   * El parámetro solo admite las formas que ya usa el reporte (FECHA[|FECHAFIN][|ESTABLECIMIENTO][|LIMITE]); cualquier otra se rechaza.
+   */
+  async diagnosticoReporte(data2: string): Promise<{ filtro: string; claves: string[]; resumen: Record<string, string | number>; nFilas: number; camposDeFila: string[]; establecimientos: Array<{ codigo: string; nombre: string; filas: number }>; estados: Record<string, number>; tipos: Record<string, number> }> {
+    if (!/^FECHA\|\d{4}-\d{2}-\d{2}(\|FECHAFIN\|\d{4}-\d{2}-\d{2})?(\|ESTABLECIMIENTO\|\d{1,3})?(\|LIMITE\|\d{1,3})?$/.test(data2)) throw new ErrorDigifact("solicitud", "Filtro de diagnóstico no permitido");
+    const { j } = await this.#shared("SHARED_GETREPORTDAILYACUSES", data2); const raiz = j!;
+    const resumen: Record<string, string | number> = {};
+    const escalar = (k: string, v: unknown) => { if (typeof v === "number" || (typeof v === "string" && v.length <= 80)) resumen[k] = typeof v === "string" ? this.#limpio(v) : v; };
+    for (const [k, v] of Object.entries(raiz)) { if (k === "RESPONSE") continue; if (Array.isArray(v)) { const f = v[0]; if (f && typeof f === "object") for (const [kk, vv] of Object.entries(f as Record<string, unknown>)) escalar(`${k}.${kk}`, vv); } else escalar(k, v); }
+    const filas = DigifactGt.#filas(raiz); const ests = new Map<string, { codigo: string; nombre: string; filas: number }>(); const estados: Record<string, number> = {}, tipos: Record<string, number> = {};
+    for (const h of filas) {
+      const k = num(h.NE) || "(sin código)"; const e = ests.get(k) ?? { codigo: k, nombre: this.#limpio(num(h.NOMBRE)), filas: 0 }; e.filas++; ests.set(k, e);
+      const es = num(h.ACUSE_RECEPCION_ESTADO) || "(vacío)", ti = num(h.TIPO_DTE) || "(vacío)"; estados[es] = (estados[es] ?? 0) + 1; tipos[ti] = (tipos[ti] ?? 0) + 1;
+    }
+    return { filtro: data2, claves: Object.keys(raiz), resumen, nFilas: filas.length, camposDeFila: filas[0] ? Object.keys(filas[0]) : [], establecimientos: [...ests.values()], estados, tipos };
+  }
+
   /* ------------------------------ descarga (GET /GetDocument) ------------------------------ */
   async obtenerDocumento(autorizacion: string, formatos: FormatoDte[] = ["XML", "PDF"]): Promise<ResultadoDescarga> {
     if (!UUID.test(autorizacion)) throw new ErrorDigifact("solicitud", "La autorización debe ser un GUID de 36 caracteres");

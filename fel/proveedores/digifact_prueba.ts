@@ -134,6 +134,14 @@ async function main() {
         nota: "Para leer el emisor de cada uno: paso «datos-emisor» con «autorizacion» = la autorización de ejemplo del establecimiento. Solo aparecen los establecimientos con documentos en el periodo consultado." });
       return;
     }
+    case "diagnostico-reporte": {   // SOLO LECTURA, 8 consultas fijas: muestra la FORMA de la respuesta del reporte de acuses y qué filtro (fecha, rango, LIMITE, establecimiento) cambia el resultado. Sin datos de receptores
+      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"); const d = (n: number) => fechaGt(-n * 86_400_000);
+      const filtros = [`FECHA|${d(1)}`, `FECHA|${d(2)}|FECHAFIN|${d(0)}`, `FECHA|${d(2)}|FECHAFIN|${d(0)}|LIMITE|200`, `FECHA|${d(2)}|FECHAFIN|${d(0)}|ESTABLECIMIENTO|1`, `FECHA|${d(2)}|FECHAFIN|${d(0)}|ESTABLECIMIENTO|2`,
+        "FECHA|2026-10-05|FECHAFIN|2026-10-07", "FECHA|2026-11-13|FECHAFIN|2026-11-15", "FECHA|2026-11-24|FECHAFIN|2026-11-26"];
+      const res: unknown[] = []; for (const f of filtros) { try { res.push(await c.diagnosticoReporte(f)); } catch (e) { res.push({ filtro: f, error: errorLegible(e) }); } }
+      out({ prueba: "diagnostico-reporte", soloLectura: true, hoyGt: d(0), consultas: res });
+      return;
+    }
     case "datos-emisor": {   // PREPARACIÓN de la certificación: SOLO LECTURA. Muestra los datos validados y la factura exacta que se enviaría
       const ref = Deno.env.get("DIGIFACT_REFERENCIA") ?? ""; if (!UUID.test(ref)) salir("Falta DIGIFACT_REFERENCIA (GUID de 36 caracteres) para mostrar la factura exacta", 2);
       const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw");
