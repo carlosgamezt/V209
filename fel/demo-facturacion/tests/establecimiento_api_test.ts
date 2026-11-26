@@ -23,8 +23,9 @@ type J = Record<string, any>; // deno-lint-ignore no-explicit-any
 async function entorno(conAlcance: boolean) {
   const bd = await crearBd(); const mundo = await prepararBase(bd, { sembrar: true });
   const sesiones = new Sesiones(undefined, new AlmacenMemoria(PERSONAS)); sesiones.claveDemoPublica = CLAVE_DEMO; for (const k of Object.keys(PERSONAS)) await sesiones.registrar(k, CLAVE_DEMO, PERSONAS[k]);
-  const e1 = mundo.establecimientos[0].id;
-  const [e2f] = await bd.filas<{ id: string }>("select (public.fel_op_establecimiento_guardar($1, $2, null, '88', 'Sucursal 88', 'Dirección 88', 'activo')).id as id", [PERSONAS.ana.id, EMPRESA]); const e2 = e2f.id;
+  const e1 = mundo.establecimientos.find((x) => x.codigo_sat === "2")!.id;   // código 2 (el sembrado)
+  await bd.filas("select (public.fel_op_establecimiento_guardar($1, $2, $3, '2', 'Sucursal Principal', null, 'activo')).id", [PERSONAS.ana.id, EMPRESA, e1]);   // nombre interno inicial del código Digifact 2
+  const [e2f] = await bd.filas<{ id: string }>("select (public.fel_op_establecimiento_guardar($1, $2, null, '67', 'Sucursal 2', null, 'activo')).id as id", [PERSONAS.ana.id, EMPRESA]); const e2 = e2f.id;
   const [esb] = await bd.filas<{ id: string }>("select id from public.establecimientos where empresa_id = $1 limit 1", [EMPRESA2]);
   const mapa: Record<string, Alcance | null> = {   // quién está asignado a qué (lo decide el administrador; en producción lo lee la base con la sesión validada)
     marta: { todos: false, multiples: false, ids: [e1], activo: e1 }, luis: { todos: false, multiples: false, ids: [e2], activo: e2 }, ana: { todos: true, multiples: false, ids: [], activo: null } };
@@ -57,6 +58,21 @@ Deno.test({ name: "establecimiento por usuario (API): el servidor fija y bloquea
   const marta = await new e.Cli("marta").entrar(), luis = await new e.Cli("luis").entrar(), ana = await new e.Cli("ana").entrar(), sofia = await new e.Cli("sofia").entrar();
   // 1) el documento nuevo nace en SU establecimiento sin elegirlo
   const dm = await e.nuevo(marta); assert.equal(dm.status, 200, dm.texto); const dl = await e.nuevo(luis); assert.equal(dl.status, 200, dl.texto);
+  // 1b) la pantalla recibe SOLO su establecimiento y el dato de bloqueo; el administrador ve todos y no está restringido
+  const em = (await marta.ll("GET", "/api/estado")).json, el = (await luis.ll("GET", "/api/estado")).json, ea = (await ana.ll("GET", "/api/estado")).json;
+  assert.deepEqual(em.establecimientos.map((x: J) => x.codigo_sat), ["2"]); assert.equal(em.alcance.restringido, true); assert.equal(em.alcance.activo, e.e1); assert.equal(em.alcance.multiples, false);
+  assert.deepEqual(el.establecimientos.map((x: J) => x.codigo_sat), ["67"]); assert.equal(el.alcance.activo, e.e2);
+  assert.ok(ea.establecimientos.map((x: J) => x.codigo_sat).includes("2") && ea.establecimientos.map((x: J) => x.codigo_sat).includes("67")); assert.equal(ea.alcance.restringido, false);
+  // 1c) el nombre INTERNO se cambia desde la administración sin alterar el código ni los documentos; solo con permiso; una petición con otro código lo ignora
+  const nom = (c: string) => e.bd.filas<{ codigo_sat: string; nombre: string }>("select codigo_sat, nombre from public.establecimientos where id = $1", [c]);
+  assert.deepEqual((await nom(e.e1))[0], { codigo_sat: "2", nombre: "Sucursal Principal" }); assert.deepEqual((await nom(e.e2))[0], { codigo_sat: "67", nombre: "Sucursal 2" });
+  const antes = (await e.bd.filas<{ establecimiento_id: string }>("select establecimiento_id from public.documentos where id = $1", [dm.json.documento?.id ?? dm.json.id]))[0]?.establecimiento_id;
+  const ren = await ana.ll("POST", `/api/establecimientos/${e.e2}/nombre`, { nombre: "Sucursal Norte", codigo_sat: "99", direccion: "otra" }); assert.equal(ren.status, 200, ren.texto);
+  assert.deepEqual((await nom(e.e2))[0], { codigo_sat: "67", nombre: "Sucursal Norte" }, "el código NO cambia aunque la petición lo traiga");
+  assert.ok((await marta.ll("POST", `/api/establecimientos/${e.e2}/nombre`, { nombre: "Intento" })).status >= 400, "quien factura no renombra"); assert.equal((await nom(e.e2))[0].nombre, "Sucursal Norte");
+  assert.equal((await ana.ll("POST", `/api/establecimientos/${e.eb}/nombre`, { nombre: "Ajena" })).status, 404, "un establecimiento de otra empresa no existe para esta");
+  await ana.ll("POST", `/api/establecimientos/${e.e2}/nombre`, { nombre: "Sucursal 2" });
+  if (antes) assert.equal((await e.bd.filas<{ establecimiento_id: string }>("select establecimiento_id from public.documentos where id = $1", [dm.json.documento?.id ?? dm.json.id]))[0].establecimiento_id, antes);
   const estDe = async (id: string) => (await e.bd.filas<{ establecimiento_id: string }>("select establecimiento_id from public.documentos where id = $1", [id]))[0].establecimiento_id;
   assert.equal(await estDe(dm.json.documento.id), e.e1, "marta: su establecimiento"); assert.equal(await estDe(dl.json.documento.id), e.e2, "luis: el suyo");
   // 2) peticiones manipuladas: otro establecimiento (de su empresa o de otra) y campos de empresa/actor → rechazo, nunca cambio en silencio

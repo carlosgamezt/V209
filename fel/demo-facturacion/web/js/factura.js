@@ -229,14 +229,17 @@ export function pantallaFactura(ctx, id) {
       pintarTarjeta(); actualizarOk();
 
       // ---- establecimiento y fecha en una fila; observaciones plegadas
-      const selEst = h("select", { "aria-label": "Establecimiento", class: "sv-in", disabled: !ed, onchange: (e) => { f.establecimiento_id = e.target.value; try { if (e.target.value) localStorage.setItem("fel.establecimiento", e.target.value); } catch { /* opcional */ } pintarEstab(); sucio = true; pintarBarra(); pintarTotales(); } },
+      const alcEst = est.alcance, bloqueadoEst = !!(alcEst && alcEst.restringido && !alcEst.multiples);   // establecimiento ASIGNADO por el administrador: se muestra solo y bloqueado (el servidor lo impone igualmente)
+      const selEst = h("select", { "aria-label": "Establecimiento", class: "sv-in", disabled: !ed || bloqueadoEst, onchange: (e) => { f.establecimiento_id = e.target.value; try { if (e.target.value) localStorage.setItem("fel.establecimiento", e.target.value); } catch { /* opcional */ } pintarEstab(); sucio = true; pintarBarra(); pintarTotales(); } },
         h("option", { value: "" }, "Selecciona…"), ...est.establecimientos.map((x) => h("option", { value: x.id }, `${x.codigo_sat} · ${x.nombre}`)));
       selEst.value = f.establecimiento_id;
       // lo VISIBLE es una presentación compacta («1 · Casa matriz»; con muy poco ancho, solo «Casa matriz»); el valor elegido y la lista de opciones son los del <select> nativo, sin cambios
       const vistaEst = h("span", { class: "sv-t", id: "establecimiento-vista" }), icoEst = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>', "image/svg+xml").documentElement; icoEst.classList.add("sv-i"); icoEst.setAttribute("aria-hidden", "true");
       function pintarEstab() { const x = est.establecimientos.find((e) => e.id === f.establecimiento_id); vistaEst.classList.toggle("sv-vacio", !x); poner(vistaEst, x ? [h("span", { class: "sv-cod" }, `${x.codigo_sat} · `), h("span", { class: "sv-nom" }, x.nombre)] : "Selecciona…"); }
       const campoEst = h("div", { class: `sv${ed ? "" : " sv-off"}` }, vistaEst, icoEst, selEst);
-      if (!f.establecimiento_id && ed && !doc.id && est.establecimientos.length) {   // factura nueva: viene elegido el único establecimiento, el último que usaste o, si no, el principal (código SAT más bajo); se puede cambiar
+      // con alcance: viene elegido el establecimiento ACTIVO de la persona (el facturador no puede cambiarlo; el supervisor sí, entre los suyos)
+      if (alcEst && alcEst.restringido && ed && !doc.id && alcEst.activo) { f.establecimiento_id = alcEst.activo; selEst.value = alcEst.activo; }
+      else if (!f.establecimiento_id && ed && !doc.id && est.establecimientos.length) {   // factura nueva: viene elegido el único establecimiento, el último que usaste o, si no, el principal (código SAT más bajo); se puede cambiar
         let elegido = est.establecimientos.length === 1 ? est.establecimientos[0].id : "";
         if (!elegido) { try { const g = localStorage.getItem("fel.establecimiento"); if (g && est.establecimientos.some((x) => x.id === g)) elegido = g; } catch { /* sin almacenamiento: se usa el principal */ } }
         if (!elegido) elegido = [...est.establecimientos].sort((a, b) => Number(a.codigo_sat) - Number(b.codigo_sat))[0].id;

@@ -24,8 +24,8 @@ insert into public.miembros (empresa_id, user_id, rol) values
   ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000c6', 'emisor'), ('10000000-0000-0000-0000-00000000000a', '00000000-0000-0000-0000-0000000000c2', 'lector'),
   ('10000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000d1', 'propietario'), ('10000000-0000-0000-0000-00000000000b', '00000000-0000-0000-0000-0000000000d2', 'emisor');
 create temp table t_e as select
-  (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, '10', 'Sucursal 10', 'Dirección 10', 'activo')).id e10,
-  (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, '20', 'Sucursal 20', 'Dirección 20', 'activo')).id e20,
+  (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, '2', 'Sucursal Principal', 'Dirección 2', 'activo')).id e10,
+  (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, '67', 'Sucursal 2', 'Dirección 67', 'activo')).id e20,
   (public.fel_op_establecimiento_guardar('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b', null, '10', 'Sucursal B', 'Dirección B', 'activo')).id eb;
 select public.fel_op_cliente_guardar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a', null, 'NIT', '3333333-3', 'Cliente A', null, null, null, null);
 select public.fel_op_cliente_guardar('00000000-0000-0000-0000-0000000000d1', '10000000-0000-0000-0000-00000000000b', null, 'NIT', '5555555-5', 'Cliente B', null, null, null, null);

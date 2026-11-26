@@ -99,7 +99,7 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
     const p = Promise.resolve(bd.rpc("fel_permisos_efectivos", { p_empresa: emp(), p_user: a.id }) as Promise<string[]>); permisosCache.set(k, { hasta: t + 5000, p }); p.catch(() => permisosCache.delete(k)); return p;
   };
   // Escrituras de datos de NEGOCIO: no cambian roles ni permisos ni el estado de los simuladores, así que no vacían lo reutilizado ni necesitan la sección crítica de los simuladores.
-  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|certificar-todo|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
+  const NEGOCIO_POST = [/^\/api\/(documentos|clientes|conceptos|establecimientos|empresa|tipos-documento)$/, /^\/api\/establecimientos\/[^/]+\/nombre$/, /^\/api\/documentos\/[^/]+\/(estado|reabrir|correo|digifact\/(validar|preparar|certificar|certificar-todo|conciliar|correo|destinatario))$/, /^\/api\/(clientes|conceptos)\/[^/]+\/(frecuente|estado)$/, /^\/api\/(receptores\/(nit|cui)|digifact\/(nit|calentar))$/];
   const LECTURA_SIN_SIM = /^\/api\/(estado|sesion|fecha-emision|tipos-documento|clientes|conceptos|correo\/estado|digifact\/estado)$|^\/api\/documentos$|^\/api\/documentos\/[^/]+\/correos$/;
 
   async function detalle(docId: string) {
@@ -241,8 +241,11 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       ["select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]],
       ["select clave, valor::text as valor from public.plataforma_parametros order by clave"],
       ]);
+      const alcE = alc(), restr = restringido(alcE);   // persona con establecimiento asignado: SOLO ve el suyo (o los suyos) y el servidor lo fija; la pantalla solo lo muestra bloqueado
+      const estPermitidos = restr ? (establecimientos as Array<{ id: string }>).filter((x) => alcE!.ids.includes(x.id)) : establecimientos;
+      const alcancePublico = restr ? { restringido: true, multiples: alcE!.multiples, activo: alcE!.activo ?? (alcE!.ids[0] ?? null), ids: alcE!.ids } : { restringido: false };
       return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, persistente: bd.tipo === "pg", practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
-        permisos, establecimientos, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+        permisos, establecimientos: estPermitidos, alcance: alcancePublico, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
       return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, c.frecuente, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [emp()]));
@@ -271,6 +274,11 @@ export function crearApi(bd: BdDemo, mundo: Sembrado, extras: { ahora?: () => Da
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
       const [cont] = await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [emp()]);
       return json({ empresa: { ...empr, ...(await empresaDatos()) }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
+    }
+    if (m === "POST" && (r = /^\/api\/establecimientos\/([^/]+)\/nombre$/.exec(ruta))) {   // cambia SOLO el nombre INTERNO (el que ven las personas en NEXA FEL): el código SAT/Digifact, la dirección, el estado y los datos fiscales NO se tocan, ni siquiera si la petición los trae
+      const eid = id(r[1]); const b = await cuerpo(); const [x] = await bd.filas<{ codigo_sat: string; direccion: string | null; estado: string }>("select codigo_sat, direccion, estado from public.establecimientos where id = $1 and empresa_id = $2", [eid, emp()]);
+      if (!x) throw new ErrorHttp(404, "Establecimiento no encontrado", "no_encontrado");
+      return json(await bd.rpc("fel_op_establecimiento_guardar", { p_actor: a.id, p_empresa: emp(), p_id: eid, p_codigo: x.codigo_sat, p_nombre: texto(b.nombre, 1, 120, "Nombre"), p_direccion: x.direccion, p_estado: x.estado }));
     }
     if (m === "POST" && ruta === "/api/establecimientos") {
       const b = await cuerpo(); const estado = b.estado === "inactivo" ? "inactivo" : "activo";

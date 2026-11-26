@@ -43,3 +43,10 @@ Local primero (PostgreSQL temporal, Digifact simulado con dos códigos); en TEST
 
 ## 6. Datos que necesito de ti
 (a) Códigos de los dos establecimientos en Digifact TEST (¿1 y 2?) y sus nombres/direcciones; (b) ¿las mismas credenciales (mismo NIT) sirven para ambos?; (c) autorización para leer los datos del emisor del segundo establecimiento con el paso «datos-emisor» existente (a partir de un DTE aceptado por SAT para ese establecimiento); (d) confirmar que «supervisor» se modela con el permiso extra `establecimientos.multiples` y no con un rol nuevo.
+
+## Establecimientos de pruebas confirmados (Digifact TEST, cuenta CARLOSGAMEZ_TEST)
+
+Confirmados por el titular desde el selector de establecimientos del portal Digifact TEST: **código 2** y **código 67** (ambos con el nombre de Digifact «ESTABLECIMIENTO "TEST GEN"»; el reporte de acuses mostró un solo NIT emisor, el de la cuenta).
+Nombres INTERNOS iniciales en NEXA FEL: **2 → Sucursal Principal**, **67 → Sucursal 2**. Se cambian con `POST /api/establecimientos/:id/nombre`, que solo modifica el nombre interno: el código Digifact/SAT, la dirección, el estado y los datos fiscales no se tocan aunque la petición los traiga (prueba en `demo-facturacion/tests/establecimiento_api_test.ts`).
+Pendiente: dirección, código SAT real y datos fiscales de cada uno con el paso `datos-emisor` (solo lectura), que necesita la autorización (UUID) de un DTE de cada establecimiento.
+En «Nueva factura» el facturador ve solo su establecimiento, elegido y bloqueado; el supervisor con `establecimientos.multiples` elige entre los suyos (`demo-facturacion/tests/e2e_establecimiento_bloqueado.cjs`).
