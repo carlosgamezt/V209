@@ -15,7 +15,7 @@ PSQLAPP() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U nexa_app -d "$1" -v ON_ERROR_
 PSQL postgres -c "create database nexa_plantilla"
 PSQL nexa_plantilla -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do PSQL nexa_plantilla -f "$f" >/dev/null 2>&1; done
-for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-E_rol_app; do PSQL nexa_plantilla --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done
+for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-E_rol_app; do PSQL nexa_plantilla --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done
 PSQL postgres -c "alter role nexa_app login password 'prueba-local'" ; echo "OK    M-D, M-A, M-B, M-C y M-E aplicadas; nexa_app habilitado SOLO en este PostgreSQL temporal"
 PSQL postgres -c "create database nexa_sesion template nexa_plantilla"   # copia con los datos de prueba de sesiones; la plantilla queda limpia para la prueba de compatibilidad de la aplicación
 # datos de prueba persistentes + pruebas COMO nexa_app con sesiones validadas (suplantación, otra empresa, MFA, permisos, establecimientos, maestro)

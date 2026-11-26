@@ -9,7 +9,7 @@ import { Sesiones } from "../src/sesiones.ts";
 import { AlmacenPg } from "../src/almacen.ts";
 import { PERSONAS, CLAVE_DEMO, EMPRESA2 } from "../src/mundo_practico.ts";
 import { EMPRESA } from "../src/mundo_demo.ts";
-import { CON_ENVOLTORIO, conIdentidadDeSesion } from "../src/identidad_sesion.ts";
+import { CON_ENVOLTORIO, PLATAFORMA, destinoPlataforma, conIdentidadDeSesion } from "../src/identidad_sesion.ts";
 import { activarEstablecimientosLocal } from "../src/demo_establecimientos.ts";
 
 type J = Record<string, any>; // deno-lint-ignore no-explicit-any
@@ -29,13 +29,13 @@ const NIT = (n: number) => `${1000000 + n}-${n % 10}`;
 
 Deno.test({ name: "R2·F1 catálogo: los envoltorios fel_ses_* generados por M-I son exactamente la lista del servidor, sin identidad por parámetro, y las internas siguen intactas", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const { bd } = await entorno(true);
-  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%'")).map((x) => "fel_op_" + x.n.slice(8)).sort();
+  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and proname <> 'fel_ses_auditar'")).map((x) => x.n === "fel_ses_tipos_empresa" ? "fel_tipos_empresa" : "fel_op_" + x.n.slice(8)).sort();
   assert.deepEqual(w, [...CON_ENVOLTORIO].sort(), "el catálogo y la lista del servidor deben coincidir");
-  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor|p_empresa' or not prosecdef or proconfig is null or not (proconfig::text ~ 'search_path'))");
+  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and proname <> 'fel_ses_auditar' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor|p_empresa' or not prosecdef or proconfig is null or not (proconfig::text ~ 'search_path'))");
   assert.deepEqual(raros, [], "todos: primer parámetro p_sesion, sin p_actor/p_empresa, SECURITY DEFINER, search_path fijo");
   assert.equal((await bd.filas("select 1 from pg_proc where proname = 'fel_op_cliente_guardar' and pg_get_function_arguments(oid) like 'p_actor uuid, p_empresa uuid%'")).length, 1, "la interna conserva su firma");
   // ninguna función con envoltorio queda sin él: toda fel_op_* con (p_actor, p_empresa) está envuelta o es una de las cubiertas por M-G/M-H
-  const sin = (await bd.filas<{ n: string }>("select proname n from pg_proc p where proname like 'fel\\_op\\_%' and pg_get_function_arguments(oid) like 'p\\_actor uuid, p\\_empresa uuid%' and not exists (select 1 from pg_proc w where w.proname = 'fel_ses_' || substr(p.proname, 8))")).map((x) => x.n).sort();
+  const sin = (await bd.filas<{ n: string }>("select proname n from pg_proc p where (proname like 'fel\\_op\\_%' or proname = 'fel_tipos_empresa') and pg_get_function_arguments(oid) like 'p\\_actor uuid, p\\_empresa uuid%' and not exists (select 1 from pg_proc w where w.proname = 'fel_ses_' || regexp_replace(p.proname, '^fel_(op_)?', ''))")).map((x) => x.n).sort();
   assert.deepEqual(sin, ["fel_op_asignacion_guardar", "fel_op_asignacion_revocar", "fel_op_borrador_trasladar", "fel_op_digifact_conectar", "fel_op_digifact_interruptores", "fel_op_digifact_registrar_prueba", "fel_op_digifact_suspender", "fel_op_emisor_aprobar", "fel_op_emisor_guardar"], "solo las cubiertas por fel_adm_* de M-G/M-H quedan sin fel_ses_*");
 }});
 
@@ -87,4 +87,41 @@ Deno.test({ name: "R2·F1 permisos efectivos decididos por la base con la sesió
   const pedro2 = await new e.Cli("pedro").entrar(); assert.equal((await crear(pedro2, 43)).status, 200, "un permiso EXTRA concedido lo habilita");
   await bd.filas("update public.miembros set permisos_revocados = array['clientes.escribir'] where user_id = $1", [PERSONAS.marta.id]); const marta2 = await new e.Cli("marta").entrar(); assert.ok((await crear(marta2, 44)).status >= 400, "un permiso REVOCADO se lo quita aunque el rol lo tenga");
   await bd.filas("update public.miembros set activo = false where user_id = $1", [PERSONAS.pedro.id]); assert.ok((await crear(pedro2, 45)).status >= 400, "una persona desactivada no actúa");
+}});
+
+Deno.test({ name: "R2·F2 catálogo y plataforma: fel_pla_* = lista del servidor; el actor sale de la sesión de PLATAFORMA; una sesión de empresa no entra; MFA de plataforma configurable", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const { bd, Cli } = await entorno(true);
+  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_pla\\_%'")).map((x) => x.n).sort();
+  assert.deepEqual(w, [...PLATAFORMA].map(destinoPlataforma).sort(), "el catálogo y la lista de plataforma del servidor deben coincidir");
+  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_pla\\_%' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor' or not prosecdef or not (proconfig::text ~ 'search_path'))");
+  assert.deepEqual(raros, [], "plataforma: primer parámetro p_sesion, sin p_actor, SECURITY DEFINER, search_path fijo");
+  const ana = await new Cli("ana").entrar(), maestro = await new Cli("maestro").entrar();
+  const maestroCtx = { token: maestro.token(), actor: PERSONAS.maestro.id as string | null, empresa: null as string | null }, anaCtx = { token: ana.token(), actor: PERSONAS.ana.id as string | null, empresa: EMPRESA as string | null };
+  const pm = conIdentidadDeSesion(bd, () => maestroCtx), pa = conIdentidadDeSesion(bd, () => anaCtx);
+  await pm.rpc("fel_op_mfa_recuperacion_listar", { p_actor: PERSONAS.maestro.id });   // con su sesión opera (sin error)
+  await assert.rejects(() => pa.rpc("fel_op_mfa_recuperacion_listar", { p_actor: PERSONAS.ana.id }), /plataforma/i, "una sesión de EMPRESA (la propietaria) no entra a la plataforma");
+  await assert.rejects(() => pm.rpc("fel_op_mfa_recuperacion_listar", { p_actor: PERSONAS.maestro2.id }), /no es la de la sesión/, "el servidor no puede enviar otra persona de plataforma");
+  await assert.rejects(() => conIdentidadDeSesion(bd, () => ({ token: "tok-inexistente-0123456789abcdef", actor: PERSONAS.maestro.id, empresa: null })).rpc("fel_op_mfa_recuperacion_listar", { p_actor: PERSONAS.maestro.id }), /sesión no válida/i);
+  await assert.rejects(() => conIdentidadDeSesion(bd, () => undefined).rpc("fel_admin_plan_crear", { p_actor: PERSONAS.maestro.id }), /Sesión no válida/);
+  // MFA de la plataforma: con el parámetro en 1 la cuenta debe tener la verificación en dos pasos registrada
+  await bd.filas("update public.plataforma_parametros set valor = 1 where clave = 'plataforma_mfa_obligatoria'"); await bd.filas("update public.demo_credenciales set mfa_semilla_cifrada = null where usuario = 'maestro'");
+  await assert.rejects(() => pm.rpc("fel_op_mfa_recuperacion_listar", { p_actor: PERSONAS.maestro.id }), /dos pasos/i, "sin MFA registrada, la plataforma no opera");
+  await bd.filas("update public.demo_credenciales set mfa_semilla_cifrada = repeat('m', 30) where usuario = 'maestro'");
+  await pm.rpc("fel_op_mfa_recuperacion_listar", { p_actor: PERSONAS.maestro.id });   // con MFA registrada opera
+}});
+
+Deno.test({ name: "R2·F3 auditoría: la firma la sesión, lista cerrada de acciones, eventos de acceso resueltos por la base; fel_auditar original queda interna", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const { bd, Cli } = await entorno(true); const ana = await new Cli("ana").entrar(); const anaCtx = { token: ana.token(), actor: PERSONAS.ana.id as string | null, empresa: EMPRESA as string | null }; const p = conIdentidadDeSesion(bd, () => anaCtx);
+  const fila = async (id: unknown) => (await bd.filas<{ actor_user_id: string | null; empresa_id: string | null; origen: string; accion: string }>("select actor_user_id, empresa_id, origen, accion from public.auditoria where id = $1", [id]))[0];
+  const id1 = await p.rpc("fel_auditar", { p_empresa: EMPRESA, p_actor: PERSONAS.ana.id, p_accion: "documento.prueba_f3", p_entidad: "documento", p_entidad_id: "d1", p_datos: JSON.stringify({ a: 1 }) }); const f1 = await fila(id1);
+  assert.equal(f1.actor_user_id, PERSONAS.ana.id); assert.equal(f1.empresa_id, EMPRESA); assert.equal(f1.origen, "fel-api");
+  await assert.rejects(() => p.rpc("fel_auditar", { p_empresa: EMPRESA, p_actor: PERSONAS.marta.id, p_accion: "documento.x_prueba", p_entidad: "documento", p_entidad_id: "d1", p_datos: "{}" }), /no es la de la sesión/, "no se firma a nombre de otra persona");
+  await assert.rejects(() => p.rpc("fel_auditar", { p_empresa: EMPRESA2, p_actor: PERSONAS.ana.id, p_accion: "documento.x_prueba", p_entidad: "documento", p_entidad_id: "d1", p_datos: "{}" }), /no es la de la sesión/, "ni en otra empresa");
+  for (const accion of ["usuario.supervisor", "establecimiento.nombre", "demo.inicio_correcto", "invitacion.aceptar", "plataforma.empresa_crear"]) await assert.rejects(() => p.rpc("fel_auditar", { p_empresa: EMPRESA, p_actor: PERSONAS.ana.id, p_accion: accion, p_entidad: "documento", p_entidad_id: "d1", p_datos: "{}" }), /no permitida/, `acción ${accion}`);
+  const antes = (await bd.filas<{ n: number }>("select count(*)::int n from public.auditoria"))[0].n;
+  const id2 = await bd.rpc("fel_aud_acceso", { p_evento: "inicio_fallido", p_usuario: "marta", p_datos: "{}" }); const f2 = await fila(id2); assert.equal(f2.actor_user_id, PERSONAS.marta.id, "la base resuelve a la persona por su usuario"); assert.equal(f2.origen, "acceso");
+  await assert.rejects(() => bd.rpc("fel_aud_acceso", { p_evento: "usuario.supervisor", p_usuario: "marta", p_datos: "{}" }), /no permitido/);
+  assert.equal((await bd.filas<{ n: number }>("select count(*)::int n from public.auditoria"))[0].n, antes + 1, "el evento rechazado no dejó rastro falso");
+  // sin sesión no se audita a nombre de nadie
+  await assert.rejects(() => conIdentidadDeSesion(bd, () => undefined).rpc("fel_auditar", { p_empresa: EMPRESA, p_actor: PERSONAS.ana.id, p_accion: "documento.x_prueba", p_entidad: "documento", p_entidad_id: "d1", p_datos: "{}" }), /Sesión no válida/);
 }});

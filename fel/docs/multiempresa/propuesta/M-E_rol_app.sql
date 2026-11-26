@@ -20,9 +20,16 @@ do $$ declare r record; begin
     execute format('grant execute on function %s to nexa_app', r.f);
   end loop;
   -- R2 · F1 (M-I): las `fel_op_*` que tienen envoltorio de sesión `fel_ses_*` YA NO se conceden a nexa_app (recibían actor y empresa como parámetros); se concede el envoltorio.
-  for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fel\_op\_%'
-            and exists (select 1 from pg_proc w where w.pronamespace = p.pronamespace and w.proname = 'fel_ses_' || substr(p.proname, 8)) loop
+  for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and (p.proname like 'fel\_op\_%' or p.proname = 'fel_tipos_empresa')
+            and exists (select 1 from pg_proc w where w.pronamespace = p.pronamespace and w.proname = 'fel_ses_' || regexp_replace(p.proname, '^fel_(op_)?', '')) loop
     execute format('revoke execute on function %s from nexa_app', r.f);
+  end loop;
+  -- R2 · F2/F3 (M-J): las `fel_admin_*` y las `fel_op_mfa_recuperacion_*` con envoltorio de plataforma `fel_pla_*` y `fel_auditar` (permitía falsificar auditoría) tampoco se conceden; se conceden los envoltorios y las dos funciones de auditoría acotadas
+  for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and ((p.proname like 'fel\_admin\_%' or p.proname like 'fel\_op\_mfa\_recuperacion\_%') and exists (select 1 from pg_proc w where w.pronamespace = p.pronamespace and w.proname = 'fel_pla_' || regexp_replace(p.proname, '^fel_(op|admin)_', '')) or (p.proname = 'fel_auditar' and exists (select 1 from pg_proc w where w.proname = 'fel_ses_auditar'))) loop
+    execute format('revoke execute on function %s from nexa_app', r.f);
+  end loop;
+  for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and (p.proname like 'fel\_pla\_%' or p.proname in ('fel_ses_auditar', 'fel_aud_acceso')) loop
+    execute format('grant execute on function %s to nexa_app', r.f);
   end loop;
   for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fel\_ses\_%' loop
     execute format('grant execute on function %s to nexa_app', r.f);

@@ -50,6 +50,6 @@ export async function crearDigifactParaBd(env: Entorno, bd: BdDemo, fetchImpl?: 
   const persistente = bd.tipo === "pg" && (await bd.filas<{ ok: boolean }>("select to_regclass('public.digifact_operaciones') is not null as ok"))[0]?.ok === true;
   const r = await crearDigifactDesdeEntorno(env, { almacen: persistente ? new AlmacenGtPg(bd.filas) : undefined, fetchImpl, ahora,
     // «$5::text::jsonb»: con PostgreSQL REAL el parámetro de un «::jsonb» directo viaja como cadena JSON y la auditoría quedaba guardada como TEXTO (no como objeto); pasando por text se guarda el objeto
-    auditar: async (evento, ctx, d) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'documento', $4, $5::text::jsonb)", [ctx.empresaId, ctx.actorId, evento, String(d.documento ?? d.operacion ?? ""), JSON.stringify(d)]); } });
+    auditar: async (evento, ctx, d) => { await bd.rpc("fel_auditar", { p_empresa: ctx.empresaId, p_actor: ctx.actorId, p_accion: evento, p_entidad: "documento", p_entidad_id: String(d.documento ?? d.operacion ?? ""), p_datos: JSON.stringify(d) }); } });
   return { ...r, almacenPersistente: persistente };
 }

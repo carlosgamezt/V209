@@ -29,12 +29,15 @@ begin
   if o_empresa is null then raise exception 'FEL_NO_AUTORIZADO: esta operación es de una empresa; la sesión es de la plataforma'; end if;
 end $$;
 create or replace function public.fel__sesion_maestro(p_token text, out o_user uuid) language plpgsql stable security definer set search_path = '' as $$
-declare v_emp uuid;
+declare v_emp uuid; v_mfa boolean;
 begin
-  select s.user_id, s.empresa_id into o_user, v_emp from public.fel__sesion(p_token) s;
+  select s.user_id, s.empresa_id, s.mfa into o_user, v_emp, v_mfa from public.fel__sesion(p_token) s;
   if o_user is null then raise exception 'FEL_NO_AUTORIZADO: sesión no válida'; end if;
   if v_emp is not null or not public.fel_es_plataforma(o_user) then raise exception 'FEL_NO_AUTORIZADO: solo el administrador de la plataforma'; end if;
+  -- MFA de la plataforma: con el parámetro en 1 (obligatorio en la nube) la cuenta DEBE tener la verificación en dos pasos registrada; el inicio de sesión ya la exige al entrar
+  if coalesce(public.fel__parametro('plataforma_mfa_obligatoria'), 0) = 1 and not coalesce(v_mfa, false) then raise exception 'FEL_NO_AUTORIZADO: la plataforma exige verificación en dos pasos'; end if;
 end $$;
+insert into public.plataforma_parametros (clave, valor, descripcion) values ('plataforma_mfa_obligatoria', 0, 'Operaciones de la plataforma: 1 = la cuenta debe tener verificación en dos pasos (en la nube), 0 = no se exige (pruebas locales)') on conflict (clave) do nothing;
 
 -- Contexto validado: persona, empresa, permisos, alcance y establecimiento ACTIVO (el único para un facturador; el elegido explícitamente por un supervisor, o su predeterminado).
 create or replace function public.fel_adm_contexto(p_sesion text) returns jsonb

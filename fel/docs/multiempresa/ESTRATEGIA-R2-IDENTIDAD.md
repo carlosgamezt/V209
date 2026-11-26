@@ -90,7 +90,10 @@ Cuando F1 a F3 pasen todas las compuertas **y** el ensayo en `nexa-fel-test` dé
 # Anexo C · Estado de las fases
 | Fase | Estado |
 |---|---|
-| F0 generador por catálogo + prueba de catálogo + sonda por clases | **hecha (local)**: `M-I` genera por catálogo; `prueba-r2-suplantacion.sql` por clases; `identidad_sesion_test.ts` compara el catálogo con la lista del servidor |
-| F1 clase C1 (34 funciones `fel_op_*` de empresa) | **hecha (local)**: 34 envoltorios, servidor con `FEL_IDENTIDAD_SESION`, `nexa_app` sin las originales, recorrido completo como `nexa_app` en verde |
-| F2 plataforma (C2) · F3 auditoría y previas a la sesión (C3, C5) · F4 `nexa_sys` · F5 Supabase Auth | pendientes |
-**R2 NO está cerrado:** la sonda sigue en «abierto» por C2 y C5 (y C3/C4/R1).
+| F0 generador por catálogo + prueba de catálogo + sonda por clases | **hecha (local)** |
+| F1 clase C1 (34 funciones de empresa) | **hecha (local)** |
+| F2 plataforma (C2) | **hecha (local)**: 33 envoltorios `fel_pla_*` (M-J) con el actor de la sesión de PLATAFORMA; MFA configurable (`plataforma_mfa_obligatoria`); `nexa_app` ya no ejecuta ninguna `fel_admin_*` ni `fel_op_mfa_recuperacion_*` |
+| F3 auditoría (C5) y previas a la sesión (C3) | **hecha (local)**: `fel_auditar` ya no es ejecutable por `nexa_app`; `fel_ses_auditar` (lista cerrada de acciones, firma la sesión) y `fel_aud_acceso` (lista cerrada de eventos, la base resuelve a la persona). C3 (`invitacion_aceptar`, `mfa_recuperacion_solicitar`) **acotada por la base**: exige usuario confirmado, correo idéntico e invitación vigente / cuenta activa con TOTP, una solicitud abierta y tope de 3 por 24 h, y la aprobación exige a dos personas de plataforma; la prueba definitiva llega con F5 |
+| F4 `nexa_sys` | pendiente (**obligatoria antes de clientes reales**) |
+| F5 Supabase Auth | **comparación hecha** (`F5-COMPARACION-ARQUITECTURA.md`); recomendación C; pendiente decisión |
+**R2 NO está cerrado.** La sonda local da «abierto» por C4 (`fel_sys_*`, F4) y R1 (fabricar sesiones, F5); C1, C2, C3 y C5 están cerradas. Falta además la compuerta del ensayo hospedado.

@@ -43,12 +43,13 @@ const bd = BD_URL ? crearBdPg(BD_URL) : await (await import("./src/bd_memoria.ts
 let mundo;
 try { mundo = await prepararBase(bd, { sembrar: true, aviso: (m) => console.log(`  ${m}`) }); }
 catch (e) { if (e instanceof ErrorAprovisionar) { console.error(e.message); Deno.exit(1); } throw e; }
+const IDENTIDAD_SESION = Deno.env.get("FEL_DEMO_ESTABLECIMIENTOS") === "1" && !Deno.env.get("FEL_DEMO_PUBLICADO") && !Deno.env.get("FEL_DEMO_BD_URL");   // misma condición que ESTAB_LOCAL (modo local de pruebas): auditoría de acceso por la función acotada
 const ESTAB_LOCAL = Deno.env.get("FEL_DEMO_ESTABLECIMIENTOS") === "1" && !PUBLICADO && !BD_URL;   // SOLO pruebas locales: establecimientos 2 y 67, asignación fija por persona y panel de administración (apagado por defecto)
 if (ESTAB_LOCAL) { const { activarEstablecimientosLocal } = await import("./src/demo_establecimientos.ts"); const x = await activarEstablecimientosLocal(bd); console.log(`  Establecimientos de prueba: 2 «Sucursal Principal» (marta) y 67 «Sucursal 2» (sin facturador: créalo y asígnalo desde Establecimientos)`); void x; }
 const ALEATORIAS = !PUBLICADO && (LAN || Deno.env.get("FEL_DEMO_CLAVE_ALEATORIA") === "1");   // acceso desde otros equipos / remoto: nunca contraseñas públicas
 const sesiones = LOGIN ? new Sesiones(undefined, bd.tipo === "pg" || ESTAB_LOCAL ? new AlmacenPg(bd) : new AlmacenMemoria(PERSONAS)) : undefined;
 // auditoría de la autenticación en el registro de auditoría de NEXA FEL (nunca contraseñas ni códigos)
-if (sesiones) sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch (e) { console.error("auditoría:", (e as Error).message); } };
+if (sesiones) sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); if (IDENTIDAD_SESION) await bd.rpc("fel_aud_acceso", { p_evento: evento, p_usuario: usuario, p_datos: JSON.stringify(detalle) }); else await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch (e) { console.error("auditoría:", (e as Error).message); } };
 const CLAVES: Record<string, string> = {};
 const aleatoria = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => "abcdefghjkmnpqrstuvwxyz23456789"[x % 31]).join("");
 if (sesiones) {

@@ -6,7 +6,7 @@ import { EMPRESA } from "./mundo_demo.ts";
 import { PERSONAS } from "./mundo_practico.ts";
 
 const RAIZ = fileURLToPath(new URL("../../", import.meta.url));
-const PROPUESTAS = ["M-D_permisos", "M-A_emisor_fiscal", "M-B_digifact_config", "M-C_acceso_maestro", "M-F_establecimientos_usuario", "M-G_sesion_admin", "M-H_admin_establecimientos", "M-I_envoltorios_sesion"];
+const PROPUESTAS = ["M-D_permisos", "M-A_emisor_fiscal", "M-B_digifact_config", "M-C_acceso_maestro", "M-F_establecimientos_usuario", "M-G_sesion_admin", "M-H_admin_establecimientos", "M-I_envoltorios_sesion", "M-J_plataforma_y_auditoria"];
 export async function activarEstablecimientosLocal(bd: BdDemo): Promise<{ e2: string; e67: string }> {
   if (bd.tipo !== "pglite") throw new Error("Solo para la base en memoria de pruebas locales");
   // deno-lint-ignore no-explicit-any

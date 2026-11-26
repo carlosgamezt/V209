@@ -17,7 +17,7 @@ Deno.test("maestro: sus rutas no consultan tablas fiscales ni de credenciales", 
 
 Deno.test("maestro: el enrutador lo envía siempre a rutasMaestro, antes de cualquier ruta de empresa", () => {
   const t = leer("../src/api.ts"), a = t.indexOf("esMaestro(a.clave)"), b = t.indexOf("manejar(req, url)", a);
-  assert.ok(a > 0 && b > a, "el desvío del maestro debe estar ANTES de manejar()"); assert.match(t.slice(a - 30, a + 120), /return await pr\.rutasMaestro\(req, url, a\)/);
+  assert.ok(a > 0 && b > a, "el desvío del maestro debe estar ANTES de manejar()"); assert.match(t.slice(a - 30, a + 260), /return await (peticion\.run\(\{[^}]*\}, \(\) => )?pr\.rutasMaestro\(req, url, a\)/);   // directo, o dentro del contexto de la petición (identidad de sesión, R2)
   const seg = tramo(); assert.match(seg, /throw new ErrorPr\(403, "Esta función no está disponible para el administrador de la plataforma"/, "lo desconocido se niega (falla cerrado)");
 });
 

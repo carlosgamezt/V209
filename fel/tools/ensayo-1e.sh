@@ -31,8 +31,8 @@ aplicar() {
   echo "== 2) estado previo (solo lectura)"; PSQLA -At -c "select 'tablas public='||count(*) from information_schema.tables where table_schema='public'"
   if [ "$(PSQLA -At -c "select count(*) from information_schema.tables where table_schema='public' and table_name='documentos'")" = 0 ]; then
     echo "== 3) migraciones 1-30 (proyecto vacío)"; for f in supabase/migrations/*.sql; do PSQLA --single-transaction -f "$f" >/dev/null || fallo "migración $f"; done; echo "OK    migraciones del proyecto"; fi
-  echo "== 4) propuestas en orden: M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-E (una transacción cada una)"
-  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
+  echo "== 4) propuestas en orden: M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-I, M-J, M-E (una transacción cada una)"
+  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
   PSQLA -c "alter role nexa_app login password '$ENSAYO_CLAVE_NEXA_APP'" ; echo "OK    nexa_app habilitado SOLO en el proyecto de pruebas"
   echo "== 5) verificación posterior (solo lectura)"; V=$({ echo '\set ON_ERROR_STOP on'; echo 'begin transaction read only;'; echo "\\i $D/verificacion.sql"; echo 'rollback;'; } | PSQLA -At); NT=$(grep -c '|t$' <<< "$V" || true); NF=$(grep -c '|f$' <<< "$V" || true)
   echo "comprobaciones ok=t: $NT · ok=f: $NF"; [ "$NT" -gt 0 ] && [ "$NF" = 0 ] || fallo "verificación posterior"
@@ -42,7 +42,7 @@ probar() {
   echo "== 7) conexión como nexa_app por el pooler (modo transacción)"; PSQLP -At -c "select 'usuario='||current_user||' · super='||rolsuper||' · bypassrls='||rolbypassrls from pg_roles where rolname=current_user"
   PSQLP -At -c "select 'funciones ejecutables: '||count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege(current_user, p.oid, 'execute') and p.proname like 'fel%'"
   echo "== 8) pruebas como nexa_app"
-  for t in prueba-rol-app prueba-sesion-admin prueba-admin-establecimientos; do PSQLP -f "$D/$t.sql" 2>&1 | grep -qE "PRUEBAS DEL ROL nexa_app OK|PRUEBAS DE SESIÓN VALIDADA OK|PRUEBAS DE ADMINISTRACIÓN DE ESTABLECIMIENTOS OK" && echo "OK    $t" || fallo "$t"; done
+  for t in prueba-rol-app prueba-sesion-admin prueba-admin-establecimientos prueba-envoltorios; do PSQLP -f "$D/$t.sql" 2>&1 | grep -qE "PRUEBAS DEL ROL nexa_app OK|PRUEBAS DE SESIÓN VALIDADA OK|PRUEBAS DE ADMINISTRACIÓN DE ESTABLECIMIENTOS OK|PRUEBAS DE ENVOLTORIOS DE SESIÓN OK" && echo "OK    $t" || fallo "$t"; done
   echo "== 9) sonda R2 (suplantación por fel_op_*), esperado: ${FEL_R2_ESPERADO:-abierto}"; PSQLP -v esperado="${FEL_R2_ESPERADO:-abierto}" -f "$D/prueba-r2-suplantacion.sql" 2>&1 | grep -E "POSIBLE|rechazada|R2 ESTADO|SONDA R2" || fallo "sonda R2"
   echo "== 10) tabla nueva con RLS y sin política: nexa_app debe ver 0 filas"
   PSQLA -c "create table public.zz_nueva (x int); alter table public.zz_nueva enable row level security; insert into public.zz_nueva values (1); grant select on public.zz_nueva to nexa_app;" >/dev/null

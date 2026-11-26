@@ -14,6 +14,7 @@ import { leerConfigPublicada } from "../src/publicado.ts";
 import { crearApi } from "../src/api.ts";
 import { lectorDeAlcanceBd } from "../src/alcance_establecimientos.ts";
 import { adminDeBd } from "../src/admin_establecimientos.ts";
+import { conIdentidadDeSesion } from "../src/identidad_sesion.ts";
 import { crearDigifactParaBd } from "../src/digifact_entorno.ts";
 import { crearConsultorNitDesdeEntorno } from "../src/digifact_nit_entorno.ts";
 import { crearConsultorCuiDesdeEntorno } from "../src/digifact_cui_entorno.ts";
@@ -32,10 +33,12 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     const cfg = leerConfigPublicada((k) => env.get(k), Object.keys(PERSONAS), { exigirClaves: false });
     const t0Inicio = performance.now();
     const bd = envolverBd(bdExterna ?? bdDeEntorno((k) => env.get(k)));   // cuenta y cronometra las consultas (solo números)
+    const identidadSesion = env.get("FEL_IDENTIDAD_SESION") === "1", IDENTIDAD_SESION = identidadSesion;   // APAGADO por defecto: exige M-I y M-J aplicadas (R2 · F1-F3)
+    const bdApp = identidadSesion ? conIdentidadDeSesion(bd) : bd;   // los servicios (Digifact, correo) usan la MISMA capa de identidad: sus auditorías las firma la sesión de la petición
     const mundo = await prepararBase(bd, { sembrar: false });
     const sesiones = new Sesiones(undefined, new AlmacenPg(bd)); sesiones.claveDemoPublica = null; sesiones.forzarSeguro = true;
-    sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch { /* la auditoría no debe tumbar la petición */ } };
-    const digifact = await crearDigifactParaBd((k) => env.get(k), bd, fetchMedido());   // sin FEL_DIGIFACT_* no existe; sin la tabla de la migración 29 prepara y valida pero NO envía nada real
+    sesiones.auditar = async (evento, usuario, detalle = {}) => { try { const c = await sesiones.almacen.cuenta(usuario); if (IDENTIDAD_SESION) await bd.rpc("fel_aud_acceso", { p_evento: evento, p_usuario: usuario, p_datos: JSON.stringify(detalle) }); else await bd.filas("select public.fel_auditar($1, $2, $3, $4, $5, $6)", [c?.persona.empresa ?? null, c?.persona.id ?? null, `demo.${evento}`, "sesion", usuario, { ...detalle, existe: !!c }]); } catch { /* la auditoría no debe tumbar la petición */ } };
+    const digifact = await crearDigifactParaBd((k) => env.get(k), bdApp, fetchMedido());   // sin FEL_DIGIFACT_* no existe; sin la tabla de la migración 29 prepara y valida pero NO envía nada real
     console.log(`Digifact TEST: ${digifact.motivo}${digifact.servicio ? (digifact.almacenPersistente ? " · almacén persistente" : " · sin almacén persistente: no envía") : ""}`);   // nunca valores
     const nit = crearConsultorNitDesdeEntorno((k) => env.get(k));   // independiente de la certificación: solo sabe consultar NIT y solo para UNA empresa; sin FEL_DIGIFACT_NIT no existe
     const cui = crearConsultorCuiDesdeEntorno((k) => env.get(k));   // independiente de NIT y de la certificación; sin FEL_DIGIFACT_CUI no existe
@@ -43,10 +46,9 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     console.log(`Consulta de NIT: ${nit.consultor ? "Digifact TEST habilitado para una empresa" : "simulador"}`);   // nunca valores, NIT ni nombres
     const correoDg = crearPoliticaCorreoDigifactDesdeEntorno((k) => env.get(k));   // correo de la factura por DIGIFACT al certificar: independiente de la certificación, NIT y CUI; sin FEL_DIGIFACT_CORREO no existe
     console.log(`Correo por Digifact: ${correoDg.politica ? "habilitado para una empresa y destinatarios de prueba" : "apagado"}`);   // nunca valores
-    const correo = crearCorreoDesdeEntorno((k) => env.get(k), bd);   // sin FEL_CORREO no existe; con «habilitado» exige remitente, lista de destinatarios de prueba y RESEND_API_KEY
+    const correo = crearCorreoDesdeEntorno((k) => env.get(k), bdApp);   // sin FEL_CORREO no existe; con «habilitado» exige remitente, lista de destinatarios de prueba y RESEND_API_KEY
     console.log(`Correo: ${correo.motivo}`);   // nunca valores
     const estabPorUsuario = env.get("FEL_ESTABLECIMIENTO_POR_USUARIO") === "1";   // APAGADO por defecto: exige M-F, M-G y M-H aplicadas (propuestas, NO están en supabase/migrations)
-    const identidadSesion = env.get("FEL_IDENTIDAD_SESION") === "1";   // APAGADO por defecto: exige M-I aplicada (R2 · F1)
     const api = crearApi(bd, mundo, { identidadSesion, ...(estabPorUsuario ? { alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor, digifactCui: cui.consultor, digifactCorreo: correoDg.politica, correo: correo.servicio });
     const endurecer = crearEndurecimiento({ publicado: true, hosts: cfg.hosts, hostDe: (r) => (r.headers.get("x-nexa-host") ?? "").toLowerCase(), ipDe: (r) => r.headers.get("x-nexa-ip") ?? "?",
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo

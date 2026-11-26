@@ -68,7 +68,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
     const ctxR: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
     try {
       const b = await c.cuerpo();
-      return c.json(await consultarReceptorNit(ctxR, b.nit, { consultor, limitador: limitadores.get(bd)!, limitadorReal: limitesReales.get(bd)!.empresa, limitadorGlobal: limitesReales.get(bd)!.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::text::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
+      return c.json(await consultarReceptorNit(ctxR, b.nit, { consultor, limitador: limitadores.get(bd)!, limitadorReal: limitesReales.get(bd)!.empresa, limitadorGlobal: limitesReales.get(bd)!.global, auditar: async (evento, empresa, actor, datos) => { await bd.rpc("fel_auditar", { p_empresa: empresa, p_actor: actor, p_accion: evento, p_entidad: "receptor", p_entidad_id: "", p_datos: JSON.stringify(datos) }); } }));
     } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
   }
   if (esReceptorCui) {   // autollenado del nombre por CUI/DPI: Digifact TEST solo para la empresa autorizada, o simulador rotulado; el CUI nunca se registra ni se devuelve
@@ -76,7 +76,7 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
     const lc = limitadoresCui.get(bd)!, ctxC: ContextoFel = { empresaId: c.empresa, actorId: c.a.id, permisos: await c.permisos() };
     try {
       const b = await c.cuerpo();
-      return c.json(await consultarReceptorCui(ctxC, b.cui, { consultor: consultorCui, limitador: lc.sim, limitadorReal: lc.empresa, limitadorGlobal: lc.global, auditar: async (evento, empresa, actor, datos) => { await bd.filas("select public.fel_auditar($1, $2, $3, 'receptor', '', $4::text::jsonb)", [empresa, actor, evento, JSON.stringify(datos)]); } }));
+      return c.json(await consultarReceptorCui(ctxC, b.cui, { consultor: consultorCui, limitador: lc.sim, limitadorReal: lc.empresa, limitadorGlobal: lc.global, auditar: async (evento, empresa, actor, datos) => { await bd.rpc("fel_auditar", { p_empresa: empresa, p_actor: actor, p_accion: evento, p_entidad: "receptor", p_entidad_id: "", p_datos: JSON.stringify(datos) }); } }));
     } catch (e) { if (e instanceof ErrorReceptorNit) return c.json({ codigo: e.codigo, mensaje: e.message }, e.status); throw e; }
   }
   if (esEstado) return c.json({ habilitado: !!svc, certificacion: !!svc, consultaNit: !!consultor && c.empresa.toLowerCase() === consultor.empresaId, consultaCui: !!consultorCui && c.empresa.toLowerCase() === consultorCui.empresaId, correoDigifact: { habilitado: !!politicaCorreo && c.empresa.toLowerCase() === politicaCorreo.empresaId }, ambiente: "TEST", produccion: "bloqueada", anulacion: "cerrada", notaCredito: "cerrada", confirmacion: "CERTIFICAR-TEST", almacenamiento: svc ? (svc.almacenPersistente ? "persistente" : "temporal") : null, ...(svc ? { empresaConCanal: svc.estadoCanal(c.empresa).canal, ciclo: svc.estadoCanal(c.empresa).ciclo } : {}) });   // «certificacion» y «consultaNit» son interruptores distintos
