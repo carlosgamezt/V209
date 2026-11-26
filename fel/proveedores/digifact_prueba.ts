@@ -121,17 +121,14 @@ async function main() {
       catch (e) { out({ prueba: "validar-nuc", ok: false, errores: e instanceof NucInvalido ? e.errores : [String(e)] }); Deno.exit(1); }
       return;
     }
-    case "listar-establecimientos": {   // SOLO LECTURA: qué establecimientos aparecen en el reporte de acuses de ESTA cuenta (mismo NIT y mismas credenciales); NO inventa códigos
-      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"); const filas: Awaited<ReturnType<DigifactGt["reporteAcuses"]>> = [];
-      // Por etapas: 30, luego 90 y luego 180 días hacia atrás; ventanas de 3 días (máximo del reporte: 2 días de rango), sin repetir lo ya consultado; se DETIENE en cuanto aparecen ≥2 establecimientos
-      let consultados = 0, fallidos = 0, truncadas = 0, desde = 0; const etapas: Record<string, unknown>[] = []; let ests = agruparEstablecimientos(filas);
-      for (const tope of [30, 90, 180]) {
-        for (; desde < tope; desde += 3) { try { const f = await c.reporteAcuses(fechaGt(-(desde + 2) * 86_400_000), { hasta: fechaGt(-desde * 86_400_000), limite: 200 }); consultados++; if (f.length >= 200) truncadas++; filas.push(...f); } catch { fallidos++; } }
-        ests = agruparEstablecimientos(filas); etapas.push({ hastaDias: tope, filasVistas: filas.length, establecimientosVistos: ests.length });
-        if (ests.length >= 2) break;
+    case "listar-establecimientos": {   // SOLO LECTURA. Un día por consulta, SIN FECHAFIN (Digifact lo rechaza). Empieza por el 25/11/2026 y se detiene al ver ≥2 establecimientos con NIT comparado. Las filas PENDIENTE_SAT valen SOLO como diagnóstico
+      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"); const dias = ["2026-11-25", "2026-11-24", "2026-11-23"]; const vistos: unknown[] = [];
+      for (const dia of dias) {
+        let r; try { r = await c.diagnosticoReporte(`FECHA|${dia}`); } catch (e) { vistos.push({ dia, error: errorLegible(e) }); continue; }
+        vistos.push({ dia, filas: r.nFilas, estados: r.estados, nitsDistintos: r.nitsDistintos, filasConNitPropio: r.filasConNitPropio, establecimientos: r.establecimientos });
+        if (r.establecimientos.length >= 2) break;
       }
-      out({ prueba: "listar-establecimientos", ok: true, soloLectura: true, etapas, solicitudes: consultados, solicitudesFallidas: fallidos, ventanasConPosibleTruncamiento: truncadas, filasVistas: filas.length, establecimientos: ests,
-        nota: "Para leer el emisor de cada uno: paso «datos-emisor» con «autorizacion» = la autorización de ejemplo del establecimiento. Solo aparecen los establecimientos con documentos en el periodo consultado." });
+      out({ prueba: "listar-establecimientos", soloLectura: true, consultas: vistos, nota: "Diagnóstico: PENDIENTE_SAT no es certificado ni autorización válida. «filasConNitPropio» compara NIT_EMISOR con el NIT de la cuenta sin mostrar NIT ajenos." });
       return;
     }
     case "diagnostico-reporte": {   // SOLO LECTURA, 8 consultas fijas: muestra la FORMA de la respuesta del reporte de acuses y qué filtro (fecha, rango, LIMITE, establecimiento) cambia el resultado. Sin datos de receptores

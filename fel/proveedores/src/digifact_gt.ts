@@ -311,18 +311,18 @@ export class DigifactGt {
    * DIAGNÓSTICO de solo lectura del reporte de acuses: devuelve solo la FORMA de la respuesta (nombres de claves, conteos y, por establecimiento, código, nombre y cantidad). Nunca valores de receptores, importes ni autorizaciones.
    * El parámetro solo admite las formas que ya usa el reporte (FECHA[|FECHAFIN][|ESTABLECIMIENTO][|LIMITE]); cualquier otra se rechaza.
    */
-  async diagnosticoReporte(data2: string): Promise<{ filtro: string; claves: string[]; resumen: Record<string, string | number>; nFilas: number; camposDeFila: string[]; establecimientos: Array<{ codigo: string; nombre: string; filas: number }>; estados: Record<string, number>; tipos: Record<string, number> }> {
+  async diagnosticoReporte(data2: string): Promise<{ filtro: string; claves: string[]; resumen: Record<string, string | number>; nFilas: number; camposDeFila: string[]; establecimientos: Array<{ codigo: string; nombre: string; filas: number; filasConNitPropio: number }>; nitsDistintos: number; filasConNitPropio: number; estados: Record<string, number>; tipos: Record<string, number> }> {
     if (!/^FECHA\|\d{4}-\d{2}-\d{2}(\|FECHAFIN\|\d{4}-\d{2}-\d{2})?(\|ESTABLECIMIENTO\|\d{1,3})?(\|LIMITE\|\d{1,3})?$/.test(data2)) throw new ErrorDigifact("solicitud", "Filtro de diagnóstico no permitido");
     const { j } = await this.#shared("SHARED_GETREPORTDAILYACUSES", data2); const raiz = j!;
     const resumen: Record<string, string | number> = {};
     const escalar = (k: string, v: unknown) => { if (typeof v === "number" || (typeof v === "string" && v.length <= 80)) resumen[k] = typeof v === "string" ? this.#limpio(v) : v; };
     for (const [k, v] of Object.entries(raiz)) { if (k === "RESPONSE") continue; if (Array.isArray(v)) { const f = v[0]; if (f && typeof f === "object") for (const [kk, vv] of Object.entries(f as Record<string, unknown>)) escalar(`${k}.${kk}`, vv); } else escalar(k, v); }
-    const filas = DigifactGt.#filas(raiz); const ests = new Map<string, { codigo: string; nombre: string; filas: number }>(); const estados: Record<string, number> = {}, tipos: Record<string, number> = {};
+    const filas = DigifactGt.#filas(raiz); const ests = new Map<string, { codigo: string; nombre: string; filas: number; filasConNitPropio: number }>(); const norm = (x: string) => x.toUpperCase().replace(/[^0-9A-Z]/g, "").replace(/^0+/, ""); const propio = norm(this.c.nit); const nits = new Set<string>(); let conPropio = 0; const estados: Record<string, number> = {}, tipos: Record<string, number> = {};
     for (const h of filas) {
-      const k = num(h.NE) || "(sin código)"; const e = ests.get(k) ?? { codigo: k, nombre: this.#limpio(num(h.NOMBRE)), filas: 0 }; e.filas++; ests.set(k, e);
+      const k = num(h.NE) || "(sin código)"; const e = ests.get(k) ?? { codigo: k, nombre: this.#limpio(num(h.NOMBRE)), filas: 0, filasConNitPropio: 0 }; e.filas++; const ne = norm(num(h.NIT_EMISOR)); nits.add(ne); if (ne && ne === propio) { e.filasConNitPropio++; conPropio++; } ests.set(k, e);
       const es = num(h.ACUSE_RECEPCION_ESTADO) || "(vacío)", ti = num(h.TIPO_DTE) || "(vacío)"; estados[es] = (estados[es] ?? 0) + 1; tipos[ti] = (tipos[ti] ?? 0) + 1;
     }
-    return { filtro: data2, claves: Object.keys(raiz), resumen, nFilas: filas.length, camposDeFila: filas[0] ? Object.keys(filas[0]) : [], establecimientos: [...ests.values()], estados, tipos };
+    return { filtro: data2, claves: Object.keys(raiz), resumen, nFilas: filas.length, camposDeFila: filas[0] ? Object.keys(filas[0]) : [], establecimientos: [...ests.values()], nitsDistintos: nits.size, filasConNitPropio: conPropio, estados, tipos };
   }
 
   /* ------------------------------ descarga (GET /GetDocument) ------------------------------ */

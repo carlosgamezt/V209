@@ -387,9 +387,9 @@ Deno.test("Digifact: consultarCui traduce los errores (401/403/429/500/ilegible)
 });
 
 Deno.test("Digifact: diagnóstico del reporte — solo forma y conteos, filtros cerrados, sin valores de receptores", async () => {
-  const m = mundo((p) => (esLogin(p) ? loginOk() : ok({ REQUEST_DATA: [{ Respuesta: 1 }], RESPONSE: [{ GUID: AUT, NE: "2", NOMBRE: "SUCURSAL", TIPO_DTE: "FACT", ACUSE_RECEPCION_ESTADO: "ACEPTADO_SAT", NOMBRE_RECEPTOR: "PERSONA SECRETA", NIT_RECEPTOR: "123456K" }, { GUID: AUT, NE: "1", NOMBRE: "CENTRAL", TIPO_DTE: "FACT", ACUSE_RECEPCION_ESTADO: "ACEPTADO_SAT" }] })));
+  const m = mundo((p) => (esLogin(p) ? loginOk() : ok({ REQUEST_DATA: [{ Respuesta: 1 }], RESPONSE: [{ GUID: AUT, NE: "2", NOMBRE: "SUCURSAL", TIPO_DTE: "FACT", ACUSE_RECEPCION_ESTADO: "ACEPTADO_SAT", NOMBRE_RECEPTOR: "PERSONA SECRETA", NIT_RECEPTOR: "123456K", NIT_EMISOR: "9999999K" }, { GUID: AUT, NE: "1", NOMBRE: "CENTRAL", TIPO_DTE: "FACT", ACUSE_RECEPCION_ESTADO: "ACEPTADO_SAT" }] })));
   const r = await m.c.diagnosticoReporte("FECHA|2026-11-12|FECHAFIN|2026-11-14|LIMITE|5");
-  assert.equal(r.nFilas, 2); assert.deepEqual(r.establecimientos.map((e) => e.codigo).sort(), ["1", "2"]); assert.equal(r.resumen["REQUEST_DATA.Respuesta"], 1);
+  assert.equal(r.nFilas, 2); assert.deepEqual(r.establecimientos.map((e) => e.codigo).sort(), ["1", "2"]); assert.equal(r.resumen["REQUEST_DATA.Respuesta"], 1); assert.equal(r.nitsDistintos, 2); assert.equal(r.filasConNitPropio, 0); assert.ok(!JSON.stringify(r).includes("9999999K"));
   const txt = JSON.stringify(r); assert.ok(!txt.includes("SECRETA") && !txt.includes("123456K") && !txt.includes(AUT));
   for (const malo of ["FECHA|2026-11-12|OTRO|1", "FECHA|2026-11-12;DROP", "x"]) await assert.rejects(() => m.c.diagnosticoReporte(malo), ErrorDigifact);
 });
