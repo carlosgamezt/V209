@@ -9,6 +9,7 @@ name: NEXA FEL · Digifact TEST (manual)
 #  · consultar-cui-privado   UNA consulta real (SHARED_GETINFOCUI) del CUI de prueba guardado en el secreto DEMO_DIGIFACT_CUI_PRUEBA (nunca se escribe en la ejecución), sin reintentos. Exige CONSULTAR-CUI-TEST en «confirmar».
 #                        La salida solo dice encontrado / no encontrado, si coincide y si hubo nombre: NUNCA imprime el CUI, el nombre, las credenciales ni el texto del proveedor.
 #  · validar-nuc         Prueba 3: construye y valida la factura de prueba (sin red).
+#  · listar-establecimientos  SOLO LECTURA: establecimientos que aparecen en el reporte de acuses de la cuenta (código, nombre, cantidad y una autorización de ejemplo por establecimiento). No inventa códigos.
 #  · datos-emisor        SOLO LECTURA: lee de un DTE ya aceptado por SAT los datos del emisor y muestra la factura exacta que se enviaría (requiere «referencia»).
 #  · certificar-test     Prueba 4: UNA certificación en TEST. Exige CERTIFICAR-TEST en «confirmar», la «referencia» mostrada y la «huella_emisor» aprobada.
 #                        CORREO DE LA FACTURA ENVIADO POR DIGIFACT (opcional, apagado por defecto): con_correo = si + confirmar_correo = ENVIAR-CORREO-TEST. El destinatario NUNCA se escribe aquí: viene del secreto
@@ -27,7 +28,7 @@ on:
       paso:
         description: "Prueba a ejecutar"
         type: choice
-        options: [autenticar, credenciales-presentes, consultar-nit-privado, consultar-cui-privado, validar-nuc, datos-emisor, certificar-test, consulta-posterior, descargar]
+        options: [autenticar, credenciales-presentes, consultar-nit-privado, consultar-cui-privado, validar-nuc, listar-establecimientos, datos-emisor, certificar-test, consulta-posterior, descargar]
         default: autenticar
       confirmar:
         description: "Para «certificar-test», escribe CERTIFICAR-TEST; para «consultar-nit-privado», escribe CONSULTAR-NIT-TEST; para «consultar-cui-privado», escribe CONSULTAR-CUI-TEST"

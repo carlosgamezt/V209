@@ -7,6 +7,7 @@ import { consultaNitPrivada, presenciaCredenciales } from "./src/consulta_nit_pr
 import { consultaCuiPrivada, presenciaCuiPrueba } from "./src/consulta_cui_privada.ts";
 import { construirNuc, NucInvalido, type FacturaGt } from "./src/nuc_gt.ts";
 import { type DatosEmisor, extraerEmisorDeDte, huellaEmisor } from "./src/datos_emisor.ts";
+import { agruparEstablecimientos } from "./src/establecimientos_digifact.ts";
 import { conCorreo, estadoDeLaReferencia, nucParaMostrar, presenciaCorreoPrueba, resolverCorreoDePrueba, sha256Hex, verificarNucConCorreo } from "./src/correo_prueba.ts";
 
 const NECESARIAS = ["DIGIFACT_TEST_USERNAME", "DIGIFACT_TEST_PASSWORD", "DIGIFACT_TEST_NIT"] as const;
@@ -118,6 +119,13 @@ async function main() {
       const ej: DatosEmisor = { nit: "5888492", nombre: "EMISOR DE EJEMPLO", nombreComercial: "ESTABLECIMIENTO DE EJEMPLO", afiliacionIva: "GEN", codigoEstablecimiento: "2", correo: "", direccion: { direccion: "DIRECCION DE EJEMPLO", codigoPostal: "01010", municipio: "Guatemala", departamento: "Guatemala", pais: "GT" }, frases: [{ tipo: 1, escenario: 2 }] };
       try { const n = construirNuc(facturaDePruebaTest(ej, crypto.randomUUID())); out({ prueba: "validar-nuc", ok: true, camposRaiz: Object.keys(n), items: (n.Items as unknown[]).length, nota: "emisor de ejemplo: solo valida la estructura" }); }
       catch (e) { out({ prueba: "validar-nuc", ok: false, errores: e instanceof NucInvalido ? e.errores : [String(e)] }); Deno.exit(1); }
+      return;
+    }
+    case "listar-establecimientos": {   // SOLO LECTURA: qué establecimientos aparecen en el reporte de acuses de ESTA cuenta (mismo NIT y mismas credenciales); NO inventa códigos
+      const c = cliente(Deno.env.get("DIGIFACT_ESQUEMA") === "bearer" ? "bearer" : "raw"); const filas: Awaited<ReturnType<DigifactGt["reporteAcuses"]>> = []; let consultados = 0, fallidos = 0;
+      for (let i = 0; i < 20; i++) { try { filas.push(...await c.reporteAcuses(fechaGt(-(i * 3 + 2) * 86_400_000), { hasta: fechaGt(-(i * 3) * 86_400_000), limite: 200 })); consultados++; } catch { fallidos++; } }
+      out({ prueba: "listar-establecimientos", ok: true, soloLectura: true, rangosConsultados: consultados, rangosFallidos: fallidos, filasVistas: filas.length, establecimientos: agruparEstablecimientos(filas),
+        nota: "Para leer el emisor de cada uno: paso «datos-emisor» con «autorizacion» = la autorización de ejemplo del establecimiento. Un establecimiento sin documentos recientes no aparece aquí." });
       return;
     }
     case "datos-emisor": {   // PREPARACIÓN de la certificación: SOLO LECTURA. Muestra los datos validados y la factura exacta que se enviaría
