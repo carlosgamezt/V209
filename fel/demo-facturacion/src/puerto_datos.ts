@@ -54,11 +54,11 @@ function comoPooler(nombrePooler: string, j: unknown): unknown {
  * `contexto()` entrega la petición en curso (con `jwt`). Los accesos SQL directos (`filas`, `ejecutar`, `lote`) NO cambian aquí: pasan a RPC/RLS en W4.
  */
 /** Lecturas del piloto W4 (M-O): RPC SECURITY INVOKER; la RLS y la empresa de la sesión deciden las filas. */
-export const LECTURAS_API: ReadonlySet<string> = new Set(["clientes_listar", "conceptos_listar", "establecimientos_listar", "estado_catalogos"]);
+export const LECTURAS_API: ReadonlySet<string> = new Set(["clientes_listar", "conceptos_listar", "establecimientos_listar", "estado_catalogos", "documentos_listar", "documento_detalle", "panel_resumen", "reporte_documentos", "artefacto_descargar"]);
 
 export function conDataApi(bd: BdDemo, o: OpcionesDataApi, contexto: () => ContextoPeticion | undefined = contextoActual): BdDemo {
   const cliente = crearRpcDataApi(o, () => contexto()?.jwt);
-  return { ...bd, lecturaApi: async (nombre: string) => { if (!LECTURAS_API.has(nombre)) throw new Error(`lectura no permitida: ${nombre}`); if (!contexto()?.jwt) throw new ErrorIdentidad("Sesión no válida"); return await cliente(nombre, {}); }, rpc: async (fn: string, args: Record<string, unknown> = {}) => {
+  return { ...bd, lecturaApi: async (nombre: string, args: Record<string, unknown> = {}) => { if (!LECTURAS_API.has(nombre)) throw new Error(`lectura no permitida: ${nombre}`); if (!contexto()?.jwt) throw new ErrorIdentidad("Sesión no válida"); return await cliente(nombre, args); }, rpc: async (fn: string, args: Record<string, unknown> = {}) => {
     const dest = nombreApi(fn); if (!dest) return bd.rpc(fn, args);
     const c = contexto(); if (!c?.jwt) throw new ErrorIdentidad("Sesión no válida");
     const { p_sesion: _s, p_actor, p_empresa, ...resto } = args as Record<string, unknown>;

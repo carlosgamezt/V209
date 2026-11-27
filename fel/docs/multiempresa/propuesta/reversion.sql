@@ -9,8 +9,35 @@ do $$ begin
 end $$;
 -- W1–W4 (M-O, M-N, M-M; se retiran ANTES que todo lo demás: las funciones de `api` dependen de los tipos de las tablas): esquema api, ayudantes de identidad de Auth y parámetro de MFA de operaciones sensibles. (`fel__sesion_empresa/maestro` las restituye M-G o las retira este archivo más abajo.)
 drop schema if exists api cascade;
+-- Políticas de lectura reescritas por M-O y M-S (conjuntos de empresas y de establecimientos) → se restituyen las originales por fila, ANTES de retirar las funciones de conjunto de las que dependen
+drop policy if exists clientes_leer on public.clientes; create policy clientes_leer on public.clientes for select to authenticated using (fel_tiene_permiso(empresa_id, 'clientes.ver'));
+drop policy if exists conceptos_leer on public.conceptos; create policy conceptos_leer on public.conceptos for select to authenticated using (fel_tiene_permiso(empresa_id, 'conceptos.ver'));
+drop policy if exists establecimientos_leer on public.establecimientos; create policy establecimientos_leer on public.establecimientos for select to authenticated using (fel_tiene_permiso(empresa_id, 'establecimientos.ver'));
+drop policy if exists documentos_leer on public.documentos; create policy documentos_leer on public.documentos for select to authenticated using (fel_tiene_permiso(empresa_id, 'borradores.ver'));
+drop policy if exists doc_lineas_leer on public.documento_lineas; create policy doc_lineas_leer on public.documento_lineas for select to authenticated using (fel_tiene_permiso(empresa_id, 'borradores.ver'));
+drop policy if exists operaciones_leer on public.operaciones_fiscales; create policy operaciones_leer on public.operaciones_fiscales for select to authenticated using (fel_tiene_permiso(empresa_id, 'historial.ver'));
+drop policy if exists eventos_leer on public.eventos_proveedor; create policy eventos_leer on public.eventos_proveedor for select to authenticated using (fel_tiene_permiso(empresa_id, 'fiscal.ver'));
+drop policy if exists conciliaciones_leer on public.conciliaciones; create policy conciliaciones_leer on public.conciliaciones for select to authenticated using (fel_tiene_permiso(empresa_id, 'fiscal.ver'));
+drop policy if exists alertas_leer on public.alertas_fiscales; create policy alertas_leer on public.alertas_fiscales for select to authenticated using (fel_tiene_permiso(empresa_id, 'fiscal.ver'));
+drop policy if exists documentos_alcance_leer on public.documentos; create policy documentos_alcance_leer on public.documentos as restrictive for select to authenticated using ((not fel__establecimiento_por_usuario()) or fel_en_alcance(empresa_id, auth.uid(), establecimiento_id));
+drop policy if exists artefactos_meta_leer on public.artefactos_documento;
+do $$ begin revoke select (id, empresa_id, documento_id, operacion_id, tipo, nombre, mime, sha256, tamano, creado_en) on public.artefactos_documento from authenticated; exception when others then null; end $$;
+drop function if exists public.fel__empresas_con_permiso(text);
+drop function if exists public.fel__establecimientos_en_alcance();
+drop function if exists public.fel__empresas_alcance_total();
+-- M-R: `fel_es_admin_plataforma()` vuelve a su versión de la migración 1000 (sin exigir la sesión guardada)
+create or replace function public.fel_es_admin_plataforma() returns boolean language sql stable security definer set search_path = '' as $$
+  select public.fel_usuario_activo(auth.uid())
+     and exists (select 1 from public.plataforma_admins pa where pa.user_id = auth.uid())
+     and coalesce((nullif(current_setting('request.jwt.claims', true), '')::jsonb) ->> 'aal', '') = 'aal2'
+     and public.fel__sesion_vigente()
+$$;
+
 drop function if exists public.fel__empresa_actual();
 drop function if exists public.fel__parametros_lista();
+drop function if exists public.fel__parametros_lista(text);
+drop function if exists public.fel__parametro_permiso(text);
+drop function if exists public.fel__parametro_clase(text);
 drop function if exists public.fel__exigir_aal2();
 drop function if exists public.fel__ctx();
 delete from public.plataforma_parametros where clave = 'mfa_operaciones_sensibles';

@@ -18,6 +18,15 @@ Alcance pedido: lectores de códigos de barras **Bluetooth HID** y **USB**, inve
 | **Nivel `nexa_sys`** y función interna con secreto acotado (`POST /tick`) | conciliaciones, sincronización diferida y verificaciones periódicas | cada tarea nueva es una `fel_sys_*`; la interfaz sigue limitada |
 | **Pruebas de método**: claims simulados (PostgREST), mutaciones, sonda por clases, emulador con firma de JWT (`emulador_postgrest.ts`) | misma disciplina de pruebas negativas por módulo | — |
 
+### Añadido en la fase siguiente (también reutilizable por POS, inventarios y Hotel)
+| Componente | Uso futuro | Condición |
+|---|---|---|
+| **Parámetros por clase** (M-R: usuario / empresa con permiso / plataforma / interno; sin clasificar = nunca sale) | cada módulo clasifica sus parámetros (p. ej. tope de descuento de caja = empresa; umbrales antifraude = interno) | un parámetro nuevo falla cerrado hasta clasificarlo; la prueba exige que no quede ninguno sin clase |
+| **Patrón de lectura optimizada** (políticas por conjunto de empresas/establecimientos evaluadas una vez por consulta + RPC `INVOKER`) | listas de productos, existencias, ventas y movimientos de caja con volúmenes altos | medido: con 15 000 filas la política por fila tardaba 12 s y la propuesta 26 ms (ver `MEDICIONES-R3.md`); toda tabla nueva debe seguir el patrón, no `fel_tiene_permiso(...)` por fila |
+| **Descarga de archivos con permiso explícito** (columna `contenido` sin `SELECT`; RPC `DEFINER` que verifica permiso, empresa y alcance) | comprobantes, reportes de cierre de caja, tickets almacenados | el binario nunca se lee por tablas |
+| **Agentes de dispositivo firmados** (Ed25519 sobre método, ruta, hora, nonce y hash del cuerpo; nonce de un solo uso; límites por origen y por agente; alcance de empresa desde el agente) | terminales, balanzas, impresoras y sincronizadores de POS/Hotel | misma separación: el protocolo del agente corre en `nexa-sys`, nunca en la función de personas |
+| **Guardia global de JWT** (con la Data API activa, ninguna ruta autenticada llega a la base sin el JWT de la persona) | todos los módulos nuevos nacen detrás de esa guardia | sin excepciones por «compatibilidad» |
+
 ## 2. Lectores de códigos de barras (Bluetooth HID y USB)
 - Un lector en modo **HID teclado** (USB o Bluetooth HID) no necesita controlador, **no transporta credenciales ni identidad** y no se «autentica»: escribe caracteres como un teclado. La seguridad no depende del dispositivo sino de lo que la aplicación hace con el texto leído.
 - **El código leído es dato no confiable:** se valida formato y dígito de control (EAN-13/EAN-8/UPC-A/Code-128 según el catálogo) en el cliente **y de nuevo en la base**; la búsqueda del producto es una RPC de lectura acotada por empresa (RLS), nunca una consulta con el código concatenado.

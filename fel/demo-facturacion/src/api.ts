@@ -12,6 +12,7 @@ import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
 import type { AdminEst } from "./admin_establecimientos.ts";
 import { conIdentidadDeSesion, peticion, ErrorIdentidad } from "./identidad_sesion.ts";
 import { conDataApi, type OpcionesDataApi } from "./puerto_datos.ts";
+import { PARAMETROS_USUARIO, SQL_PARAMETROS_USUARIO } from "./parametros.ts";
 import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
@@ -109,7 +110,8 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
   const LECTURA_SIN_SIM = /^\/api\/(estado|sesion|fecha-emision|tipos-documento|clientes|conceptos|correo\/estado|digifact\/estado)$|^\/api\/documentos$|^\/api\/documentos\/[^/]+\/correos$/;
 
   async function detalle(docId: string) {
-    const [[d], lineas, operaciones, eventos, conciliaciones, alertas, artefactos] = await leerLote(bd, [   // siete lecturas independientes en UN solo viaje a la base
+    const viaApi = bd.lecturaApi ? await bd.lecturaApi("documento_detalle", { p_id: docId }) as Record<string, unknown> : null;   // Data API: UNA RPC por pantalla (RLS + empresa de la sesión)
+    const [[d], lineas, operaciones, eventos, conciliaciones, alertas, artefactos] = viaApi ? [[viaApi.documento as Obj], viaApi.lineas, viaApi.operaciones, viaApi.eventos, viaApi.conciliaciones, viaApi.alertas, viaApi.artefactos] as [Obj[], Obj[], Obj[], Obj[], Obj[], Obj[], Obj[]] : await leerLote(bd, [   // siete lecturas independientes en UN solo viaje a la base
       ["select d.*, d.fecha_emision_prevista::text as fecha_emision_txt, c.nombre as cliente_nombre, c.email as cliente_email, c.tipo_identificacion as cliente_tipo, c.numero_identificacion as cliente_numero, e.nombre as establecimiento_nombre, e.codigo_sat as establecimiento_codigo from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, emp()]],
       ["select orden, descripcion, cantidad::text as cantidad, precio_unitario::text as precio_unitario, descuento_tipo, descuento_valor::text as descuento_valor, importes from public.documento_lineas where documento_id = $1 order by orden", [docId]],
       ["select id, tipo, estado, proveedor, ambiente, enviada_en, orden_externa, resolucion, motivo_desconocido, reintento_desde, iniciada_en, resuelta_en, clave_idempotencia from public.operaciones_fiscales where documento_id = $1 order by iniciada_en, id", [docId]],
@@ -246,7 +248,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       ["select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]],
       ["select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]],
       ["select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]],
-      ["select clave, valor::text as valor from public.plataforma_parametros order by clave"],
+      [SQL_PARAMETROS_USUARIO, [PARAMETROS_USUARIO as string[]]],   // lista explícita (clase «usuario»): jamás todos los parámetros de plataforma
       ]);
       const alcE = alc(), restr = restringido(alcE);   // persona con establecimiento asignado: SOLO ve el suyo (o los suyos) y el servidor lo fija; la pantalla solo lo muestra bloqueado
       const estPermitidos = restr ? (establecimientos as Array<{ id: string }>).filter((x) => alcE!.ids.includes(x.id)) : establecimientos;
@@ -280,7 +282,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const establecimientos = bd.lecturaApi ? await bd.lecturaApi("establecimientos_listar") as unknown[] : await bd.filas("select id, codigo_sat, nombre, direccion, estado, (select count(*)::int from public.documentos d where d.establecimiento_id = x.id and d.empresa_id = x.empresa_id) as documentos from public.establecimientos x where x.empresa_id = $1 order by codigo_sat", [emp()]);
       const proveedores = await bd.filas("select id, nombre, ambientes, habilitado, nota from public.proveedores_emision order by case id when 'mock' then 0 when 'portal_playwright' then 1 else 2 end");
       const canales = await bd.filas("select proveedor_id, ambiente, habilitado, prioridad from public.empresa_canales where empresa_id = $1", [emp()]);
-      const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
+      const parametros = await bd.filas(SQL_PARAMETROS_USUARIO, [PARAMETROS_USUARIO as string[]]);   // lista explícita (clase «usuario»)
       const [cont] = await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [emp()]);
       return json({ empresa: { ...empr, ...(await empresaDatos()) }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
     }
@@ -359,11 +361,20 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const cli = url.searchParams.get("cliente"), q = url.searchParams.get("q");
       return json(await bd.rpc("fel_op_documento_origenes", { p_actor: a.id, p_empresa: emp(), p_tipo: tipo, p_cliente: cli && uuidOk(cli) ? cli : null, p_buscar: q ? q.slice(0, 40) : null }));
     }
+    if (m === "GET" && ruta === "/api/documentos" && bd.lecturaApi) {   // Data API: RPC INVOKER + RLS; sin JWT se rechaza (no hay degradación al pooler). Sin «pagina» (ruta antigua) se devuelven las primeras 100 filas
+      const f = leerFiltros(url.searchParams); const r = await bd.lecturaApi("documentos_listar", { p_filtros: { ...f, ...(restringido(alc()) ? { establecimientos: alc()!.ids } : {}) } }) as { items: unknown[] };
+      return json(url.searchParams.has("pagina") || restringido(alc()) ? r : (await bd.lecturaApi("documentos_listar", { p_filtros: { tam: 100 } }) as { items: unknown[] }).items);
+    }
     if (m === "GET" && ruta === "/api/documentos") {
       if (url.searchParams.has("pagina") || restringido(alc())) return json(await listarDocumentos(bd, emp(), { ...leerFiltros(url.searchParams), ...(restringido(alc()) ? { establecimientos: alc()!.ids } : {}) }, await tiposDisponibles(bd)));   // paginado y filtrado en el servidor
       return json(await bd.filas("select d.id, d.numero_borrador, " + ((await tiposDisponibles(bd)) ? "d.tipo_dte, d.documento_origen_id, d.referencia_origen->>'serie' as origen_serie, d.referencia_origen->>'numero' as origen_numero, " : "") + "d.estado_preparacion, d.estado_fiscal, d.fecha_emision_prevista, d.base_imponible::text as base_imponible, d.serie, d.numero_fiscal, d.autorizacion_sat, d.version, d.actualizado_en, c.nombre as cliente_nombre, e.nombre as establecimiento_nombre, (select count(*)::int from public.alertas_fiscales a where a.documento_id = d.id and a.resuelta_en is null) as alertas, uo.proveedor as canal_id, pe.nombre as canal_nombre, uo.ambiente as canal_ambiente, uo.estado as operacion_estado from public.documentos d left join lateral (select o.proveedor, o.ambiente, o.estado from public.operaciones_fiscales o where o.documento_id = d.id and o.tipo = 'certificacion' order by o.iniciada_en desc, o.id desc limit 1) uo on true left join public.proveedores_emision pe on pe.id = uo.proveedor left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos e on e.id = d.establecimiento_id and e.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador desc", [emp()]));
     }
     if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)$/.exec(ruta))) return json(await detalle(id(r[1])));
+    if (m === "GET" && (r = /^\/api\/artefactos\/([^/]+)$/.exec(ruta)) && bd.lecturaApi) {   // Data API: la base exige `artefactos.descargar`, la empresa de la sesión y el alcance de establecimiento
+      const x = await bd.lecturaApi("artefacto_descargar", { p_id: id(r[1]) }) as { nombre: string; mime: string; contenido_b64: string };
+      const bytes = Uint8Array.from(atob(x.contenido_b64), (c) => c.charCodeAt(0));
+      return new Response(bytes.buffer as ArrayBuffer, { headers: { "content-type": x.mime, "content-disposition": `attachment; filename="SIMULADO-${x.nombre.replace(/[^A-Za-z0-9._-]/g, "_")}"`, "x-content-type-options": "nosniff", "cache-control": "no-store" } });
+    }
     if (m === "GET" && (r = /^\/api\/artefactos\/([^/]+)$/.exec(ruta))) {
       const [x] = await bd.filas<{ nombre: string; mime: string; contenido: Uint8Array; tipo: string }>("select nombre, mime, contenido, tipo from public.artefactos_documento where id = $1 and empresa_id = $2", [id(r[1]), emp()]);
       if (!x) throw new ErrorHttp(404, "Archivo no encontrado", "no_encontrado");
@@ -454,6 +465,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const url = new URL(req.url);
       if (pr) { const s = await pr.rutasSesion(req, url); if (s) return s; }   // inicio y cierre de sesión (no requieren sesión previa)
       const a = await actor(req);
+      if (extras.datosApi && !extras.jwtDe?.(req)) throw new ErrorIdentidad("Sesión no válida");   // con la Data API activa, la cookie propia NO basta: toda ruta autenticada exige el JWT de la persona (nada llega a la base sin él)
       const negocio = req.method === "POST" && NEGOCIO_POST.some((r) => r.test(url.pathname));
       if (req.method === "POST" && !negocio) permisosCache.clear();   // puede cambiar roles o membresías: los permisos reutilizados no sobreviven
       const atender = async () => {

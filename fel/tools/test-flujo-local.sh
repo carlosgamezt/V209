@@ -15,6 +15,11 @@ trap 'as_pg "'"$PGBIN"'/pg_ctl -D '"$DATA"' -m immediate stop >/dev/null" || tru
 PSQL=("$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -X)
 "${PSQL[@]}" -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do "${PSQL[@]}" -f "$f" >/dev/null; done
+# FEL_PROPUESTAS=1: además aplica TODAS las propuestas multiempresa (M-D…M-S) para comprobar que ninguna rompe el flujo existente (regresión de proveedores/pruebas_db)
+if [ "${FEL_PROPUESTAS:-0}" = 1 ]; then
+  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-Q_agente_endurecimiento M-R_parametros_clases M-S_lecturas_documentos M-E_rol_app M-P_agente_nivel_sistema; do "${PSQL[@]}" -f docs/multiempresa/propuesta/$f.sql >/dev/null 2>&1 || { echo "FALLO al aplicar $f"; exit 1; }; done
+  echo "propuestas M-D…M-S, M-E y M-P aplicadas"
+fi
 echo "migraciones aplicadas; ejecutando las pruebas del flujo (Deno)…"
 cd proveedores
 FEL_PGHOST="$SOCK" FEL_PGPORT="$PORT" FEL_PGUSER=postgres FEL_PGDATABASE=postgres deno test -A ${FEL_DENO_ARGS:-pruebas_db/}

@@ -40,7 +40,7 @@ do $$ declare a uuid := '10000000-0000-0000-0000-00000000000a'; e1 jsonb; e2 jso
     'establecimientos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.codigo_sat), '[]') from (select id, codigo_sat, nombre from public.establecimientos where empresa_id = a and estado = 'activo') t),
     'clientes', (select coalesce(jsonb_agg(to_jsonb(t) order by t.frecuente desc, t.nombre), '[]') from (select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = a and activo) t),
     'conceptos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.descripcion), '[]') from (select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = a and activo) t),
-    'parametros', (select coalesce(jsonb_agg(to_jsonb(t) order by t.clave), '[]') from (select clave, valor::text as valor from public.plataforma_parametros) t));
+    'parametros', (select coalesce(jsonb_agg(to_jsonb(t) order by t.clave), '[]') from (select clave, valor::text as valor from public.plataforma_parametros where public.fel__parametro_clase(clave) = 'usuario') t));
   assert e1 = e2, 'api.estado_catalogos() = las cuatro consultas del servidor'; assert (select count(*) from jsonb_array_elements(e1 -> 'clientes')) = 2, 'solo clientes ACTIVOS en el estado';
   assert (e1 -> 'clientes' -> 0 ->> 'nombre') = 'Alfa A', 'orden por nombre';
 end $$;
@@ -79,7 +79,7 @@ do $$ declare r text; begin
   assert r is null, 'las lecturas deben ser INVOKER con search_path fijo: ' || coalesce(r, '');
   assert (select count(*) from pg_proc where pronamespace = 'api'::regnamespace and proname in ('clientes_listar', 'conceptos_listar', 'establecimientos_listar', 'estado_catalogos') and has_function_privilege('authenticated', oid, 'execute') and not has_function_privilege('anon', oid, 'execute')) = 4, 'ejecutables solo por authenticated';
   assert not has_table_privilege('authenticated', 'public.plataforma_parametros', 'select'), 'authenticated NO lee plataforma_parametros: solo el ayudante devuelve la lista';
-  assert has_function_privilege('authenticated', 'public.fel__parametros_lista()', 'execute') and not has_function_privilege('anon', 'public.fel__parametros_lista()', 'execute'), 'fel__parametros_lista: solo authenticated';
+  assert has_function_privilege('authenticated', 'public.fel__parametros_lista(text)', 'execute') and not has_function_privilege('anon', 'public.fel__parametros_lista(text)', 'execute'), 'fel__parametros_lista: solo authenticated';
   assert has_function_privilege('authenticated', 'public.fel__empresa_actual()', 'execute') and not has_function_privilege('anon', 'public.fel__empresa_actual()', 'execute'), 'fel__empresa_actual: solo authenticated';
   assert not exists (select 1 from information_schema.role_table_grants g where g.grantee in ('anon', 'authenticated') and g.table_schema = 'public' and g.table_name in ('clientes', 'conceptos', 'establecimientos') and g.privilege_type <> 'SELECT'), 'authenticated solo LEE esas tablas';
   assert not exists (select 1 from information_schema.role_table_grants g where g.grantee = 'anon' and g.table_schema = 'public' and g.table_name in ('clientes', 'conceptos', 'establecimientos', 'documentos')), 'anon nada';

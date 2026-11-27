@@ -37,10 +37,23 @@ select pg_temp.espera($$select public.fel_sys_orden_progreso('a0000000-0000-0000
 do $$ begin assert public.fel_sys_orden_reclamar('a0000000-0000-0000-0000-00000000000a') is null, 'sin órdenes de SU empresa no recibe nada (la cola es por empresa del agente)'; end $$;
 -- la clave pública y estado de un agente por su id: solo esos tres campos (sin secretos)
 do $$ declare j jsonb; begin j := public.fel_sys_agente_clave('a0000000-0000-0000-0000-00000000000a'); assert (select array_agg(k order by k) from jsonb_object_keys(j) k) = array['clave_publica', 'empresa_id', 'estado'], 'solo clave pública, empresa y estado'; end $$;
--- vinculación: límite GLOBAL de fallos (anti fuerza bruta del código)
+-- vinculación (M-Q): el límite es POR ORIGEN; un origen que agota sus intentos NO bloquea a los demás (antes: 20 fallos globales bloqueaban a todas las empresas)
 do $$ declare i int; j jsonb; begin
-  for i in 1 .. 20 loop j := public.fel_sys_agente_vincular('CODIGO-' || i, repeat('K', 43), 'X', '1'); assert j ->> 'error' = 'FEL_CODIGO', 'código inexistente: error sin excepción'; end loop; end $$;
-select pg_temp.espera($$select public.fel_sys_agente_vincular('CODIGO-21', repeat('K', 43), 'X', '1')$$, 'FEL_LIMITE');
+  for i in 1 .. 10 loop j := public.fel_sys_agente_vincular('CODIGO-' || i, repeat('K', 43), 'X', '1', 'origen-atacante'); assert j ->> 'error' = 'FEL_CODIGO', 'código inexistente: error sin excepción'; end loop; end $$;
+select pg_temp.espera($$select public.fel_sys_agente_vincular('CODIGO-11', repeat('K', 43), 'X', '1', 'origen-atacante')$$, 'FEL_LIMITE.*este origen');
+do $$ declare j jsonb; begin j := public.fel_sys_agente_vincular('CODIGO-LEGIT', repeat('K', 43), 'X', '1', 'origen-legitimo'); assert j ->> 'error' = 'FEL_CODIGO', 'otro origen NO queda bloqueado por el atacante (responde FEL_CODIGO, no FEL_LIMITE)'; end $$;
+-- el cortacircuitos global solo salta con volumen alto (parámetro) y entonces afecta a todos, con mensaje propio
+do $$ begin update public.plataforma_parametros set valor = 11 where clave = 'agente_vinculacion_max_global'; end $$;
+select pg_temp.espera($$select public.fel_sys_agente_vincular('CODIGO-LEGIT-2', repeat('K', 43), 'X', '1', 'origen-nuevo')$$, 'FEL_LIMITE.*temporalmente limitada');
+do $$ begin update public.plataforma_parametros set valor = 1000 where clave = 'agente_vinculacion_max_global'; end $$;
+-- una vinculación VÁLIDA con la clave correcta funciona aun con otros orígenes limitados (no consume fallos)
+-- límite por agente: solo ese agente se limita (conteo por nonces del último minuto)
+do $$ declare i int; begin
+  update public.plataforma_parametros set valor = 4 where clave = 'agente_max_peticiones_min';
+  for i in 1 .. 3 loop perform public.fel_sys_agente_autenticar('a0000000-0000-0000-0000-00000000000a', now(), 'nonce-limite-agente-' || i); end loop; end $$;
+select pg_temp.espera($$select public.fel_sys_agente_autenticar('a0000000-0000-0000-0000-00000000000a', now(), 'nonce-limite-agente-4')$$, 'FEL_LIMITE.*este agente');
+do $$ declare j jsonb; begin j := public.fel_sys_agente_autenticar('a0000000-0000-0000-0000-00000000000b', now(), 'nonce-agente-b-ok-0001'); assert (j ->> 'ok') = 'true', 'el agente B (otra empresa) NO se ve afectado por el límite del agente A';
+  update public.plataforma_parametros set valor = 120 where clave = 'agente_max_peticiones_min'; end $$;
 -- LO QUE LA BASE NO IMPONE (hallazgo, medido): con solo el id del agente, sin firma, nexa_app actúa como ese agente
 do $$ declare j jsonb; begin
   j := public.fel_sys_agente_latido('a0000000-0000-0000-0000-00000000000a', 'x-sin-firma', null); assert j ->> 'estado' = 'activo', 'latido SIN FIRMA aceptado con solo el id del agente';

@@ -34,7 +34,7 @@ aplicar() {
   if [ "$(PSQLA -At -c "select count(*) from information_schema.tables where table_schema='public' and table_name='documentos'")" = 0 ]; then
     echo "== 3) migraciones 1-30 (proyecto vacío)"; for f in supabase/migrations/*.sql; do PSQLA --single-transaction -f "$f" >/dev/null || fallo "migración $f"; done; echo "OK    migraciones del proyecto"; fi
   echo "== 4) propuestas en orden: M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-I, M-J, M-E (una transacción cada una)"
-  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
+  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-Q_agente_endurecimiento M-R_parametros_clases M-S_lecturas_documentos M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
   PSQLA -c "alter role nexa_app login password '$ENSAYO_CLAVE_NEXA_APP'" ; echo "OK    nexa_app habilitado SOLO en el proyecto de pruebas"
   if [ -n "${ENSAYO_CLAVE_NEXA_SYS:-}" ]; then
     PSQLA -c "alter role nexa_sys login password '$ENSAYO_CLAVE_NEXA_SYS'"
@@ -58,6 +58,10 @@ probar() {
   PSQLA -f "$D/prueba-api-identidad.sql" 2>&1 | grep -q "PRUEBAS DE IDENTIDAD DE AUTH Y ESQUEMA API OK" && echo "OK    prueba-api-identidad" || fallo "prueba-api-identidad"
   echo "== 8e) lecturas por la Data API (W4)"
   PSQLA -f "$D/prueba-api-lecturas.sql" 2>&1 | grep -q "PRUEBAS DE LECTURAS POR LA DATA API OK" && echo "OK    prueba-api-lecturas" || fallo "prueba-api-lecturas"
+  echo "== 8f) parámetros por clase (M-R)"
+  PSQLA -f "$D/prueba-parametros.sql" 2>&1 | grep -q "PRUEBAS DE PARÁMETROS POR CLASE OK" && echo "OK    prueba-parametros" || fallo "prueba-parametros"
+  echo "== 8g) lecturas de documentos (M-S)"
+  PSQLA -f "$D/prueba-api-documentos.sql" 2>&1 | grep -q "PRUEBAS DE LECTURAS DE DOCUMENTOS OK" && echo "OK    prueba-api-documentos" || fallo "prueba-api-documentos"
   echo "== 9) sonda R2 (suplantación por fel_op_*), esperado: ${FEL_R2_ESPERADO:-abierto}"; PSQLP -v esperado="${FEL_R2_ESPERADO:-abierto}" -f "$D/prueba-r2-suplantacion.sql" 2>&1 | grep -E "POSIBLE|rechazada|R2 ESTADO|SONDA R2" || fallo "sonda R2"
   echo "== 10) tabla nueva con RLS y sin política: nexa_app debe ver 0 filas"
   PSQLA -c "create table public.zz_nueva (x int); alter table public.zz_nueva enable row level security; insert into public.zz_nueva values (1); grant select on public.zz_nueva to nexa_app;" >/dev/null

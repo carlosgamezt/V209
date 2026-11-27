@@ -31,8 +31,10 @@ create policy establecimientos_leer on public.establecimientos for select to aut
 create or replace function api.clientes_listar() returns jsonb language sql stable security invoker set search_path = '' as $$
   select coalesce(jsonb_agg(to_jsonb(t) order by t.nombre), '[]'::jsonb) from (
     select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, c.frecuente,
-           (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas
-      from public.clientes c where c.empresa_id = public.fel__empresa_actual()) t
+           coalesce(f.n, 0) as facturas
+      from public.clientes c
+      left join (select d.cliente_id, count(*)::int as n from public.documentos d where d.empresa_id = public.fel__empresa_actual() group by d.cliente_id) f on f.cliente_id = c.id   -- una sola agregación (la subconsulta correlacionada por cliente era O(N²): 17 s con 15 000 clientes)
+     where c.empresa_id = public.fel__empresa_actual()) t
 $$;
 create or replace function api.conceptos_listar() returns jsonb language sql stable security invoker set search_path = '' as $$
   select coalesce(jsonb_agg(to_jsonb(t) order by t.descripcion), '[]'::jsonb) from (

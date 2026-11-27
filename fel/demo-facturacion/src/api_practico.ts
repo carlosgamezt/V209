@@ -163,6 +163,8 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       // ---------------- panel (indicadores) y reportes
       if (m === "GET" && ruta === "/api/panel") {
         const permisos = await c.permisos(); if (!permisos.includes("borradores.ver")) throw new ErrorPr(403, "No tienes permiso para ver el panel", "no_autorizado");
+        const viaApi = bd.lecturaApi ? await bd.lecturaApi("panel_resumen") as { documentos: Obj; serie: Obj[]; clientes: Obj[]; pendientes: Obj[] } : null;   // Data API: una RPC por pantalla
+        if (viaApi) return c.json({ documentos: viaApi.documentos, serie: viaApi.serie, clientes: viaApi.clientes.map(({ nombre, documentos, base }) => ({ nombre, documentos, base })), pendientes: viaApi.pendientes.map(({ id, numero_borrador, estado_fiscal }) => ({ id, numero_borrador, estado_fiscal })), plan: permisos.includes("facturacion.ver") ? await planDe(E) : null, aviso: "Cifras de la SIMULACIÓN: sin valor fiscal." });
         const [est] = await bd.filas<Obj>(`select count(*)::int as total, count(*) filter (where estado_preparacion = 'borrador' and estado_fiscal = 'ninguno')::int as borradores, count(*) filter (where estado_preparacion = 'revisado' and estado_fiscal = 'ninguno')::int as revisados,
             count(*) filter (where estado_fiscal = 'certificado')::int as certificados, count(*) filter (where estado_fiscal = 'anulado')::int as anulados, count(*) filter (where estado_fiscal = 'por_verificar')::int as por_verificar,
             count(*) filter (where estado_fiscal = 'rechazado')::int as rechazados, coalesce(sum(base_imponible) filter (where estado_fiscal = 'certificado'), 0)::text as base_certificada from public.documentos where empresa_id = $1`, [E]);
@@ -178,7 +180,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         if (r[1] === "documentos") {
           if (!permisos.includes("borradores.ver")) throw new ErrorPr(403, "No tienes permiso para este reporte", "no_autorizado");
           cols = ["borrador", "fecha_prevista", "receptor", "identificacion", "estado", "estado_fiscal", "base_imponible", "serie", "numero", "autorizacion_simulada"];
-          filas = await bd.filas<Obj>(`select 'BR-' || lpad(d.numero_borrador::text, 4, '0') as borrador, d.fecha_emision_prevista::text as fecha_prevista, cl.nombre as receptor, cl.numero_identificacion as identificacion, d.estado_preparacion as estado, d.estado_fiscal, d.base_imponible::text as base_imponible,
+          filas = bd.lecturaApi ? (await bd.lecturaApi("reporte_documentos") as Obj[]) : await bd.filas<Obj>(`select 'BR-' || lpad(d.numero_borrador::text, 4, '0') as borrador, d.fecha_emision_prevista::text as fecha_prevista, cl.nombre as receptor, cl.numero_identificacion as identificacion, d.estado_preparacion as estado, d.estado_fiscal, d.base_imponible::text as base_imponible,
               d.serie, d.numero_fiscal as numero, d.autorizacion_sat as autorizacion_simulada from public.documentos d left join public.clientes cl on cl.id = d.cliente_id and cl.empresa_id = d.empresa_id where d.empresa_id = $1 order by d.numero_borrador`, [E]);
         } else {
           if (!permisos.includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para este reporte", "no_autorizado");

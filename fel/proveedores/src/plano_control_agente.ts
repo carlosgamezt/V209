@@ -61,6 +61,8 @@ export interface OpcionesPlano {
   firmante?: FirmanteRespuestas;
   /** Contadores de uso por agente y hora (se vuelcan a la base por lotes con `metricas.vaciar()`). */
   metricas?: Metricas;
+  /** Huella del ORIGEN de la petición (nunca la IP en claro) para atribuir los fallos de vinculación: así un origen no agota el límite de los demás. Debe venir de un dato que la plataforma garantice (no de una cabecera del cliente). Sin ella la base usa un solo origen «-». */
+  origen?: (req: Request) => Promise<string | null> | string | null;
 }
 const CLAVES_CLIENTE = ["reconexiones", "errores_red", "no_autenticas", "peticiones"] as const;
 
@@ -132,7 +134,8 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
 
   async function manejar(req: Request): Promise<{ resp: Response; op: string; agente?: string }> {
     const url = new URL(req.url);
-    const nombre = url.pathname.startsWith(PREFIJO_AGENTE) ? url.pathname.slice(PREFIJO_AGENTE.length) : "";
+    // la ruta se reconoce ANCLADA (con o sin el prefijo de la función de Supabase); la firma del agente cubre la ruta TAL COMO la recibe el servidor (url.pathname), sin reescribirla
+    const nombre = /^(?:\/functions\/v1)?(?:\/nexa-sys)?\/api\/agente\/v1\/([a-z_]+)$/.exec(url.pathname)?.[1] ?? "";
     const operacion = (OPERACIONES as readonly string[]).includes(nombre) ? nombre as Operacion : null;
     if (!operacion) return { resp: responder("FEL_RUTA"), op: "desconocida" };
     if (req.method !== "POST") return { resp: responder("FEL_METODO", {}, { allow: "POST" }), op: operacion };
@@ -147,7 +150,8 @@ export function crearPlanoControl(op: OpcionesPlano): (req: Request) => Promise<
       if (!codigo || !clave || !nombreAg || version === undefined) return { resp: responder("FEL_DATOS_INVALIDOS"), op: operacion };
       const polV = await sql<Obj>("fel_sys_agente_politica", { p_agente: null });
       if (versionBloqueada(version, Number(polV.version_minima))) return { resp: responder("FEL_VERSION", politicaPublica(polV, version)), op: operacion };   // antes de gastar el código
-      const r = await sql<Obj>("fel_sys_agente_vincular", { p_codigo: codigo, p_clave_publica: clave, p_nombre: nombreAg, p_version: version });
+      const o = op.origen ? await op.origen(req) : undefined;   // solo se envía si el anfitrión lo entrega (la base sin M-Q no tiene ese parámetro)
+      const r = await sql<Obj>("fel_sys_agente_vincular", { p_codigo: codigo, p_clave_publica: clave, p_nombre: nombreAg, p_version: version, ...(o !== undefined ? { p_origen: o } : {}) });
       if (typeof r.error === "string") return { resp: responder(r.error), op: operacion };
       return { resp: responder(null, { agente_id: r.agente_id, empresa_id: r.empresa_id, empresa: r.empresa, ...politicaPublica(polV, version), ...distribucion([]) }), op: operacion, agente: String(r.agente_id) };
     }

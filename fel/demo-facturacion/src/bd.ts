@@ -18,7 +18,7 @@ export interface BdDemo {
   /** Alta de un usuario en Supabase Auth (en local, fila en auth.users; en un proyecto hospedado, la API de administración). */
   crearUsuario: (id: string, email: string) => Promise<void>;
   /** W4 · solo con la Data API: lectura por una RPC de `api` (lista cerrada, con el JWT de la petición); las rutas la usan si existe y, si no, hacen su consulta de siempre. */
-  lecturaApi?: (nombre: string) => Promise<unknown>;
+  lecturaApi?: (nombre: string, args?: Record<string, unknown>) => Promise<unknown>;
   db?: PGlite;   // solo en modo memoria
 }
 

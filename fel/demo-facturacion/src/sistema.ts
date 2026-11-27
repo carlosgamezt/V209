@@ -14,12 +14,15 @@ export async function tickSistema(sys: BdDemo, o: { umbralMin?: number } = {}): 
   };
 }
 const igual = async (a: string, b: string) => { const h = async (x: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(x))); const [x, y] = await Promise.all([h(a), h(b)]); let d = 0; for (let i = 0; i < x.length; i++) d |= x[i] ^ y[i]; return d === 0; };
-/** Manejador HTTP de la función de sistema: solo `POST /tick` con el secreto compartido (cabecera `x-nexa-sys-secreto`); sin secreto configurado no responde nada. */
-export function crearManejadorSistema(o: { sys: () => BdDemo; secreto: string | undefined }): (req: Request) => Promise<Response> {
+/** Manejador HTTP de la función de sistema: `POST /tick` con el secreto compartido y, si se activa, `POST /api/agente/v1/<operación>` con firma de agente; nada más (cabecera `x-nexa-sys-secreto`); sin secreto configurado no responde nada. */
+/** Ruta del protocolo del agente local (anclada; con o sin el prefijo de la función). Se autentica con la FIRMA Ed25519 del agente (verificada en el plano de control), no con el secreto compartido. */
+const RUTA_AGENTE = /^(?:\/functions\/v1)?(?:\/nexa-sys)?\/api\/agente\/v1\/(?:vincular|latido|reclamar|progreso|vista_previa|resultado)$/;
+export function crearManejadorSistema(o: { sys: () => BdDemo; secreto: string | undefined; /** plano de control del agente (W5): si no se entrega, esas rutas no existen */ agente?: (req: Request) => Promise<Response> }): (req: Request) => Promise<Response> {
   const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
   return async (req) => {
-    if (!o.secreto || o.secreto.length < 24) return json({ codigo: "no_configurado" }, 503);
     const url = new URL(req.url);
+    if (o.agente && RUTA_AGENTE.test(url.pathname)) return await o.agente(req);   // el agente NO usa el secreto de sistema: cada petición va firmada y la valida el plano de control
+    if (!o.secreto || o.secreto.length < 24) return json({ codigo: "no_configurado" }, 503);
     if (req.method !== "POST" || !/^(?:\/functions\/v1)?(?:\/nexa-sys)?\/tick$/.test(url.pathname)) return json({ codigo: "no_encontrado" }, 404);   // ruta ANCLADA: ni `/x/tick` ni `/tick/x`; solo POST
     if (!(await igual(req.headers.get("x-nexa-sys-secreto") ?? "", o.secreto))) return json({ codigo: "no_autorizado" }, 401);
     try { return json(await tickSistema(o.sys())); } catch { return json({ codigo: "error" }, 500); }   // sin detalles: nunca cadenas de conexión ni mensajes de la base

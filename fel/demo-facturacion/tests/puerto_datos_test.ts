@@ -143,15 +143,17 @@ async function servidor(modo: "pooler" | "dataapi") {
   const sesiones = new Sesiones(undefined, new AlmacenPg(bd)); sesiones.claveDemoPublica = CLAVE_DEMO; for (const k of Object.keys(PERSONAS)) await sesiones.registrar(k, CLAVE_DEMO, PERSONAS[k]);
   const emu = emularPostgrest(bd.db!, { secreto: SECRETO, apikey: APIKEY }); let n = 0;
   const jwtDe = (req: Request) => req.headers.get("x-jwt-prueba");
-  const api = crearApi(bd, mundo, { sesiones, practico: true, identidadSesion: true, ...(modo === "dataapi" ? { datosApi: { url: URL, apikey: APIKEY, fetch: emu.fetch }, jwtDe } : {}) });
+  const espia = { n: 0 };   // cuenta TODA consulta/rpc que la aplicación (no la sesión propia) hace a la base
+  const bdEspiada = { ...bd, filas: (...x: Parameters<typeof bd.filas>) => { espia.n++; return bd.filas(...x); }, ejecutar: (...x: Parameters<typeof bd.ejecutar>) => { espia.n++; return bd.ejecutar(...x); }, rpc: (...x: Parameters<typeof bd.rpc>) => { espia.n++; return bd.rpc(...x); }, lote: bd.lote ? (...x: Parameters<NonNullable<typeof bd.lote>>) => { espia.n++; return bd.lote!(...x); } : undefined } as typeof bd;
+  const api = crearApi(bdEspiada, mundo, { sesiones, practico: true, identidadSesion: true, ...(modo === "dataapi" ? { datosApi: { url: URL, apikey: APIKEY, fetch: emu.fetch }, jwtDe } : {}) });
   const entrar = async (clave: string, aal: "aal1" | "aal2" = "aal2") => {
     const r = await api(new Request("http://127.0.0.1/api/sesion/entrar", { method: "POST", headers: { "x-demo": "1", "content-type": "application/json" }, body: JSON.stringify({ usuario: clave, clave: CLAVE_DEMO }) })); assert.equal(r.status, 200);
     const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0]; const sid = `94000000-0000-0000-0000-${String(++n).padStart(12, "0")}`;
     await bd.ejecutar("insert into auth.sessions (id, user_id, aal) values ($1, $2, $3)", [sid, PERSONAS[clave].id, aal]);
     const jwt = await firmarJwt({ sub: PERSONAS[clave].id, role: "authenticated", session_id: sid, aal, exp: ahora() + 600 }, SECRETO);
-    return { cookie, sid, jwt, ll: async (m: string, ruta: string, cuerpo?: unknown, cab: Record<string, string> = {}) => { const x = await api(new Request("http://127.0.0.1" + ruta, { method: m, headers: { "x-demo": "1", "content-type": "application/json", cookie, "x-jwt-prueba": jwt, ...cab }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) })); const t = await x.text(); let json: Record<string, any> = {}; try { json = JSON.parse(t); } catch { /* sin cuerpo */ } return { status: x.status, json, texto: t }; } };
+    return { cookie, sid, jwt, bin: async (ruta: string) => { const x = await api(new Request("http://127.0.0.1" + ruta, { headers: { "x-demo": "1", cookie, "x-jwt-prueba": jwt } })); return { status: x.status, bytes: (await x.arrayBuffer()).byteLength }; }, ll: async (m: string, ruta: string, cuerpo?: unknown, cab: Record<string, string> = {}) => { const x = await api(new Request("http://127.0.0.1" + ruta, { method: m, headers: { "x-demo": "1", "content-type": "application/json", cookie, "x-jwt-prueba": jwt, ...cab }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) })); const t = await x.text(); let json: Record<string, any> = {}; try { json = JSON.parse(t); } catch { /* sin cuerpo */ } return { status: x.status, json, texto: t }; } };
   };
-  return { bd, emu, entrar };
+  return { bd, emu, entrar, espia };
 }
 Deno.test({ name: "W4 rutas: /api/estado, /api/clientes, /api/conceptos y /api/configuracion por la Data API devuelven lo mismo que por el pooler; con la Data API no hay degradación sin JWT", ...o, fn: async () => {
   const P = await servidor("pooler"), D = await servidor("dataapi");
@@ -175,4 +177,77 @@ Deno.test({ name: "W4 rutas: /api/estado, /api/clientes, /api/conceptos y /api/c
   await D.bd.ejecutar("delete from auth.sessions where id = $1", [ad.sid]); const cerrada = await ad.ll("GET", "/api/clientes"); assert.equal(cerrada.status, 403, cerrada.texto); assert.match(cerrada.texto, /sesión no válida/i);
   // aislamiento: la persona de OTRA empresa, por la Data API, no ve los clientes de ana
   const sd = await D.entrar("sofia"); const lista = (await sd.ll("GET", "/api/clientes")).json as { nombre: string }[]; assert.ok(!lista.some((c) => c.nombre === "Cliente W4"), "sofia no ve lo de ana");
+}});
+
+// ---- Parámetros de plataforma por clase (M-R): el servidor solo entrega la clase «usuario», por el pooler y por la Data API ----
+import { PARAMETROS_USUARIO } from "../src/parametros.ts";
+Deno.test({ name: "Parámetros: la lista del servidor = la clase «usuario» de la base; /api/estado y /api/configuracion solo entregan esa clase (pooler y Data API); ningún umbral de defensa llega al cliente", ...o, fn: async () => {
+  const P = await servidor("pooler"), D = await servidor("dataapi");
+  const clases = await P.bd.filas<{ clave: string; clase: string | null }>("select clave, public.fel__parametro_clase(clave) as clase from public.plataforma_parametros order by clave");
+  assert.deepEqual(clases.filter((c) => c.clase === "usuario").map((c) => c.clave).sort(), [...PARAMETROS_USUARIO].sort(), "la lista del servidor coincide con la clasificación de la base");
+  assert.deepEqual(clases.filter((c) => c.clase === null), [], "todo parámetro existente está clasificado");
+  const internos = clases.filter((c) => c.clase === "interno").map((c) => c.clave); assert.ok(internos.length >= 6 && internos.includes("mfa_operaciones_sensibles") && internos.includes("agente_vinculacion_max_origen"));
+  await P.bd.ejecutar("insert into public.plataforma_parametros (clave, valor, descripcion) values ('zz_nuevo_sin_clasificar', 5, 'prueba')"); await D.bd.ejecutar("insert into public.plataforma_parametros (clave, valor, descripcion) values ('zz_nuevo_sin_clasificar', 5, 'prueba')");
+  for (const [nombre, S] of [["pooler", P], ["dataapi", D]] as const) {
+    const a = await S.entrar("ana");
+    const est = await a.ll("GET", "/api/estado"); assert.equal(est.status, 200, est.texto); const cfg = await a.ll("GET", "/api/configuracion"); assert.equal(cfg.status, 200, cfg.texto);
+    for (const [ruta, r] of [["/api/estado", est], ["/api/configuracion", cfg]] as const) {
+      const claves = (r.json.parametros as { clave: string }[]).map((p) => p.clave).sort();
+      assert.deepEqual(claves, [...PARAMETROS_USUARIO].sort(), `${nombre} ${ruta}: solo la clase usuario`);
+      assert.ok(!claves.some((c) => /mfa|vinculacion|reloj|peticiones|zz_nuevo|agente_/.test(c)), `${nombre} ${ruta}: ningún parámetro interno ni sin clasificar`);
+    }
+  }
+}});
+
+// ---- R3 segunda tanda (M-S): documentos, detalle, archivos, panel y reporte por la Data API = lo mismo que por el pooler; sin JWT NADA toca la base ----
+// Se compara contenido y orden sin ids ni marcas de tiempo/valores aleatorios; la forma (claves y tipos) debe ser idéntica.
+const ALEATORIO = /^(id|.*_id|.*_en|clave_idempotencia|orden_externa|sha256|autorizacion|autorizacion_sat|serie|numero|numero_fiscal|referencia_externa|hash_.*|tamano|enviada_en)$/;
+const norm = (v: unknown): unknown => Array.isArray(v) ? v.map(norm) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([k]) => !ALEATORIO.test(k)).sort(([a], [b]) => a < b ? -1 : 1).map(([k, x]) => [k, norm(x)])) : typeof v === "string" && /^\d{4}-\d{2}-\d{2}T00:00:00(\.000)?Z?$/.test(v) ? v.slice(0, 10) : v;   // la interfaz toma siempre los 10 primeros caracteres de una fecha
+const tipos = (v: unknown): unknown => Array.isArray(v) ? (v.length ? tipos(v[0]) : "[]") : v && typeof v === "object" ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a < b ? -1 : 1).map(([k, x]) => [k, tipos(x)])) : v === null ? "null" : typeof v;
+async function flujo(S: Awaited<ReturnType<typeof servidor>>) {
+  const a = await S.entrar("ana"); const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date());
+  const cli = await a.ll("POST", "/api/clientes", { tipo_identificacion: "NIT", numero_identificacion: NIT(300), nombre: "Cliente Flujo" }); assert.equal(cli.status, 200, cli.texto);
+  await a.ll("POST", "/api/conceptos", { codigo: "SRV-F", descripcion: "Servicio flujo", tipo: "servicio", unidad_medida: "UNI", precio_unitario: "100.00" });
+  const est = (await a.ll("GET", "/api/estado")).json.establecimientos[0].id; const ids: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const d = await a.ll("POST", "/api/documentos", { cliente_id: cli.json.id, establecimiento_id: est, fecha: hoy, lineas: [{ descripcion: "Servicio flujo", cantidad: String(i + 1), precio_unitario: "100.00" }] }); assert.equal(d.status, 200, d.texto); ids.push(d.json.documento.id);
+  }
+  for (const id of ids.slice(0, 2)) { const g = await a.ll("GET", `/api/documentos/${id}`); await a.ll("POST", `/api/documentos/${id}/estado`, { estado: "revisado", version: g.json.documento.version }); const c = await a.ll("POST", `/api/documentos/${id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: `clave-flujo-${ids.indexOf(id)}-${Math.random().toString(36).slice(2, 10)}-0001` }); assert.equal(c.json.documento?.estado_fiscal, "certificado", c.texto); }
+  return { a, ids };
+}
+Deno.test({ name: "R3·M-S rutas: lista, detalle, archivos, panel y reporte por la Data API = pooler; sin JWT ninguna ruta toca la base (ni siquiera las no migradas)", ...o, fn: async () => {
+  const P = await servidor("pooler"), D = await servidor("dataapi"); const fp = await flujo(P), fd = await flujo(D);
+  // lista paginada con filtros y categorías
+  for (const qs of ["pagina=1&tam=25", "pagina=1&tam=2", "pagina=2&tam=2", "pagina=1&categoria=emitidos", "pagina=1&categoria=borradores", "pagina=1&q=Flujo", "pagina=1&estado=certificado", "pagina=99&tam=2"]) {
+    const x = await fp.a.ll("GET", `/api/documentos?${qs}`), y = await fd.a.ll("GET", `/api/documentos?${qs}`); assert.equal(y.status, 200, `${qs}: ${y.texto}`);
+    assert.deepEqual(norm(y.json), norm(x.json), `lista ${qs}: mismo contenido y orden`); assert.deepEqual(tipos(y.json), tipos(x.json), `lista ${qs}: mismas claves y tipos`);
+  }
+  // detalle (documento certificado: operaciones, eventos, archivos) y borrador
+  for (const i of [0, 3]) {
+    const x = await fp.a.ll("GET", `/api/documentos/${fp.ids[i]}`), y = await fd.a.ll("GET", `/api/documentos/${fd.ids[i]}`); assert.equal(y.status, 200, y.texto);
+    assert.deepEqual(norm(y.json.documento), norm(x.json.documento), `detalle ${i}: documento`); assert.deepEqual(tipos(y.json.documento), tipos(x.json.documento), `detalle ${i}: tipos del documento`);
+    for (const k of ["lineas", "operaciones", "eventos", "conciliaciones", "alertas", "artefactos"]) { assert.deepEqual(norm(y.json[k]), norm(x.json[k]), `detalle ${i}.${k}`); assert.deepEqual(tipos(y.json[k]), tipos(x.json[k]), `detalle ${i}.${k}: tipos`); }
+  }
+  const dx = (await fd.a.ll("GET", `/api/documentos/${fd.ids[0]}`)).json; assert.ok(dx.artefactos.length >= 1, "el documento certificado tiene archivos");
+  // descarga de archivos: mismo contenido por ambos caminos
+  for (const [nombre, f] of [["pooler", fp], ["dataapi", fd]] as const) { const det = (await f.a.ll("GET", `/api/documentos/${f.ids[0]}`)).json; const r = await f.a.bin(`/api/artefactos/${det.artefactos[0].id}`); assert.equal(r.status, 200, `${nombre} descarga`); assert.ok(r.bytes > 100, `${nombre}: contenido no vacío (${r.bytes})`); }
+  // panel y reportes
+  const px = await fp.a.ll("GET", "/api/panel"), py = await fd.a.ll("GET", "/api/panel"); assert.equal(py.status, 200, py.texto);
+  assert.deepEqual(norm(py.json.documentos), norm(px.json.documentos), "panel: totales"); assert.deepEqual(norm(py.json.clientes), norm(px.json.clientes), "panel: clientes"); assert.deepEqual(py.json.serie.map((s: { certificados: number }) => s.certificados), px.json.serie.map((s: { certificados: number }) => s.certificados), "panel: serie");
+  const rx = await fp.a.ll("GET", "/api/reportes/documentos.csv"), ry = await fd.a.ll("GET", "/api/reportes/documentos.csv"); assert.equal(ry.status, 200, ry.texto);
+  assert.equal(ry.texto.split("\n").length, rx.texto.split("\n").length, "reporte: mismas filas"); assert.equal(ry.texto.split("\n")[0], rx.texto.split("\n")[0], "reporte: mismas columnas");
+  // salieron por la Data API
+  const usadas = new Set(D.emu.llamadas.map((l) => l.fn)); for (const f of ["documentos_listar", "documento_detalle", "artefacto_descargar", "panel_resumen", "reporte_documentos"]) assert.ok(usadas.has(f), `por la Data API: ${f}`);
+  // sin JWT: NINGUNA ruta autenticada llega a la base (el espía cuenta toda consulta/rpc de la aplicación) ni a la Data API; mismo resultado con firma ajena y con JWT vencido
+  const rutas = ["/api/documentos?pagina=1", `/api/documentos/${fd.ids[0]}`, "/api/panel", "/api/reportes/documentos.csv", "/api/clientes", "/api/estado", "/api/configuracion", "/api/usuarios", "/api/plan", "/api/agentes"];
+  const llamadas0 = D.emu.llamadas.length; D.espia.n = 0;
+  for (const r of rutas) { const x = await fd.a.ll("GET", r, undefined, { "x-jwt-prueba": "" }); assert.equal(x.status, 403, `${r} sin JWT: ${x.texto}`); assert.match(x.texto, /sesión no válida/i, `${r}: motivo`); }
+  const falso = await firmarJwt({ sub: PERSONAS.ana.id, role: "authenticated", session_id: fd.a.sid, aal: "aal2", exp: ahora() + 600 }, "otro-secreto-0123456789-abcdefghij");
+  const venc = await firmarJwt({ sub: PERSONAS.ana.id, role: "authenticated", session_id: fd.a.sid, aal: "aal2", exp: ahora() - 5 }, SECRETO);
+  for (const t of [falso, venc]) for (const r of ["/api/documentos?pagina=1", "/api/panel"]) { const x = await fd.a.ll("GET", r, undefined, { "x-jwt-prueba": t }); assert.equal(x.status, 403, `${r}: JWT inválido`); }
+  assert.equal(D.espia.n, 0, "sin JWT válido la aplicación NO ejecutó ninguna consulta ni rpc (nada de pooler como alternativa)"); assert.equal(D.emu.llamadas.length, llamadas0, "tampoco llegó a la Data API");
+  // aislamiento: la persona de OTRA empresa no ve nada de ana por ninguna de las rutas
+  const sd = await D.entrar("sofia"); const lista = (await sd.ll("GET", "/api/documentos?pagina=1")).json as { total: number }; assert.equal(lista.total, 0, "sofia no ve documentos de ana");
+  const det = await sd.ll("GET", `/api/documentos/${fd.ids[0]}`); assert.equal(det.status, 404, det.texto);
+  const art = (await fd.a.ll("GET", `/api/documentos/${fd.ids[0]}`)).json.artefactos[0]; assert.equal((await sd.bin(`/api/artefactos/${art.id}`)).status, 404, "archivo de otra empresa: no existe");
 }});

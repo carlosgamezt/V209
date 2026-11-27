@@ -9,10 +9,10 @@ import { crearMetricas } from "../../proveedores/src/metricas_agente.ts";
 import { crearSupervisor } from "../../proveedores/src/supervisor_ordenes.ts";
 import type { BdDemo } from "./bd.ts";
 
-export function montarAgente(bd: BdDemo, o: { intervaloMs?: number; silencio?: boolean; firmante?: FirmanteRespuestas } = {}) {
+export function montarAgente(bd: BdDemo, o: { intervaloMs?: number; silencio?: boolean; firmante?: FirmanteRespuestas; origen?: (req: Request) => Promise<string | null> | string | null } = {}) {
   const orq = new OrquestadorDb(bd.rpc, new PortalPlaywrightProvider(puertoOrdenesRpc(bd.rpc)));
   const metricas = crearMetricas({ rpc: bd.rpc });
-  const plano = crearPlanoControl({ rpc: bd.rpc, firmante: o.firmante, metricas });
+  const plano = crearPlanoControl({ rpc: bd.rpc, firmante: o.firmante, metricas, origen: o.origen });
   const supervisor = crearSupervisor({ rpc: bd.rpc, cerrar: async () => { await metricas.vaciar(); return cerrarOrdenes(bd.rpc, orq); }, intervaloMs: o.intervaloMs,   // cada ciclo también vuelca las métricas por lote
     registrar: (e) => { if (!o.silencio && e.evento !== "error") console.log(`  Supervisor de órdenes ${e.evento}${e.detalle ? ` (${e.detalle})` : ""}`); } });
   return { plano, supervisor, metricas };
