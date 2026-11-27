@@ -14,7 +14,7 @@ D=docs/multiempresa/propuesta; export PGPASSWORD=prueba-local
 P() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d nexa -v ON_ERROR_STOP=1 -q -X "$@"; }
 "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -q -X -c "create database nexa" ; P -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do P -f "$f" >/dev/null 2>&1; done
-for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-E_rol_app; do P --single-transaction -f $D/$f.sql >/dev/null; done
+for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-E_rol_app; do P --single-transaction -f $D/$f.sql >/dev/null; done
 P -c "alter role nexa_app login password 'prueba-local'"; P -f $D/fixture-sesion.sql >/dev/null 2>&1
 cat > /tmp/med_a_$$.sql <<'S1'
 select count(*) from public.fel_op_miembros_listar('00000000-0000-0000-0000-0000000000c1', '10000000-0000-0000-0000-00000000000a');

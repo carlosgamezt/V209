@@ -21,7 +21,7 @@ do $$ declare c jsonb; begin
   c := public.fel_adm_contexto(pg_temp.t('propb')); assert c ->> 'empresa_id' = '10000000-0000-0000-0000-00000000000b', 'propb: empresa B';
 end $$;
 -- 2) sin sesión válida no hay identidad
-select pg_temp.espera_error($$select public.fel_adm_contexto(null)$$, 'sesión no válida');
+select pg_temp.espera_error($$select public.fel_adm_contexto(null)$$, 'sesión no válida|sin identidad');
 select pg_temp.espera_error($$select public.fel_adm_contexto('corto')$$, 'sesión no válida');
 select pg_temp.espera_error($$select public.fel_adm_contexto('tok-inexistente-0123456789abcdef')$$, 'sesión no válida');
 select pg_temp.espera_error($$select public.fel_adm_contexto(pg_temp.t('vencida'))$$, 'sesión no válida');   -- vencida
