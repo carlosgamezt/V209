@@ -192,7 +192,7 @@ export function pantallaFactura(ctx, id) {
         const n = normalizarId(valor), tipoBusca = f.tipo === "CF" ? "NIT" : f.tipo;
         const exacto = n.length >= 4 && est.clientes.find((c) => c.tipo_identificacion === tipoBusca && normalizarId(c.numero_identificacion) === n);
         if (exacto) { elegirExistente(exacto); return; }   // idéntico a un cliente guardado: no se consulta nada fuera
-        ctrl.alEscribirId(valor); sincronizar(); mostrarSugerencias(); cambio();
+        ctrl.alEscribirId(valor); sincronizar(); mostrarSugerencias(); cambio(); buscarRemoto(valor.trim());
       }
       function elegirExistente(c) {
         ctrl?.cancelar(); ctrl = null; nit.info = null; nit.et = null;
@@ -203,6 +203,19 @@ export function pantallaFactura(ctx, id) {
       function cambiarReceptor() {
         if (!ed) return; ctrl?.cancelar(); ctrl = null; f.cliente_id = ""; f.nuevo = false; f.numero = ""; f.nombre = ""; nit.info = null; nit.et = null;
         nit.numero.value = ""; nit.estado.textContent = ""; pintarEtiqueta(nit.etiqueta, null); ocultarSugerencias(); sincronizar(); cambio(); nit.numero.focus();
+      }
+      // Con más clientes que el conjunto de trabajo de /api/estado (500), lo que no está en memoria se busca en el servidor (con espera de 250 ms) y se incorpora a la lista; con menos, nunca se llama.
+      let temporizadorRemoto = 0, ultimaRemota = "";
+      const truncadoClientes = () => (est.clientes_total ?? 0) > (est.clientes?.length ?? 0);
+      function buscarRemoto(q) {
+        if (!truncadoClientes() || q.length < 3 || q === ultimaRemota) return; clearTimeout(temporizadorRemoto);
+        temporizadorRemoto = setTimeout(async () => {
+          ultimaRemota = q;
+          try { const r = await api.clientesPagina({ pagina: 1, tam: 6, q, tipo: "todos" }); let nuevos = 0;
+            for (const c of r.items) if (!est.clientes.some((x) => x.id === c.id)) { est.clientes.push({ id: c.id, tipo_identificacion: c.tipo_identificacion, numero_identificacion: c.numero_identificacion, nombre: c.nombre, direccion: c.direccion, email: c.email, telefono: c.telefono, frecuente: c.frecuente }); nuevos++; }
+            if (nuevos && ed && !f.cliente_id && nit.numero.value.trim() === q) { const n = normalizarId(q), ex = n.length >= 4 && est.clientes.find((c) => c.tipo_identificacion === (f.tipo === "CF" ? "NIT" : f.tipo) && normalizarId(c.numero_identificacion) === n); if (ex) elegirExistente(ex); else mostrarSugerencias(); }
+          } catch { /* sin conexión o sin permiso: se sigue con lo que hay en memoria */ }
+        }, 250);
       }
       function coincidencias() {
         const q = nit.numero.value.trim(), qn = normalizarId(q), ql = q.toLowerCase(); if (!q || f.tipo === "CF") return [];

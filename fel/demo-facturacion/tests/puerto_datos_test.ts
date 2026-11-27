@@ -251,3 +251,75 @@ Deno.test({ name: "R3·M-S rutas: lista, detalle, archivos, panel y reporte por 
   const det = await sd.ll("GET", `/api/documentos/${fd.ids[0]}`); assert.equal(det.status, 404, det.texto);
   const art = (await fd.a.ll("GET", `/api/documentos/${fd.ids[0]}`)).json.artefactos[0]; assert.equal((await sd.bin(`/api/artefactos/${art.id}`)).status, 404, "archivo de otra empresa: no existe");
 }});
+
+// ---- R3 tanda final (M-T): plan, consumos, usuarios y rutas de plataforma por la Data API = pooler; negativas por la defensa de la base; sin JWT nada toca la base ----
+Deno.test({ name: "R3·M-T rutas: plan, reporte de consumos, usuarios y plataforma por la Data API = pooler; permisos y MFA decididos por la base; rutas de simulación cerradas; sin JWT nada toca la base", ...o, fn: async () => {
+  const P = await servidor("pooler"), D = await servidor("dataapi"); const fp = await flujo(P), fd = await flujo(D);
+  const mp = await P.entrar("maestro"), md = await D.entrar("maestro");
+  const cmp = async (ruta: string, quien: "a" | "m", ignorar: string[] = []) => {
+    const x = quien === "a" ? await fp.a.ll("GET", ruta) : await mp.ll("GET", ruta), y = quien === "a" ? await fd.a.ll("GET", ruta) : await md.ll("GET", ruta); assert.equal(x.status, 200, `${ruta} pooler: ${x.texto}`); assert.equal(y.status, 200, `${ruta} dataapi: ${y.texto}`);
+    const q = (v: unknown) => { const w = norm(v) as Record<string, unknown>; for (const k of ignorar) delete w[k]; return w; };
+    assert.deepEqual(q(y.json), q(x.json), `${ruta}: mismo contenido`); assert.deepEqual(tipos(q(y.json)), tipos(q(x.json)), `${ruta}: mismas claves y tipos`); return y;
+  };
+  // empresa
+  const plan = await cmp("/api/plan", "a"); assert.ok(plan.json.cuenta && plan.json.contrato && Array.isArray(plan.json.consumos) && plan.json.consumos.length >= 1, "el plan tiene cuenta, contrato y consumos de las certificaciones");
+  await cmp("/api/panel", "a", ["serie"]);
+  const csvP = await fp.a.ll("GET", "/api/reportes/consumos.csv"), csvD = await fd.a.ll("GET", "/api/reportes/consumos.csv"); assert.equal(csvD.status, 200, csvD.texto);
+  assert.equal(csvD.texto.split("\n").length, csvP.texto.split("\n").length, "reporte de consumos: mismas filas"); assert.equal(csvD.texto.split("\n")[0], csvP.texto.split("\n")[0], "mismas columnas");
+  const us = await cmp("/api/usuarios", "a", ["yo"]); assert.ok(us.json.invitaciones !== undefined && us.json.roles.length === 4 && us.json.catalogo.length > 5, "usuarios: roles y catálogo");
+  // plataforma
+  const empId = (await fd.a.ll("GET", "/api/estado")).json.empresa?.id ?? EMPRESA;
+  await cmp("/api/plataforma/resumen", "m", ["verificacion"]); const res = await md.ll("GET", "/api/plataforma/resumen"); assert.ok(res.json.verificacion.comprobaciones >= 1 && res.json.verificacion.fallos === 0, "verificación de saldos por la Data API");
+  await cmp("/api/plataforma/planes", "m"); await cmp("/api/plataforma/bolson", "m", ["simuladores", "verificacion", "nombres"]); await cmp("/api/plataforma/bolson/conciliaciones", "m", ["nombres", "yo"]);
+  const pe = await md.ll("GET", `/api/plataforma/empresas/${empId}/plan`); assert.equal(pe.status, 200, pe.texto); assert.ok(pe.json.cuenta, "plan de una empresa elegida por el administrador");
+  const usadas = new Set(D.emu.llamadas.map((l) => l.fn)); for (const f of ["plan_resumen", "reporte_consumos", "usuarios_resumen", "pla_lectura_resumen", "pla_lectura_planes", "pla_lectura_plan_empresa", "pla_lectura_bolson", "pla_lectura_conciliaciones", "pla_lectura_verificacion"]) assert.ok(usadas.has(f), `por la Data API: ${f}`);
+  // las rutas acopladas a la simulación no existen con la Data API; con el pooler siguen igual
+  for (const [m, r] of [["POST", "/api/usuarios"], ["POST", "/api/plataforma/empresas"], ["POST", "/api/plataforma/bolson/extractos/importar"]] as const) { const x = m === "POST" && r.startsWith("/api/plataforma") ? await md.ll(m, r, {}) : await fd.a.ll(m, r, {}); assert.equal(x.status, 404, `${r}: ${x.texto}`); assert.match(x.texto, /simulación|no_disponible/i); }
+  // aislamiento y permisos: la persona de otra empresa ve SU plan; un lector no ve plan ni usuarios (la base lo decide, no solo el servidor)
+  const sd = await D.entrar("sofia"); const psofia = await sd.ll("GET", "/api/plan"); assert.equal(psofia.status, 200, psofia.texto); assert.notDeepEqual(norm(psofia.json.consumos), norm(plan.json.consumos), "sofía no recibe los consumos de ana");
+  const crudo = (jwt: string, fn: string, cuerpo: unknown = {}) => D.emu.fetch(`${URL}/rest/v1/rpc/${fn}`, { method: "POST", headers: { "content-type": "application/json", apikey: APIKEY, authorization: `Bearer ${jwt}`, "content-profile": "api" }, body: JSON.stringify(cuerpo) });
+  const pedro = await D.entrar("pedro"); const msg = async (r: Response) => ({ st: r.status, m: ((await r.json()) as { message?: string }).message ?? "" });
+  assert.match((await msg(await crudo(pedro.jwt, "plan_resumen"))).m, /FEL_NO_AUTORIZADO.*plan/, "lector sin facturacion.ver: lo rechaza LA BASE"); assert.match((await msg(await crudo(pedro.jwt, "usuarios_resumen"))).m, /FEL_NO_AUTORIZADO.*usuarios/);
+  assert.match((await msg(await crudo(pedro.jwt, "reporte_consumos"))).m, /FEL_NO_AUTORIZADO/);
+  for (const fn of ["pla_lectura_resumen", "pla_lectura_planes", "pla_lectura_bolson", "pla_lectura_conciliaciones", "pla_lectura_verificacion"]) { const r = await msg(await crudo(fd.a.jwt, fn)); assert.ok(r.st >= 400 && /FEL_NO_AUTORIZADO/.test(r.m), `${fn} con la sesión de una empresa: ${r.st} ${r.m}`); }
+  assert.equal((await crudo(fd.a.jwt, "pla_lectura_plan_empresa", { p_empresa: empId })).status, 400, "una persona de empresa no lee el plan de otra por la ruta de plataforma");
+  const anon = await D.emu.fetch(`${URL}/rest/v1/rpc/plan_resumen`, { method: "POST", headers: { "content-type": "application/json", apikey: APIKEY, "content-profile": "api" }, body: "{}" }); assert.equal(anon.status, 401);
+  // MFA de plataforma: con el parámetro obligatorio, el administrador con aal1 queda fuera
+  await D.bd.ejecutar("update public.plataforma_parametros set valor = 1 where clave = 'plataforma_mfa_obligatoria'");
+  const m1 = await D.entrar("maestro", "aal1"); const r1 = await msg(await crudo(m1.jwt, "pla_lectura_resumen")); assert.ok(r1.st >= 400 && /dos pasos/.test(r1.m), `aal1: ${r1.m}`);
+  assert.equal((await crudo(md.jwt, "pla_lectura_resumen")).status, 200, "con aal2 pasa");
+  // sin JWT: ninguna ruta nueva llega a la base ni a la Data API
+  D.espia.n = 0; const n0 = D.emu.llamadas.length;
+  for (const r of ["/api/plan", "/api/reportes/consumos.csv", "/api/usuarios"]) { const x = await fd.a.ll("GET", r, undefined, { "x-jwt-prueba": "" }); assert.equal(x.status, 403, r); }
+  for (const r of ["/api/plataforma/resumen", "/api/plataforma/planes", "/api/plataforma/bolson", "/api/plataforma/bolson/conciliaciones", `/api/plataforma/empresas/${empId}/plan`]) { const x = await md.ll("GET", r, undefined, { "x-jwt-prueba": "" }); assert.equal(x.status, 403, r); }
+  assert.equal(D.espia.n, 0, "sin JWT: ninguna consulta ni rpc de la aplicación"); assert.equal(D.emu.llamadas.length, n0);
+}});
+
+// ---- Paginación de clientes y conceptos (M-U): pooler = Data API; conjunto de trabajo acotado con totales; sin cambios por debajo del tope ----
+Deno.test({ name: "Paginación: /api/clientes y /api/conceptos paginados = por pooler y por Data API; /api/estado entrega un conjunto de trabajo (500/1000) con totales; con pocos registros todo es como siempre", ...o, fn: async () => {
+  const P = await servidor("pooler"), D = await servidor("dataapi");
+  const ap = await P.entrar("ana"), ad = await D.entrar("ana");
+  // por debajo del tope: sin cambios (totales = longitud) y la lista completa de siempre
+  for (const [a] of [[ap], [ad]] as const) { const e = (await a.ll("GET", "/api/estado")).json; assert.equal(e.clientes_total, e.clientes.length, "por debajo del tope: todo el conjunto"); assert.equal(e.conceptos_total, e.conceptos.length); const l = await a.ll("GET", "/api/clientes"); assert.ok(Array.isArray(l.json), "ruta sin «pagina»: lista completa como siempre"); }
+  const masivo = async (S: typeof P) => {
+    await S.bd.ejecutar("insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre, activo, frecuente) select $1, case when g % 5 = 0 then 'CUI' else 'NIT' end, (9000000 + g) || '-1', 'Masivo ' || lpad(g::text, 4, '0'), g % 50 <> 0, g % 97 = 0 from generate_series(1, 560) g", [EMPRESA]);
+    await S.bd.ejecutar("insert into public.conceptos (empresa_id, codigo, descripcion, tipo, unidad_medida, precio_unitario, activo) select $1, 'M' || g, 'Concepto masivo ' || lpad(g::text, 4, '0'), case when g % 2 = 0 then 'bien' else 'servicio' end, 'UNI', 1, true from generate_series(1, 1100) g", [EMPRESA]);
+  };
+  await masivo(P); await masivo(D);
+  const x = (await ap.ll("GET", "/api/estado")).json, y = (await ad.ll("GET", "/api/estado")).json;
+  for (const [n, e] of [["pooler", x], ["dataapi", y]] as const) { assert.equal(e.clientes.length, 500, `${n}: conjunto de trabajo de clientes`); assert.ok(e.clientes_total > 500, `${n}: total mayor que el conjunto`); assert.equal(e.conceptos.length, 1000, `${n}: conceptos acotados`); assert.ok(e.conceptos_total >= 1100, `${n}: total de conceptos`); assert.ok(e.clientes[0].frecuente, `${n}: los frecuentes primero`); }
+  assert.equal(y.clientes_total, x.clientes_total); assert.deepEqual(norm(y.clientes.slice(0, 20)), norm(x.clientes.slice(0, 20)), "mismo orden del conjunto de trabajo");
+  // rutas paginadas: mismas respuestas por ambos caminos
+  for (const qs of ["pagina=1&tam=5", "pagina=3&tam=5", "pagina=1&tam=100&tipo=persona", "pagina=1&frecuentes=1", "pagina=1&q=masivo%200007", "pagina=1&q=9000010", "pagina=1&inactivos=1&tam=100", "pagina=99999&tam=100", "pagina=1&tam=1000&tipo=basura&q=%25"]) {
+    const a = await ap.ll("GET", `/api/clientes?${qs}`), b = await ad.ll("GET", `/api/clientes?${qs}`); assert.equal(a.status, 200, `${qs}: ${a.texto}`); assert.equal(b.status, 200, `${qs}: ${b.texto}`);
+    assert.deepEqual(norm(b.json), norm(a.json), `clientes ${qs}`); assert.deepEqual(tipos(b.json), tipos(a.json), `clientes ${qs}: tipos`);
+  }
+  for (const qs of ["pagina=1", "pagina=22&tam=50", "pagina=1&tipo=bien&q=masivo%20000", "pagina=1&inactivos=1&q=%25"]) {
+    const a = await ap.ll("GET", `/api/conceptos?${qs}`), b = await ad.ll("GET", `/api/conceptos?${qs}`); assert.equal(b.status, 200, `${qs}: ${b.texto}`); assert.deepEqual(norm(b.json), norm(a.json), `conceptos ${qs}`); assert.deepEqual(tipos(b.json), tipos(a.json), `conceptos ${qs}: tipos`);
+  }
+  const p1 = (await ad.ll("GET", "/api/clientes?pagina=1&tam=5")).json; assert.equal(p1.items.length, 5); assert.ok(p1.total > 500 && p1.conteos.registrados === p1.total, "total e indicadores sobre los activos"); assert.equal(p1.paginas, Math.ceil(p1.total / 5));
+  const pc = (await ad.ll("GET", "/api/conceptos?pagina=1&tam=50")).json; assert.equal(pc.items.length, 50); assert.ok(pc.total >= 1100);
+  // aislamiento y JWT: la otra empresa no ve nada de esto; sin JWT la ruta paginada no toca la base
+  const sd = await D.entrar("sofia"); const s1 = (await sd.ll("GET", "/api/clientes?pagina=1&q=masivo")).json; assert.equal(s1.total, 0, "sofía no ve los clientes de ana"); assert.equal(((await sd.ll("GET", "/api/conceptos?pagina=1&q=masivo")).json as { total: number }).total, 0);
+  D.espia.n = 0; const sin = await ad.ll("GET", "/api/clientes?pagina=1", undefined, { "x-jwt-prueba": "" }); assert.equal(sin.status, 403); assert.equal(D.espia.n, 0);
+}});

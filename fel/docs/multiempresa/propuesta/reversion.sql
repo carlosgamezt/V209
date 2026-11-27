@@ -22,6 +22,7 @@ drop policy if exists alertas_leer on public.alertas_fiscales; create policy ale
 drop policy if exists documentos_alcance_leer on public.documentos; create policy documentos_alcance_leer on public.documentos as restrictive for select to authenticated using ((not fel__establecimiento_por_usuario()) or fel_en_alcance(empresa_id, auth.uid(), establecimiento_id));
 drop policy if exists artefactos_meta_leer on public.artefactos_documento;
 do $$ begin revoke select (id, empresa_id, documento_id, operacion_id, tipo, nombre, mime, sha256, tamano, creado_en) on public.artefactos_documento from authenticated; exception when others then null; end $$;
+drop function if exists public.fel__plan_json(uuid);
 drop function if exists public.fel__empresas_con_permiso(text);
 drop function if exists public.fel__establecimientos_en_alcance();
 drop function if exists public.fel__empresas_alcance_total();

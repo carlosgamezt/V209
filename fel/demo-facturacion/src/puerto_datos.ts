@@ -54,7 +54,7 @@ function comoPooler(nombrePooler: string, j: unknown): unknown {
  * `contexto()` entrega la petición en curso (con `jwt`). Los accesos SQL directos (`filas`, `ejecutar`, `lote`) NO cambian aquí: pasan a RPC/RLS en W4.
  */
 /** Lecturas del piloto W4 (M-O): RPC SECURITY INVOKER; la RLS y la empresa de la sesión deciden las filas. */
-export const LECTURAS_API: ReadonlySet<string> = new Set(["clientes_listar", "conceptos_listar", "establecimientos_listar", "estado_catalogos", "documentos_listar", "documento_detalle", "panel_resumen", "reporte_documentos", "artefacto_descargar"]);
+export const LECTURAS_API: ReadonlySet<string> = new Set(["clientes_listar", "conceptos_listar", "establecimientos_listar", "estado_catalogos", "documentos_listar", "documento_detalle", "panel_resumen", "reporte_documentos", "artefacto_descargar", "clientes_pagina", "conceptos_pagina", "plan_resumen", "reporte_consumos", "usuarios_resumen", "pla_lectura_resumen", "pla_lectura_planes", "pla_lectura_plan_empresa", "pla_lectura_bolson", "pla_lectura_conciliaciones", "pla_lectura_verificacion"]);
 
 export function conDataApi(bd: BdDemo, o: OpcionesDataApi, contexto: () => ContextoPeticion | undefined = contextoActual): BdDemo {
   const cliente = crearRpcDataApi(o, () => contexto()?.jwt);

@@ -6,7 +6,7 @@ import { EMPRESA } from "./mundo_demo.ts";
 import { PERSONAS } from "./mundo_practico.ts";
 
 const RAIZ = fileURLToPath(new URL("../../", import.meta.url));
-const PROPUESTAS = ["M-D_permisos", "M-A_emisor_fiscal", "M-B_digifact_config", "M-C_acceso_maestro", "M-F_establecimientos_usuario", "M-G_sesion_admin", "M-H_admin_establecimientos", "M-I_envoltorios_sesion", "M-J_plataforma_y_auditoria", "M-K_sistema_nexa_sys", "M-L_rls_sesion_viva", "M-M_identidad_auth", "M-N_esquema_api", "M-O_lecturas_api", "M-Q_agente_endurecimiento", "M-R_parametros_clases", "M-S_lecturas_documentos"];
+const PROPUESTAS = ["M-D_permisos", "M-A_emisor_fiscal", "M-B_digifact_config", "M-C_acceso_maestro", "M-F_establecimientos_usuario", "M-G_sesion_admin", "M-H_admin_establecimientos", "M-I_envoltorios_sesion", "M-J_plataforma_y_auditoria", "M-K_sistema_nexa_sys", "M-L_rls_sesion_viva", "M-M_identidad_auth", "M-N_esquema_api", "M-O_lecturas_api", "M-Q_agente_endurecimiento", "M-R_parametros_clases", "M-S_lecturas_documentos", "M-T_lecturas_restantes", "M-U_lecturas_paginadas"];
 export async function activarEstablecimientosLocal(bd: BdDemo): Promise<{ e2: string; e67: string }> {
   if (bd.tipo !== "pglite") throw new Error("Solo para la base en memoria de pruebas locales");
   // deno-lint-ignore no-explicit-any

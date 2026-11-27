@@ -15,7 +15,7 @@ D=docs/multiempresa/propuesta
 P() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d nexa -v ON_ERROR_STOP=1 -q -X "$@"; }
 "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d postgres -q -X -c "create database nexa"; P -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do P -f "$f" >/dev/null 2>&1; done
-for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-Q_agente_endurecimiento M-R_parametros_clases M-S_lecturas_documentos M-E_rol_app; do P -f $D/$f.sql >/dev/null 2>&1 || { echo "FALLO al aplicar $f"; exit 1; }; done
+for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-Q_agente_endurecimiento M-R_parametros_clases M-S_lecturas_documentos M-T_lecturas_restantes M-U_lecturas_paginadas M-E_rol_app; do P -f $D/$f.sql >/dev/null 2>&1 || { echo "FALLO al aplicar $f"; exit 1; }; done
 P -f $D/fixture-sesion.sql >/dev/null 2>/tmp/medrls_fix.log || { echo "FALLO fixture"; tail -3 /tmp/medrls_fix.log; exit 1; }
 U=00000000-0000-0000-0000-0000000000c1; A=10000000-0000-0000-0000-00000000000a; SID=98000000-0000-0000-0000-0000000000c1
 P -c "insert into auth.sessions (id, user_id, aal) values ('$SID', '$U', 'aal2') on conflict do nothing"

@@ -34,7 +34,7 @@ aplicar() {
   if [ "$(PSQLA -At -c "select count(*) from information_schema.tables where table_schema='public' and table_name='documentos'")" = 0 ]; then
     echo "== 3) migraciones 1-30 (proyecto vacío)"; for f in supabase/migrations/*.sql; do PSQLA --single-transaction -f "$f" >/dev/null || fallo "migración $f"; done; echo "OK    migraciones del proyecto"; fi
   echo "== 4) propuestas en orden: M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-I, M-J, M-E (una transacción cada una)"
-  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-Q_agente_endurecimiento M-R_parametros_clases M-S_lecturas_documentos M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
+  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-M_identidad_auth M-N_esquema_api M-O_lecturas_api M-Q_agente_endurecimiento M-R_parametros_clases M-S_lecturas_documentos M-T_lecturas_restantes M-U_lecturas_paginadas M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
   PSQLA -c "alter role nexa_app login password '$ENSAYO_CLAVE_NEXA_APP'" ; echo "OK    nexa_app habilitado SOLO en el proyecto de pruebas"
   if [ -n "${ENSAYO_CLAVE_NEXA_SYS:-}" ]; then
     PSQLA -c "alter role nexa_sys login password '$ENSAYO_CLAVE_NEXA_SYS'"
@@ -62,10 +62,19 @@ probar() {
   PSQLA -f "$D/prueba-parametros.sql" 2>&1 | grep -q "PRUEBAS DE PARÁMETROS POR CLASE OK" && echo "OK    prueba-parametros" || fallo "prueba-parametros"
   echo "== 8g) lecturas de documentos (M-S)"
   PSQLA -f "$D/prueba-api-documentos.sql" 2>&1 | grep -q "PRUEBAS DE LECTURAS DE DOCUMENTOS OK" && echo "OK    prueba-api-documentos" || fallo "prueba-api-documentos"
+  echo "== 8h) lecturas restantes (M-T) y paginación (M-U): estructura y exposición (como administrador del ensayo)"
+  PSQLA -At -c "select case when (select count(*) from pg_proc where pronamespace = 'api'::regnamespace and proname in ('plan_resumen','reporte_consumos','usuarios_resumen','pla_lectura_resumen','pla_lectura_planes','pla_lectura_plan_empresa','pla_lectura_bolson','pla_lectura_conciliaciones','pla_lectura_verificacion','clientes_pagina','conceptos_pagina') and not has_function_privilege('anon', oid, 'execute') and has_function_privilege('authenticated', oid, 'execute')) = 11 then 'ok' else 'mal' end" | grep -q ok && echo "OK    M-T/M-U: 11 funciones de api, solo authenticated" || fallo "exposición de M-T/M-U"
+  echo "== 8i) agente: estado actual (nexa_app) y corte M-P dentro de una transacción que se deshace"
+  PSQLA -f "$D/prueba-agente-protocolo.sql" 2>&1 | grep -q "PRUEBAS DE PROTOCOLO DEL AGENTE OK" && echo "OK    prueba-agente-protocolo" || fallo "prueba-agente-protocolo (¿el administrador puede hacer SET ROLE a nexa_app/nexa_sys? en Supabase requiere GRANT de pertenencia)"
   echo "== 9) sonda R2 (suplantación por fel_op_*), esperado: ${FEL_R2_ESPERADO:-abierto}"; PSQLP -v esperado="${FEL_R2_ESPERADO:-abierto}" -f "$D/prueba-r2-suplantacion.sql" 2>&1 | grep -E "POSIBLE|rechazada|R2 ESTADO|SONDA R2" || fallo "sonda R2"
   echo "== 10) tabla nueva con RLS y sin política: nexa_app debe ver 0 filas"
   PSQLA -c "create table public.zz_nueva (x int); alter table public.zz_nueva enable row level security; insert into public.zz_nueva values (1); grant select on public.zz_nueva to nexa_app;" >/dev/null
   [ "$(PSQLP -At -c 'select count(*) from public.zz_nueva')" = 0 ] && echo "OK    falla cerrado" || fallo "RLS sin política"; PSQLA -c "drop table public.zz_nueva" >/dev/null
 }
+# CORTE FINAL (solo cuando la ruta del agente ya usa nexa-sys, W5): ENSAYO_CORTE_M_P=1 aplica M-P y comprueba que nexa_app ya no ejecuta ninguna fel_sys_*
+if [ "${ENSAYO_CORTE_M_P:-0}" = 1 ] && [ "$MODO" != aplicar ]; then
+  echo "== 11) CORTE M-P"; PSQLA --single-transaction -f "$D/M-P_agente_nivel_sistema.sql" >/dev/null || fallo "M-P"
+  [ "$(PSQLA -At -c "select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fel\\_sys\\_%' and has_function_privilege('nexa_app', p.oid, 'execute')")" = 0 ] && echo "OK    nexa_app sin fel_sys_*" || fallo "tras M-P nexa_app aún ejecuta fel_sys_*"
+fi
 case "$MODO" in aplicar) aplicar;; probar) probar;; todo) aplicar; probar;; *) fallo "modo desconocido";; esac
 echo "ENSAYO 1E ($MODO) terminado"

@@ -13,6 +13,7 @@ import type { AdminEst } from "./admin_establecimientos.ts";
 import { conIdentidadDeSesion, peticion, ErrorIdentidad } from "./identidad_sesion.ts";
 import { conDataApi, type OpcionesDataApi } from "./puerto_datos.ts";
 import { PARAMETROS_USUARIO, SQL_PARAMETROS_USUARIO } from "./parametros.ts";
+import { filtrosClientes, filtrosConceptos, paginarClientes, paginarConceptos, TOPE_CLIENTES_ESTADO, TOPE_CONCEPTOS_ESTADO } from "./lista_catalogos.ts";
 import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
@@ -244,17 +245,24 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     if (m === "GET" && ruta === "/api/estado") {
       const permisos = await permisosDe(a);
       const lecturaApi = bd.lecturaApi ? await bd.lecturaApi("estado_catalogos") as Record<string, unknown[]> : null;   // W4: Data API, una RPC por pantalla (RLS + empresa de la sesión)
-      const [establecimientos, clientes, conceptos, parametros] = lecturaApi ? [lecturaApi.establecimientos, lecturaApi.clientes, lecturaApi.conceptos, lecturaApi.parametros] : await leerLote(bd, [   // cuatro lecturas independientes en UN solo viaje a la base
+      const [establecimientos, clientes, conceptos, [totales], parametros] = lecturaApi ? [lecturaApi.establecimientos, lecturaApi.clientes, lecturaApi.conceptos, [{ clientes_total: lecturaApi.clientes_total, conceptos_total: lecturaApi.conceptos_total }], lecturaApi.parametros] : await leerLote(bd, [   // cuatro lecturas independientes en UN solo viaje a la base
       ["select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]],
-      ["select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]],
-      ["select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]],
+      ["select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre limit " + TOPE_CLIENTES_ESTADO, [emp()]],
+      ["select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion limit " + TOPE_CONCEPTOS_ESTADO, [emp()]],
+      ["select (select count(*)::int from public.clientes where empresa_id = $1 and activo) as clientes_total, (select count(*)::int from public.conceptos where empresa_id = $1 and activo) as conceptos_total", [emp()]],
       [SQL_PARAMETROS_USUARIO, [PARAMETROS_USUARIO as string[]]],   // lista explícita (clase «usuario»): jamás todos los parámetros de plataforma
       ]);
       const alcE = alc(), restr = restringido(alcE);   // persona con establecimiento asignado: SOLO ve el suyo (o los suyos) y el servidor lo fija; la pantalla solo lo muestra bloqueado
       const estPermitidos = restr ? (establecimientos as Array<{ id: string }>).filter((x) => alcE!.ids.includes(x.id)) : establecimientos;
       const alcancePublico = restr ? { restringido: true, multiples: alcE!.multiples, activo: alcE!.activo ?? (alcE!.ids[0] ?? null), ids: alcE!.ids } : { restringido: false };
       return json({ empresa: await empresaDatos(), usuario: { clave: a.clave, ...(await personaDe(a.clave)) }, login: !!extras.sesiones, persistente: bd.tipo === "pg", practico: !!pr, ...(pr ? await pr.estadoExtra() : {}), usuarios: extras.sesiones ? [] : Object.entries(personas()).map(([k, u]) => ({ clave: k, nombre: u.nombre, rol: u.rol, descripcion: u.descripcion })),
-        permisos, establecimientos: estPermitidos, alcance: alcancePublico, adminEstablecimientos: !!extras.adminEst, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+        permisos, establecimientos: estPermitidos, alcance: alcancePublico, adminEstablecimientos: !!extras.adminEst, clientes, conceptos, clientes_total: (totales as Obj).clientes_total, conceptos_total: (totales as Obj).conceptos_total, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
+    }
+    if (m === "GET" && ruta === "/api/clientes" && url.searchParams.has("pagina")) {   // paginado en el servidor (se usa cuando hay más clientes que el conjunto de trabajo de /api/estado)
+      const f = filtrosClientes(url.searchParams); return json(bd.lecturaApi ? await bd.lecturaApi("clientes_pagina", { p_filtros: f }) : await paginarClientes(bd, emp(), f));
+    }
+    if (m === "GET" && ruta === "/api/conceptos" && url.searchParams.has("pagina")) {
+      const f = filtrosConceptos(url.searchParams); return json(bd.lecturaApi ? await bd.lecturaApi("conceptos_pagina", { p_filtros: f }) : await paginarConceptos(bd, emp(), f));
     }
     if (m === "GET" && ruta === "/api/clientes") {
       if (bd.lecturaApi) return json(await bd.lecturaApi("clientes_listar"));   // con la Data API activa NO hay degradación: sin JWT se rechaza

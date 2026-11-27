@@ -125,6 +125,8 @@ jobs:
         run: node fel/demo-facturacion/tests/e2e_identificacion.cjs
       - name: Revisión visual automática de las pantallas principales (Documentos, Nueva factura, Clientes, Conceptos, Configuración y Panel; 320/360/390/412/768/1440 px; sin desbordes y objetivos táctiles; simulado y local)
         run: node fel/demo-facturacion/tests/e2e_vistas.cjs
+      - name: Paginación de clientes y conceptos en el servidor (más de 500 clientes y 200 conceptos; búsqueda, indicadores, CSV, factura con cliente fuera del conjunto de trabajo; nunca la lista completa)
+        run: node fel/demo-facturacion/tests/e2e_paginacion.cjs
       - name: "Correo de facturas (proveedor SIMULADO, nada sale a la red) · servicio, Resend con fetch falso, plantilla, duplicados, permisos, aislamiento, envío automático apagado por defecto y navegador (teléfono 320–430 px)"
         run: |
           deno test -A fel/demo-facturacion/tests/correo_test.ts

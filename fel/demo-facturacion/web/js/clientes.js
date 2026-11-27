@@ -11,20 +11,25 @@ const categoria = (c) => (c.tipo_identificacion === "CF" ? "cf" : c.tipo_identif
 
 export function pantallaClientes(ctx) {
   let datos = [], busqueda = "", tipo = "todos", soloFrecuentes = false, verInactivos = false, pagina = 1;
+  // MODO SERVIDOR: solo si hay más clientes activos que el conjunto de trabajo que entrega /api/estado (500). Con menos, todo funciona exactamente como antes (lista completa y filtros en el navegador).
+  let srv = false, totalSrv = 0, paginasSrv = 1, conteosSrv = null, temporizador = 0;
+  const truncado = () => (ctx.estado?.clientes_total ?? 0) > (ctx.estado?.clientes?.length ?? 0);
+  const paramsSrv = (p, tam) => ({ pagina: p, tam, q: busqueda, tipo, frecuentes: soloFrecuentes ? 1 : 0, inactivos: verInactivos ? 1 : 0 });
   const puedeEscribir = ctx.tiene("clientes.escribir");
   const indicadores = h("div", { class: "indicadores" }), tabla = h("div", { class: "lista" }), pie = h("div", { class: "paginacion" });
   const frecuente = (c) => c.frecuente === true;
-  const filtrados = () => datos.filter((c) => (verInactivos || c.activo) && (tipo === "todos" || categoria(c) === tipo) && (!soloFrecuentes || frecuente(c))
+  const filtrados = () => srv ? datos : datos.filter((c) => (verInactivos || c.activo) && (tipo === "todos" || categoria(c) === tipo) && (!soloFrecuentes || frecuente(c))
     && (!busqueda || `${c.numero_identificacion} ${c.nombre}`.toLowerCase().includes(busqueda.toLowerCase())));
 
   function pintarIndicadores() {
-    const act = datos.filter((c) => c.activo), ind = (ik, n, t, tono) => h("div", { class: `indicador ind-${tono}` }, h("span", { class: "ind-ik" }, icono(ik)), h("div", {}, h("strong", { class: "num" }, String(n)), h("small", {}, t)));
-    poner(indicadores, ind("users", act.length, "Clientes registrados", "azul"), ind("circleCheck", act.filter(frecuente).length, "Clientes frecuentes", "ambar"),
-      ind("building", act.filter((c) => categoria(c) === "empresa").length, "Empresas", "azul"), ind("users", act.filter((c) => categoria(c) !== "empresa").length, "Personas y consumidor final", "lila"));
+    const act = srv ? [] : datos.filter((c) => c.activo), ind = (ik, n, t, tono) => h("div", { class: `indicador ind-${tono}` }, h("span", { class: "ind-ik" }, icono(ik)), h("div", {}, h("strong", { class: "num" }, String(n)), h("small", {}, t)));
+    const k = srv ? conteosSrv : { registrados: act.length, frecuentes: act.filter(frecuente).length, empresas: act.filter((c) => categoria(c) === "empresa").length, personas: act.filter((c) => categoria(c) !== "empresa").length };
+    poner(indicadores, ind("users", k.registrados, "Clientes registrados", "azul"), ind("circleCheck", k.frecuentes, "Clientes frecuentes", "ambar"),
+      ind("building", k.empresas, "Empresas", "azul"), ind("users", k.personas, "Personas y consumidor final", "lila"));
   }
   function pintarTabla() {
-    const todos = filtrados(), paginas = Math.max(1, Math.ceil(todos.length / POR_PAGINA)); pagina = Math.min(pagina, paginas);
-    const vista = todos.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
+    const todos = srv ? { length: totalSrv } : filtrados(), paginas = srv ? paginasSrv : Math.max(1, Math.ceil(todos.length / POR_PAGINA)); if (!srv) pagina = Math.min(pagina, paginas);
+    const vista = srv ? datos : todos.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
     poner(tabla,
       vista.length ? [h("div", { class: "fila fila-cli fila-cab", "aria-hidden": "true" }, ...["", "NIT / Id.", "Nombre / Razón social", "Tipo", "Teléfono", "Correo", ""].map((t) => h("span", {}, t))),
         ...vista.map((c) => h("div", { class: `fila fila-cli${c.activo ? "" : " inactivo"}`, "data-cliente": c.numero_identificacion },
@@ -36,9 +41,9 @@ export function pantallaClientes(ctx) {
           h("div", { class: "celda celda-ac" }, puedeEscribir && c.tipo_identificacion !== "CF" ? h("button", { type: "button", class: "icon-btn", title: "Editar", "aria-label": `Editar ${c.nombre}`, onclick: () => formulario(c) }, icono("pencil")) : null)))]
         : vacio("users", "No hay clientes", busqueda || tipo !== "todos" || soloFrecuentes ? "Ningún cliente coincide con los filtros." : "Agrega tu primer cliente.", puedeEscribir && !busqueda ? boton("Nuevo cliente", { icon: "plus", onclick: () => formulario(null) }) : null));
     poner(pie, h("span", { class: "mut" }, todos.length ? `Mostrando ${(pagina - 1) * POR_PAGINA + 1} a ${(pagina - 1) * POR_PAGINA + vista.length} de ${todos.length} clientes` : "Sin resultados"),
-      paginas > 1 ? h("div", { class: "pag" }, h("button", { type: "button", class: "pag-b", "aria-label": "Página anterior", disabled: pagina === 1, onclick: () => { pagina--; pintarTabla(); } }, "‹"),
-        ...Array.from({ length: paginas }, (_, i) => h("button", { type: "button", class: `pag-b${pagina === i + 1 ? " on" : ""}`, "aria-current": pagina === i + 1 ? "page" : null, onclick: () => { pagina = i + 1; pintarTabla(); } }, String(i + 1))),
-        h("button", { type: "button", class: "pag-b", "aria-label": "Página siguiente", disabled: pagina === paginas, onclick: () => { pagina++; pintarTabla(); } }, "›")) : null);
+      paginas > 1 ? h("div", { class: "pag" }, h("button", { type: "button", class: "pag-b", "aria-label": "Página anterior", disabled: pagina === 1, onclick: () => { pagina--; refrescar(); } }, "‹"),
+        ...Array.from({ length: paginas }, (_, i) => h("button", { type: "button", class: `pag-b${pagina === i + 1 ? " on" : ""}`, "aria-current": pagina === i + 1 ? "page" : null, onclick: () => { pagina = i + 1; refrescar(); } }, String(i + 1))),
+        h("button", { type: "button", class: "pag-b", "aria-label": "Página siguiente", disabled: pagina === paginas, onclick: () => { pagina++; refrescar(); } }, "›")) : null);
   }
   function estrella(c) {
     const puede = puedeEscribir && c.tipo_identificacion !== "CF" && c.activo;
@@ -52,9 +57,15 @@ export function pantallaClientes(ctx) {
     m = modal({ titulo: "Correo del cliente", ancho: "sm", contenido: [h("p", { class: "mut" }, c.nombre), h("p", { class: "correo-completo", "data-correo-completo": "1" }, c.email), estado],
       pie: [boton("Copiar", { tipo: "sec", onclick: async () => { try { await navigator.clipboard.writeText(c.email); estado.textContent = "Copiado."; } catch { estado.textContent = "No se pudo copiar; selecciona el texto."; } } }), boton("Cerrar", { onclick: () => m.cerrar() })] });
   }
-  function descargar() {
+  async function filasCsv() {   // en modo servidor se piden las páginas de 100 con el filtro actual (tope 10 000 filas)
+    if (!srv) return filtrados(); const out = [];
+    for (let p = 1; p <= 100; p++) { const r = await api.clientesPagina(paramsSrv(p, 100)); out.push(...r.items); if (p >= r.paginas) break; }
+    return out;
+  }
+  async function descargar() {
+    let filas; try { filas = await filasCsv(); } catch (e) { toast(mensajeError(e), "error"); return; }
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""').replace(/^([=+\-@])/, "'$1")}"`;   // evita fórmulas al abrir en hojas de cálculo
-    const csv = ["Identificación,Nombre,Tipo,Teléfono,Correo,Facturas", ...filtrados().map((c) => [c.numero_identificacion, c.nombre, c.tipo_identificacion, c.telefono, c.email, c.facturas].map(esc).join(","))].join("\r\n");
+    const csv = ["Identificación,Nombre,Tipo,Teléfono,Correo,Facturas", ...filas.map((c) => [c.numero_identificacion, c.nombre, c.tipo_identificacion, c.telefono, c.email, c.facturas].map(esc).join(","))].join("\r\n");
     const a = h("a", { href: URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })), download: "clientes-demostracion.csv" }); document.body.append(a); a.click(); a.remove();
   }
   function formulario(c) {
@@ -85,9 +96,11 @@ export function pantallaClientes(ctx) {
       pie: [c ? boton(c.activo ? "Desactivar" : "Reactivar", { tipo: c.activo ? "peligro" : "sec", id: "estado-cliente", onclick: async () => { try { await api.estadoCliente(c.id, !c.activo); await ctx.recargarEstado(); m.cerrar(); toast(c.activo ? "Cliente desactivado" : "Cliente reactivado"); await cargar(); } catch (e) { err.textContent = mensajeError(e); } } }) : null,
         boton("Cancelar", { tipo: "sec", onclick: () => m.cerrar() }), guardar] });
   }
-  async function cargar() { try { datos = await api.clientes(); pintarIndicadores(); pintarTabla(); } catch (e) { poner(tabla, h("p", { class: "err", role: "alert" }, mensajeError(e))); } }
+  async function cargarSrv() { const r = await api.clientesPagina(paramsSrv(pagina, POR_PAGINA)); datos = r.items; totalSrv = r.total; paginasSrv = r.paginas; pagina = r.pagina; conteosSrv = r.conteos; pintarIndicadores(); pintarTabla(); }
+  const refrescar = () => { if (!srv) { pintarTabla(); return; } clearTimeout(temporizador); temporizador = setTimeout(() => cargarSrv().catch((e) => toast(mensajeError(e), "error")), 200); };   // la búsqueda espera 200 ms tras la última tecla
+  async function cargar() { try { srv = truncado(); if (srv) await cargarSrv(); else { datos = await api.clientes(); pintarIndicadores(); pintarTabla(); } } catch (e) { poner(tabla, h("p", { class: "err", role: "alert" }, mensajeError(e))); } }
 
-  const buscador = h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar por NIT, nombre o razón social…", "aria-label": "Buscar clientes", oninput: (e) => { busqueda = e.target.value.trim(); pagina = 1; pintarTabla(); } }));
+  const buscador = h("label", { class: "buscador" }, icono("search"), h("input", { type: "search", placeholder: "Buscar por NIT, nombre o razón social…", "aria-label": "Buscar clientes", oninput: (e) => { busqueda = e.target.value.trim(); pagina = 1; refrescar(); } }));
   cargar();
   return h("section", { class: "pantalla" },
     cabecera({ icon: "users", titulo: "Clientes", subtitulo: "Administra tus compradores (clientes) para agilizar la facturación.",
@@ -95,9 +108,9 @@ export function pantallaClientes(ctx) {
         boton("Importar", { tipo: "sec", icon: "archive", disabled: true, title: "La importación masiva llega en una fase posterior (facturación individual primero)" })) }),
     indicadores,
     h("div", { class: "barra" }, buscador,
-      h("select", { "aria-label": "Tipo de cliente", class: "sel-tipo", onchange: (e) => { tipo = e.target.value; pagina = 1; pintarTabla(); } }, ...TIPOS.map(([v, t]) => h("option", { value: v }, t))),
-      h("label", { class: "check" }, h("input", { type: "checkbox", "aria-label": "Solo frecuentes", onchange: (e) => { soloFrecuentes = e.target.checked; pagina = 1; pintarTabla(); } }), h("span", {}, "Solo frecuentes")),
-      h("label", { class: "check" }, h("input", { type: "checkbox", "aria-label": "Incluir inactivos", onchange: (e) => { verInactivos = e.target.checked; pagina = 1; pintarTabla(); } }), h("span", {}, "Inactivos")),
+      h("select", { "aria-label": "Tipo de cliente", class: "sel-tipo", onchange: (e) => { tipo = e.target.value; pagina = 1; refrescar(); } }, ...TIPOS.map(([v, t]) => h("option", { value: v }, t))),
+      h("label", { class: "check" }, h("input", { type: "checkbox", "aria-label": "Solo frecuentes", onchange: (e) => { soloFrecuentes = e.target.checked; pagina = 1; refrescar(); } }), h("span", {}, "Solo frecuentes")),
+      h("label", { class: "check" }, h("input", { type: "checkbox", "aria-label": "Incluir inactivos", onchange: (e) => { verInactivos = e.target.checked; pagina = 1; refrescar(); } }), h("span", {}, "Inactivos")),
       h("button", { type: "button", class: "icon-btn borde", title: "Descargar lista (CSV)", "aria-label": "Descargar clientes en CSV", onclick: descargar }, icono("archive"))),
     tabla, pie);
 }

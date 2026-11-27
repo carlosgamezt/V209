@@ -40,6 +40,7 @@ do $$ declare a uuid := '10000000-0000-0000-0000-00000000000a'; e1 jsonb; e2 jso
     'establecimientos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.codigo_sat), '[]') from (select id, codigo_sat, nombre from public.establecimientos where empresa_id = a and estado = 'activo') t),
     'clientes', (select coalesce(jsonb_agg(to_jsonb(t) order by t.frecuente desc, t.nombre), '[]') from (select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = a and activo) t),
     'conceptos', (select coalesce(jsonb_agg(to_jsonb(t) order by t.descripcion), '[]') from (select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = a and activo) t),
+    'clientes_total', (select count(*)::int from public.clientes where empresa_id = a and activo), 'conceptos_total', (select count(*)::int from public.conceptos where empresa_id = a and activo),
     'parametros', (select coalesce(jsonb_agg(to_jsonb(t) order by t.clave), '[]') from (select clave, valor::text as valor from public.plataforma_parametros where public.fel__parametro_clase(clave) = 'usuario') t));
   assert e1 = e2, 'api.estado_catalogos() = las cuatro consultas del servidor'; assert (select count(*) from jsonb_array_elements(e1 -> 'clientes')) = 2, 'solo clientes ACTIVOS en el estado';
   assert (e1 -> 'clientes' -> 0 ->> 'nombre') = 'Alfa A', 'orden por nombre';
@@ -67,11 +68,35 @@ select pg_temp.como('00000000-0000-0000-0000-0000000000c1', '93000000-0000-0000-
 select pg_temp.espera($$select api.clientes_listar()$$, 'varias empresas');
 select pg_temp.root(); select pg_temp.como('00000000-0000-0000-0000-0000000000c1', '93000000-0000-0000-0000-0000000000c1', 'aal1', '10000000-0000-0000-0000-00000000000b');
 do $$ declare c jsonb; begin c := api.clientes_listar(); assert jsonb_array_length(c) = 1 and c -> 0 ->> 'nombre' = 'Solo B', 'selector B: solo B (aunque la persona también es de A)'; end $$;
+do $$ declare p jsonb; begin
+  p := api.clientes_pagina('{"tam": 100}'); assert (p ->> 'total')::int = 1 and (p -> 'conteos' ->> 'registrados')::int = 1 and (p -> 'conteos' ->> 'empresas')::int = 1, 'selector B: totales e indicadores SOLO de B (aunque también es de A): ' || p::text;
+  assert (api.conceptos_pagina() ->> 'total')::int = 1 and (api.estado_catalogos() ->> 'clientes_total')::int = 1 and (api.estado_catalogos() ->> 'conceptos_total')::int = 1, 'selector B: conceptos y totales del estado solo de B';
+end $$;
 select pg_temp.root(); select pg_temp.como('00000000-0000-0000-0000-0000000000c1', '93000000-0000-0000-0000-0000000000c1', 'aal1', '10000000-0000-0000-0000-0000000000ff');
 select pg_temp.espera($$select api.clientes_listar()$$, 'no eres miembro activo');
 -- 5) plataforma: no tiene empresa; no lee datos de empresa por estas RPC
 select pg_temp.root(); select pg_temp.como('00000000-0000-0000-0000-0000000000a1', '93000000-0000-0000-0000-0000000000a1');
 select pg_temp.espera($$select api.clientes_listar()$$, 'plataforma|empresa|membres');
+-- 5b) paginación (M-U): página y total en el servidor con los filtros de la interfaz; aislamiento; conjunto de trabajo acotado con totales
+select pg_temp.root();
+update public.clientes set frecuente = true where empresa_id = '10000000-0000-0000-0000-00000000000a' and nombre = 'Zeta A';
+insert into public.clientes (empresa_id, tipo_identificacion, numero_identificacion, nombre, activo) select '10000000-0000-0000-0000-00000000000a', case when g % 5 = 0 then 'CUI' else 'NIT' end, (9000000 + g) || '-1', 'Masivo ' || lpad(g::text, 4, '0'), true from generate_series(1, 520) g;
+insert into public.conceptos (empresa_id, codigo, descripcion, tipo, unidad_medida, precio_unitario, activo) select '10000000-0000-0000-0000-00000000000a', 'M' || g, 'Concepto masivo ' || lpad(g::text, 4, '0'), case when g % 2 = 0 then 'bien' else 'servicio' end, 'UNI', 1, true from generate_series(1, 1100) g;
+select pg_temp.como('00000000-0000-0000-0000-0000000000c2', '93000000-0000-0000-0000-0000000000c2');
+do $$ declare p jsonb; e jsonb; begin
+  p := api.clientes_pagina('{"pagina": 1, "tam": 5}'); assert (p ->> 'total')::int = 522 and jsonb_array_length(p -> 'items') = 5 and (p ->> 'paginas')::int = 105 and p -> 'items' -> 0 ->> 'nombre' = 'Alfa A', 'página 1 de clientes ordenada por nombre (activos): ' || (p ->> 'total');
+  assert (p -> 'conteos' ->> 'registrados')::int = 522 and (p -> 'conteos' ->> 'frecuentes')::int = 1 and (p -> 'conteos' ->> 'empresas')::int = 418 and (p -> 'conteos' ->> 'personas')::int = 104, 'indicadores sobre TODOS los activos: ' || (p -> 'conteos')::text;
+  p := api.clientes_pagina('{"q": "masivo 0007"}'); assert (p ->> 'total')::int = 1 and p -> 'items' -> 0 ->> 'nombre' = 'Masivo 0007', 'búsqueda por nombre';
+  p := api.clientes_pagina('{"q": "9000010"}'); assert (p ->> 'total')::int = 1, 'búsqueda por identificación'; p := api.clientes_pagina('{"q": "%"}'); assert (p ->> 'total')::int = 0, 'el comodín % es texto';
+  p := api.clientes_pagina('{"tipo": "persona"}'); assert (p ->> 'total')::int = 104, 'tipo persona'; p := api.clientes_pagina('{"frecuentes": true}'); assert (p ->> 'total')::int = 1 and p -> 'items' -> 0 ->> 'nombre' = 'Zeta A', 'solo frecuentes';
+  p := api.clientes_pagina('{"inactivos": true}'); assert (p ->> 'total')::int = 523, 'con inactivos'; p := api.clientes_pagina('{"pagina": 9999, "tam": 100}'); assert (p ->> 'pagina')::int = 6 and jsonb_array_length(p -> 'items') = 22, 'página fuera de rango: la última';
+  p := api.clientes_pagina('{"tam": 100000, "pagina": -1, "tipo": "x"}'); assert (p ->> 'tam')::int = 100 and (p ->> 'pagina')::int = 1 and (p ->> 'total')::int = 522, 'entradas anómalas acotadas';
+  assert not exists (select 1 from jsonb_array_elements(api.clientes_pagina('{"tam": 100}') -> 'items') x where x ->> 'nombre' = 'Solo B'), 'nunca clientes de otra empresa';
+  p := api.conceptos_pagina('{"tam": 50}'); assert (p ->> 'total')::int = 1101 and jsonb_array_length(p -> 'items') = 50 and (p ->> 'paginas')::int = 23, 'conceptos paginados'; p := api.conceptos_pagina('{"tipo": "bien", "q": "masivo 000"}'); assert (p ->> 'total')::int = 4, 'conceptos: tipo y búsqueda: ' || (p ->> 'total');
+  assert not exists (select 1 from jsonb_array_elements(api.conceptos_pagina('{"tam": 100, "q": "W4B"}') -> 'items')), 'no ve conceptos de B';
+  e := api.estado_catalogos(); assert jsonb_array_length(e -> 'clientes') = 500 and (e ->> 'clientes_total')::int = 522 and jsonb_array_length(e -> 'conceptos') = 1000 and (e ->> 'conceptos_total')::int = 1101, 'estado: conjunto de trabajo acotado con totales';
+  assert e -> 'clientes' -> 0 ->> 'nombre' = 'Zeta A', 'los frecuentes van primero';
+end $$;
 -- 6) estructura: SECURITY INVOKER (sin privilegios elevados), search_path fijo, ejecutables solo por authenticated, sin tablas nuevas concedidas
 select pg_temp.root();
 do $$ declare r text; begin

@@ -43,8 +43,11 @@ export function crearPractico(bd: BdDemo, d: Deps) {
   };
   const seguro = (req: Request) => !!d.sesiones?.forzarSeguro || new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
 
+  /** Con la Data API activa (arquitectura de producción) NO existen las rutas acopladas a los certificadores SIMULADOS ni a las cuentas de demostración: se rechazan antes de tocar la base. */
+  const soloSimulacion = () => { if (bd.lecturaApi) throw new ErrorPr(404, "No disponible: solo existe en la simulación", "no_disponible"); };
   /** Aplica a consumos y cargos el resultado confirmado de las operaciones de los certificadores (p. ej. tras conciliar). Seguro de repetir. */
   async function sincronizar() {
+    if (bd.lecturaApi) return;   // la sincronización con los simuladores no existe en producción
     const pend = await bd.filas<{ id: string; empresa_id: string }>("select o.id, o.empresa_id from public.operaciones_fiscales o join public.consumos c on c.operacion_id = o.id and c.empresa_id = o.empresa_id where c.estado = 'reservado' and o.estado in ('confirmada_exitosa','confirmada_fallida') and o.proveedor = any($1::text[])", [ids]);
     for (const p of pend) { const prov = (await bd.filas<{ proveedor: string }>("select proveedor from public.operaciones_fiscales where id = $1", [p.id]))[0]?.proveedor; await registro.obtener(prov)?.servicio.cerrarCobertura(p.empresa_id, p.id); }
   }
@@ -56,7 +59,12 @@ export function crearPractico(bd: BdDemo, d: Deps) {
   }
 
   const nom = (id: unknown) => registro.obtener(String(id))?.nombre ?? String(id ?? "—");   // nombre del certificador: las pantallas no los conocen por id
-  async function planDe(empresa: string) {
+  const AVISO_PLAN = "Pagos y cobros SIMULADOS: no hay pasarela de pago. NEXA no calcula impuestos de sus propias facturas: guarda la referencia del documento emitido fuera de este sistema.";
+  async function planDe(empresa: string, plataforma = false) {
+    if (bd.lecturaApi) {   // Data API: una RPC (DEFINER con permiso explícito; la empresa sale de la sesión, o la objetivo del administrador de plataforma)
+      const x = await (plataforma ? bd.lecturaApi("pla_lectura_plan_empresa", { p_empresa: empresa }) : bd.lecturaApi("plan_resumen")) as Record<string, unknown> & { consumos: Obj[]; porCertificador: Obj[] };
+      return { ...x, consumos: x.consumos.map((y) => ({ ...y, certificador_nombre: nom(y.certificador) })), porCertificador: x.porCertificador.map((y) => ({ ...y, certificador_nombre: nom(y.certificador) })), aviso: AVISO_PLAN };
+    }
     const [cuenta] = await bd.filas<Obj>("select id, estado, cupo_mensual_unidades::text as cupo from public.cuentas_comerciales where empresa_id = $1", [empresa]);
     const contratos = await bd.filas<Obj>(`select ct.id, ct.desde, ct.hasta, pv.id as version_id, pv.version, pl.codigo, pl.nombre, pl.modalidad, pv.cuota_fija::text as cuota_fija, pv.unidades_incluidas::text as unidades_incluidas, pv.permite_sobregiro, pv.limite_sobregiro::text as limite_sobregiro
       from public.contratos_plan ct join public.plan_versiones pv on pv.id = ct.plan_version_id join public.planes pl on pl.codigo = pv.plan_codigo where ct.empresa_id = $1 order by ct.desde desc`, [empresa]);
@@ -138,13 +146,14 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       if (m === "GET" && ruta === "/api/usuarios") {
         const permisos = await c.permisos(); if (!permisos.includes("usuarios.ver")) throw new ErrorPr(403, "No tienes permiso para ver los usuarios", "no_autorizado");
         const miembros = await bd.rpc("fel_op_miembros_listar", { p_actor: a.id, p_empresa: E }) as Obj[];
-        const invitaciones = await bd.filas<Obj>("select id, email, rol, estado, expira_en from public.invitaciones where empresa_id = $1 and estado = 'pendiente' order by creado_en desc", [E]);
-        const roles = await bd.filas<Obj>("select rol, array_agg(permiso order by permiso) as permisos from public.rol_permisos group by rol order by case rol when 'propietario' then 0 when 'administrador' then 1 when 'emisor' then 2 else 3 end");
-        const catalogo = await bd.filas<Obj>("select codigo, descripcion from public.permisos_catalogo order by codigo");
+        const viaU = bd.lecturaApi ? await bd.lecturaApi("usuarios_resumen") as { invitaciones: Obj[]; roles: Obj[]; catalogo: Obj[] } : null;   // Data API: DEFINER con permiso usuarios.ver
+        const invitaciones = viaU ? viaU.invitaciones.map(({ id, email, rol, estado, expira_en }) => ({ id, email, rol, estado, expira_en })) : await bd.filas<Obj>("select id, email, rol, estado, expira_en from public.invitaciones where empresa_id = $1 and estado = 'pendiente' order by creado_en desc", [E]);
+        const roles = viaU ? viaU.roles : await bd.filas<Obj>("select rol, array_agg(permiso order by permiso) as permisos from public.rol_permisos group by rol order by case rol when 'propietario' then 0 when 'administrador' then 1 when 'emisor' then 2 else 3 end");
+        const catalogo = viaU ? viaU.catalogo : await bd.filas<Obj>("select codigo, descripcion from public.permisos_catalogo order by codigo");
         const cuentasU = d.sesiones ? await d.sesiones.almacen.cuentas() : [], claveDe = (uid: unknown) => cuentasU.find((c) => c.persona.id === uid)?.usuario ?? null;
         return c.json({ miembros: miembros.map((x) => ({ ...x, usuario: claveDe(x.user_id) })), invitaciones, roles, catalogo, puedeGestionar: permisos.includes("usuarios.gestionar"), yo: a.id });
       }
-      if (m === "POST" && ruta === "/api/usuarios") {   // alta de una persona de la demostración: invitación real (con su chequeo de jerarquía) + cuenta + aceptación
+      if (m === "POST" && ruta === "/api/usuarios") {   soloSimulacion();   // alta de cuentas de demostración: en producción, por invitación de Supabase Auth   // alta de una persona de la demostración: invitación real (con su chequeo de jerarquía) + cuenta + aceptación
         const b = await c.cuerpo(); const usuario = texto(b.usuario, 3, 20, "Usuario").toLowerCase(), nombre = texto(b.nombre, 3, 80, "Nombre"), clave = texto(b.clave, 8, 80, "Contraseña"), rol = String(b.rol);
         if (!/^[a-z][a-z0-9_]{2,19}$/.test(usuario)) throw new ErrorPr(400, "Usuario: letras minúsculas, números o guion bajo (3 a 20)", "entrada_invalida");
         if (!["administrador", "emisor", "lector"].includes(rol)) throw new ErrorPr(400, "Rol no válido", "entrada_invalida");
@@ -185,7 +194,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         } else {
           if (!permisos.includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para este reporte", "no_autorizado");
           cols = ["fecha", "certificador", "evento", "documento", "estado", "unidades", "cargado"];
-          filas = await bd.filas<Obj>(`select to_char(c.reservado_en at time zone 'America/Guatemala', 'YYYY-MM-DD HH24:MI') as fecha, b.proveedor_id as certificador, c.evento_tipo as evento, 'BR-' || lpad(d.numero_borrador::text, 4, '0') as documento, c.estado, case when c.estado = 'confirmado' then c.unidades_consumidas else c.unidades_reservadas end::text as unidades,
+          filas = bd.lecturaApi ? (await bd.lecturaApi("reporte_consumos") as Obj[]) : await bd.filas<Obj>(`select to_char(c.reservado_en at time zone 'America/Guatemala', 'YYYY-MM-DD HH24:MI') as fecha, b.proveedor_id as certificador, c.evento_tipo as evento, 'BR-' || lpad(d.numero_borrador::text, 4, '0') as documento, c.estado, case when c.estado = 'confirmado' then c.unidades_consumidas else c.unidades_reservadas end::text as unidades,
               (select coalesce(sum(g.monto), 0) from public.cargos g where g.consumo_id = c.id)::text as cargado from public.consumos c join public.bolson_cuentas b on b.id = c.cuenta_id left join public.documentos d on d.id = c.documento_id and d.empresa_id = c.empresa_id where c.empresa_id = $1 order by c.reservado_en`, [E]);
         }
         const csv = "\uFEFF" + [cols.join(","), ...filas.map((f) => cols.map((k) => celda(f[k])).join(","))].join("\r\n") + "\r\n# SIMULADO - SIN VALOR FISCAL\r\n";
@@ -213,7 +222,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         if (!(await c.permisos()).includes("facturacion.ver")) throw new ErrorPr(403, "No tienes permiso para ver el plan y el consumo", "no_autorizado");
         return c.json(await planDe(E));
       }
-      if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)\/consultar-proveedor$/.exec(ruta))) {   // solo lectura: pregunta al certificador (simulado) y NO cambia nada
+      if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)\/consultar-proveedor$/.exec(ruta))) {   soloSimulacion();   // solo lectura: pregunta al certificador (simulado) y NO cambia nada
         const docId = c.id(r[1]); const [o] = await bd.filas<{ id: string; clave_idempotencia: string; estado: string; proveedor: string }>("select id, clave_idempotencia, estado, proveedor from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and proveedor = any($3::text[]) order by iniciada_en desc limit 1", [docId, E, ids]);
         if (!o) throw new ErrorPr(404, "Este documento no se envió a un certificador simulado", "no_encontrado");
         const x = await registro.obtener(o.proveedor)!.proveedor.conciliar({ empresaId: E, documentoId: docId, operacionId: o.id, claveIdempotencia: o.clave_idempotencia, ambiente: "simulado" }, CTX);
@@ -230,7 +239,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         await cd.servicio.anular({ actor: a.id, empresa: E, documento: docId, clave: texto(b.clave, 16, 80, "Clave de idempotencia"), motivo: texto(b.motivo, 5, 300, "Motivo"), canal: await c.canalDe(cert.proveedor), certificacion: { clave: cert.clave, autorizacion: cert.autorizacion } });
         return c.json(await c.detalle(docId));
       }
-      if (m === "POST" && (r = /^\/api\/operaciones\/([^/]+)\/conciliar-anulacion$/.exec(ruta))) {
+      if (m === "POST" && (r = /^\/api\/operaciones\/([^/]+)\/conciliar-anulacion$/.exec(ruta))) {   soloSimulacion();
         if (!(await c.permisos()).includes("fiscal.conciliar")) throw new ErrorPr(403, "No tienes permiso para conciliar", "no_autorizado");
         const opId = c.id(r[1]); const [o] = await bd.filas<{ documento_id: string; clave_idempotencia: string; motivo: string | null }>("select documento_id, clave_idempotencia, motivo from public.operaciones_fiscales where id = $1 and empresa_id = $2 and tipo = 'anulacion'", [opId, E]);
         if (!o) throw new ErrorPr(404, "Anulación no encontrada", "no_encontrado"); const cert = await certOp(o.documento_id, E);
@@ -246,7 +255,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       const ruta = url.pathname, m = req.method; let r: RegExpExecArray | null; const M = a.id;
       if (m === "GET" && ruta === "/api/estado") return json({ usuario: { clave: a.clave, ...(await d.sesiones?.persona(a.clave)) }, esMaestro: true, login: true, practico: true, permisos: [], aviso: "SIMULADO - SIN VALOR FISCAL" });
       if (m === "GET" && ruta === "/api/plataforma/resumen") {
-        const empresas = await bd.filas<Obj>(`select e.id, e.nombre_comercial, e.razon_social, e.nit, e.estado,
+        const empresas = bd.lecturaApi ? ((await bd.lecturaApi("pla_lectura_resumen")) as { empresas: Obj[] }).empresas : await bd.filas<Obj>(`select e.id, e.nombre_comercial, e.razon_social, e.nit, e.estado,
             (select pl.nombre from public.contratos_plan ct join public.plan_versiones pv on pv.id = ct.plan_version_id join public.planes pl on pl.codigo = pv.plan_codigo where ct.empresa_id = e.id and ct.hasta is null limit 1) as plan,
             (select pl.modalidad from public.contratos_plan ct join public.plan_versiones pv on pv.id = ct.plan_version_id join public.planes pl on pl.codigo = pv.plan_codigo where ct.empresa_id = e.id and ct.hasta is null limit 1) as modalidad,
             (select (s.recargado + s.ajustado - s.consumido - s.reservado - s.reembolsado + s.sobregiro)::text from public.monedero_saldos s where s.empresa_id = e.id) as disponible,
@@ -257,6 +266,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         return json({ empresas, verificacion: await this.verificacion() });
       }
       if (m === "GET" && ruta === "/api/plataforma/planes") {
+        if (bd.lecturaApi) return json(await bd.lecturaApi("pla_lectura_planes"));
         const planes = await bd.filas<Obj>("select codigo, nombre, modalidad, activo from public.planes order by codigo");
         const versiones = await bd.filas<Obj>("select pv.id, pv.plan_codigo, pv.version, pv.vigente_desde, pv.cuota_fija::text as cuota_fija, pv.unidades_incluidas::text as unidades_incluidas, pv.permite_sobregiro, pv.limite_sobregiro::text as limite_sobregiro, (select json_agg(json_build_object('evento', t.evento_tipo, 'precio', t.precio_unitario::text, 'cargable', t.cargable) order by t.evento_tipo) from public.tarifas t where t.plan_version_id = pv.id) as tarifas from public.plan_versiones pv order by pv.plan_codigo, pv.version desc");
         return json({ planes, versiones, eventos: await bd.filas("select codigo from public.evento_tipos order by codigo") });
@@ -294,12 +304,12 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         const b = await leer(req); if (!uuidOk(b.cobro)) throw new ErrorPr(400, "Cobro no válido", "entrada_invalida");
         return json(await bd.rpc("fel_admin_cobro_emitir", { p_actor: M, p_cobro: b.cobro, p_referencia: texto(b.referencia, 3, 120, "Referencia del documento"), p_monto_total: monto(String(b.monto_total ?? ""), "Total del documento") }));
       }
-      if (m === "GET" && (r = /^\/api\/plataforma\/empresas\/([^/]+)\/plan$/.exec(ruta))) { if (!uuidOk(r[1])) throw new ErrorPr(400, "Empresa no válida", "entrada_invalida"); return json(await planDe(r[1])); }
+      if (m === "GET" && (r = /^\/api\/plataforma\/empresas\/([^/]+)\/plan$/.exec(ruta))) { if (!uuidOk(r[1])) throw new ErrorPr(400, "Empresa no válida", "entrada_invalida"); return json(await planDe(r[1], true)); }
       if (m === "POST" && (r = /^\/api\/plataforma\/empresas\/([^/]+)\/estado$/.exec(ruta))) {
         const b = await leer(req); if (!uuidOk(r[1])) throw new ErrorPr(400, "Empresa no válida", "entrada_invalida");
         await bd.rpc("fel_admin_empresa_estado", { p_actor: M, p_empresa: r[1], p_estado: String(b.estado), p_motivo: texto(b.motivo, 5, 300, "Motivo") }); return json({ ok: true });
       }
-      if (m === "POST" && ruta === "/api/plataforma/empresas") {
+      if (m === "POST" && ruta === "/api/plataforma/empresas") {   soloSimulacion();   // alta de cuentas de demostración: en producción, por invitación de Supabase Auth
         const b = await leer(req); const usuario = texto(b.propietario_usuario, 3, 20, "Usuario del propietario").toLowerCase(); if (!/^[a-z][a-z0-9_]{2,19}$/.test(usuario)) throw new ErrorPr(400, "Usuario: letras minúsculas, números o guion bajo (3 a 20)", "entrada_invalida");
         if (await d.sesiones?.persona(usuario)) throw new ErrorPr(409, "Ese usuario ya existe", "conflicto"); const clave = texto(b.propietario_clave, 8, 80, "Contraseña del propietario");
         const [reg] = await bd.filas<{ id: string }>("select id from public.regimenes_fiscales where codigo = $1", [typeof b.regimen === "string" ? b.regimen : "general"]); if (!reg) throw new ErrorPr(422, "Régimen no encontrado", "regla");
@@ -313,38 +323,41 @@ export function crearPractico(bd: BdDemo, d: Deps) {
         return json({ empresa, usuario, aviso: "Empresa habilitada con canal simulado y Digifact simulado. Asígnale un plan y registra un pago simulado para que pueda certificar." });
       }
       if (m === "GET" && ruta === "/api/plataforma/bolson") {
-        const cuentas = await bd.filas<Obj>("select (select case when sum(l.unidades) > 0 then (sum(l.costo_total) / sum(l.unidades))::numeric(18,6)::text end from public.bolson_lotes l where l.cuenta_id = c.id) as costo_unitario, c.id, c.proveedor_id, c.ambiente, c.referencia_externa, c.estado, s.comprado::text as comprado, s.consumido::text as consumido, s.reservado::text as reservado, s.ajustado::text as ajustado, (s.comprado + s.ajustado - s.consumido - s.reservado)::text as disponible from public.bolson_cuentas c join public.bolson_saldos s on s.cuenta_id = c.id order by c.creada_en");
-        const lotes = await bd.filas<Obj>("select l.id, l.cuenta_id, l.unidades::text as unidades, l.costo_total::text as costo_total, l.referencia_proveedor, l.registrado_en from public.bolson_lotes l order by l.registrado_en desc limit 20");
-        const porEmpresa = await bd.filas<Obj>(`with costo as (select b.id as cuenta_id, case when sum(l.unidades) > 0 then sum(l.costo_total) / sum(l.unidades) else 0 end as unitario from public.bolson_cuentas b left join public.bolson_lotes l on l.cuenta_id = b.id group by b.id),
+        const viaB = bd.lecturaApi ? await bd.lecturaApi("pla_lectura_bolson") as { cuentas: Obj[]; lotes: Obj[]; porEmpresa: Obj[]; reglas: Obj[]; alertas: Obj[] } : null;   // Data API: DEFINER, solo administrador de plataforma con MFA real
+        const cuentas = viaB ? viaB.cuentas.map(({ creada_en: _c, ...x }) => x) : await bd.filas<Obj>("select (select case when sum(l.unidades) > 0 then (sum(l.costo_total) / sum(l.unidades))::numeric(18,6)::text end from public.bolson_lotes l where l.cuenta_id = c.id) as costo_unitario, c.id, c.proveedor_id, c.ambiente, c.referencia_externa, c.estado, s.comprado::text as comprado, s.consumido::text as consumido, s.reservado::text as reservado, s.ajustado::text as ajustado, (s.comprado + s.ajustado - s.consumido - s.reservado)::text as disponible from public.bolson_cuentas c join public.bolson_saldos s on s.cuenta_id = c.id order by c.creada_en");
+        const lotes = viaB ? viaB.lotes : await bd.filas<Obj>("select l.id, l.cuenta_id, l.unidades::text as unidades, l.costo_total::text as costo_total, l.referencia_proveedor, l.registrado_en from public.bolson_lotes l order by l.registrado_en desc limit 20");
+        const porEmpresa = viaB ? viaB.porEmpresa : await bd.filas<Obj>(`with costo as (select b.id as cuenta_id, case when sum(l.unidades) > 0 then sum(l.costo_total) / sum(l.unidades) else 0 end as unitario from public.bolson_cuentas b left join public.bolson_lotes l on l.cuenta_id = b.id group by b.id),
             cargado as (select consumo_id, sum(monto) as monto from public.cargos where naturaleza = 'cargo' group by consumo_id)
           select e.id, e.nombre_comercial, b.proveedor_id as certificador, count(*) filter (where c.estado = 'confirmado')::int as confirmados, count(*) filter (where c.estado = 'reservado')::int as reservados, count(*) filter (where c.estado = 'liberado')::int as liberados,
             coalesce(sum(c.unidades_consumidas) filter (where c.estado = 'confirmado'), 0)::text as unidades, coalesce(sum(g.monto), 0)::text as cargado,
             coalesce(sum(c.unidades_consumidas * k.unitario) filter (where c.estado = 'confirmado'), 0)::numeric(18,6)::text as costo_estimado
           from public.empresas e left join public.consumos c on c.empresa_id = e.id left join public.bolson_cuentas b on b.id = c.cuenta_id left join costo k on k.cuenta_id = c.cuenta_id left join cargado g on g.consumo_id = c.id
           group by e.id, e.nombre_comercial, b.proveedor_id order by e.nombre_comercial, b.proveedor_id`);
-        const reglas = await bd.filas<Obj>("select r.cuenta_id, r.evento_tipo, r.consume, r.unidades::text as unidades from public.bolson_reglas_consumo r where r.vigente_hasta is null order by r.evento_tipo");
-        const alertas = await bd.filas<Obj>("select a.id, a.tipo, a.detalle, a.creada_en, a.resuelta_en, e.nombre_comercial from public.bolson_alertas a left join public.empresas e on e.id = a.empresa_id order by a.creada_en desc limit 20");
+        const reglas = viaB ? viaB.reglas : await bd.filas<Obj>("select r.cuenta_id, r.evento_tipo, r.consume, r.unidades::text as unidades from public.bolson_reglas_consumo r where r.vigente_hasta is null order by r.evento_tipo");
+        const alertas = viaB ? viaB.alertas : await bd.filas<Obj>("select a.id, a.tipo, a.detalle, a.creada_en, a.resuelta_en, e.nombre_comercial from public.bolson_alertas a left join public.empresas e on e.id = a.empresa_id order by a.creada_en desc limit 20");
         return json({ cuentas: cuentas.map((x) => ({ ...x, certificador_nombre: nom(x.proveedor_id) })), lotes, porEmpresa: porEmpresa.map((x) => ({ ...x, certificador_nombre: x.certificador ? nom(x.certificador) : null })), reglas, alertas, simuladores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, saldo_reportado: x.simulacion.saldoReportado(), certificaciones: x.simulacion.certificaciones(), llamadas: x.simulacion.llamadas() })), verificacion: await this.verificacion() });
       }
       if (m === "POST" && ruta === "/api/plataforma/bolson/lotes") {
         const b = await leer(req); if (!uuidOk(b.cuenta)) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");
         await bd.rpc("fel_admin_bolson_lote_registrar", { p_actor: M, p_cuenta: b.cuenta, p_unidades: monto(String(b.unidades ?? ""), "Unidades"), p_costo_total: monto(String(b.costo_total ?? "0"), "Costo total"), p_referencia: texto(b.referencia, 1, 120, "Referencia del proveedor") });
-        const prov = (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.bolson_cuentas where id = $1", [b.cuenta]))[0]?.proveedor_id; registro.obtener(prov)?.simulacion.sumarSaldo(Number(b.unidades)); return json({ ok: true });
+        if (!bd.lecturaApi) { const prov = (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.bolson_cuentas where id = $1", [b.cuenta]))[0]?.proveedor_id; registro.obtener(prov)?.simulacion.sumarSaldo(Number(b.unidades)); }   // el saldo del simulador solo existe en la demostración
+        return json({ ok: true });
       }
       if (m === "POST" && (r = /^\/api\/plataforma\/bolson\/alertas\/([^/]+)\/resolver$/.exec(ruta))) {
         const b = await leer(req); if (!uuidOk(r[1])) throw new ErrorPr(400, "Alerta no válida", "entrada_invalida");
         await bd.rpc("fel_admin_bolson_alerta_resolver", { p_actor: M, p_alerta: r[1], p_nota: texto(b.nota, 3, 300, "Nota") }); return json({ ok: true });
       }
       if (m === "GET" && ruta === "/api/plataforma/bolson/conciliaciones") {
-        const extractos = await bd.filas<Obj>("select x.id, x.periodo_desde, x.periodo_hasta, x.saldo_final::text as saldo_final, x.importado_en, (select count(*)::int from public.bolson_extracto_lineas l where l.extracto_id = x.id) as lineas, c.id as conciliacion_id from public.bolson_extractos x left join public.bolson_conciliaciones c on c.extracto_id = x.id order by x.importado_en desc limit 20");
-        const conciliaciones = await bd.filas<Obj>("select id, extracto_id, estado, propuesta_por, propuesta_en, decidida_por, decidida_en, nota, resumen from public.bolson_conciliaciones order by propuesta_en desc limit 20");
-        const partidas = await bd.filas<Obj>(`select p.id, p.conciliacion_id, p.clasificacion, p.referencia, p.unidades_extracto::text as unidades_extracto, p.unidades_nexa::text as unidades_nexa, p.diferencia::text as diferencia, e.nombre_comercial,
+        const viaC = bd.lecturaApi ? await bd.lecturaApi("pla_lectura_conciliaciones") as { extractos: Obj[]; conciliaciones: Obj[]; partidas: Obj[]; empresas: Obj[] } : null;
+        const extractos = viaC ? viaC.extractos : await bd.filas<Obj>("select x.id, x.periodo_desde, x.periodo_hasta, x.saldo_final::text as saldo_final, x.importado_en, (select count(*)::int from public.bolson_extracto_lineas l where l.extracto_id = x.id) as lineas, c.id as conciliacion_id from public.bolson_extractos x left join public.bolson_conciliaciones c on c.extracto_id = x.id order by x.importado_en desc limit 20");
+        const conciliaciones = viaC ? viaC.conciliaciones : await bd.filas<Obj>("select id, extracto_id, estado, propuesta_por, propuesta_en, decidida_por, decidida_en, nota, resumen from public.bolson_conciliaciones order by propuesta_en desc limit 20");
+        const partidas = viaC ? viaC.partidas : await bd.filas<Obj>(`select p.id, p.conciliacion_id, p.clasificacion, p.referencia, p.unidades_extracto::text as unidades_extracto, p.unidades_nexa::text as unidades_nexa, p.diferencia::text as diferencia, e.nombre_comercial,
             r.accion, r.motivo as resolucion_motivo, r.unidades::text as resolucion_unidades, re.nombre_comercial as resolucion_empresa
           from public.bolson_conciliacion_partidas p left join public.empresas e on e.id = p.empresa_id left join public.bolson_partida_resoluciones r on r.partida_id = p.id left join public.empresas re on re.id = r.empresa_id
           order by p.clasificacion = 'coincide', p.referencia`);
-        return json({ extractos, conciliaciones, partidas, yo: M, nombres: Object.fromEntries((d.sesiones ? await d.sesiones.almacen.cuentas() : []).map((c) => [c.persona.id, c.persona.nombre])), empresas: await bd.filas("select id, nombre_comercial from public.empresas order by nombre_comercial") });
+        return json({ extractos, conciliaciones, partidas, yo: M, nombres: Object.fromEntries((d.sesiones ? await d.sesiones.almacen.cuentas() : []).map((c) => [c.persona.id, c.persona.nombre])), empresas: viaC ? viaC.empresas : await bd.filas("select id, nombre_comercial from public.empresas order by nombre_comercial") });
       }
-      if (m === "POST" && ruta === "/api/plataforma/bolson/extractos/importar") {
+      if (m === "POST" && ruta === "/api/plataforma/bolson/extractos/importar") {   soloSimulacion();   // construye el extracto desde el certificador simulado
         const b = await leer(req); const cuenta = uuidOk(b.cuenta) ? b.cuenta : null; if (!cuenta) throw new ErrorPr(400, "Cuenta no válida", "entrada_invalida");
         const hoy = new Date(), ayer = new Date(hoy.getTime() - 86_400_000), f = (x: Date) => x.toISOString().slice(0, 10);
         const prov = (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.bolson_cuentas where id = $1", [cuenta]))[0]?.proveedor_id, cert = registro.obtener(prov); if (!cert) throw new ErrorPr(404, "Cuenta de un certificador simulado no encontrada", "no_encontrado");
@@ -371,6 +384,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       throw new ErrorPr(403, "Esta función no está disponible para el administrador de la plataforma", "no_autorizado");
     },
     async verificacion() {
+      if (bd.lecturaApi) return await bd.lecturaApi("pla_lectura_verificacion") as { comprobaciones: number; fallos: number };
       const tokV = d.identidadSesion ? (contextoActual()?.token ?? null) : null; if (d.identidadSesion && !tokV) throw new ErrorPr(403, "Sesión no válida", "no_autorizado");   // con identidad de sesión: versiones de PLATAFORMA (solo la sesión de plataforma las ejecuta)
       const s = tokV ? await bd.filas<{ ok: boolean }>("select ok from public.fel_pla_sys_verificar_saldos($1)", [tokV]) : await bd.filas<{ ok: boolean }>("select ok from public.fel_sys_verificar_saldos()"), w = tokV ? await bd.filas<{ ok: boolean }>("select ok from public.fel_pla_sys_verificar_monederos($1)", [tokV]) : await bd.filas<{ ok: boolean }>("select ok from public.fel_sys_verificar_monederos()");
       return { comprobaciones: s.length + w.length, fallos: [...s, ...w].filter((x) => !x.ok).length };

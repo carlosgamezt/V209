@@ -2,7 +2,7 @@
 -- (solo token de demo_sesiones). Las sesiones con identidad de Auth (token_hash 'auth:…') que hubiera en sesion_establecimiento_activo se borran para poder restituir la llave foránea.
 \set ON_ERROR_STOP on
 begin;
--- Orden: si se aplicaron, revertir ANTES reversion-M-S.sql, reversion-M-R.sql y reversion-M-Q.sql. Aquí se restituyen las políticas de M-O (clientes, conceptos, establecimientos) y se retira su función de conjunto.
+-- Orden: si se aplicaron, revertir ANTES reversion-M-U.sql, reversion-M-T.sql, reversion-M-S.sql, reversion-M-R.sql y reversion-M-Q.sql. Aquí se restituyen las políticas de M-O (clientes, conceptos, establecimientos) y se retira su función de conjunto.
 drop policy if exists clientes_leer on public.clientes; create policy clientes_leer on public.clientes for select to authenticated using (fel_tiene_permiso(empresa_id, 'clientes.ver'));
 drop policy if exists conceptos_leer on public.conceptos; create policy conceptos_leer on public.conceptos for select to authenticated using (fel_tiene_permiso(empresa_id, 'conceptos.ver'));
 drop policy if exists establecimientos_leer on public.establecimientos; create policy establecimientos_leer on public.establecimientos for select to authenticated using (fel_tiene_permiso(empresa_id, 'establecimientos.ver'));

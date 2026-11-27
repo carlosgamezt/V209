@@ -2,12 +2,12 @@
 
 > Generado por `tools/inventario-lecturas.ts`. NO editar a mano. Base: catálogo con las migraciones 1-30 y las propuestas M-D…M-L aplicadas en un PostgreSQL en memoria.
 
-**169 consultas SQL directas** (`filas`/`ejecutar`) y **112 llamadas `rpc`** a 81 funciones.
+**174 consultas SQL directas** (`filas`/`ejecutar`) y **112 llamadas `rpc`** a 81 funciones.
 
 ## 1. Consultas SQL directas por clase
 | Clase | Consultas |
 |---|---|
-| datos de empresa | 66 |
+| datos de empresa | 71 |
 | sin tabla (funciones, catálogos, utilidades) | 51 |
 | plataforma y catálogos globales | 30 |
 | sesiones y simuladores de la demostración (`demo_*`) | 22 |
@@ -15,7 +15,7 @@
 ## 2. Por tipo
 | Tipo | Consultas |
 |---|---|
-| select | 135 |
+| select | 140 |
 | insert | 19 |
 | update | 7 |
 | delete | 4 |
@@ -25,9 +25,9 @@
 ## 3. Tablas tocadas (de mayor a menor)
 | Tabla | Consultas | Tiene `empresa_id` | RLS |
 |---|---|---|---|
-| `documentos` | 19 | sí | sí |
+| `documentos` | 20 | sí | sí |
+| `clientes` | 12 | sí | sí |
 | `empresas` | 12 | no | sí |
-| `clientes` | 9 | sí | sí |
 | `operaciones_fiscales` | 8 | sí | sí |
 | `consumos` | 7 | sí | sí |
 | `bolson_cuentas` | 7 | no | sí |
@@ -36,6 +36,7 @@
 | `demo_simulador_estado` | 5 | no | sí |
 | `digifact_operaciones` | 5 | sí | sí |
 | `establecimientos` | 4 | sí | sí |
+| `conceptos` | 4 | sí | sí |
 | `empresa_canales` | 4 | sí | sí |
 | `regimenes_fiscales` | 4 | no | sí |
 | `perfiles` | 4 | no | sí |
@@ -45,7 +46,6 @@
 | `bolson_lotes` | 3 | no | sí |
 | `demo_entorno` | 3 | no | sí |
 | `demo_intentos` | 3 | no | sí |
-| `conceptos` | 2 | sí | sí |
 | `auditoria` | 2 | sí | sí |
 | `artefactos_documento` | 2 | sí | sí |
 | `alertas_fiscales` | 2 | sí | sí |
@@ -101,52 +101,52 @@
 | `demo-facturacion/src/api_digifact.ts:35` | select | `documento_lineas`, `conceptos` | no |
 | `demo-facturacion/src/api_digifact.ts:96` | select | `auditoria` | no |
 | `demo-facturacion/src/api_digifact.ts:103` | select | `documentos`, `clientes` | no |
-| `demo-facturacion/src/api.ts:77` | select | `empresa_canales` | no |
-| `demo-facturacion/src/api.ts:140` | select | `documentos` | no |
-| `demo-facturacion/src/api.ts:163` | select | `documentos` | no |
-| `demo-facturacion/src/api.ts:176` | select | `documentos` | no |
-| `demo-facturacion/src/api.ts:194` | select | `clientes` | no |
-| `demo-facturacion/src/api.ts:202` | select | `clientes` | no |
-| `demo-facturacion/src/api.ts:213` | select | `documentos` | no |
-| `demo-facturacion/src/api.ts:231` | select | `documentos` | no |
-| `demo-facturacion/src/api.ts:261` | select | `documentos`, `clientes` | **sí** (el SQL queda solo como camino del modo pooler) |
-| `demo-facturacion/src/api.ts:272` | select | `conceptos` | **sí** (el SQL queda solo como camino del modo pooler) |
-| `demo-facturacion/src/api.ts:282` | select | `documentos`, `establecimientos` | **sí** (el SQL queda solo como camino del modo pooler) |
-| `demo-facturacion/src/api.ts:284` | select | `empresa_canales` | no |
-| `demo-facturacion/src/api.ts:286` | select | `documentos` | no |
-| `demo-facturacion/src/api.ts:379` | select | `artefactos_documento` | no |
-| `demo-facturacion/src/api.ts:402` | select | `operaciones_fiscales` | no |
-| `demo-facturacion/src/api.ts:431` | select | `conciliaciones` | no |
-| `demo-facturacion/src/api.ts:436` | select | `alertas_fiscales` | no |
-| `demo-facturacion/src/api.ts:477` | select | `documentos` | no |
-| `demo-facturacion/src/api_practico.ts:48` | select | `operaciones_fiscales`, `consumos` | no |
-| `demo-facturacion/src/api_practico.ts:49` | select | `operaciones_fiscales` | no |
-| `demo-facturacion/src/api_practico.ts:53` | select | `operaciones_fiscales` | no |
-| `demo-facturacion/src/api_practico.ts:54` | select | `documentos` | no |
-| `demo-facturacion/src/api_practico.ts:60` | select | `cuentas_comerciales` | no |
-| `demo-facturacion/src/api_practico.ts:61` | select | `contratos_plan`, `plan_versiones`, `planes` | no |
-| `demo-facturacion/src/api_practico.ts:65` | select | `monedero_saldos` | no |
-| `demo-facturacion/src/api_practico.ts:66` | select | `pagos` | no |
-| `demo-facturacion/src/api_practico.ts:67` | select | `cargos`, `consumos`, `bolson_cuentas`, `documentos` | no |
-| `demo-facturacion/src/api_practico.ts:70` | select | `consumos`, `bolson_cuentas`, `cargos` | no |
-| `demo-facturacion/src/api_practico.ts:74` | select | `cargos` | no |
-| `demo-facturacion/src/api_practico.ts:75` | select | `cobros` | no |
-| `demo-facturacion/src/api_practico.ts:76` | select | `consumos` | no |
-| `demo-facturacion/src/api_practico.ts:82` | select | `empresa_canales` | no |
-| `demo-facturacion/src/api_practico.ts:141` | select | `invitaciones` | no |
-| `demo-facturacion/src/api_practico.ts:168` | select | `documentos` | no |
-| `demo-facturacion/src/api_practico.ts:171` | select | `operaciones_fiscales` | no |
-| `demo-facturacion/src/api_practico.ts:173` | select | `documentos`, `clientes` | no |
-| `demo-facturacion/src/api_practico.ts:174` | select | `documentos`, `alertas_fiscales` | no |
-| `demo-facturacion/src/api_practico.ts:183` | select | `documentos`, `clientes` | **sí** (el SQL queda solo como camino del modo pooler) |
-| `demo-facturacion/src/api_practico.ts:188` | select | `cargos`, `consumos`, `bolson_cuentas`, `documentos` | no |
-| `demo-facturacion/src/api_practico.ts:217` | select | `operaciones_fiscales` | no |
-| `demo-facturacion/src/api_practico.ts:235` | select | `operaciones_fiscales` | no |
-| `demo-facturacion/src/api_practico.ts:249` | select | `contratos_plan`, `plan_versiones`, `planes`, `monedero_saldos`, `consumos`, `cargos`, `empresas` | no |
-| `demo-facturacion/src/api_practico.ts:310` | insert | `miembros` | no |
-| `demo-facturacion/src/api_practico.ts:318` | with | `bolson_cuentas`, `bolson_lotes`, `cargos`, `empresas`, `consumos` | no |
-| `demo-facturacion/src/api_practico.ts:326` | select | `bolson_alertas`, `empresas` | no |
-| `demo-facturacion/src/api_practico.ts:341` | select | `bolson_conciliacion_partidas`, `empresas`, `bolson_partida_resoluciones` | no |
+| `demo-facturacion/src/api.ts:78` | select | `empresa_canales` | no |
+| `demo-facturacion/src/api.ts:141` | select | `documentos` | no |
+| `demo-facturacion/src/api.ts:164` | select | `documentos` | no |
+| `demo-facturacion/src/api.ts:177` | select | `documentos` | no |
+| `demo-facturacion/src/api.ts:195` | select | `clientes` | no |
+| `demo-facturacion/src/api.ts:203` | select | `clientes` | no |
+| `demo-facturacion/src/api.ts:214` | select | `documentos` | no |
+| `demo-facturacion/src/api.ts:232` | select | `documentos` | no |
+| `demo-facturacion/src/api.ts:269` | select | `documentos`, `clientes` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api.ts:280` | select | `conceptos` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api.ts:290` | select | `documentos`, `establecimientos` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api.ts:292` | select | `empresa_canales` | no |
+| `demo-facturacion/src/api.ts:294` | select | `documentos` | no |
+| `demo-facturacion/src/api.ts:387` | select | `artefactos_documento` | no |
+| `demo-facturacion/src/api.ts:410` | select | `operaciones_fiscales` | no |
+| `demo-facturacion/src/api.ts:439` | select | `conciliaciones` | no |
+| `demo-facturacion/src/api.ts:444` | select | `alertas_fiscales` | no |
+| `demo-facturacion/src/api.ts:485` | select | `documentos` | no |
+| `demo-facturacion/src/api_practico.ts:51` | select | `operaciones_fiscales`, `consumos` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api_practico.ts:52` | select | `operaciones_fiscales` | no |
+| `demo-facturacion/src/api_practico.ts:56` | select | `operaciones_fiscales` | no |
+| `demo-facturacion/src/api_practico.ts:57` | select | `documentos` | no |
+| `demo-facturacion/src/api_practico.ts:68` | select | `cuentas_comerciales` | no |
+| `demo-facturacion/src/api_practico.ts:69` | select | `contratos_plan`, `plan_versiones`, `planes` | no |
+| `demo-facturacion/src/api_practico.ts:73` | select | `monedero_saldos` | no |
+| `demo-facturacion/src/api_practico.ts:74` | select | `pagos` | no |
+| `demo-facturacion/src/api_practico.ts:75` | select | `cargos`, `consumos`, `bolson_cuentas`, `documentos` | no |
+| `demo-facturacion/src/api_practico.ts:78` | select | `consumos`, `bolson_cuentas`, `cargos` | no |
+| `demo-facturacion/src/api_practico.ts:82` | select | `cargos` | no |
+| `demo-facturacion/src/api_practico.ts:83` | select | `cobros` | no |
+| `demo-facturacion/src/api_practico.ts:84` | select | `consumos` | no |
+| `demo-facturacion/src/api_practico.ts:90` | select | `empresa_canales` | no |
+| `demo-facturacion/src/api_practico.ts:150` | select | `invitaciones` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api_practico.ts:177` | select | `documentos` | no |
+| `demo-facturacion/src/api_practico.ts:180` | select | `operaciones_fiscales` | no |
+| `demo-facturacion/src/api_practico.ts:182` | select | `documentos`, `clientes` | no |
+| `demo-facturacion/src/api_practico.ts:183` | select | `documentos`, `alertas_fiscales` | no |
+| `demo-facturacion/src/api_practico.ts:192` | select | `documentos`, `clientes` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api_practico.ts:197` | select | `cargos`, `consumos`, `bolson_cuentas`, `documentos` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api_practico.ts:226` | select | `operaciones_fiscales` | no |
+| `demo-facturacion/src/api_practico.ts:244` | select | `operaciones_fiscales` | no |
+| `demo-facturacion/src/api_practico.ts:258` | select | `contratos_plan`, `plan_versiones`, `planes`, `monedero_saldos`, `consumos`, `cargos`, `empresas` | **sí** (el SQL queda solo como camino del modo pooler) |
+| `demo-facturacion/src/api_practico.ts:320` | insert | `miembros` | no |
+| `demo-facturacion/src/api_practico.ts:329` | with | `bolson_cuentas`, `bolson_lotes`, `cargos`, `empresas`, `consumos` | no |
+| `demo-facturacion/src/api_practico.ts:337` | select | `bolson_alertas`, `empresas` | no |
+| `demo-facturacion/src/api_practico.ts:354` | select | `bolson_conciliacion_partidas`, `empresas`, `bolson_partida_resoluciones` | no |
 | `demo-facturacion/src/mundo_practico.ts:33` | insert | `miembros` | no |
 | `demo-facturacion/src/demo_establecimientos.ts:16` | select | `establecimientos` | no |
 | `demo-facturacion/src/mundo_demo.ts:24` | insert | `miembros` | no |
@@ -157,6 +157,11 @@
 | `demo-facturacion/src/correo/servicio.ts:102` | select | `operaciones_fiscales` | no |
 | `demo-facturacion/src/correo/servicio.ts:105` | select | `auditoria` | no |
 | `demo-facturacion/src/correo/servicio.ts:126` | select | `artefactos_documento` | no |
+| `demo-facturacion/src/lista_catalogos.ts:22` | select | `clientes` | no |
+| `demo-facturacion/src/lista_catalogos.ts:23` | select | `clientes` | no |
+| `demo-facturacion/src/lista_catalogos.ts:25` | select | `documentos`, `clientes` | no |
+| `demo-facturacion/src/lista_catalogos.ts:32` | select | `conceptos` | no |
+| `demo-facturacion/src/lista_catalogos.ts:34` | select | `conceptos` | no |
 | `proveedores/src/almacen_gt_pg.ts:16` | insert | `digifact_operaciones` | no |
 | `proveedores/src/almacen_gt_pg.ts:36` | insert | `digifact_artefactos` | no |
 | `proveedores/src/almacen_gt_pg.ts:42` | select | `digifact_artefactos`, `digifact_operaciones` | no |

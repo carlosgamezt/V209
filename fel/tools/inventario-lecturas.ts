@@ -4,7 +4,7 @@ import { crearBd } from "../demo-facturacion/src/bd_memoria.ts";
 import { CON_ENVOLTORIO, PLATAFORMA, SYS_CON_SESION } from "../demo-facturacion/src/identidad_sesion.ts";
 
 const RAIZ = new URL("../", import.meta.url).pathname;
-const PROPUESTAS = ["M-D_permisos", "M-A_emisor_fiscal", "M-B_digifact_config", "M-C_acceso_maestro", "M-F_establecimientos_usuario", "M-G_sesion_admin", "M-H_admin_establecimientos", "M-I_envoltorios_sesion", "M-J_plataforma_y_auditoria", "M-K_sistema_nexa_sys", "M-L_rls_sesion_viva", "M-M_identidad_auth", "M-N_esquema_api", "M-O_lecturas_api", "M-Q_agente_endurecimiento", "M-R_parametros_clases", "M-S_lecturas_documentos"];
+const PROPUESTAS = ["M-D_permisos", "M-A_emisor_fiscal", "M-B_digifact_config", "M-C_acceso_maestro", "M-F_establecimientos_usuario", "M-G_sesion_admin", "M-H_admin_establecimientos", "M-I_envoltorios_sesion", "M-J_plataforma_y_auditoria", "M-K_sistema_nexa_sys", "M-L_rls_sesion_viva", "M-M_identidad_auth", "M-N_esquema_api", "M-O_lecturas_api", "M-Q_agente_endurecimiento", "M-R_parametros_clases", "M-S_lecturas_documentos", "M-T_lecturas_restantes", "M-U_lecturas_paginadas"];
 const bd = await crearBd(); // deno-lint-ignore no-explicit-any
 const db = (bd as any).db; for (const f of PROPUESTAS) await db.exec(await Deno.readTextFile(`${RAIZ}docs/multiempresa/propuesta/${f}.sql`));
 const tablas = new Map((await bd.filas<{ t: string; emp: boolean; rls: boolean }>("select c.relname t, exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'empresa_id' and not a.attisdropped) emp, c.relrowsecurity rls from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r','v')")).map((x) => [x.t, x]));
