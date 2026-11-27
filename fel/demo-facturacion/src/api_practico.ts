@@ -53,6 +53,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
   }
 
   async function certOp(docId: string, empresa: string) {
+    soloSimulacion();   // la anulación simulada depende de los certificadores simulados: no existe con la Data API
     const [o] = await bd.filas<{ clave_idempotencia: string; proveedor: string }>("select clave_idempotencia, proveedor from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' and proveedor = any($3::text[]) and ambiente = 'simulado' order by iniciada_en desc limit 1", [docId, empresa, ids]);
     const [doc] = await bd.filas<{ autorizacion_sat: string | null }>("select autorizacion_sat from public.documentos where id = $1 and empresa_id = $2", [docId, empresa]);
     return o && doc?.autorizacion_sat && registro.obtener(o.proveedor)?.soportaAnulacion ? { clave: o.clave_idempotencia, autorizacion: doc.autorizacion_sat, proveedor: o.proveedor } : null;
@@ -87,9 +88,11 @@ export function crearPractico(bd: BdDemo, d: Deps) {
 
   return {
     registro, sincronizar,
-    async estadoExtra() { return { certificadores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, soportaAnulacion: x.soportaAnulacion, escenarios: x.escenarios, escenariosAnulacion: x.escenariosAnulacion })), canales: (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.empresa_canales where empresa_id = $1 and ambiente = 'simulado' and habilitado", [d.emp()])).map((c) => c.proveedor_id) }; },
+    async estadoExtra() { return { certificadores: registro.listar().map((x) => ({ id: x.id, nombre: x.nombre, soportaAnulacion: x.soportaAnulacion, escenarios: x.escenarios, escenariosAnulacion: x.escenariosAnulacion })), canales: bd.lecturaApi ? ((await bd.lecturaApi("empresa_contexto")) as { canales: { proveedor_id: string; ambiente: string; habilitado: boolean }[] }).canales.filter((c) => c.ambiente === "simulado" && c.habilitado).map((c) => c.proveedor_id) : (await bd.filas<{ proveedor_id: string }>("select proveedor_id from public.empresa_canales where empresa_id = $1 and ambiente = 'simulado' and habilitado", [d.emp()])).map((c) => c.proveedor_id) }; },
     async detalleExtra(docId: string) {
-      const E = d.emp();   // cobertura, operación certificada y autorización en UN solo viaje a la base (antes eran tres, uno tras otro)
+      const E = d.emp();
+      if (bd.lecturaApi) return { cobertura: await bd.lecturaApi("documento_cobertura", { p_doc: docId }) as Obj[], escenarioCertificador: registro.listar().map((x) => x.simulacion.escenarioDe(docId)).find((e) => e) ?? null, anulable: false };   // Data API: cobertura por RPC; la anulación simulada no existe
+      // cobertura, operación certificada y autorización en UN solo viaje a la base (antes eran tres, uno tras otro)
       const [cobertura, [o], [doc]] = await leerLote(bd, [
         [`select c.id, c.evento_tipo, c.estado, c.unidades_reservadas::text as reservadas, c.unidades_consumidas::text as consumidas, c.operacion_id,
           (select coalesce(sum(g.monto), 0)::text from public.cargos g where g.consumo_id = c.id) as cargado from public.consumos c where c.documento_id = $1 and c.empresa_id = $2 order by c.reservado_en`, [docId, E]],
@@ -202,7 +205,7 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       }
       if (m === "GET" && (r = /^\/api\/documentos\/([^/]+)\/pdf-demo$/.exec(ruta))) {
         if (!(await c.permisos()).includes("borradores.ver")) throw new ErrorPr(403, "No tienes permiso para ver documentos", "no_autorizado");
-        const det = await c.detalle(c.id(r[1])) as { documento: Obj; lineas: Obj[] }; const [emp] = await bd.filas<Obj>("select razon_social, nit from public.empresas where id = $1", [E]); const dc = det.documento;
+        const det = await c.detalle(c.id(r[1])) as { documento: Obj; lineas: Obj[] }; const emp = bd.lecturaApi ? (({ razon_social, nit }) => ({ razon_social, nit }))(((await bd.lecturaApi("empresa_contexto")) as { empresa: { razon_social: string; nit: string } }).empresa) : (await bd.filas<Obj>("select razon_social, nit from public.empresas where id = $1", [E]))[0]; const dc = det.documento;
         const ESTADO: Record<string, string> = { ninguno: "Sin estado fiscal", pendiente_certificacion: "Pendiente de certificación (simulación)", por_verificar: "Por verificar (simulación)", certificado: "Certificado en SIMULACIÓN", rechazado: "Rechazado (simulación)", anulado: "Anulado (simulación)", anulacion_solicitada: "Anulación solicitada (simulación)" };
         const f = String(dc.fecha_emision_prevista ?? "").slice(0, 10).split("-").reverse().join("/");
         const fmt = c.url.searchParams.get("formato") ?? "carta"; if (fmt !== "carta" && fmt !== "ticket") throw new ErrorPr(400, "Formato no válido: usa «carta» o «ticket»", "entrada_invalida");

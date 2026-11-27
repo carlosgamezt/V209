@@ -3,6 +3,17 @@
 import type { BdDemo } from "./bd.ts";
 
 export interface ResultadoTick { ordenesVencidas: number; bolsonRevisado: number; operacionesPendientes: number; fallidasManuales: number; consumosIncoherentes: number; saldosInconsistentes: number; monederosInconsistentes: number }
+/** Monitoreo MÍNIMO de los procesos internos y de la certificación: del conteo del ciclo se deduce un estado y los motivos (de una lista cerrada, sin datos de empresas). Quien programa el `tick` alerta si el estado no es «ok». */
+export type EstadoSalud = "ok" | "atencion" | "critico";
+export const MOTIVOS_SALUD = ["integridad_de_saldos", "consumos_incoherentes", "operaciones_atascadas", "operaciones_muy_atascadas", "fallos_por_conciliar", "ordenes_vencidas"] as const;
+export interface Salud { estado: EstadoSalud; motivos: (typeof MOTIVOS_SALUD)[number][] }
+export function evaluarSalud(t: ResultadoTick): Salud {
+  const crit: Salud["motivos"] = [], aten: Salud["motivos"] = [];
+  if (t.saldosInconsistentes > 0 || t.monederosInconsistentes > 0) crit.push("integridad_de_saldos"); if (t.consumosIncoherentes > 0) crit.push("consumos_incoherentes");
+  if (t.operacionesPendientes > 10) crit.push("operaciones_muy_atascadas"); else if (t.operacionesPendientes > 0) aten.push("operaciones_atascadas");
+  if (t.fallidasManuales > 0) aten.push("fallos_por_conciliar"); if (t.ordenesVencidas > 0) aten.push("ordenes_vencidas");
+  return { estado: crit.length ? "critico" : aten.length ? "atencion" : "ok", motivos: [...crit, ...aten] };
+}
 const n = (x: unknown): number => (Array.isArray(x) ? x.length : typeof x === "number" ? x : x ? 1 : 0);
 /** Un ciclo del sistema. Solo cuenta y marca; las decisiones sobre cada operación siguen siendo de las personas autorizadas. */
 export async function tickSistema(sys: BdDemo, o: { umbralMin?: number } = {}): Promise<ResultadoTick> {
@@ -17,14 +28,16 @@ const igual = async (a: string, b: string) => { const h = async (x: string) => n
 /** Manejador HTTP de la función de sistema: `POST /tick` con el secreto compartido y, si se activa, `POST /api/agente/v1/<operación>` con firma de agente; nada más (cabecera `x-nexa-sys-secreto`); sin secreto configurado no responde nada. */
 /** Ruta del protocolo del agente local (anclada; con o sin el prefijo de la función). Se autentica con la FIRMA Ed25519 del agente (verificada en el plano de control), no con el secreto compartido. */
 const RUTA_AGENTE = /^(?:\/functions\/v1)?(?:\/nexa-sys)?\/api\/agente\/v1\/(?:vincular|latido|reclamar|progreso|vista_previa|resultado)$/;
-export function crearManejadorSistema(o: { sys: () => BdDemo; secreto: string | undefined; /** plano de control del agente (W5): si no se entrega, esas rutas no existen */ agente?: (req: Request) => Promise<Response> }): (req: Request) => Promise<Response> {
+export function crearManejadorSistema(o: { sys: () => BdDemo; secreto: string | undefined; /** ROTACIÓN sin interrupción: durante la ventana de cambio se acepta también el secreto anterior; luego se retira. */ secretoAnterior?: string; /** plano de control del agente (W5): si no se entrega, esas rutas no existen */ agente?: (req: Request) => Promise<Response> }): (req: Request) => Promise<Response> {
   const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
   return async (req) => {
     const url = new URL(req.url);
     if (o.agente && RUTA_AGENTE.test(url.pathname)) return await o.agente(req);   // el agente NO usa el secreto de sistema: cada petición va firmada y la valida el plano de control
     if (!o.secreto || o.secreto.length < 24) return json({ codigo: "no_configurado" }, 503);
     if (req.method !== "POST" || !/^(?:\/functions\/v1)?(?:\/nexa-sys)?\/tick$/.test(url.pathname)) return json({ codigo: "no_encontrado" }, 404);   // ruta ANCLADA: ni `/x/tick` ni `/tick/x`; solo POST
-    if (!(await igual(req.headers.get("x-nexa-sys-secreto") ?? "", o.secreto))) return json({ codigo: "no_autorizado" }, 401);
-    try { return json(await tickSistema(o.sys())); } catch { return json({ codigo: "error" }, 500); }   // sin detalles: nunca cadenas de conexión ni mensajes de la base
+    const presentado = req.headers.get("x-nexa-sys-secreto") ?? "";
+    const valido = (await igual(presentado, o.secreto)) || (!!o.secretoAnterior && o.secretoAnterior.length >= 24 && (await igual(presentado, o.secretoAnterior)));   // ambas comparaciones se evalúan en tiempo constante
+    if (!valido) return json({ codigo: "no_autorizado" }, 401);
+    try { const t = await tickSistema(o.sys()); return json({ ...t, salud: evaluarSalud(t) }); } catch { return json({ codigo: "error" }, 500); }   // sin detalles: nunca cadenas de conexión ni mensajes de la base
   };
 }

@@ -5,7 +5,7 @@ import { ErrorBd, type Rpc } from "../../proveedores/src/rpc.ts";
 import { conectarPgUrl, valorPg } from "../../proveedores/src/repo_pg.ts";
 import { creadorSql, type CreadorUsuarios } from "./usuarios_auth.ts";
 
-export const LISTAS = new Set(["fel_sys_operaciones_pendientes", "fel_sys_fallidas_manuales_recientes", "fel_sys_artefactos_faltantes", "fel_sys_ordenes_para_cerrar", "fel_op_agentes_listar", "fel_op_miembros_listar"]);
+export const LISTAS = new Set(["fel_sys_operaciones_pendientes", "fel_sys_fallidas_manuales_recientes", "fel_sys_artefactos_faltantes", "fel_sys_ordenes_para_cerrar", "fel_op_agentes_listar", "fel_op_miembros_listar", "fel_sys_artefactos_op"]);
 for (const n of [...LISTAS]) { if (n.startsWith("fel_op_")) { LISTAS.add(`fel_ses_${n.slice(7)}`); LISTAS.add(`fel_pla_${n.slice(7)}`); } else if (n.startsWith("fel_admin_")) LISTAS.add(`fel_pla_${n.slice(10)}`); else if (n.startsWith("fel_sys_")) LISTAS.add(`fel_ses_sys_${n.slice(8)}`); }   // los envoltorios de sesión (M-I) devuelven lo mismo que su función interna
 
 export interface BdDemo {

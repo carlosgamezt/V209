@@ -9,7 +9,7 @@ import { PERSONAS, EMPRESA2 } from "../src/mundo_practico.ts";
 import { EMPRESA } from "../src/mundo_demo.ts";
 import { CON_ENVOLTORIO, PLATAFORMA, ErrorIdentidad, conIdentidadDeSesion, type ContextoPeticion } from "../src/identidad_sesion.ts";
 import { conDataApi, nombreApi, elegirDatos, LECTURAS_API } from "../src/puerto_datos.ts";
-import { emularPostgrest, firmarJwt } from "../src/emulador_postgrest.ts";
+import { emularPostgrest, firmarJwt, verificar } from "../src/emulador_postgrest.ts";
 import { crearApi } from "../src/api.ts";
 import { Sesiones } from "../src/sesiones.ts";
 import { AlmacenPg } from "../src/almacen.ts";
@@ -145,7 +145,7 @@ async function servidor(modo: "pooler" | "dataapi") {
   const jwtDe = (req: Request) => req.headers.get("x-jwt-prueba");
   const espia = { n: 0 };   // cuenta TODA consulta/rpc que la aplicación (no la sesión propia) hace a la base
   const bdEspiada = { ...bd, filas: (...x: Parameters<typeof bd.filas>) => { espia.n++; return bd.filas(...x); }, ejecutar: (...x: Parameters<typeof bd.ejecutar>) => { espia.n++; return bd.ejecutar(...x); }, rpc: (...x: Parameters<typeof bd.rpc>) => { espia.n++; return bd.rpc(...x); }, lote: bd.lote ? (...x: Parameters<NonNullable<typeof bd.lote>>) => { espia.n++; return bd.lote!(...x); } : undefined } as typeof bd;
-  const api = crearApi(bdEspiada, mundo, { sesiones, practico: true, identidadSesion: true, ...(modo === "dataapi" ? { datosApi: { url: URL, apikey: APIKEY, fetch: emu.fetch }, jwtDe } : {}) });
+  const api = crearApi(bdEspiada, mundo, { sesiones, practico: true, identidadSesion: true, ...(modo === "dataapi" ? { datosApi: { url: URL, apikey: APIKEY, fetch: emu.fetch }, jwtDe, verificarJwt: (t: string) => verificar(t, SECRETO) as never } : {}) });
   const entrar = async (clave: string, aal: "aal1" | "aal2" = "aal2") => {
     const r = await api(new Request("http://127.0.0.1/api/sesion/entrar", { method: "POST", headers: { "x-demo": "1", "content-type": "application/json" }, body: JSON.stringify({ usuario: clave, clave: CLAVE_DEMO }) })); assert.equal(r.status, 200);
     const cookie = (r.headers.get("set-cookie") ?? "").split(";")[0]; const sid = `94000000-0000-0000-0000-${String(++n).padStart(12, "0")}`;

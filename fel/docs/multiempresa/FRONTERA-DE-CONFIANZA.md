@@ -42,5 +42,10 @@ Estado: **diseño verificado en local**; la parte de infraestructura (funciones 
 | la base de datos / `service_role` | todo | fuera del modelo: protegido por Supabase y por el procedimiento de respaldos |
 **Decisiones explícitas:** (a) no se verifica la firma dentro de la base; (b) `nexa-sys` es la única función con credencial de sistema; (c) sin rotación automática de claves de agente (se revoca y se vincula de nuevo); (d) la firma de las respuestas del servidor al agente queda opcional (decisión de W5).
 
+## 3.1 Añadidos de la fase 4
+- **El servidor verifica el JWT** (ES256/RS256 por JWKS, caché 10 min, cierra si falla) en las rutas que no pasan por la Data API (Digifact, PDF) y exige que `sub` coincida con la persona de la sesión; además comprueba sesión viva por `api.empresa_contexto()`.
+- **`nexa-sys` con privilegios mínimos de tabla**: solo las cuatro tablas de servicio; el resto por `fel_sys_*` que reciben la empresa ya verificada. Un servicio (correo, Digifact, almacén, límites) no puede emitir SQL fuera de su lista (cerrojo estructural).
+- **Operación:** rotación manual (`ROTACION-DE-CREDENCIALES.md`, con secreto doble sin interrupción para `/tick`) y monitoreo mínimo (`salud` en `/tick`).
+
 ## 4. Qué se retira y cuándo
 `demo_sesiones`/`demo_credenciales` y el inicio de sesión propio (W6) → cierra R1 y el último uso de `nexa_app` para identidad; con ello `nexa_app` pasa a ser un rol de compatibilidad sin lecturas de empresa. Hasta entonces R1, R2 y R3 permanecen **abiertos**.

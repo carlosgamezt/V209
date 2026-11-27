@@ -1,6 +1,7 @@
 // Almacén PERSISTENTE (PostgreSQL) de las operaciones de Digifact: implementa AlmacenGt sobre la tabla propuesta public.digifact_operaciones (docs/migracion-29).
 // Atomicidad y exclusión mutua las garantizan los índices únicos y el disparador de la base, no la memoria del proceso: dos procesos no pueden enviar el mismo documento.
 import type { AlmacenGt, ArtefactoGt, EstadoOpGt, OperacionGt } from "./felgt_servicio.ts";
+import { acotarFilas, TABLAS_SERVICIO } from "./acceso_directo.ts";
 
 export type Filas = <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
 const COLS = "id, empresa_id, documento_id, referencia, hash, huella_emisor, fecha_emision, establecimiento, total, estado, creada_ms, actualizada_ms, actor_id, intento_del_documento, intentos_conciliacion, renovaciones, resultado";
@@ -10,7 +11,8 @@ const aOp = (r: any): OperacionGt => ({ id: r.id, empresaId: r.empresa_id, docum
 
 export class AlmacenGtPg implements AlmacenGt {
   readonly persistente = true;
-  constructor(private readonly filas: Filas) {}
+  private readonly filas: Filas;
+  constructor(filas: Filas) { this.filas = acotarFilas(filas as never, TABLAS_SERVICIO, "almacén de Digifact") as unknown as Filas; }   // solo sus tablas propias; el resto, por funciones
   async crear(op: OperacionGt): Promise<{ op: OperacionGt; creada: boolean }> {
     for (let intento = 0; intento < 3; intento++) {
       const nuevas = await this.filas(`insert into public.digifact_operaciones (${COLS}) select $1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::text,$6::text,$7::text,$8::integer,$9::text,$10::text,$11::bigint,$12::bigint,$13::uuid,$14::integer,$15::integer,0,$16::text::jsonb

@@ -14,6 +14,7 @@ import { leerConfigPublicada } from "../src/publicado.ts";
 import { crearApi } from "../src/api.ts";
 import { lectorDeAlcanceBd } from "../src/alcance_establecimientos.ts";
 import { adminDeBd } from "../src/admin_establecimientos.ts";
+import { crearVerificadorJwt } from "../src/verificador_jwt.ts";
 import { conIdentidadDeSesion } from "../src/identidad_sesion.ts";
 import { crearDigifactParaBd } from "../src/digifact_entorno.ts";
 import { crearConsultorNitDesdeEntorno } from "../src/digifact_nit_entorno.ts";
@@ -49,7 +50,13 @@ export function crearManejador(env: EntornoFuncion, bdExterna?: BdDemo): (req: R
     const correo = crearCorreoDesdeEntorno((k) => env.get(k), bdApp);   // sin FEL_CORREO no existe; con «habilitado» exige remitente, lista de destinatarios de prueba y RESEND_API_KEY
     console.log(`Correo: ${correo.motivo}`);   // nunca valores
     const estabPorUsuario = env.get("FEL_ESTABLECIMIENTO_POR_USUARIO") === "1";   // APAGADO por defecto: exige M-F, M-G y M-H aplicadas (propuestas, NO están en supabase/migrations)
-    const api = crearApi(bd, mundo, { identidadSesion, ...(estabPorUsuario ? { alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor, digifactCui: cui.consultor, digifactCorreo: correoDg.politica, correo: correo.servicio });
+    // W5 (APAGADO por defecto): la Data API con el JWT de la persona. Exige FEL_IDENTIDAD_SESION=1 (transición), la URL pública del proyecto, su llave PÚBLICA y el JWKS (ES256/RS256) para VERIFICAR la firma en cada petición.
+    const datosApi = env.get("FEL_DATOS") === "dataapi" ? (() => {
+      const url = env.get("FEL_DATA_API_URL"), apikey = env.get("FEL_DATA_API_KEY"), jwks = env.get("FEL_JWKS_URL"); if (!url || !apikey || !jwks) throw new Error("FEL_DATOS=dataapi exige FEL_DATA_API_URL, FEL_DATA_API_KEY (llave pública) y FEL_JWKS_URL");
+      const verificarJwt = crearVerificadorJwt({ jwks: async () => await (await fetch(jwks)).json(), emisor: env.get("FEL_JWT_EMISOR") || undefined, audiencia: "authenticated" });
+      return { datosApi: { url, apikey }, verificarJwt, jwtDe: (r: Request) => /^Bearer (\S+)$/.exec(r.headers.get("x-usuario-jwt") ?? "")?.[1] ?? null };   // el JWT de la persona viaja en x-usuario-jwt (Authorization lo usa la pasarela de la función)
+    })() : {};
+    const api = crearApi(bd, mundo, { ...datosApi, identidadSesion, ...(estabPorUsuario ? { alcance: lectorDeAlcanceBd(bd, Sesiones.idDeCookie), adminEst: adminDeBd(bd) } : {}), sesiones, practico: true, mfa: new Map(Object.entries(cfg.semillas)), digifact: digifact.servicio, digifactNit: nit.consultor, digifactCui: cui.consultor, digifactCorreo: correoDg.politica, correo: correo.servicio });
     const endurecer = crearEndurecimiento({ publicado: true, hosts: cfg.hosts, hostDe: (r) => (r.headers.get("x-nexa-host") ?? "").toLowerCase(), ipDe: (r) => r.headers.get("x-nexa-ip") ?? "?",
       limiteLogin: new LimiteTasaPg(bd, Number(env.get("FEL_DEMO_LIMITE_LOGIN") ?? "10"), 60_000),   // compartido entre instancias (PostgreSQL); el general por IP queda por instancia y Cloudflare añade el suyo
       limiteApi: new LimiteTasa(Number(env.get("FEL_DEMO_LIMITE_API") ?? "400"), 60_000) });

@@ -1,9 +1,12 @@
 // Límite de peticiones COMPARTIDO entre instancias: contador por clave y ventana fija en PostgreSQL (tabla demo_limites, migración 0A00). Mismo contrato que LimiteTasa, pero asíncrono.
 // Un incremento atómico por petición (insert … on conflict do update): todas las instancias ven el mismo conteo. Si la base no responde, la petición falla (no se abre la puerta por error).
 import type { BdDemo } from "./bd.ts";
+import { acotarBd } from "./acceso_bd.ts";
+import { TABLAS_SERVICIO } from "../../proveedores/src/acceso_directo.ts";
 
 export class LimiteTasaPg {
-  constructor(private bd: BdDemo, private max: number, private ventanaMs: number, private ahora: () => number = () => Date.now()) {}
+  private bd: BdDemo;
+  constructor(bd: BdDemo, private max: number, private ventanaMs: number, private ahora: () => number = () => Date.now()) { this.bd = acotarBd(bd, TABLAS_SERVICIO, "límites de tasa"); }
   async permitir(clave: string): Promise<{ ok: boolean; reintentarEnS: number }> {
     const t = this.ahora(), ventana = Math.floor(t / this.ventanaMs), fin = (ventana + 1) * this.ventanaMs;
     const [f] = await this.bd.filas<{ n: number }>("insert into public.demo_limites (clave, ventana, n, expira) values ($1, $2, 1, $3) on conflict (clave, ventana) do update set n = public.demo_limites.n + 1 returning n", [clave.slice(0, 200), ventana, new Date(fin + 60_000)]);

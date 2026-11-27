@@ -12,6 +12,8 @@ import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
 import type { AdminEst } from "./admin_establecimientos.ts";
 import { conIdentidadDeSesion, peticion, ErrorIdentidad } from "./identidad_sesion.ts";
 import { conDataApi, type OpcionesDataApi } from "./puerto_datos.ts";
+import { acotarBd } from "./acceso_bd.ts";
+import { TABLAS_CATALOGO } from "../../proveedores/src/acceso_directo.ts";
 import { PARAMETROS_USUARIO, SQL_PARAMETROS_USUARIO } from "./parametros.ts";
 import { filtrosClientes, filtrosConceptos, paginarClientes, paginarConceptos, TOPE_CLIENTES_ESTADO, TOPE_CONCEPTOS_ESTADO } from "./lista_catalogos.ts";
 import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
@@ -58,12 +60,14 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSesion?: boolean; /** W3 · Data API: opciones del cliente de PostgREST (con el JWT de la petición); nada de credenciales de base */ datosApi?: OpcionesDataApi; /** W3 · extrae el access token de la persona de la petición (cabecera o cookie); sin él, las funciones de `api` se rechazan antes de salir */ jwtDe?: (req: Request) => string | null;  ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
+export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSesion?: boolean; /** W3 · Data API: opciones del cliente de PostgREST (con el JWT de la petición); nada de credenciales de base */ datosApi?: OpcionesDataApi; /** Solo pruebas: recibe la conexión efectiva de las rutas (para comprobar que el cerrojo está cableado). */ alObtenerBd?: (bd: BdDemo) => void; /** Verifica la FIRMA, la expiración y el `sub` de un JWT (ver verificador_jwt.ts). OBLIGATORIO con `datosApi`: sin él la aplicación arranca fallando (nunca se acepta un JWT sin verificar). */ verificarJwt?: (jwt: string) => Promise<{ sub: string } | null>; /** W3 · extrae el access token de la persona de la petición (cabecera o cookie); sin él, las funciones de `api` se rechazan antes de salir */ jwtDe?: (req: Request) => string | null;  ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string; alc: Alcance | null }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   // IDENTIDAD DE SESIÓN (R2 · F1): con el interruptor, las funciones con envoltorio `fel_ses_*` se llaman con el token de la sesión y SIN actor ni empresa (la base los deduce); ver identidad_sesion.ts
+  if (extras.datosApi && !extras.verificarJwt) throw new Error("datosApi exige verificarJwt: un JWT sin verificar nunca es identidad");
   const bdInterna = extras.identidadSesion ? conIdentidadDeSesion(bdBase) : bdBase;
-  const bd = extras.datosApi ? conDataApi(bdInterna, extras.datosApi) : bdInterna;   // W3: la Data API es la capa más externa (ve los nombres originales); lo que no existe en `api` baja a la conexión interna
+  const bd = extras.datosApi ? acotarBd(conDataApi(bdInterna, extras.datosApi), TABLAS_CATALOGO, "la API con Data API") : bdInterna;   // CERROJO: con la Data API, ninguna ruta lee tablas de empresa con SQL propio (solo catálogos globales)   // W3: la Data API es la capa más externa (ve los nombres originales); lo que no existe en `api` baja a la conexión interna
+  extras.alObtenerBd?.(bd);
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
   const alc = () => alcance.getStore()?.alc ?? null;   // alcance de establecimientos de la persona de ESTA petición (null = sin restricción)
   const pr = extras.practico ? crearPractico(bd, { mock, emp, identidadSesion: extras.identidadSesion, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, digifactCorreo: extras.digifactCorreo, correo: extras.correo }) : null;
@@ -75,7 +79,8 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
   const CTX = { ambiente: "simulado" as const, ahora: extras.ahora ?? (() => new Date()) };   // el reloj del SERVIDOR decide qué día es hoy (America/Guatemala); el del dispositivo no cuenta
   const personas = (): typeof PERSONAS => extras.sesiones ? PERSONAS : Object.fromEntries(Object.entries(PERSONAS).filter(([, u]) => u.empresa === EMPRESA)) as typeof PERSONAS;
   const canalDe = async (proveedor: string): Promise<string> => {
-    const [c] = await bd.filas<{ id: string }>("select id from public.empresa_canales where empresa_id = $1 and proveedor_id = $2 and ambiente = 'simulado' and habilitado order by prioridad limit 1", [emp(), proveedor]);
+    const x = await ctxEmpresa(); const c = x ? (x.canales as { id: string; proveedor_id: string; ambiente: string; habilitado: boolean; prioridad: number }[]).filter((k) => k.proveedor_id === proveedor && k.ambiente === "simulado" && k.habilitado)[0]
+      : (await bd.filas<{ id: string }>("select id from public.empresa_canales where empresa_id = $1 and proveedor_id = $2 and ambiente = 'simulado' and habilitado order by prioridad limit 1", [emp(), proveedor]))[0];
     if (!c) throw new ErrorHttp(422, `La empresa no tiene un canal «${proveedor}» simulado habilitado`, "regla");
     return c.id;
   };
@@ -96,10 +101,26 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     return { clave: c, id: PERSONAS[c].id };
   };
 
+  // Con la Data API, los datos de la empresa y las pre-lecturas de validación salen de RPC con la identidad de la sesión (M-V); con el pooler, de las consultas de siempre.
+  type CtxEmpresa = { empresa: Obj; canales: Obj[]; ultimo_borrador: number };
+  const ctxEmpresa = async (): Promise<CtxEmpresa | null> => bd.lecturaApi ? await bd.lecturaApi("empresa_contexto") as CtxEmpresa : null;
   async function empresaDatos() {
+    const x = await ctxEmpresa(); if (x) { const e = x.empresa; return { id: e.id, nombre: e.razon_social, nombre_comercial: e.nombre_comercial, nit: e.nit, direccion: e.direccion_fiscal, telefono: e.telefono, correo: e.correo_facturacion } as Obj; }
     const [e] = await bd.filas<Obj>("select id, razon_social as nombre, nombre_comercial, nit, direccion_fiscal as direccion, telefono, correo_facturacion as correo from public.empresas where id = $1", [emp()]);
     return e;
   }
+  const docRef = async (id: string, empresa: string = emp()): Promise<Obj | null> => bd.lecturaApi ? await bd.lecturaApi("documento_ref", { p_id: id }) as Obj | null
+    : (await bd.filas<Obj>(`select ${(await tiposDisponibles(bd)) ? "tipo_dte" : "'FACT'::text as tipo_dte"}, version, estado_fiscal, estado_preparacion, fecha_emision_prevista::text as fecha_emision_prevista, establecimiento_id, cliente_id from public.documentos where id = $1 and empresa_id = $2`, [id, empresa]))[0] ?? null;
+  const clienteTipo = async (id: string): Promise<string | undefined> => bd.lecturaApi ? ((await bd.lecturaApi("cliente_ref", { p_id: id })) as Obj | null)?.tipo_identificacion as string | undefined
+    : (await bd.filas<{ t: string }>("select tipo_identificacion as t from public.clientes where id = $1 and empresa_id = $2", [id, emp()]))[0]?.t;
+  const clienteCf = async (nombre: string): Promise<{ id: string } | undefined> => bd.lecturaApi ? ((await bd.lecturaApi("cliente_ref", { p_cf_nombre: nombre })) as { id: string } | null) ?? undefined
+    : (await bd.filas<{ id: string }>("select id from public.clientes where empresa_id = $1 and tipo_identificacion = 'CF' and nombre = $2 and activo order by creado_en limit 1", [emp(), nombre]))[0];
+  const referencia = async (tipo: "operacion_certificada" | "operacion_de_conciliacion" | "documento_de_alerta", id: string): Promise<string | null> => {
+    if (bd.lecturaApi) return await bd.lecturaApi("referencia", { p_tipo: tipo, p_id: id }) as string | null;
+    const q = tipo === "operacion_certificada" ? "select id as r from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' order by iniciada_en desc limit 1"
+      : tipo === "operacion_de_conciliacion" ? "select operacion_id as r from public.conciliaciones where id = $1 and empresa_id = $2" : "select documento_id as r from public.alertas_fiscales where id = $1 and empresa_id = $2";
+    return (await bd.filas<{ r: string }>(q, [id, emp()]))[0]?.r ?? null;
+  };
   // Los permisos se reutilizan unos segundos (cada consulta a la base remota cuesta un viaje de red, ≈140 ms medidos); cualquier escritura que no sea de datos de negocio (usuarios, roles, empresas…) los olvida.
   const permisosCache = new Map<string, { hasta: number; p: Promise<string[]> }>();
   const permisosDe = (a: { id: string }): Promise<string[]> => {
@@ -138,7 +159,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       throw new ErrorHttp(422, "Los tipos de documento aún no están habilitados en esta base de datos.", "regla");
     }
     // un cliente que no manda el tipo (versiones anteriores del formulario) NO cambia el tipo de un documento existente
-    if ((b.tipo_dte === undefined || b.tipo_dte === null) && uuidOk(b.id)) { const [d] = await bd.filas<{ tipo_dte: string }>("select tipo_dte from public.documentos where id = $1 and empresa_id = $2", [b.id, emp()]); return { tipo: d?.tipo_dte ?? "FACT", origen: null, motivo: null, recibo: null, mantener: true }; }
+    if ((b.tipo_dte === undefined || b.tipo_dte === null) && uuidOk(b.id)) { const d = await docRef(b.id as string); return { tipo: (d?.tipo_dte as string | undefined) ?? "FACT", origen: null, motivo: null, recibo: null, mantener: true }; }
     const tipo = b.tipo_dte === undefined || b.tipo_dte === null || b.tipo_dte === "" ? "FACT" : b.tipo_dte;
     if (!esCodigoDte(tipo)) throw new ErrorHttp(400, "Tipo de documento no válido", "entrada_invalida");
     const t = tipoDte(tipo)!;
@@ -161,7 +182,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
 
   /** La fecha de emisión del documento guardado debe estar dentro de la ventana AHORA (reloj del servidor). Se usa al revisar y justo antes de certificar; nunca modifica la fecha. */
   async function exigirFechaVigente(docId: string, soloSiPendiente = false) {
-    const [d] = await bd.filas<{ f: string | null; ef: string }>("select fecha_emision_prevista::text as f, estado_fiscal as ef from public.documentos where id = $1 and empresa_id = $2", [docId, emp()]);
+    const d0 = await docRef(docId); const d = d0 ? { f: d0.fecha_emision_prevista as string | null, ef: String(d0.estado_fiscal) } : undefined;
     if (!d || (soloSiPendiente && !["ninguno", "rechazado"].includes(d.ef))) return;   // lo ya certificado no se juzga de nuevo (la reutilización es idempotente)
     if (!d.f) throw new ErrorHttp(422, "Indica la fecha de emisión.", "fecha_emision");
     const v = validarFechaEmision(d.f, CTX.ahora());
@@ -174,7 +195,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     let estPedido: string | undefined;
     try {
       estPedido = establecimientoNuevo(alc(), uuidOk(b.establecimiento_id) ? String(b.establecimiento_id) : undefined);
-      if (restringido(alc()) && uuidOk(b.id)) { const [cur] = await bd.filas<{ establecimiento_id: string | null }>("select establecimiento_id from public.documentos where id = $1 and empresa_id = $2", [b.id, emp()]);
+      if (restringido(alc()) && uuidOk(b.id)) { const cur = await docRef(b.id as string) as { establecimiento_id: string | null } | null;
         if (cur?.establecimiento_id) { if (uuidOk(b.establecimiento_id) && b.establecimiento_id !== cur.establecimiento_id) throw new ErrorAlcance(403, "establecimiento_no_autorizado", "El establecimiento de un documento no se puede cambiar."); estPedido = undefined; } }
     } catch (e) { if (e instanceof ErrorAlcance) throw new ErrorHttp(e.status, e.message, e.codigo); throw e; }
     const lineasEntrada = b.lineas; if (!Array.isArray(lineasEntrada) || lineasEntrada.length < 1 || lineasEntrada.length > 50) throw new ErrorHttp(400, "Debe haber de 1 a 50 líneas", "entrada_invalida");
@@ -192,7 +213,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     const tipoNuevo = nuevo ? (esCF(nuevo.numero_identificacion) || nuevo.tipo_identificacion === "CF" ? "CF" : String(nuevo.tipo_identificacion ?? "NIT")) : null;
     // SAT: «CF» solo se admite en facturas por montos MENORES a Q2,500.00 (Reglamento de la Ley del IVA, art. 30 núm. 9, reformado por el Acuerdo Gubernativo 12-2023, según las preguntas frecuentes del portal SAT; el texto oficial se contrastará con un contador antes de la emisión real).
     // Aquí el monto es la base de este documento (los precios incluyen IVA; los impuestos finales siguen pendientes). Es una regla de la DEMO; no habilita la emisión real, que sigue bloqueada.
-    const esReceptorCF = nuevo && !clienteId ? tipoNuevo === "CF" : clienteId && uuidOk(clienteId) ? (await bd.filas<{ t: string }>("select tipo_identificacion as t from public.clientes where id = $1 and empresa_id = $2", [clienteId, emp()]))[0]?.t === "CF" : false;
+    const esReceptorCF = nuevo && !clienteId ? tipoNuevo === "CF" : clienteId && uuidOk(clienteId) ? (await clienteTipo(clienteId)) === "CF" : false;
     if (esReceptorCF && tp.tipo === "FACT" && aInterno(c.base_imponible) >= aInterno("2500")) throw new ErrorHttp(422, "Consumidor final solo se admite en facturas menores a Q2,500.00. Identifica al receptor con su NIT (o con su CUI si es persona individual sin NIT).", "regla");
     if (!clienteId && nuevo) {
       const tipo = tipoNuevo!; let num = tipo === "CF" ? "CF" : texto(nuevo.numero_identificacion, 1, 30, "Identificación del receptor");
@@ -200,7 +221,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       // CF: la identificación SIEMPRE es «CF»; el nombre es «CONSUMIDOR FINAL» por omisión pero la persona puede escribir otro (p. ej. «Juan Pérez») sin que cambie la identificación. Un receptor CF con ese nombre se reutiliza si ya existe en la empresa.
       let nombreCF = NOMBRE_CF;
       if (tipo === "CF" && typeof nuevo.nombre === "string" && nuevo.nombre.trim() !== "" && nuevo.nombre.trim().toUpperCase() !== NOMBRE_CF) nombreCF = texto(nuevo.nombre, 1, 200, "Nombre del receptor");
-      const previo = tipo === "CF" ? (await bd.filas<{ id: string }>("select id from public.clientes where empresa_id = $1 and tipo_identificacion = 'CF' and nombre = $2 and activo order by creado_en limit 1", [emp(), nombreCF]))[0] : undefined;
+      const previo = tipo === "CF" ? await clienteCf(nombreCF) : undefined;
       if (previo) clienteId = previo.id;
       else {
         const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? nombreCF : texto(nuevo.nombre, 1, 200, "Nombre del receptor"), p_direccion: null, p_email: null, p_telefono: null, p_version: null }) as Obj;
@@ -211,7 +232,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     // FECHA DE EMISIÓN: se valida AQUÍ, en el servidor, con su reloj y la zona de Guatemala (la interfaz solo ayuda; una petición directa no la salta). Sin fecha: la que ya tenía el borrador o, si es nuevo, hoy.
     // Una fecha que NO cambia no se vuelve a juzgar al guardar (un borrador que venció no se cambia solo: se le impide revisarse y certificarse hasta que se elija otra fecha).
     const ahoraSrv = CTX.ahora();
-    const previaFecha = uuidOk(b.id) ? ((await bd.filas<{ f: string | null }>("select fecha_emision_prevista::text as f from public.documentos where id = $1 and empresa_id = $2", [b.id, emp()]))[0]?.f ?? null) : null;
+    const previaFecha = uuidOk(b.id) ? (((await docRef(b.id as string))?.fecha_emision_prevista as string | null | undefined) ?? null) : null;
     let fecha: string;
     if (b.fecha === undefined || b.fecha === null || b.fecha === "") fecha = previaFecha ?? hoyGt(ahoraSrv);
     else {
@@ -229,7 +250,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     if (estPedido) await bd.rpc("fel_op_documento_establecimiento", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_est: estPedido });   // ya validado ANTES de escribir; con la función encendida el establecimiento lo decide el servidor
     // el tipo se asigna DESPUÉS (la base copia el receptor y la referencia fiscal del origen y valida habilitación, origen certificado, tope y duplicados)
     if (!tp.mantener) {
-      const [ver] = await bd.filas<{ version: number; tipo_dte: string }>("select version, tipo_dte from public.documentos where id = $1 and empresa_id = $2", [doc.id, emp()]);
+      const ver = (await docRef(doc.id as string)) as { version: number; tipo_dte: string };
       if (tp.tipo !== "FACT" || ver.tipo_dte !== "FACT") await bd.rpc("fel_op_documento_tipo", { p_actor: a.id, p_empresa: emp(), p_doc: doc.id, p_tipo: tp.tipo, p_origen: tp.origen, p_motivo: tp.motivo, p_tipo_recibo: tp.recibo, p_version: ver.version });
     }
     return doc.id as string;
@@ -286,13 +307,14 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     }
     if (m === "GET" && ruta === "/api/fecha-emision") return json(ventanaEmision(CTX.ahora()));   // hoy en Guatemala (servidor) y la fecha más antigua permitida
     if (m === "GET" && ruta === "/api/configuracion") {
-      const [empr] = await bd.filas("select e.razon_social, e.nombre_comercial, e.nit, e.estado, e.moneda, e.emision_real_habilitada, r.nombre as regimen, r.estado as regimen_estado from public.empresas e left join public.regimenes_fiscales r on r.id = e.regimen_id where e.id = $1", [emp()]);
+      const cx = await ctxEmpresa();
+      const empr = cx ? (({ razon_social, nombre_comercial, nit, estado, moneda, emision_real_habilitada, regimen, regimen_estado }) => ({ razon_social, nombre_comercial, nit, estado, moneda, emision_real_habilitada, regimen, regimen_estado }))(cx.empresa as Record<string, unknown> as never) : (await bd.filas("select e.razon_social, e.nombre_comercial, e.nit, e.estado, e.moneda, e.emision_real_habilitada, r.nombre as regimen, r.estado as regimen_estado from public.empresas e left join public.regimenes_fiscales r on r.id = e.regimen_id where e.id = $1", [emp()]))[0];
       const establecimientos = bd.lecturaApi ? await bd.lecturaApi("establecimientos_listar") as unknown[] : await bd.filas("select id, codigo_sat, nombre, direccion, estado, (select count(*)::int from public.documentos d where d.establecimiento_id = x.id and d.empresa_id = x.empresa_id) as documentos from public.establecimientos x where x.empresa_id = $1 order by codigo_sat", [emp()]);
       const proveedores = await bd.filas("select id, nombre, ambientes, habilitado, nota from public.proveedores_emision order by case id when 'mock' then 0 when 'portal_playwright' then 1 else 2 end");
-      const canales = await bd.filas("select proveedor_id, ambiente, habilitado, prioridad from public.empresa_canales where empresa_id = $1", [emp()]);
+      const canales = cx ? cx.canales.map(({ proveedor_id, ambiente, habilitado, prioridad }) => ({ proveedor_id, ambiente, habilitado, prioridad })) : await bd.filas("select proveedor_id, ambiente, habilitado, prioridad from public.empresa_canales where empresa_id = $1", [emp()]);
       const parametros = await bd.filas(SQL_PARAMETROS_USUARIO, [PARAMETROS_USUARIO as string[]]);   // lista explícita (clase «usuario»)
-      const [cont] = await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [emp()]);
-      return json({ empresa: { ...empr, ...(await empresaDatos()) }, establecimientos, proveedores, canales, parametros, ultimo_borrador: cont.ultimo });
+      const ultimo = cx ? cx.ultimo_borrador : ((await bd.filas("select coalesce(max(numero_borrador), 0)::int as ultimo from public.documentos where empresa_id = $1", [emp()]))[0] as { ultimo: number }).ultimo;
+      return json({ empresa: { ...empr, ...(await empresaDatos()) }, establecimientos, proveedores, canales, parametros, ultimo_borrador: ultimo });
     }
     // ---- ADMINISTRACIÓN de establecimientos y asignaciones (solo con el puerto activado). Jamás se lee un «actor» ni una «empresa» del cuerpo: la identidad es la de la sesión y la valida la base.
     if (extras.adminEst && ruta.startsWith("/api/admin/")) {
@@ -407,7 +429,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const correoAuto = async (): Promise<Obj | null> => {
         const svc = extras.correo; if (!svc || b.enviar_correo !== true || !svc.automatico) return null;
         try {
-          const [op] = await bd.filas<{ id: string }>("select id from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' order by iniciada_en desc limit 1", [docId, emp()]);
+          const opId = await referencia("operacion_certificada", docId); const op = opId ? { id: opId } : undefined;
           if (!op) return null;   // no quedó certificada: no hay nada que enviar
           const x = await svc.enviar({ empresaId: emp(), actorId: a.id, permisos: [] }, { documentoId: docId, clave: `auto:${op.id}`, origen: "automatico" });
           return { estado: x.envio.estado, repetido: x.repetido };
@@ -436,12 +458,12 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       return json(await detalle(op.documento_id as string));
     }
     if (m === "POST" && (r = /^\/api\/conciliaciones\/([^/]+)\/decidir$/.exec(ruta))) {
-      const b = await cuerpo(); const [c] = await bd.filas<{ operacion_id: string }>("select operacion_id from public.conciliaciones where id = $1 and empresa_id = $2", [id(r[1]), emp()]); if (!c) throw new ErrorHttp(404, "Conciliación no encontrada", "no_encontrado");
+      const b = await cuerpo(); const cOp = await referencia("operacion_de_conciliacion", id(r[1])); const c = cOp ? { operacion_id: cOp } : undefined; if (!c) throw new ErrorHttp(404, "Conciliación no encontrada", "no_encontrado");
       await bd.rpc("fel_op_conciliacion_decidir", { p_actor: a.id, p_empresa: emp(), p_conciliacion: r[1], p_aprobar: b.aprobar === true, p_nota: typeof b.nota === "string" ? b.nota : "" });
       await pr?.sincronizar(); const op = await bd.rpc("fel_sys_operacion", { p_empresa: emp(), p_op: c.operacion_id }) as Obj; return json(await detalle(op.documento_id as string));
     }
     if (m === "POST" && (r = /^\/api\/alertas\/([^/]+)\/resolver$/.exec(ruta))) {
-      const b = await cuerpo(); const [x] = await bd.filas<{ documento_id: string }>("select documento_id from public.alertas_fiscales where id = $1 and empresa_id = $2", [id(r[1]), emp()]); if (!x) throw new ErrorHttp(404, "Alerta no encontrada", "no_encontrado");
+      const b = await cuerpo(); const xDoc = await referencia("documento_de_alerta", id(r[1])); const x = xDoc ? { documento_id: xDoc } : undefined; if (!x) throw new ErrorHttp(404, "Alerta no encontrada", "no_encontrado");
       await bd.rpc("fel_op_alerta_resolver", { p_actor: a.id, p_empresa: emp(), p_alerta: r[1], p_nota: typeof b.nota === "string" ? b.nota : "" }); return json(await detalle(x.documento_id));
     }
     // ---- controles de la DEMOSTRACIÓN: reproducen lo que en la realidad hacen el proveedor, el tiempo o una caída del proceso ----
@@ -468,21 +490,26 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     throw new ErrorHttp(404, "Ruta no encontrada", "no_encontrado");
   }
 
+  const RUTAS_DE_SISTEMA = /^\/api\/(documentos\/[^/]+\/(digifact|certificar|certificar-todo|anular|correo)|operaciones\/|conciliaciones\/|alertas\/|digifact\/)/;
   const atenderPeticion = async (req: Request): Promise<Response> => {
     try {
       const url = new URL(req.url);
       if (pr) { const s = await pr.rutasSesion(req, url); if (s) return s; }   // inicio y cierre de sesión (no requieren sesión previa)
       const a = await actor(req);
-      if (extras.datosApi && !extras.jwtDe?.(req)) throw new ErrorIdentidad("Sesión no válida");   // con la Data API activa, la cookie propia NO basta: toda ruta autenticada exige el JWT de la persona (nada llega a la base sin él)
+      if (extras.datosApi) {   // con la Data API activa, la cookie propia NO basta: toda ruta autenticada exige el JWT de la persona, con FIRMA válida, sin vencer y de LA MISMA persona de la sesión (nada llega a la base sin él)
+        const jwt = extras.jwtDe?.(req); const claims = jwt ? await extras.verificarJwt!(jwt) : null;
+        if (!claims || claims.sub !== a.id) throw new ErrorIdentidad("Sesión no válida");
+      }
       const negocio = req.method === "POST" && NEGOCIO_POST.some((r) => r.test(url.pathname));
       if (req.method === "POST" && !negocio) permisosCache.clear();   // puede cambiar roles o membresías: los permisos reutilizados no sobreviven
       const atender = async () => {
         if (pr && esMaestro(a.clave)) return await peticion.run({ token: Sesiones.idDeCookie(req), actor: a.id, empresa: null, jwt: extras.jwtDe?.(req) ?? null }, () => pr.rutasMaestro(req, url, a));   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
         const empresaP = (await personaDe(a.clave))?.empresa ?? EMPRESA, alcP = extras.alcance ? await extras.alcance(req, a, empresaP) : null;   // la identidad y el alcance salen de la sesión validada, no de la petición
         return await alcance.run({ empresa: empresaP, alc: alcP }, () => peticion.run({ token: Sesiones.idDeCookie(req), actor: a.id, empresa: empresaP, jwt: extras.jwtDe?.(req) ?? null }, async () => {
+          if (extras.datosApi && RUTAS_DE_SISTEMA.test(url.pathname)) await bd.lecturaApi!("empresa_contexto");   // estas rutas ejecutan pasos del sistema que no pasan por la Data API: la base comprueba AHORA que la sesión siga viva (cerrar sesión surte efecto de inmediato)
           if (restringido(alcP)) {   // un documento fuera del alcance de establecimientos de la persona NO EXISTE para ella (lectura, modificación, certificación, descargas, correo…)
             const mDoc = /^\/api\/documentos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i.exec(url.pathname);
-            if (mDoc && !/\/digifact\//.test(url.pathname)) { const [r] = await bd.filas<{ establecimiento_id: string | null }>("select establecimiento_id from public.documentos where id = $1 and empresa_id = $2", [mDoc[1], empresaP]); if (r && !enAlcance(alcP, r.establecimiento_id)) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado"); }
+            if (mDoc && !/\/digifact\//.test(url.pathname)) { const r = await docRef(mDoc[1], empresaP) as { establecimiento_id: string | null } | null; if (r && !enAlcance(alcP, r.establecimiento_id)) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado"); }
           }
           return await manejar(req, url);
         }));

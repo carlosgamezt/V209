@@ -52,11 +52,24 @@ Deno.test({ name: "P8 interfaz de nexa-sys: solo POST /tick con secreto; todo lo
   for (const cab of [{} as Record<string, string>, { "x-nexa-sys-secreto": "" }, { "x-nexa-sys-secreto": SEC.slice(0, -1) }, { "x-nexa-sys-secreto": SEC + "x" }, { authorization: `Bearer ${SEC}` }, { "x-secreto": SEC }]) assert.equal((await pet("POST", "/tick", cab)).status, 401);
   assert.equal((await h(new Request(`http://x/tick?secreto=${SEC}`, { method: "POST" }))).status, 401, "el secreto en la URL no vale");
   assert.equal(llamadas, 0);
-  const ok = await pet("POST", "/tick", { "x-nexa-sys-secreto": SEC }); assert.equal(ok.status, 200); const j = await ok.json(); assert.deepEqual(Object.keys(j).sort(), Object.keys(conteo).sort(), "la respuesta son SOLO conteos"); assert.ok(Object.values(j).every((v) => typeof v === "number"));
+  const ok = await pet("POST", "/tick", { "x-nexa-sys-secreto": SEC }); assert.equal(ok.status, 200); const j = await ok.json(); assert.deepEqual(Object.keys(j).sort(), [...Object.keys(conteo), "salud"].sort(), "la respuesta son conteos y la salud"); assert.ok(Object.entries(j).every(([k, v]) => k === "salud" || typeof v === "number")); assert.deepEqual(Object.keys(j.salud).sort(), ["estado", "motivos"]); assert.equal(j.salud.estado, "ok");
   assert.equal((await pet("POST", "/nexa-sys/tick", { "x-nexa-sys-secreto": SEC })).status, 200); assert.equal((await pet("POST", "/functions/v1/nexa-sys/tick", { "x-nexa-sys-secreto": SEC })).status, 200);
   // sin configurar o con secreto corto: 503 (no se puede «adivinar» un secreto vacío)
   for (const s of [undefined, "", "corto-menos-de-24"]) { const x = await crearManejadorSistema({ sys: () => bd, secreto: s })(new Request("http://x/tick", { method: "POST", headers: { "x-nexa-sys-secreto": s ?? "" } })); assert.equal(x.status, 503); }
   // un fallo de la base no filtra la cadena de conexión ni el mensaje
   const roto = crearManejadorSistema({ sys: () => { throw new Error("postgres://nexa_sys.ref:CLAVE-SECRETA@host/postgres"); }, secreto: SEC });
   const e = await roto(new Request("http://x/tick", { method: "POST", headers: { "x-nexa-sys-secreto": SEC } })); assert.equal(e.status, 500); const t = await e.text(); assert.ok(!/CLAVE-SECRETA|postgres:|nexa_sys/.test(t), "el error no contiene detalles"); assert.deepEqual(JSON.parse(t), { codigo: "error" });
+}});
+
+Deno.test({ name: "P8 monitoreo y rotación: la salud sale de los conteos con motivos de lista cerrada; el secreto anterior solo vale durante la rotación y el secreto corto nunca", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const { evaluarSalud, MOTIVOS_SALUD } = await import("../src/sistema.ts"); const base = { ordenesVencidas: 0, bolsonRevisado: 0, operacionesPendientes: 0, fallidasManuales: 0, consumosIncoherentes: 0, saldosInconsistentes: 0, monederosInconsistentes: 0 };
+  assert.deepEqual(evaluarSalud(base), { estado: "ok", motivos: [] });
+  assert.deepEqual(evaluarSalud({ ...base, operacionesPendientes: 2 }), { estado: "atencion", motivos: ["operaciones_atascadas"] }); assert.deepEqual(evaluarSalud({ ...base, fallidasManuales: 1, ordenesVencidas: 3 }), { estado: "atencion", motivos: ["fallos_por_conciliar", "ordenes_vencidas"] });
+  assert.deepEqual(evaluarSalud({ ...base, operacionesPendientes: 11 }), { estado: "critico", motivos: ["operaciones_muy_atascadas"] }); assert.deepEqual(evaluarSalud({ ...base, saldosInconsistentes: 1, consumosIncoherentes: 2, fallidasManuales: 1 }), { estado: "critico", motivos: ["integridad_de_saldos", "consumos_incoherentes", "fallos_por_conciliar"] });
+  for (const m of evaluarSalud({ ...base, saldosInconsistentes: 1, monederosInconsistentes: 1, consumosIncoherentes: 1, operacionesPendientes: 50, fallidasManuales: 1, ordenesVencidas: 1 }).motivos) assert.ok((MOTIVOS_SALUD as readonly string[]).includes(m));
+  const NUEVO = "secreto-NUEVO-de-sistema-0123456789-abc", VIEJO = "secreto-VIEJO-de-sistema-0123456789-abc"; const bd = { rpc: async () => [] } as unknown as BdDemo;
+  const pet = (h: ReturnType<typeof crearManejadorSistema>, s: string) => h(new Request("http://x/tick", { method: "POST", headers: { "x-nexa-sys-secreto": s } }));
+  const rot = crearManejadorSistema({ sys: () => bd, secreto: NUEVO, secretoAnterior: VIEJO }); assert.equal((await pet(rot, NUEVO)).status, 200); assert.equal((await pet(rot, VIEJO)).status, 200, "durante la rotación el anterior sigue valiendo"); assert.equal((await pet(rot, "otro-secreto-de-sistema-0123456789-x")).status, 401);
+  const fin = crearManejadorSistema({ sys: () => bd, secreto: NUEVO }); assert.equal((await pet(fin, NUEVO)).status, 200); assert.equal((await pet(fin, VIEJO)).status, 401, "retirado el anterior, deja de valer");
+  const corto = crearManejadorSistema({ sys: () => bd, secreto: NUEVO, secretoAnterior: "corto" }); assert.equal((await pet(corto, "corto")).status, 401, "un secreto anterior corto nunca se acepta"); assert.equal((await pet(corto, "")).status, 401);
 }});

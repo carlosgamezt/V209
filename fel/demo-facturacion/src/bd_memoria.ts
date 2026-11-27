@@ -17,6 +17,8 @@ export async function crearBd(): Promise<BdDemo> {
   if (Deno.env.get("FEL_PROPUESTA_31") === "1") await db.exec(await Deno.readTextFile(`${RAIZ}docs/migracion-31/20261125000100_fel_certificacion_test_tipos.sql`));
   // Propuesta (fuera de supabase/migrations): historial de envíos por correo. Solo se aplica cuando se pide el correo (FEL_CORREO); el conjunto de 29 migraciones no cambia.
   if (Deno.env.get("FEL_CORREO")) for (const f of [...Deno.readDirSync(`${RAIZ}docs/migracion-correo`)].map((x) => x.name).filter((n) => /^\d{14}_.+\.sql$/.test(n)).sort()) await db.exec(await Deno.readTextFile(`${RAIZ}docs/migracion-correo/${f}`));   // solo la migración (no la reversión ni la verificación)
+  // Lecturas de los servicios del sistema (M-V1; sin dependencias de Auth): Digifact y correo leen documentos/clientes/auditoría SOLO por estas funciones. Se cargan como las migraciones (en producción las aplica el ensayo 1E).
+  await db.exec(await Deno.readTextFile(`${RAIZ}docs/multiempresa/propuesta/M-V1_lecturas_de_sistema.sql`));
   const rpc: Rpc = async (fn, args) => {
     if (!/^[a-z_0-9]+$/.test(fn)) throw new Error("nombre de función no válido");
     const claves = Object.keys(args);

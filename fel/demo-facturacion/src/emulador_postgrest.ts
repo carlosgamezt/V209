@@ -13,7 +13,7 @@ export async function firmarJwt(claims: Record<string, unknown>, secreto: string
   const h = b64u(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" }))), p = b64u(new TextEncoder().encode(JSON.stringify(claims)));
   return `${h}.${p}.${b64u(await crypto.subtle.sign("HMAC", await llave(secreto), new TextEncoder().encode(`${h}.${p}`)))}`;
 }
-async function verificar(jwt: string, secreto: string): Promise<Record<string, unknown> | null> {
+export async function verificar(jwt: string, secreto: string): Promise<Record<string, unknown> | null> {
   const [h, p, s] = jwt.split("."); if (!h || !p || !s) return null;
   try {
     if (JSON.parse(new TextDecoder().decode(deb64u(h))).alg !== "HS256") return null;   // jamás «none» ni otro algoritmo

@@ -9,6 +9,8 @@
 //   · el resultado se guarda ANTES y DESPUÉS de hablar con el proveedor; los adjuntos no se copian a ningún lado; la auditoría lleva el correo enmascarado, nunca el contenido ni claves.
 import type { BdDemo } from "../bd.ts";
 import { LimiteTasaPg } from "../limite_pg.ts";
+import { acotarBd } from "../acceso_bd.ts";
+import { TABLAS_SERVICIO } from "../../../proveedores/src/acceso_directo.ts";
 import { plantillaFactura } from "./plantilla.ts";
 import type { MensajeCorreo, ProveedorCorreo, ResultadoEnvio } from "./proveedor.ts";
 
@@ -66,7 +68,9 @@ const fechaCorta = (v: unknown) => { const s = v instanceof Date ? v.toISOString
 
 export class ServicioCorreo {
   readonly #limEmpresa: LimiteTasaPg; readonly #limPersona: LimiteTasaPg; readonly #limDia: LimiteTasaPg | null;
-  constructor(private bd: BdDemo, private proveedor: ProveedorCorreo, private cfg: ConfigCorreo) {
+  private bd: BdDemo;
+  constructor(bd: BdDemo, private proveedor: ProveedorCorreo, private cfg: ConfigCorreo) {
+    this.bd = acotarBd(bd, TABLAS_SERVICIO, "servicio de correo");   // solo sus tablas propias; las demás lecturas, por fel_sys_*
     this.#limEmpresa = new LimiteTasaPg(bd, cfg.limites?.empresa ?? LIMITE_EMPRESA_POR_MIN, 60_000); this.#limPersona = new LimiteTasaPg(bd, cfg.limites?.persona ?? LIMITE_PERSONA_POR_MIN, 60_000);
     this.#limDia = cfg.topeDiario ? new LimiteTasaPg(bd, cfg.topeDiario, 86_400_000) : null;
   }
@@ -94,16 +98,14 @@ export class ServicioCorreo {
     const le = await this.#limEmpresa.permitir(`correo:e:${ctx.empresaId}`), lp = await this.#limPersona.permitir(`correo:p:${ctx.actorId}`);
     if (!le.ok || !lp.ok) throw new ErrorCorreo(429, "demasiados_envios", `Demasiados envíos seguidos. Intenta de nuevo en ${Math.max(le.reintentarEnS, lp.reintentarEnS)} s.`);
     // 3) la factura, SIEMPRE de la empresa de la sesión
-    const [d] = await this.bd.filas<Obj>(`select d.id, d.estado_fiscal, d.serie, d.numero_fiscal, d.autorizacion_sat, d.fecha_emision_prevista::text as fecha_emision_prevista, coalesce(d.total, d.base_imponible)::text as total, d.moneda,
-        c.nombre as cliente_nombre, c.email as cliente_email, e.nombre_comercial, e.razon_social
-      from public.documentos d join public.empresas e on e.id = d.empresa_id left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2`, [p.documentoId, ctx.empresaId]);
+    const d = await this.bd.rpc("fel_sys_doc_correo", { p_empresa: ctx.empresaId, p_doc: p.documentoId }) as Obj | null;   // función del nivel sistema: la empresa llega ya verificada
     if (!d) throw new ErrorCorreo(404, "no_encontrado", "Documento no encontrado.");
     if (d.estado_fiscal !== "certificado") throw new ErrorCorreo(409, "no_certificada", ESTADOS_NO_ENVIABLES[String(d.estado_fiscal)] ?? "La factura no está certificada.");
-    const [op] = await this.bd.filas<{ id: string }>("select id from public.operaciones_fiscales where documento_id = $1 and empresa_id = $2 and tipo = 'certificacion' and estado = 'confirmada_exitosa' order by iniciada_en desc limit 1", [p.documentoId, ctx.empresaId]);
+    const opId = await this.bd.rpc("fel_sys_op_certificada", { p_empresa: ctx.empresaId, p_doc: p.documentoId }) as string | null; const op = opId ? { id: opId } : null;
     if (!op) throw new ErrorCorreo(409, "sin_certificacion", "La factura no tiene una certificación confirmada.");
     // 3b) si Digifact ya recibió la orden de enviar el correo de esta factura al certificar, NEXA NO envía otro (evita el duplicado entre los dos caminos)
-    const [dg] = await this.bd.filas<{ n: number }>("select count(*)::int as n from public.auditoria where empresa_id = $1 and entidad = 'documento' and entidad_id = $2 and accion = 'digifact_test.correo_solicitado'", [ctx.empresaId, p.documentoId]);
-    if (dg?.n) throw new ErrorCorreo(409, "lo_envia_digifact", "Digifact ya recibió la orden de enviar esta factura por correo al certificarla: no se envía otra vez desde NEXA.");
+    const nDg = Number(await this.bd.rpc("fel_sys_auditoria_contar", { p_empresa: ctx.empresaId, p_accion: "digifact_test.correo_solicitado", p_entidad: "documento", p_entidad_id: p.documentoId }) ?? 0);
+    if (nDg) throw new ErrorCorreo(409, "lo_envia_digifact", "Digifact ya recibió la orden de enviar esta factura por correo al certificarla: no se envía otra vez desde NEXA.");
     // 4) destinatario
     const destinatario = String(p.destinatario ?? d.cliente_email ?? "").trim();
     if (!destinatario) throw new ErrorCorreo(400, "sin_correo", "El receptor no tiene correo electrónico: escribe uno para enviar la factura.");
@@ -123,7 +125,7 @@ export class ServicioCorreo {
       if (hoy >= MAX_REENVIOS_POR_DOCUMENTO_DIA) throw new ErrorCorreo(429, "limite_reenvios", `Se alcanzó el máximo de ${MAX_REENVIOS_POR_DOCUMENTO_DIA} reenvíos por factura en 24 horas.`);
     }
     // 7) adjuntos: el XML y el PDF de ESA certificación, íntegros
-    const arts = await this.bd.filas<Obj>("select tipo, nombre, mime, sha256, contenido from public.artefactos_documento where documento_id = $1 and empresa_id = $2 and operacion_id = $3", [p.documentoId, ctx.empresaId, op.id]);
+    const arts = await this.bd.rpc("fel_sys_artefactos_op", { p_empresa: ctx.empresaId, p_doc: p.documentoId, p_op: op.id }) as Obj[];
     const xml = arts.find((a) => a.tipo === "xml"), pdf = arts.find((a) => a.tipo === "pdf");
     const conXml = p.adjuntarXml === true;   // por defecto solo el PDF; con el interruptor, PDF + XML
     if (!pdf || (conXml && !xml)) throw new ErrorCorreo(409, "sin_adjuntos", conXml ? "La factura no tiene el XML y el PDF certificados guardados." : "La factura no tiene el PDF certificado guardado.");

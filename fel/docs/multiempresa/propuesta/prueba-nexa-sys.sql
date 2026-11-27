@@ -14,7 +14,11 @@ do $$ declare r pg_roles; n_sys int; n_todas int; begin
    where s.nspname = 'public' and p.prokind = 'f' and p.prorettype <> 'trigger'::regtype and has_function_privilege('nexa_sys', p.oid, 'execute');
   assert n_sys = n_todas and n_sys >= 45, 'nexa_sys ejecuta SOLO fel_sys_* (' || n_sys || ' de ' || n_todas || ')';
   assert not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname ~ '^fel_(ses|pla|adm|op|admin)_|^fel_(auditar|aud_acceso)$' and has_function_privilege('nexa_sys', p.oid, 'execute')), 'nexa_sys no ejecuta funciones de personas, plataforma ni auditoría';
-  assert not exists (select 1 from information_schema.role_table_grants where grantee = 'nexa_sys'), 'nexa_sys no tiene ningún privilegio sobre tablas';
+  -- M-V: SOLO las tablas propias de los servicios (lista cerrada, privilegios máximos por tabla); nada sobre documentos, clientes, empresas, auditoría, sesiones ni personas
+  assert not exists (select 1 from information_schema.role_table_grants g where g.grantee = 'nexa_sys' and (g.table_name, g.privilege_type) not in (
+      ('digifact_operaciones', 'SELECT'), ('digifact_operaciones', 'INSERT'), ('digifact_operaciones', 'UPDATE'), ('digifact_artefactos', 'SELECT'), ('digifact_artefactos', 'INSERT'),
+      ('envios_correo', 'SELECT'), ('envios_correo', 'INSERT'), ('envios_correo', 'UPDATE'), ('demo_limites', 'SELECT'), ('demo_limites', 'INSERT'), ('demo_limites', 'UPDATE'), ('demo_limites', 'DELETE'))),
+    'nexa_sys: privilegios sobre tablas fuera de la lista cerrada de servicios: ' || (select coalesce(string_agg(table_name || ':' || privilege_type, ','), '') from information_schema.role_table_grants where grantee = 'nexa_sys');
   assert not has_schema_privilege('nexa_sys', 'auth', 'usage') and not has_schema_privilege('nexa_sys', 'public', 'create'), 'sin acceso a auth y sin crear objetos';
 end $$;
 -- lo que SÍ hace: procesos del sistema

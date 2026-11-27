@@ -13,7 +13,7 @@
 |---|---|---|---|
 | 0 | **W0** (ver §C): verificaciones de plataforma, sin código nuevo | lista W0 completa | — |
 | 1 | Migraciones 1–30 en proyecto vacío (la 29 y la 30 se **verifican**) | `tools/ensayo-1e.sh validar`; conteos de tablas y funciones | recrear el proyecto vacío |
-| 2 | Propuestas, **una transacción cada una**, en este orden: `M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-I, M-J, M-K, M-L, M-M, M-N, M-O, M-Q, M-R, M-S, M-T, M-U, M-E` (`tools/ensayo-1e.sh aplicar`) | `verificacion.sql` (solo lectura) entre una y otra; auditoría `SECURITY DEFINER` (todas con `search_path` vacío; nada ejecutable por `anon`/PUBLIC; las únicas ejecutables por `authenticated` son los ayudantes de RLS esperados) | `reversion-M-U, -T, -S, -R, -Q`, luego `reversion-M-M-N-O.sql`, luego `reversion.sql` (se niega con datos de configuración) y `reversion-M-E.sql` |
+| 2 | Propuestas, **una transacción cada una**, en este orden: `M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-I, M-J, M-K, M-L, M-M, M-N, M-O, M-Q, M-R, M-S, M-T, M-U, M-V1, M-V, M-E` (`tools/ensayo-1e.sh aplicar`) | `verificacion.sql` (solo lectura) entre una y otra; auditoría `SECURITY DEFINER` (todas con `search_path` vacío; nada ejecutable por `anon`/PUBLIC; las únicas ejecutables por `authenticated` son los ayudantes de RLS esperados) | `reversion-M-V` (retira M-V1 y M-V), `reversion-M-U, -T, -S, -R, -Q`, luego `reversion-M-M-N-O.sql`, luego `reversion.sql` (se niega con datos de configuración) y `reversion-M-E.sql` |
 | 3 | Datos **simulados** (`fixture-sesion.sql`: dos empresas, establecimientos 2 y 67, personas de prueba) | `tools/ensayo-1e.sh probar` | borrar el proyecto de pruebas |
 | 4 | Pruebas como `nexa_app` por el pooler y como `nexa_sys`; suites de §8–8i del guion (identidad, lecturas, parámetros, documentos, plan/plataforma, agente) | todas en «OK»; sonda R2 esperada «abierto» hasta W6 | — |
 | 5 | **Configurar la Data API:** esquemas expuestos = **solo `api`**; `anon` sin privilegios; límites de filas; JWT con llaves asimétricas si W0 lo confirma | llamada anónima a `/rest/v1/rpc/contexto` → 401; perfil `public` → 406 | volver a la configuración previa |
@@ -22,6 +22,9 @@
 | 8 | Ruta del agente por `nexa-sys` y luego **M-P** (`ENSAYO_CORTE_M_P=1`) | `nexa_app` sin ninguna `fel_sys_*`; agente de prueba vincula y emite latidos firmados | `reversion-M-P.sql` |
 | 9 | **W6:** inicio de sesión por Supabase Auth; retiro de `demo_sesiones`/`demo_credenciales` | lista W6; sonda R1 «rechazada» (`FEL_R2_ESPERADO=cerrado`) | restaurar desde la copia previa (solo ensayo) |
 | 10 | Mediciones contra #55 (`COMPARACION-RENDIMIENTO-55.md`) | criterios de aceptación de ese documento | — |
+
+### B.1 Verificaciones previas al ensayo que ya pasaron en local (repetir en `nexa-fel-test`)
+`tools/ensayo-respaldo-esquema.sh` (respaldo/restauración), `tools/carga-basica.sh` (concurrencia), `tools/ensayo-rotacion.sh` (rotación). Documentos: `PROCEDIMIENTO-RESPALDO-Y-RECUPERACION.md`, `MONITOREO-MINIMO.md`, `ROTACION-DE-CREDENCIALES.md`, `CONDICIONES-PREVIAS-LANZAMIENTO.md`.
 
 ## C. Lista de comprobación W0 (verificaciones de plataforma; define el diseño de W1)
 - [ ] **Llaves de firma asimétricas (ES256/RS256) disponibles en el plan Free** y JWKS publicado. Si no: documentar y decidir (HS256 heredado no es aceptable como destino).

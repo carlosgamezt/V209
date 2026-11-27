@@ -28,12 +28,10 @@ const NO_HABILITADO = { codigo: "digifact_no_habilitado", mensaje: "Digifact TES
 
 /** Lee un documento de LA empresa indicada (nunca de otra) en la forma que necesita el servicio. */
 export async function leerDocumentoFel(bd: BdDemo, empresa: string, docId: string): Promise<DocumentoFel | null> {
-  const conTipos = await tiposDisponibles(bd);   // sin la propuesta de tipos aplicada, las columnas nuevas no existen: el documento es Factura, como siempre
-  const [d] = await bd.filas<Obj>(`select d.id, d.empresa_id, d.estado_preparacion, d.estado_fiscal, d.establecimiento_id, es.codigo_sat as est_codigo, d.fecha_emision_prevista::text as fecha_emision_prevista, ${conTipos ? "d.tipo_dte, d.referencia_origen, d.motivo_ajuste, d.tipo_recibo," : ""} c.tipo_identificacion as c_tipo, c.numero_identificacion as c_num, c.nombre as c_nombre
-      from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id left join public.establecimientos es on es.id = d.establecimiento_id and es.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2`, [docId, empresa]);
-  if (!d) return null;
-  const ls = await bd.filas<Obj>(`select l.descripcion, l.cantidad::text as cantidad, l.precio_unitario::text as precio_unitario, l.importes->>'descuento' as descuento, k.tipo as concepto_tipo, k.unidad_medida
-      from public.documento_lineas l left join public.conceptos k on k.id = l.concepto_id and k.empresa_id = l.empresa_id where l.documento_id = $1 and l.empresa_id = $2 order by l.orden`, [docId, empresa]);
+  // función del NIVEL SISTEMA (la empresa llega ya verificada): documento, receptor, establecimiento y líneas en una sola llamada; sin la propuesta de tipos las columnas nuevas vienen nulas y el documento es Factura, como siempre
+  const x = await bd.rpc("fel_sys_doc_fel", { p_empresa: empresa, p_doc: docId }) as { documento: Obj; lineas: Obj[] } | null;
+  if (!x) return null;
+  const d = x.documento, ls = x.lineas;
   const tipo = String(d.c_tipo ?? "CF");
   // la referencia fiscal de una nota la COPIÓ la base del documento certificado de origen: aquí solo se lee (nunca llega desde el navegador)
   const ro = typeof d.referencia_origen === "string" ? (() => { try { return JSON.parse(d.referencia_origen as string) as Obj; } catch { return null; } })() : (d.referencia_origen as Obj | null);
@@ -93,14 +91,14 @@ export async function rutasDigifact(c: CtxDigifact, bd: BdDemo, svc: ServicioFel
       }
       if (accion === "correo") {   // ¿se pidió a Digifact enviar el correo al certificar? Solo lo que NEXA sabe: «solicitado». NEXA no recibe confirmación de entrega.
         if (!ctx.permisos.includes("fiscal.ver")) throw new ErrorFelGt("NO_AUTORIZADO", "No tienes permiso para ver Digifact TEST");
-        const [x] = await bd.filas<{ ocurrido_en: unknown; datos: Obj }>("select ocurrido_en, datos from public.auditoria where empresa_id = $1 and accion = 'digifact_test.correo_solicitado' and entidad = 'documento' and entidad_id = $2 order by id desc limit 1", [c.empresa, docId]);
+        const x = await bd.rpc("fel_sys_auditoria_ultima", { p_empresa: c.empresa, p_accion: "digifact_test.correo_solicitado", p_entidad: "documento", p_entidad_id: docId }) as { ocurrido_en: unknown; datos: Obj } | null;
         const datosCorreo: Obj = typeof x?.datos === "string" ? (() => { try { return JSON.parse(x.datos as unknown as string) as Obj; } catch { return {}; } })() : (x?.datos ?? {});   // tolera registros guardados como cadena JSON
         return c.json({ solicitado: !!x, destinatario: x ? String(datosCorreo.destinatario ?? "") : null, cuando: x ? (x.ocurrido_en instanceof Date ? x.ocurrido_en.toISOString() : String(x.ocurrido_en)) : null, entrega: "sin_confirmacion" });
       }
       if (accion === "destinatario") {   // el correo REGISTRADO del cliente de ESTE documento, para prellenar la casilla. Solo de la empresa de la sesión (el cliente se busca con la empresa del documento, nunca con lo que mande el navegador) y solo para quien puede certificar.
         if (!politicaCorreo || c.empresa.toLowerCase() !== politicaCorreo.empresaId) return c.json({ codigo: "correo_no_habilitado", mensaje: "El envío de la factura por correo de Digifact no está habilitado para esta empresa." }, 403);
         if (!ctx.permisos.includes("fiscal.certificar")) throw new ErrorFelGt("NO_AUTORIZADO", "No tienes permiso para elegir el envío por correo");
-        const [x] = await bd.filas<Obj>("select c.id as cliente_id, c.tipo_identificacion, c.email from public.documentos d left join public.clientes c on c.id = d.cliente_id and c.empresa_id = d.empresa_id where d.id = $1 and d.empresa_id = $2", [docId, c.empresa]);
+        const x = await bd.rpc("fel_sys_doc_cliente", { p_empresa: c.empresa, p_doc: docId }) as Obj | null;
         if (!x) throw new ErrorFelGt("NO_ENCONTRADO", "Documento no encontrado");
         const reg = typeof x.email === "string" ? x.email.trim() : "", valido = reg !== "" && correoConFormatoNuc(reg);
         return c.json({ clienteId: x.cliente_id ? String(x.cliente_id) : null, consumidorFinal: !x.cliente_id || x.tipo_identificacion === "CF", correo: valido ? reg : null, registradoNoValido: reg !== "" && !valido });
