@@ -11,12 +11,13 @@ as_pg "'$PGBIN/pg_ctl' -D '$DATA' -o '-p $PORT -k $SOCK -c listen_addresses=127.
 trap 'as_pg "'"$PGBIN"'/pg_ctl -D '"$DATA"' -m immediate stop >/dev/null" || true' EXIT
 D=${FEL_PROPUESTA:-docs/multiempresa/propuesta}
 PSQL() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U postgres -d "$1" -v ON_ERROR_STOP=1 -q -X "${@:2}"; }
+PSQLSYS() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U nexa_sys -d "$1" -v ON_ERROR_STOP=1 -q -X "${@:2}"; }
 PSQLAPP() { "$PGBIN/psql" -h "$SOCK" -p "$PORT" -U nexa_app -d "$1" -v ON_ERROR_STOP=1 -q -X "${@:2}"; }
 PSQL postgres -c "create database nexa_plantilla"
 PSQL nexa_plantilla -f tools/shim_supabase.sql
 for f in supabase/migrations/*.sql; do PSQL nexa_plantilla -f "$f" >/dev/null 2>&1; done
-for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-E_rol_app; do PSQL nexa_plantilla --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done
-PSQL postgres -c "alter role nexa_app login password 'prueba-local'" ; echo "OK    M-D, M-A, M-B, M-C y M-E aplicadas; nexa_app habilitado SOLO en este PostgreSQL temporal"
+for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-E_rol_app; do PSQL nexa_plantilla --single-transaction -f $D/$f.sql >/dev/null || { echo "FALLO: no se aplicó $f"; exit 1; }; done
+PSQL postgres -c "alter role nexa_app login password 'prueba-local'" ; PSQL postgres -c "alter role nexa_sys login password 'prueba-sys'" ; echo "OK    M-D, M-A, M-B, M-C y M-E aplicadas; nexa_app habilitado SOLO en este PostgreSQL temporal"
 PSQL postgres -c "create database nexa_sesion template nexa_plantilla"   # copia con los datos de prueba de sesiones; la plantilla queda limpia para la prueba de compatibilidad de la aplicación
 # datos de prueba persistentes + pruebas COMO nexa_app con sesiones validadas (suplantación, otra empresa, MFA, permisos, establecimientos, maestro)
 PSQL nexa_sesion -f $D/fixture-sesion.sql >/dev/null 2>&1 || { echo "FALLO: fixture de sesiones"; PSQL nexa_sesion -f $D/fixture-sesion.sql 2>&1 | tail -3; exit 1; }
@@ -24,12 +25,14 @@ PSQL nexa_sesion -f $D/fixture-sesion.sql >/dev/null 2>&1 || { echo "FALLO: fixt
 SAL=$(PSQL nexa_plantilla -A -t -f $D/auditoria-definer.sql)
 echo "$SAL" | sed 's/^/      /'
 grep -q "DEFINER sin search_path fijo: ninguna" <<< "$SAL" && grep -q "DEFINER con search_path no vacío: ninguna" <<< "$SAL" && grep -q "DEFINER ejecutables por anon/PUBLIC: ninguna" <<< "$SAL" \
- && grep -q "DEFINER ejecutables por authenticated: fel__establecimiento_por_usuario, fel_en_alcance, fel_es_admin_plataforma, fel_es_miembro, fel_tiene_permiso$" <<< "$SAL" && echo "OK    auditoría de funciones SECURITY DEFINER" || { echo "FALLO: auditoría SECURITY DEFINER"; exit 1; }
+ && grep -q "DEFINER ejecutables por authenticated: fel__aal2, fel__establecimiento_por_usuario, fel__sesion_viva, fel_en_alcance, fel_es_admin_plataforma, fel_es_miembro, fel_tiene_permiso$" <<< "$SAL" && echo "OK    auditoría de funciones SECURITY DEFINER" || { echo "FALLO: auditoría SECURITY DEFINER"; exit 1; }
 # pruebas COMO nexa_app (conexión real)
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-rol-app.sql | grep -q "PRUEBAS DEL ROL nexa_app OK" && echo "OK    pruebas de seguridad conectadas como nexa_app" || { echo "FALLO: pruebas como nexa_app"; exit 1; }
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-sesion-admin.sql 2>&1 | tee /tmp/sesion_admin.log | grep -q "PRUEBAS DE SESIÓN VALIDADA OK" && echo "OK    pruebas conectadas como nexa_app con sesión validada (suplantación, MFA, establecimientos, maestro)" || { grep -E "ERROR|ESPERABA|CONTEXT" /tmp/sesion_admin.log | head -4; echo "FALLO: pruebas de sesión validada"; exit 1; }
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-admin-establecimientos.sql 2>&1 | tee /tmp/admin_est.log | grep -q "PRUEBAS DE ADMINISTRACIÓN DE ESTABLECIMIENTOS OK" && echo "OK    administración de establecimientos como nexa_app (sesión validada, otra empresa, nombre interno, reasignación, supervisión)" || { echo "FALLO: administración de establecimientos"; tail -8 /tmp/admin_est.log; exit 1; }
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -f $D/prueba-envoltorios.sql 2>&1 | tee /tmp/envoltorios.log | grep -q "PRUEBAS DE ENVOLTORIOS DE SESIÓN OK" && echo "OK    envoltorios fel_ses_* como nexa_app (todos rechazan identidades inválidas; empresa y permisos desde la sesión)" || { echo "FALLO: envoltorios de sesión"; tail -8 /tmp/envoltorios.log; exit 1; }
+PSQL nexa_sesion -f $D/prueba-rls-sesion-viva.sql 2>&1 | tee /tmp/rls_viva.log | grep -q "PRUEBAS RLS DE SESIÓN VIVA OK" && echo "OK    lectura por la Data API (R3/F5): sesión viva, revocación inmediata, MFA real y cobertura de todas las tablas de empresa" || { echo "FALLO: RLS de sesión viva"; tail -8 /tmp/rls_viva.log; exit 1; }
+PGPASSWORD=prueba-sys PSQLSYS nexa_sesion -f $D/prueba-nexa-sys.sql 2>&1 | tee /tmp/nexa_sys.log | grep -q "PRUEBAS DE NEXA_SYS OK" && echo "OK    nexa_sys (F4): solo fel_sys_*, sin tablas, sin esquemas ajenos, sin asumir otro rol" || { echo "FALLO: pruebas de nexa_sys"; tail -8 /tmp/nexa_sys.log; exit 1; }
 PGPASSWORD=prueba-local PSQLAPP nexa_sesion -v esperado=${FEL_R2_ESPERADO:-abierto} -f $D/prueba-r2-suplantacion.sql 2>&1 | tee /tmp/r2.log | grep -q "SONDA R2 OK" && echo "OK    sonda R2 (suplantación por fel_op_*): $(grep -o 'R2 ESTADO: [a-z]*' /tmp/r2.log) — esperado ${FEL_R2_ESPERADO:-abierto}" || { echo "FALLO: sonda R2"; tail -12 /tmp/r2.log; exit 1; }
 # una tabla nueva con RLS y sin política es invisible para nexa_app (falla cerrado)
 PSQL nexa_sesion -c "create table public.zz_nueva (x int); alter table public.zz_nueva enable row level security; insert into public.zz_nueva values (1); grant select on public.zz_nueva to nexa_app;"

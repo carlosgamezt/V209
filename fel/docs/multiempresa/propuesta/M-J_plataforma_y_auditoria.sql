@@ -28,7 +28,7 @@ begin
     execute format($fn$create or replace function public.%I(p_sesion text%s) returns %s%s language plpgsql security definer set search_path = '' as $body$
       declare u uuid;
       begin select o_user into u from public.fel__sesion_maestro(p_sesion); %s end $body$ $fn$,
-      v_nombre, case when v_args = '' then '' else ', ' || v_args end, case when r.proretset and v_ret not like 'TABLE%' then 'setof ' else '' end, v_ret, v_body);
+      v_nombre, case when v_args = '' then '' else ', ' || v_args end, '', v_ret, v_body);
     execute format('revoke all on function public.%I(%s) from public, anon, authenticated', v_nombre, (select pg_get_function_identity_arguments(o.oid) from pg_proc o where o.proname = v_nombre and o.pronamespace = 'public'::regnamespace));
     n := n + 1;
   end loop;

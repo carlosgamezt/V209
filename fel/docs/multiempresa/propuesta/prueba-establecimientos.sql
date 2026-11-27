@@ -6,7 +6,9 @@ create or replace function pg_temp.espera_error(p_sql text, p_patron text) retur
 declare v_ok boolean := false;
 begin begin execute p_sql; exception when others then v_ok := (sqlerrm ~ p_patron) or (sqlstate ~ p_patron); end;
   if not v_ok then raise exception 'ESPERABA ERROR /%/ pero no ocurrió, en: %', p_patron, p_sql; end if; end $$;
-create or replace function pg_temp.como(p_uid text) returns void language plpgsql as $$ begin perform set_config('request.jwt.claim.sub', p_uid, true); perform set_config('role', 'authenticated', true); end $$;
+create or replace function pg_temp.como(p_uid text) returns void language plpgsql as $$ begin   -- imita a PostgREST con una SESIÓN VIVA de Supabase Auth (M-L exige session_id en el token y en auth.sessions)
+  perform set_config('role', 'postgres', true); insert into auth.sessions (id, user_id) values (md5('sesion-' || p_uid)::uuid, p_uid::uuid) on conflict do nothing;
+  perform set_config('request.jwt.claim.sub', p_uid, true); perform set_config('request.jwt.claims', json_build_object('sub', p_uid, 'role', 'authenticated', 'session_id', md5('sesion-' || p_uid)::uuid, 'aal', 'aal1')::text, true); perform set_config('role', 'authenticated', true); end $$;
 create or replace function pg_temp.anonimo() returns void language plpgsql as $$ begin perform set_config('request.jwt.claim.sub', '', true); perform set_config('role', 'anon', true); end $$;
 create or replace function pg_temp.volver() returns void language plpgsql as $$ begin perform set_config('role', 'postgres', true); end $$;
 

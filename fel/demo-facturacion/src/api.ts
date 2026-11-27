@@ -62,7 +62,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
   const bd = extras.identidadSesion ? conIdentidadDeSesion(bdBase) : bdBase;
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
   const alc = () => alcance.getStore()?.alc ?? null;   // alcance de establecimientos de la persona de ESTA petición (null = sin restricción)
-  const pr = extras.practico ? crearPractico(bd, { mock, emp, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, digifactCorreo: extras.digifactCorreo, correo: extras.correo }) : null;
+  const pr = extras.practico ? crearPractico(bd, { mock, emp, identidadSesion: extras.identidadSesion, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, digifactCorreo: extras.digifactCorreo, correo: extras.correo }) : null;
   // estado de los simuladores en la base real (solo modo PostgreSQL con versión práctica): sobrevive a reinicios y es común a todas las instancias
   const simPersist = pr ? new PersistenciaSimuladores(bd, { mock, ...Object.fromEntries(pr.registro.listar().filter((x) => x.persistible).map((x) => [x.id, x.persistible!])) }) : null;
   const base = extras.proveedor ?? mock;   // «proveedor»: solo las pruebas del agente lo sustituyen (canal asistido); la demostración usa el simulado
@@ -422,8 +422,9 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     }
     // ---- controles de la DEMOSTRACIÓN: reproducen lo que en la realidad hacen el proveedor, el tiempo o una caída del proceso ----
     if (m === "POST" && ruta === "/api/demo/liberar-tardios") { await cuerpo(); await mock.liberarTardios(CTX); await pr?.sincronizar(); return json({ ok: true, aviso: "El proveedor simulado procesó las solicitudes tardías." }); }
-    if (m === "POST" && ruta === "/api/demo/auditar") { await cuerpo(); const x = await orqRec().auditarFallidas(); await pr?.sincronizar(); return json(x); }
-    if (m === "POST" && ruta === "/api/demo/recuperar") { await cuerpo(); const x = await orqRec().recuperar({ umbralMin: 0 }); await pr?.sincronizar(); return json(x); }
+    // barridos del SISTEMA sobre todas las empresas: con identidad de sesión no existen en la ruta de personas (los hace la función interna de sistema con nexa_sys)
+    if (!extras.identidadSesion && m === "POST" && ruta === "/api/demo/auditar") { await cuerpo(); const x = await orqRec().auditarFallidas(); await pr?.sincronizar(); return json(x); }
+    if (!extras.identidadSesion && m === "POST" && ruta === "/api/demo/recuperar") { await cuerpo(); const x = await orqRec().recuperar({ umbralMin: 0 }); await pr?.sincronizar(); return json(x); }
     if (m === "POST" && ruta === "/api/demo/completar-humana") {
       const b = await cuerpo(); const op = await bd.rpc("fel_sys_operacion", { p_empresa: emp(), p_op: id(b.operacion as string) }) as Obj;
       if (!op.orden_externa) throw new ErrorHttp(422, "La operación no espera una acción humana", "regla");

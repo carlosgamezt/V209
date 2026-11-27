@@ -5,6 +5,7 @@
 #   ENSAYO_URL_ADMIN        postgres://postgres.<ref>:<clave>@<host-pooler>:5432/postgres   (session pooler, para aplicar migraciones)
 #   ENSAYO_URL_APP          postgres://nexa_app.<ref>:<clave>@<host-pooler>:6543/postgres   (pooler en modo transacción, como la función)
 #   ENSAYO_CLAVE_NEXA_APP   contraseña que se asigna a nexa_app en el proyecto de pruebas
+#   ENSAYO_URL_SYS / ENSAYO_CLAVE_NEXA_SYS   (opcionales, F4) conexión y contraseña del rol de sistema nexa_sys (usuario nexa_sys.<ref>, pooler 6543)
 #   ENSAYO_CONFIRMO         debe valer «nexa-fel-test»
 #   FEL_DEMO_PROYECTO_REF   (opcional) ref de nexa-demo: si coincide con ENSAYO_REF el script se NIEGA
 #   FEL_R2_ESPERADO         abierto (hoy) | cerrado (tras corregir R2)
@@ -25,6 +26,7 @@ if ! local_ok "$ENSAYO_URL_ADMIN"; then [[ "$UA" == *".$REF" ]] || fallo "el usu
 echo "OK    guardas: proyecto $REF distinto de nexa-demo, usuarios coherentes"
 [ "$MODO" = validar ] && { echo "OK    validación de la forma (no se tocó la base)"; exit 0; }
 PSQLA() { psql "$ENSAYO_URL_ADMIN" -v ON_ERROR_STOP=1 -q -X "$@"; }
+PSQLS() { PGPASSWORD="$ENSAYO_CLAVE_NEXA_SYS" psql "$ENSAYO_URL_SYS" -v ON_ERROR_STOP=1 -q -X "$@"; }
 PSQLP() { PGPASSWORD="$ENSAYO_CLAVE_NEXA_APP" psql "$ENSAYO_URL_APP" -v ON_ERROR_STOP=1 -q -X "$@"; }
 aplicar() {
   echo "== 1) identidad del administrador del ensayo"; PSQLA -At -c "select 'usuario='||current_user||' · super='||rolsuper||' · bypassrls='||rolbypassrls from pg_roles where rolname=current_user"
@@ -32,8 +34,12 @@ aplicar() {
   if [ "$(PSQLA -At -c "select count(*) from information_schema.tables where table_schema='public' and table_name='documentos'")" = 0 ]; then
     echo "== 3) migraciones 1-30 (proyecto vacío)"; for f in supabase/migrations/*.sql; do PSQLA --single-transaction -f "$f" >/dev/null || fallo "migración $f"; done; echo "OK    migraciones del proyecto"; fi
   echo "== 4) propuestas en orden: M-D, M-A, M-B, M-C, M-F, M-G, M-H, M-I, M-J, M-E (una transacción cada una)"
-  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
+  for f in M-D_permisos M-A_emisor_fiscal M-B_digifact_config M-C_acceso_maestro M-F_establecimientos_usuario M-G_sesion_admin M-H_admin_establecimientos M-I_envoltorios_sesion M-J_plataforma_y_auditoria M-K_sistema_nexa_sys M-L_rls_sesion_viva M-E_rol_app; do PSQLA --single-transaction -f "$D/$f.sql" >/dev/null || fallo "no se aplicó $f"; echo "OK    $f"; done
   PSQLA -c "alter role nexa_app login password '$ENSAYO_CLAVE_NEXA_APP'" ; echo "OK    nexa_app habilitado SOLO en el proyecto de pruebas"
+  if [ -n "${ENSAYO_CLAVE_NEXA_SYS:-}" ]; then
+    PSQLA -c "alter role nexa_sys login password '$ENSAYO_CLAVE_NEXA_SYS'"
+    echo "OK    nexa_sys habilitado SOLO en el proyecto de pruebas"
+  fi
   echo "== 5) verificación posterior (solo lectura)"; V=$({ echo '\set ON_ERROR_STOP on'; echo 'begin transaction read only;'; echo "\\i $D/verificacion.sql"; echo 'rollback;'; } | PSQLA -At); NT=$(grep -c '|t$' <<< "$V" || true); NF=$(grep -c '|f$' <<< "$V" || true)
   echo "comprobaciones ok=t: $NT · ok=f: $NF"; [ "$NT" -gt 0 ] && [ "$NF" = 0 ] || fallo "verificación posterior"
   echo "== 6) datos SIMULADOS (dos empresas, establecimientos 2 y 67, sesiones de prueba)"; PSQLA -f "$D/fixture-sesion.sql" >/dev/null; echo "OK    fixture"
@@ -43,6 +49,11 @@ probar() {
   PSQLP -At -c "select 'funciones ejecutables: '||count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and has_function_privilege(current_user, p.oid, 'execute') and p.proname like 'fel%'"
   echo "== 8) pruebas como nexa_app"
   for t in prueba-rol-app prueba-sesion-admin prueba-admin-establecimientos prueba-envoltorios; do PSQLP -f "$D/$t.sql" 2>&1 | grep -qE "PRUEBAS DEL ROL nexa_app OK|PRUEBAS DE SESIÓN VALIDADA OK|PRUEBAS DE ADMINISTRACIÓN DE ESTABLECIMIENTOS OK|PRUEBAS DE ENVOLTORIOS DE SESIÓN OK" && echo "OK    $t" || fallo "$t"; done
+  echo "== 8b) lectura por la Data API: sesión viva, revocación inmediata, MFA real (como administrador del ensayo)"; PSQLA -f "$D/prueba-rls-sesion-viva.sql" 2>&1 | grep -q "PRUEBAS RLS DE SESIÓN VIVA OK" && echo "OK    prueba-rls-sesion-viva" || fallo "prueba-rls-sesion-viva"
+  if [ -n "${ENSAYO_URL_SYS:-}" ]; then
+    echo "== 8c) conexión como nexa_sys (F4): solo fel_sys_*, sin tablas"
+    local_ok "$ENSAYO_URL_ADMIN" || [[ "$(usuario "$ENSAYO_URL_SYS")" == "nexa_sys.$REF" ]] || fallo "el usuario de sistema debe ser nexa_sys.<ref>"; PSQLS -f "$D/prueba-nexa-sys.sql" 2>&1 | grep -q "PRUEBAS DE NEXA_SYS OK" && echo "OK    prueba-nexa-sys" || fallo "prueba-nexa-sys"
+  fi
   echo "== 9) sonda R2 (suplantación por fel_op_*), esperado: ${FEL_R2_ESPERADO:-abierto}"; PSQLP -v esperado="${FEL_R2_ESPERADO:-abierto}" -f "$D/prueba-r2-suplantacion.sql" 2>&1 | grep -E "POSIBLE|rechazada|R2 ESTADO|SONDA R2" || fallo "sonda R2"
   echo "== 10) tabla nueva con RLS y sin política: nexa_app debe ver 0 filas"
   PSQLA -c "create table public.zz_nueva (x int); alter table public.zz_nueva enable row level security; insert into public.zz_nueva values (1); grant select on public.zz_nueva to nexa_app;" >/dev/null

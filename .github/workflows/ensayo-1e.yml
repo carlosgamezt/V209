@@ -50,6 +50,8 @@ jobs:
           ENSAYO_URL_ADMIN: ${{ secrets.ENSAYO_URL_ADMIN }}
           ENSAYO_URL_APP: ${{ secrets.ENSAYO_URL_APP }}
           ENSAYO_CLAVE_NEXA_APP: ${{ secrets.ENSAYO_CLAVE_NEXA_APP }}
+          ENSAYO_URL_SYS: ${{ secrets.ENSAYO_URL_SYS }}
+          ENSAYO_CLAVE_NEXA_SYS: ${{ secrets.ENSAYO_CLAVE_NEXA_SYS }}
         run: |
           case "$PASO" in validar|aplicar|probar|todo) ;; *) echo "Paso no válido"; exit 2;; esac
           bash fel/tools/ensayo-1e.sh "$PASO"

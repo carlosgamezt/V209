@@ -31,6 +31,13 @@ do $$ declare r record; begin
   for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and (p.proname like 'fel\_pla\_%' or p.proname in ('fel_ses_auditar', 'fel_aud_acceso')) loop
     execute format('grant execute on function %s to nexa_app', r.f);
   end loop;
+  -- R2 · F4 (M-K): nexa_app pierde TODA `fel_sys_*` salvo las 9 de los protocolos de máquina del agente local (se autentican dentro de la función con su clave o firma); usa los envoltorios `fel_ses_sys_*`/`fel_pla_sys_*`
+  if exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname = 'fel_ses_sys_operacion') then
+    for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fel\_sys\_%'
+              and p.proname not in ('fel_sys_agente_autenticar', 'fel_sys_agente_clave', 'fel_sys_agente_latido', 'fel_sys_agente_politica', 'fel_sys_agente_vincular', 'fel_sys_orden_reclamar', 'fel_sys_orden_progreso', 'fel_sys_orden_resultado', 'fel_sys_orden_vista_previa') loop
+      execute format('revoke execute on function %s from nexa_app', r.f);
+    end loop;
+  end if;
   for r in select p.oid::regprocedure as f from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname like 'fel\_ses\_%' loop
     execute format('grant execute on function %s to nexa_app', r.f);
   end loop;

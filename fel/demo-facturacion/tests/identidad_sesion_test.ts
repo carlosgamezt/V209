@@ -9,7 +9,8 @@ import { Sesiones } from "../src/sesiones.ts";
 import { AlmacenPg } from "../src/almacen.ts";
 import { PERSONAS, CLAVE_DEMO, EMPRESA2 } from "../src/mundo_practico.ts";
 import { EMPRESA } from "../src/mundo_demo.ts";
-import { CON_ENVOLTORIO, PLATAFORMA, destinoPlataforma, conIdentidadDeSesion } from "../src/identidad_sesion.ts";
+import { CON_ENVOLTORIO, PLATAFORMA, SYS_CON_SESION, destinoPlataforma, conIdentidadDeSesion } from "../src/identidad_sesion.ts";
+import { crearManejadorSistema, tickSistema } from "../src/sistema.ts";
 import { activarEstablecimientosLocal } from "../src/demo_establecimientos.ts";
 
 type J = Record<string, any>; // deno-lint-ignore no-explicit-any
@@ -29,9 +30,9 @@ const NIT = (n: number) => `${1000000 + n}-${n % 10}`;
 
 Deno.test({ name: "R2·F1 catálogo: los envoltorios fel_ses_* generados por M-I son exactamente la lista del servidor, sin identidad por parámetro, y las internas siguen intactas", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const { bd } = await entorno(true);
-  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and proname <> 'fel_ses_auditar'")).map((x) => x.n === "fel_ses_tipos_empresa" ? "fel_tipos_empresa" : "fel_op_" + x.n.slice(8)).sort();
+  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and proname <> 'fel_ses_auditar' and proname not like 'fel\\_ses\\_sys\\_%'")).map((x) => x.n === "fel_ses_tipos_empresa" ? "fel_tipos_empresa" : "fel_op_" + x.n.slice(8)).sort();
   assert.deepEqual(w, [...CON_ENVOLTORIO].sort(), "el catálogo y la lista del servidor deben coincidir");
-  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and proname <> 'fel_ses_auditar' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor|p_empresa' or not prosecdef or proconfig is null or not (proconfig::text ~ 'search_path'))");
+  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_%' and proname <> 'fel_ses_auditar' and proname not like 'fel\\_ses\\_sys\\_%' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor|p_empresa' or not prosecdef or proconfig is null or not (proconfig::text ~ 'search_path'))");
   assert.deepEqual(raros, [], "todos: primer parámetro p_sesion, sin p_actor/p_empresa, SECURITY DEFINER, search_path fijo");
   assert.equal((await bd.filas("select 1 from pg_proc where proname = 'fel_op_cliente_guardar' and pg_get_function_arguments(oid) like 'p_actor uuid, p_empresa uuid%'")).length, 1, "la interna conserva su firma");
   // ninguna función con envoltorio queda sin él: toda fel_op_* con (p_actor, p_empresa) está envuelta o es una de las cubiertas por M-G/M-H
@@ -91,9 +92,9 @@ Deno.test({ name: "R2·F1 permisos efectivos decididos por la base con la sesió
 
 Deno.test({ name: "R2·F2 catálogo y plataforma: fel_pla_* = lista del servidor; el actor sale de la sesión de PLATAFORMA; una sesión de empresa no entra; MFA de plataforma configurable", sanitizeOps: false, sanitizeResources: false, fn: async () => {
   const { bd, Cli } = await entorno(true);
-  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_pla\\_%'")).map((x) => x.n).sort();
+  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_pla\\_%' and proname not like 'fel\\_pla\\_sys\\_%'")).map((x) => x.n).sort();
   assert.deepEqual(w, [...PLATAFORMA].map(destinoPlataforma).sort(), "el catálogo y la lista de plataforma del servidor deben coincidir");
-  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_pla\\_%' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor' or not prosecdef or not (proconfig::text ~ 'search_path'))");
+  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_pla\\_%' and proname not like 'fel\\_pla\\_sys\\_%' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_actor' or not prosecdef or not (proconfig::text ~ 'search_path'))");
   assert.deepEqual(raros, [], "plataforma: primer parámetro p_sesion, sin p_actor, SECURITY DEFINER, search_path fijo");
   const ana = await new Cli("ana").entrar(), maestro = await new Cli("maestro").entrar();
   const maestroCtx = { token: maestro.token(), actor: PERSONAS.maestro.id as string | null, empresa: null as string | null }, anaCtx = { token: ana.token(), actor: PERSONAS.ana.id as string | null, empresa: EMPRESA as string | null };
@@ -124,4 +125,36 @@ Deno.test({ name: "R2·F3 auditoría: la firma la sesión, lista cerrada de acci
   assert.equal((await bd.filas<{ n: number }>("select count(*)::int n from public.auditoria"))[0].n, antes + 1, "el evento rechazado no dejó rastro falso");
   // sin sesión no se audita a nombre de nadie
   await assert.rejects(() => conIdentidadDeSesion(bd, () => undefined).rpc("fel_auditar", { p_empresa: EMPRESA, p_actor: PERSONAS.ana.id, p_accion: "documento.x_prueba", p_entidad: "documento", p_entidad_id: "d1", p_datos: "{}" }), /Sesión no válida/);
+}});
+
+Deno.test({ name: "R2·F4 sistema: fel_ses_sys_* = lista del servidor; la empresa sale de la sesión (una operación ajena no existe); nexa_sys y el tick del sistema", sanitizeOps: false, sanitizeResources: false, fn: async () => {
+  const { bd, Cli } = await entorno(true);
+  const w = (await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_sys\\_%' and proname <> 'fel_ses_sys_bolson_cuenta_simulada'")).map((x) => "fel_sys_" + x.n.slice(12)).sort();
+  assert.deepEqual(w, [...SYS_CON_SESION].sort(), "el catálogo y la lista del servidor deben coincidir");
+  const raros = await bd.filas<{ n: string }>("select proname n from pg_proc where proname like 'fel\\_ses\\_sys\\_%' and (pg_get_function_arguments(oid) !~ '^p_sesion text' or pg_get_function_arguments(oid) ~ 'p_empresa' or not prosecdef or not (proconfig::text ~ 'search_path'))");
+  assert.deepEqual(raros, [], "sin p_empresa en la firma, SECURITY DEFINER y search_path fijo");
+  // una operación de la empresa A: la ve la sesión de A; la sesión de B no la encuentra (la empresa NO es un parámetro)
+  const ana = await new Cli("ana").entrar(), sofia = await new Cli("sofia").entrar(); const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Guatemala" }).format(new Date());
+  const est = (await ana.ll("GET", "/api/estado")).json.establecimientos[0].id, cli = (await ana.ll("GET", "/api/estado")).json.clientes[0].id, con = (await ana.ll("GET", "/api/estado")).json.conceptos[0];
+  const d = await ana.ll("POST", "/api/documentos", { cliente_id: cli, establecimiento_id: est, fecha: hoy, lineas: [{ descripcion: con.descripcion, cantidad: "1", precio_unitario: con.precio_unitario, concepto_id: con.id }] }); assert.equal(d.status, 200, d.texto);
+  assert.equal((await ana.ll("POST", `/api/documentos/${d.json.documento.id}/estado`, { estado: "revisado", version: d.json.documento.version })).status, 200);
+  const cert = await ana.ll("POST", `/api/documentos/${d.json.documento.id}/certificar`, { proveedor: "digifact", escenario: "exito", clave: "clave-f4-0000000000001" }); assert.equal(cert.json.documento?.estado_fiscal, "certificado", cert.texto);
+  const op = (await bd.filas<{ id: string }>("select id from public.operaciones_fiscales where documento_id = $1 limit 1", [d.json.documento.id]))[0].id;
+  assert.ok(await bd.rpc("fel_ses_sys_operacion", { p_sesion: ana.token(), p_op: op }), "la sesión de A ve su operación");
+  await assert.rejects(() => bd.rpc("fel_ses_sys_operacion", { p_sesion: sofia.token(), p_op: op }), /./, "la sesión de B NO ve la operación de A");
+  await assert.rejects(() => bd.rpc("fel_ses_sys_operacion", { p_sesion: "tok-inexistente-0123456789abcdef", p_op: op }), /sesión no válida/i);
+  // el servidor no puede mandar otra empresa
+  const p = conIdentidadDeSesion(bd, () => ({ token: ana.token(), actor: PERSONAS.ana.id, empresa: EMPRESA }));
+  await assert.rejects(() => p.rpc("fel_sys_operacion", { p_empresa: EMPRESA2, p_op: op }), /no es la de la sesión/); assert.ok(await p.rpc("fel_sys_operacion", { p_empresa: EMPRESA, p_op: op }));
+  await assert.rejects(() => conIdentidadDeSesion(bd, () => undefined).rpc("fel_sys_operacion", { p_empresa: EMPRESA, p_op: op }), /Sesión no válida/);
+  // las rutas de barrido del sistema no existen en la ruta de personas con identidad de sesión
+  assert.equal((await ana.ll("POST", "/api/demo/recuperar", {})).status, 404); assert.equal((await ana.ll("POST", "/api/demo/auditar", {})).status, 404);
+  // función interna de sistema: secreto obligatorio y respuesta solo con conteos
+  const SEC = "secreto-de-sistema-para-pruebas-0123456789"; const h = crearManejadorSistema({ sys: () => bd, secreto: SEC });
+  const pet = (secreto?: string, m = "POST", ruta = "/tick") => h(new Request("http://127.0.0.1" + ruta, { method: m, headers: secreto ? { "x-nexa-sys-secreto": secreto } : {} }));
+  assert.equal((await pet()).status, 401); assert.equal((await pet("otro")).status, 401); assert.equal((await pet(SEC, "GET")).status, 404);
+  const ok = await pet(SEC); assert.equal(ok.status, 200); const j = await ok.json(); for (const k of ["ordenesVencidas", "bolsonRevisado", "operacionesPendientes", "fallidasManuales", "consumosIncoherentes", "saldosInconsistentes", "monederosInconsistentes"]) assert.equal(typeof j[k], "number", k);
+  assert.equal((await crearManejadorSistema({ sys: () => bd, secreto: undefined })(new Request("http://x/tick", { method: "POST" }))).status, 503, "sin secreto configurado no responde");
+  assert.equal((await crearManejadorSistema({ sys: () => { throw new Error("postgres://usuario:clave@host"); }, secreto: SEC })(new Request("http://x/tick", { method: "POST", headers: { "x-nexa-sys-secreto": SEC } }))).status, 500);
+  assert.ok(typeof (await tickSistema(bd)).ordenesVencidas === "number");
 }});

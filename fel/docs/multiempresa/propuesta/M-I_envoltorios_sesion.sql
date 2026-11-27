@@ -25,7 +25,7 @@ begin
     execute format($fn$create or replace function public.%I(p_sesion text%s) returns %s%s language plpgsql security definer set search_path = '' as $body$
       declare u uuid; e uuid;
       begin select o_user, o_empresa into u, e from public.fel__sesion_empresa(p_sesion); %s end $body$ $fn$,
-      'fel_ses_' || regexp_replace(r.proname, '^fel_(op_)?', ''), case when v_args = '' then '' else ', ' || v_args end, case when r.proretset and v_ret not like 'TABLE%' then 'setof ' else '' end, v_ret, v_body);
+      'fel_ses_' || regexp_replace(r.proname, '^fel_(op_)?', ''), case when v_args = '' then '' else ', ' || v_args end, '', v_ret, v_body);
     execute format('revoke all on function public.%I(%s) from public, anon, authenticated', 'fel_ses_' || regexp_replace(r.proname, '^fel_(op_)?', ''), (select pg_get_function_identity_arguments(o.oid) from pg_proc o where o.proname = 'fel_ses_' || regexp_replace(r.proname, '^fel_(op_)?', '') and o.pronamespace = 'public'::regnamespace));
     n := n + 1;
   end loop;

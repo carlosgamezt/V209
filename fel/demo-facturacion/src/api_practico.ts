@@ -14,6 +14,7 @@ import type { MockProvider } from "../../proveedores/src/mock.ts";
 import type { BdDemo } from "./bd.ts";
 import { EXTRA, esMaestro } from "./mundo_practico.ts";
 import { Sesiones } from "./sesiones.ts";
+import { contextoActual } from "./identidad_sesion.ts";
 import { ivaIncluidoPdf, pdfDemo } from "./pdf_demo.ts";
 import { verificar as verificarTotp } from "./totp.ts";
 import { rutasCorreo } from "./api_correo.ts";
@@ -27,7 +28,7 @@ const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 const texto = (x: unknown, min: number, max: number, campo: string): string => { if (typeof x !== "string" || x.trim().length < min || x.length > max) throw new ErrorPr(400, `${campo}: texto de ${min} a ${max} caracteres`, "entrada_invalida"); return x.trim(); };
 const monto = (x: unknown, campo: string): string => { if (typeof x !== "string" || !RE_MONTO.test(x)) throw new ErrorPr(400, `${campo}: número con hasta 6 decimales`, "entrada_invalida"); return x; };
 
-interface Deps { mock: MockProvider; emp: () => string; sesiones?: Sesiones; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo }
+interface Deps { mock: MockProvider; emp: () => string; identidadSesion?: boolean; sesiones?: Sesiones; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo }
 interface CtxEmpresa { req: Request; url: URL; a: { clave: string; id: string }; ruta: string; m: string; cuerpo: () => Promise<Obj>; id: (x: string) => string;
   json: (x: unknown, s?: number) => Response; canalDe: (p: string) => Promise<string>; detalle: (id: string) => Promise<unknown>; permisos: () => Promise<string[]>; revisar: (id: string, version: number) => Promise<void>; alcance?: Alcance | null }
 
@@ -368,7 +369,8 @@ export function crearPractico(bd: BdDemo, d: Deps) {
       throw new ErrorPr(403, "Esta función no está disponible para el administrador de la plataforma", "no_autorizado");
     },
     async verificacion() {
-      const s = await bd.filas<{ ok: boolean }>("select ok from public.fel_sys_verificar_saldos()"), w = await bd.filas<{ ok: boolean }>("select ok from public.fel_sys_verificar_monederos()");
+      const tokV = d.identidadSesion ? (contextoActual()?.token ?? null) : null; if (d.identidadSesion && !tokV) throw new ErrorPr(403, "Sesión no válida", "no_autorizado");   // con identidad de sesión: versiones de PLATAFORMA (solo la sesión de plataforma las ejecuta)
+      const s = tokV ? await bd.filas<{ ok: boolean }>("select ok from public.fel_pla_sys_verificar_saldos($1)", [tokV]) : await bd.filas<{ ok: boolean }>("select ok from public.fel_sys_verificar_saldos()"), w = tokV ? await bd.filas<{ ok: boolean }>("select ok from public.fel_pla_sys_verificar_monederos($1)", [tokV]) : await bd.filas<{ ok: boolean }>("select ok from public.fel_sys_verificar_monederos()");
       return { comprobaciones: s.length + w.length, fallos: [...s, ...w].filter((x) => !x.ok).length };
     },
   };

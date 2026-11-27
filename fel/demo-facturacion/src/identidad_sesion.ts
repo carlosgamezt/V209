@@ -13,6 +13,9 @@ export const CON_ENVOLTORIO: ReadonlySet<string> = new Set(["agente_codigo_crear
 
 export class ErrorIdentidad extends Error { constructor(m: string, readonly codigo = "no_autorizado") { super(`FEL_NO_AUTORIZADO: ${m}`); } }   // el prefijo hace que la API responda 403 como cualquier otro rechazo de la base
 export interface ContextoPeticion { token: string | null; actor: string | null; empresa: string | null }
+/** F4 · funciones del SISTEMA `fel_sys_*` con empresa que se usan DENTRO de una petición (máquina de estados de certificación, cobertura, artefactos, credencial y emisor): `fel_ses_sys_*` toma la empresa de la sesión. */
+export const SYS_CON_SESION: ReadonlySet<string> = new Set(["anulacion_cerrar","anulacion_desconocida","artefacto_guardar","cobertura_cerrar","cobertura_confirmar","cobertura_liberar","cobertura_reservar","consumo_confirmar","consumo_liberar","consumo_reservar","consumo_vigilar","digifact_aplicar","digifact_credencial","documento_instantanea","emisor_vigente","evento_registrar","hash_documento","operacion","operacion_desconocida","operacion_marcar_envio","operacion_no_enviada","operacion_orden","operacion_resolver_evento","orden_crear","orden_por_operacion"].map((n) => `fel_sys_${n}`));
+
 /** F2 · funciones de PLATAFORMA con envoltorio `fel_pla_*` (M-J): `fel_admin_*` y `fel_op_mfa_recuperacion_*` (aprobar, cerrar, listar, rechazar). El actor sale de la sesión de plataforma; la empresa OBJETIVO, si la hay, se conserva. */
 export const PLATAFORMA: ReadonlySet<string> = new Set(["bolson_alerta_resolver","bolson_conciliar_decidir","bolson_conciliar_proponer","bolson_cuenta_crear","bolson_cuenta_estado","bolson_evento_tipo_crear","bolson_extracto_importar","bolson_lote_registrar","bolson_partida_resolver","bolson_regla_registrar","cobro_emitir","cobro_generar","contrato_asignar","cuenta_comercial_ajustar","emision","empresa_crear","empresa_estado","empresa_regimen","identificacion_verificar","invitar_propietario","maestro_autorizar","maestro_revocar_autorizacion","pago_simulado_registrar","plan_crear","plan_version_crear","regimen_crear_version","regimen_verificar","regla_crear_version","regla_verificar"].map((n) => `fel_admin_${n}`).concat(["aprobar", "cerrar", "listar", "rechazar"].map((n) => `fel_op_mfa_recuperacion_${n}`)));
 export const destinoPlataforma = (fn: string) => `fel_pla_${fn.replace(/^fel_(op|admin)_/, "")}`;
@@ -29,6 +32,13 @@ export function conIdentidadDeSesion(bd: BdDemo, contexto: () => ContextoPeticio
       const { p_actor, ...resto } = args; if (c.actor && p_actor !== undefined && p_actor !== c.actor) throw new ErrorIdentidad("La persona de la llamada no es la de la sesión", "identidad_distinta");
       return bd.rpc(destinoPlataforma(fn), { p_sesion: c.token, ...resto });
     }
+    if (SYS_CON_SESION.has(fn)) {   // F4: la empresa de la llamada DEBE ser la de la sesión (y se envía solo la sesión)
+      const c = contexto(); if (!c?.token) throw new ErrorIdentidad("Sesión no válida");
+      const { p_empresa, ...resto } = args; if (c.empresa && p_empresa !== undefined && p_empresa !== c.empresa) throw new ErrorIdentidad("La empresa de la llamada no es la de la sesión", "identidad_distinta");
+      return bd.rpc(`fel_ses_sys_${fn.slice(8)}`, { p_sesion: c.token, ...resto });
+    }
+    if (fn === "fel_sys_bolson_cuenta_simulada") { const c = contexto(); if (!c?.token) throw new ErrorIdentidad("Sesión no válida"); return bd.rpc("fel_ses_sys_bolson_cuenta_simulada", { p_sesion: c.token, ...args }); }
+    if (fn === "fel_sys_bolson_revisar") { const c = contexto(); if (!c?.token) throw new ErrorIdentidad("Sesión no válida"); return bd.rpc("fel_pla_sys_bolson_revisar", { p_sesion: c.token, p_umbral_min: args.p_umbral_min ?? null }); }
     if (fn === "fel_auditar") {   // F3: la auditoría de una petición la firma la sesión (lista cerrada de acciones); jamás una persona enviada por parámetro
       const c = contexto(); if (!c?.token) throw new ErrorIdentidad("Sesión no válida");
       const { p_actor, p_empresa, ...resto } = args;

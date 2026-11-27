@@ -21,6 +21,8 @@ Organización de Supabase con plan Free y cupo para un proyecto activo más (con
 | `ENSAYO_URL_ADMIN` | `postgres://postgres.<ref>:<clave>@<host-del-pooler>:5432/postgres` (session pooler) | Supabase → *Connect* → *Session pooler* (sustituye la contraseña) |
 | `ENSAYO_URL_APP` | `postgres://nexa_app.<ref>:<clave-nexa-app>@<host-del-pooler>:6543/postgres` (transaction pooler) | mismo host, puerto 6543, usuario `nexa_app.<ref>` |
 | `ENSAYO_CLAVE_NEXA_APP` | contraseña nueva que se asignará al rol `nexa_app` solo en este proyecto | la generas tú (≥ 32 caracteres aleatorios) |
+| `ENSAYO_URL_SYS` *(opcional, F4)* | `postgres://nexa_sys.<ref>:<clave-nexa-sys>@<host-del-pooler>:6543/postgres` | mismo host; usuario `nexa_sys.<ref>`; **distinta** de la de `nexa_app` |
+| `ENSAYO_CLAVE_NEXA_SYS` *(opcional, F4)* | contraseña nueva del rol de sistema `nexa_sys` | la generas tú (≥ 32 caracteres aleatorios, distinta de las demás) |
 
 ## 4. Verificaciones previas a cualquier ejecución (automáticas)
 - `tools/verificar-publicacion.py` (CI): el flujo es solo manual, usa **su** entorno, solo secretos `ENSAYO_*`, ningún secreto `DEMO_`, ningún nombre de la demostración en el código, secretos solo en un paso, sin artefactos ni eco de secretos.
