@@ -17,7 +17,7 @@ do $$ declare t text; n int := 0; begin
   for t in select c.relname from pg_class c join pg_namespace s on s.oid = c.relnamespace join pg_attribute a on a.attrelid = c.oid and a.attname = 'empresa_id' and not a.attisdropped
             where s.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity and c.relname not like 'zz\_%' order by 1 loop
     execute format('drop policy if exists sesion_viva on public.%I', t);
-    execute format('create policy sesion_viva on public.%I as restrictive for select to authenticated using (public.fel__sesion_viva())', t);
+    execute format('create policy sesion_viva on public.%I as restrictive for select to authenticated using ((select public.fel__sesion_viva()))', t);   -- subconsulta: se evalúa UNA vez por consulta, no por fila
     n := n + 1;
   end loop;
   raise notice 'M-L: política de sesión viva en % tablas', n;

@@ -90,7 +90,7 @@ do $$ declare n int; r text; begin
   select string_agg(p.proname, ',') into r from pg_proc p where p.pronamespace = 'api'::regnamespace and pg_get_function_arguments(p.oid) ~ case when p.proname like 'pla\_%' then '(^|, )(p_sesion|p_actor) ' else '(^|, )(p_sesion|p_actor|p_empresa) ' end;
   assert r is null, 'funciones de api con parámetro de identidad: ' || coalesce(r, '');
   -- todas SECURITY DEFINER con search_path vacío; ninguna de sistema ni de auditoría
-  select string_agg(p.proname, ',') into r from pg_proc p where p.pronamespace = 'api'::regnamespace and (not p.prosecdef or p.proconfig is null or not (p.proconfig::text ~ 'search_path='));
+  select string_agg(p.proname, ',') into r from pg_proc p where p.pronamespace = 'api'::regnamespace and ((not p.prosecdef and p.proname not in ('clientes_listar', 'conceptos_listar', 'establecimientos_listar', 'estado_catalogos')) or p.proconfig is null or not (p.proconfig::text ~ 'search_path='));   -- las 4 lecturas de M-O son INVOKER a propósito (lo exige prueba-api-lecturas)
   assert r is null, 'api sin definer/search_path fijo: ' || coalesce(r, '');
   assert not exists (select 1 from pg_proc p where p.pronamespace = 'api'::regnamespace and (p.proname ~ '^(sys_|pla_sys_|auditar|aud_)' or p.proname like '%operacion_marcar_envio%' or p.proname like '%evento_registrar%' or p.proname like '%artefacto_guardar%')), 'api NO expone pasos del sistema ni auditoría';
   -- authenticated/anon NO ejecutan nada de public (salvo los predicados de RLS) ni leen tablas de sesiones, auditoría o credenciales

@@ -12,7 +12,7 @@ export const CON_ENVOLTORIO: ReadonlySet<string> = new Set(["agente_codigo_crear
   "orden_confirmacion_autorizar", "orden_vista_previa", "tipos_empresa_guardar"].map((n) => `fel_op_${n}`).concat(["fel_tipos_empresa"]));
 
 export class ErrorIdentidad extends Error { constructor(m: string, readonly codigo = "no_autorizado") { super(`FEL_NO_AUTORIZADO: ${m}`); } }   // el prefijo hace que la API responda 403 como cualquier otro rechazo de la base
-export interface ContextoPeticion { token: string | null; actor: string | null; empresa: string | null }
+export interface ContextoPeticion { token: string | null; actor: string | null; empresa: string | null; /** W3 · access token de Supabase Auth de la persona (solo con la Data API; jamás se guarda ni se registra) */ jwt?: string | null }
 /** F4 · funciones del SISTEMA `fel_sys_*` con empresa que se usan DENTRO de una petición (máquina de estados de certificación, cobertura, artefactos, credencial y emisor): `fel_ses_sys_*` toma la empresa de la sesión. */
 export const SYS_CON_SESION: ReadonlySet<string> = new Set(["anulacion_cerrar","anulacion_desconocida","artefacto_guardar","cobertura_cerrar","cobertura_confirmar","cobertura_liberar","cobertura_reservar","consumo_confirmar","consumo_liberar","consumo_reservar","consumo_vigilar","digifact_aplicar","digifact_credencial","documento_instantanea","emisor_vigente","evento_registrar","hash_documento","operacion","operacion_desconocida","operacion_marcar_envio","operacion_no_enviada","operacion_orden","operacion_resolver_evento","orden_crear","orden_por_operacion"].map((n) => `fel_sys_${n}`));
 

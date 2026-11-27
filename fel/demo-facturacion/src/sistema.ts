@@ -20,7 +20,7 @@ export function crearManejadorSistema(o: { sys: () => BdDemo; secreto: string | 
   return async (req) => {
     if (!o.secreto || o.secreto.length < 24) return json({ codigo: "no_configurado" }, 503);
     const url = new URL(req.url);
-    if (req.method !== "POST" || !url.pathname.endsWith("/tick")) return json({ codigo: "no_encontrado" }, 404);
+    if (req.method !== "POST" || !/^(?:\/functions\/v1)?(?:\/nexa-sys)?\/tick$/.test(url.pathname)) return json({ codigo: "no_encontrado" }, 404);   // ruta ANCLADA: ni `/x/tick` ni `/tick/x`; solo POST
     if (!(await igual(req.headers.get("x-nexa-sys-secreto") ?? "", o.secreto))) return json({ codigo: "no_autorizado" }, 401);
     try { return json(await tickSistema(o.sys())); } catch { return json({ codigo: "error" }, 500); }   // sin detalles: nunca cadenas de conexión ni mensajes de la base
   };

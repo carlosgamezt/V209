@@ -2,7 +2,7 @@
 
 > Generado por `tools/inventario-lecturas.ts`. NO editar a mano. Base: catálogo con las migraciones 1-30 y las propuestas M-D…M-L aplicadas en un PostgreSQL en memoria.
 
-**170 consultas SQL directas** (`filas`/`ejecutar`) y **111 llamadas `rpc`** a 80 funciones.
+**170 consultas SQL directas** (`filas`/`ejecutar`) y **112 llamadas `rpc`** a 81 funciones.
 
 ## 1. Consultas SQL directas por clase
 | Clase | Consultas |
@@ -86,12 +86,13 @@
 | ya con identidad de sesión (fel_adm_*, fel_ses_*, fel_pla_*) | 9 |
 | auditoría (fel_ses_auditar) | 5 |
 | sistema en petición (fel_ses_sys_* / fel_pla_sys_*; la función de sistema usa nexa_sys) | 3 |
-| directa | 2 |
+| directa | 3 |
 | acceso acotado (fel_aud_acceso) | 1 |
 
 ### Llamadas `rpc` todavía DIRECTAS con alcance de persona o empresa (pendientes: R3/F5)
 - `fel_permisos_efectivos` ×1
 - `fel_op_invitacion_aceptar` ×1
+- `fel_op_x` ×1
 
 ## 5. Consultas sobre datos de empresa (las que F5-3 debe llevar a RPC de lectura o a RLS con la identidad de Supabase Auth)
 | Archivo:línea | Tipo | Tablas |
@@ -100,24 +101,24 @@
 | `demo-facturacion/src/api_digifact.ts:35` | select | `documento_lineas`, `conceptos` |
 | `demo-facturacion/src/api_digifact.ts:96` | select | `auditoria` |
 | `demo-facturacion/src/api_digifact.ts:103` | select | `documentos`, `clientes` |
-| `demo-facturacion/src/api.ts:74` | select | `empresa_canales` |
-| `demo-facturacion/src/api.ts:136` | select | `documentos` |
-| `demo-facturacion/src/api.ts:159` | select | `documentos` |
-| `demo-facturacion/src/api.ts:172` | select | `documentos` |
-| `demo-facturacion/src/api.ts:190` | select | `clientes` |
-| `demo-facturacion/src/api.ts:198` | select | `clientes` |
-| `demo-facturacion/src/api.ts:209` | select | `documentos` |
-| `demo-facturacion/src/api.ts:227` | select | `documentos` |
-| `demo-facturacion/src/api.ts:255` | select | `documentos`, `clientes` |
-| `demo-facturacion/src/api.ts:265` | select | `conceptos` |
-| `demo-facturacion/src/api.ts:275` | select | `documentos`, `establecimientos` |
-| `demo-facturacion/src/api.ts:277` | select | `empresa_canales` |
-| `demo-facturacion/src/api.ts:279` | select | `documentos` |
-| `demo-facturacion/src/api.ts:363` | select | `artefactos_documento` |
-| `demo-facturacion/src/api.ts:386` | select | `operaciones_fiscales` |
-| `demo-facturacion/src/api.ts:415` | select | `conciliaciones` |
-| `demo-facturacion/src/api.ts:420` | select | `alertas_fiscales` |
-| `demo-facturacion/src/api.ts:460` | select | `documentos` |
+| `demo-facturacion/src/api.ts:76` | select | `empresa_canales` |
+| `demo-facturacion/src/api.ts:138` | select | `documentos` |
+| `demo-facturacion/src/api.ts:161` | select | `documentos` |
+| `demo-facturacion/src/api.ts:174` | select | `documentos` |
+| `demo-facturacion/src/api.ts:192` | select | `clientes` |
+| `demo-facturacion/src/api.ts:200` | select | `clientes` |
+| `demo-facturacion/src/api.ts:211` | select | `documentos` |
+| `demo-facturacion/src/api.ts:229` | select | `documentos` |
+| `demo-facturacion/src/api.ts:259` | select | `documentos`, `clientes` |
+| `demo-facturacion/src/api.ts:270` | select | `conceptos` |
+| `demo-facturacion/src/api.ts:280` | select | `documentos`, `establecimientos` |
+| `demo-facturacion/src/api.ts:282` | select | `empresa_canales` |
+| `demo-facturacion/src/api.ts:284` | select | `documentos` |
+| `demo-facturacion/src/api.ts:368` | select | `artefactos_documento` |
+| `demo-facturacion/src/api.ts:391` | select | `operaciones_fiscales` |
+| `demo-facturacion/src/api.ts:420` | select | `conciliaciones` |
+| `demo-facturacion/src/api.ts:425` | select | `alertas_fiscales` |
+| `demo-facturacion/src/api.ts:465` | select | `documentos` |
 | `demo-facturacion/src/api_practico.ts:48` | select | `operaciones_fiscales`, `consumos` |
 | `demo-facturacion/src/api_practico.ts:49` | select | `operaciones_fiscales` |
 | `demo-facturacion/src/api_practico.ts:53` | select | `operaciones_fiscales` |

@@ -10,7 +10,8 @@ import { esCF, NOMBRE_CF } from "./receptor_nit.ts";
 import { tiposDisponibles } from "./tipos_disponibles.ts";
 import { leerFiltros, listarDocumentos } from "./lista_documentos.ts";
 import type { AdminEst } from "./admin_establecimientos.ts";
-import { conIdentidadDeSesion, peticion } from "./identidad_sesion.ts";
+import { conIdentidadDeSesion, peticion, ErrorIdentidad } from "./identidad_sesion.ts";
+import { conDataApi, type OpcionesDataApi } from "./puerto_datos.ts";
 import { enAlcance, establecimientoNuevo, restringido, ErrorAlcance, type Alcance, type LectorAlcance } from "./alcance_establecimientos.ts";
 import { CATALOGO_DTE, esCodigoDte, tipoDte, TIPOS_RECIBO } from "../../proveedores/src/catalogo_dte.ts";
 import type { EmissionProvider } from "../../proveedores/src/tipos.ts";
@@ -55,11 +56,12 @@ const texto = (x: unknown, min: number, max: number, campo: string): string => {
 const RE_MONTO = /^\d{1,12}(\.\d{1,6})?$/;
 type Obj = Record<string, unknown>;
 
-export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSesion?: boolean;  ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
+export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSesion?: boolean; /** W3 · Data API: opciones del cliente de PostgREST (con el JWT de la petición); nada de credenciales de base */ datosApi?: OpcionesDataApi; /** W3 · extrae el access token de la persona de la petición (cabecera o cookie); sin él, las funciones de `api` se rechazan antes de salir */ jwtDe?: (req: Request) => string | null;  ahora?: () => Date; supervisor?: { salud(): unknown }; autorizador?: Autorizador; proveedor?: EmissionProvider; metricas?: { vaciar(): Promise<number> }; sesiones?: Sesiones; practico?: boolean; mfa?: Map<string, string>; digifact?: ServicioFelGt; digifactNit?: ConsultorNit; digifactCui?: ConsultorCui; digifactCorreo?: PoliticaCorreoDigifact; correo?: ServicioCorreo; /** Establecimiento asignado y bloqueado por usuario (apagado por omisión). */ alcance?: LectorAlcance; adminEst?: AdminEst } = {}) {
   const mock = new MockProvider({ idempotenciaNativa: false });   // el «servidor» del proveedor simulado NO deduplica: la protección está en nuestro lado
   const alcance = new AsyncLocalStorage<{ empresa: string; alc: Alcance | null }>();   // la empresa de CADA petición (una persona pertenece a una sola empresa; el maestro opera desde «Plataforma»)
   // IDENTIDAD DE SESIÓN (R2 · F1): con el interruptor, las funciones con envoltorio `fel_ses_*` se llaman con el token de la sesión y SIN actor ni empresa (la base los deduce); ver identidad_sesion.ts
-  const bd = extras.identidadSesion ? conIdentidadDeSesion(bdBase) : bdBase;
+  const bdInterna = extras.identidadSesion ? conIdentidadDeSesion(bdBase) : bdBase;
+  const bd = extras.datosApi ? conDataApi(bdInterna, extras.datosApi) : bdInterna;   // W3: la Data API es la capa más externa (ve los nombres originales); lo que no existe en `api` baja a la conexión interna
   const emp = () => alcance.getStore()?.empresa ?? EMPRESA;
   const alc = () => alcance.getStore()?.alc ?? null;   // alcance de establecimientos de la persona de ESTA petición (null = sin restricción)
   const pr = extras.practico ? crearPractico(bd, { mock, emp, identidadSesion: extras.identidadSesion, sesiones: extras.sesiones, mfa: extras.mfa, digifact: extras.digifact, digifactNit: extras.digifactNit, digifactCui: extras.digifactCui, digifactCorreo: extras.digifactCorreo, correo: extras.correo }) : null;
@@ -239,7 +241,8 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
 
     if (m === "GET" && ruta === "/api/estado") {
       const permisos = await permisosDe(a);
-      const [establecimientos, clientes, conceptos, parametros] = await leerLote(bd, [   // cuatro lecturas independientes en UN solo viaje a la base
+      const lecturaApi = bd.lecturaApi ? await bd.lecturaApi("estado_catalogos") as Record<string, unknown[]> : null;   // W4: Data API, una RPC por pantalla (RLS + empresa de la sesión)
+      const [establecimientos, clientes, conceptos, parametros] = lecturaApi ? [lecturaApi.establecimientos, lecturaApi.clientes, lecturaApi.conceptos, lecturaApi.parametros] : await leerLote(bd, [   // cuatro lecturas independientes en UN solo viaje a la base
       ["select id, codigo_sat, nombre from public.establecimientos where empresa_id = $1 and estado = 'activo' order by codigo_sat", [emp()]],
       ["select id, tipo_identificacion, numero_identificacion, nombre, direccion, email, telefono, frecuente from public.clientes where empresa_id = $1 and activo order by frecuente desc, nombre", [emp()]],
       ["select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario from public.conceptos where empresa_id = $1 and activo order by descripcion", [emp()]],
@@ -252,6 +255,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
         permisos, establecimientos: estPermitidos, alcance: alcancePublico, adminEstablecimientos: !!extras.adminEst, clientes, conceptos, canal: await canalBase(), escenarios: ESCENARIOS, parametros, aviso: "SIMULADO - SIN VALOR FISCAL" });
     }
     if (m === "GET" && ruta === "/api/clientes") {
+      if (bd.lecturaApi) return json(await bd.lecturaApi("clientes_listar"));   // con la Data API activa NO hay degradación: sin JWT se rechaza
       return json(await bd.filas("select c.id, c.tipo_identificacion, c.numero_identificacion, c.nombre, c.direccion, c.email, c.telefono, c.activo, c.version, c.frecuente, (select count(*)::int from public.documentos d where d.cliente_id = c.id and d.empresa_id = c.empresa_id) as facturas from public.clientes c where c.empresa_id = $1 order by c.nombre", [emp()]));
     }
     if (m === "POST" && ruta === "/api/clientes") {
@@ -262,6 +266,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const r = await bd.rpc("fel_op_cliente_guardar", { p_actor: a.id, p_empresa: emp(), p_id: uuidOk(b.id) ? b.id : null, p_tipo_identificacion: tipo, p_numero_identificacion: num, p_nombre: tipo === "CF" ? "Consumidor final" : texto(b.nombre, 1, 200, "Nombre"), p_direccion: opc(b.direccion, 300), p_email: opc(b.email, 200), p_telefono: opc(b.telefono, 40), p_version: b.id ? Number(b.version) : null });
       return json(r);
     }
+    if (m === "GET" && ruta === "/api/conceptos" && bd.lecturaApi) return json(await bd.lecturaApi("conceptos_listar"));
     if (m === "GET" && ruta === "/api/conceptos") return json(await bd.filas("select id, codigo, descripcion, tipo, unidad_medida, precio_unitario::text as precio_unitario, activo, version from public.conceptos where empresa_id = $1 order by descripcion", [emp()]));
     if (m === "POST" && ruta === "/api/conceptos") {
       const b = await cuerpo(); if (!["bien", "servicio"].includes(String(b.tipo))) throw new ErrorHttp(400, "Tipo de concepto no válido", "entrada_invalida");
@@ -272,7 +277,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
     if (m === "GET" && ruta === "/api/fecha-emision") return json(ventanaEmision(CTX.ahora()));   // hoy en Guatemala (servidor) y la fecha más antigua permitida
     if (m === "GET" && ruta === "/api/configuracion") {
       const [empr] = await bd.filas("select e.razon_social, e.nombre_comercial, e.nit, e.estado, e.moneda, e.emision_real_habilitada, r.nombre as regimen, r.estado as regimen_estado from public.empresas e left join public.regimenes_fiscales r on r.id = e.regimen_id where e.id = $1", [emp()]);
-      const establecimientos = await bd.filas("select id, codigo_sat, nombre, direccion, estado, (select count(*)::int from public.documentos d where d.establecimiento_id = x.id and d.empresa_id = x.empresa_id) as documentos from public.establecimientos x where x.empresa_id = $1 order by codigo_sat", [emp()]);
+      const establecimientos = bd.lecturaApi ? await bd.lecturaApi("establecimientos_listar") as unknown[] : await bd.filas("select id, codigo_sat, nombre, direccion, estado, (select count(*)::int from public.documentos d where d.establecimiento_id = x.id and d.empresa_id = x.empresa_id) as documentos from public.establecimientos x where x.empresa_id = $1 order by codigo_sat", [emp()]);
       const proveedores = await bd.filas("select id, nombre, ambientes, habilitado, nota from public.proveedores_emision order by case id when 'mock' then 0 when 'portal_playwright' then 1 else 2 end");
       const canales = await bd.filas("select proveedor_id, ambiente, habilitado, prioridad from public.empresa_canales where empresa_id = $1", [emp()]);
       const parametros = await bd.filas("select clave, valor::text as valor from public.plataforma_parametros order by clave");
@@ -452,9 +457,9 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const negocio = req.method === "POST" && NEGOCIO_POST.some((r) => r.test(url.pathname));
       if (req.method === "POST" && !negocio) permisosCache.clear();   // puede cambiar roles o membresías: los permisos reutilizados no sobreviven
       const atender = async () => {
-        if (pr && esMaestro(a.clave)) return await peticion.run({ token: Sesiones.idDeCookie(req), actor: a.id, empresa: null }, () => pr.rutasMaestro(req, url, a));   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
+        if (pr && esMaestro(a.clave)) return await peticion.run({ token: Sesiones.idDeCookie(req), actor: a.id, empresa: null, jwt: extras.jwtDe?.(req) ?? null }, () => pr.rutasMaestro(req, url, a));   // el administrador de la plataforma opera desde «Plataforma», no dentro de una empresa
         const empresaP = (await personaDe(a.clave))?.empresa ?? EMPRESA, alcP = extras.alcance ? await extras.alcance(req, a, empresaP) : null;   // la identidad y el alcance salen de la sesión validada, no de la petición
-        return await alcance.run({ empresa: empresaP, alc: alcP }, () => peticion.run({ token: Sesiones.idDeCookie(req), actor: a.id, empresa: empresaP }, async () => {
+        return await alcance.run({ empresa: empresaP, alc: alcP }, () => peticion.run({ token: Sesiones.idDeCookie(req), actor: a.id, empresa: empresaP, jwt: extras.jwtDe?.(req) ?? null }, async () => {
           if (restringido(alcP)) {   // un documento fuera del alcance de establecimientos de la persona NO EXISTE para ella (lectura, modificación, certificación, descargas, correo…)
             const mDoc = /^\/api\/documentos\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i.exec(url.pathname);
             if (mDoc && !/\/digifact\//.test(url.pathname)) { const [r] = await bd.filas<{ establecimiento_id: string | null }>("select establecimiento_id from public.documentos where id = $1 and empresa_id = $2", [mDoc[1], empresaP]); if (r && !enAlcance(alcP, r.establecimiento_id)) throw new ErrorHttp(404, "Documento no encontrado", "no_encontrado"); }
@@ -471,6 +476,7 @@ export function crearApi(bdBase: BdDemo, mundo: Sembrado, extras: { identidadSes
       const cab = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
       if (e instanceof ErrorPr) return new Response(JSON.stringify({ codigo: e.codigo, mensaje: e.message }), { status: e.status, headers: cab });
       if (e instanceof ErrorHttp) return new Response(JSON.stringify({ codigo: e.codigo, mensaje: e.message }), { status: e.status, headers: cab });
+      if (e instanceof ErrorIdentidad) return new Response(JSON.stringify({ codigo: "FEL_NO_AUTORIZADO", mensaje: e.message.replace(/^FEL_[A-Z_]+:\s*/, "") }), { status: 403, headers: cab });   // identidad rechazada ANTES de llegar a la base: 403, nunca 500
       if (e instanceof ErrorBd) {
         const status = STATUS[e.codigo];
         if (status) return new Response(JSON.stringify({ codigo: e.codigo, mensaje: e.message.replace(/^FEL_[A-Z_]+:\s*/, "") }), { status, headers: cab });

@@ -7,6 +7,13 @@ do $$ begin
     raise exception 'FEL_REGLA: hay datos multiempresa; la reversión se niega (exporta y decide con el propietario)';
   end if;
 end $$;
+-- W1–W4 (M-O, M-N, M-M; se retiran ANTES que todo lo demás: las funciones de `api` dependen de los tipos de las tablas): esquema api, ayudantes de identidad de Auth y parámetro de MFA de operaciones sensibles. (`fel__sesion_empresa/maestro` las restituye M-G o las retira este archivo más abajo.)
+drop schema if exists api cascade;
+drop function if exists public.fel__empresa_actual();
+drop function if exists public.fel__parametros_lista();
+drop function if exists public.fel__exigir_aal2();
+drop function if exists public.fel__ctx();
+delete from public.plataforma_parametros where clave = 'mfa_operaciones_sensibles';
 -- M-K (envoltorios fel_ses_sys_* y función de bolsón de plataforma; el rol nexa_sys se retira con reversion-M-K.sql)
 do $$ declare r record; begin for r in select oid::regprocedure as f from pg_proc where pronamespace = 'public'::regnamespace and (proname like 'fel\_ses\_sys\_%' or proname in ('fel_pla_sys_bolson_revisar', 'fel_pla_sys_verificar_saldos', 'fel_pla_sys_verificar_monederos')) loop execute format('drop function %s', r.f); end loop; end $$;
 -- M-J (envoltorios de plataforma y auditoría acotada; se retiran primero)
