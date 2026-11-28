@@ -56,4 +56,11 @@ v = json.loads(open(sys.argv[1]).read())
 assert v['miniaturas_embebidas_en_pa_docs'] == 96 and v['miniaturas_en_pa_thumbs'] >= 96 and v['respaldo_miniaturas'] == 96 and v['pa_docs_intacto_vs_respaldo'] is True and v['disparadores_en_pa_docs'] == 1 and v['matriz_escritura_identica_casos'] > 0, v
 PY
 Q -At -f $P/auto_e1_miniaturas.sql >/dev/null 2>&1 && echo "OK    E1 automática es idempotente (si pa_docs no cambió desde el respaldo)" || echo "NOTA: la segunda ejecución se detiene porque pa_docs ya cambió respecto al respaldo (esperado tras escribir planes)"
+# E3 automática (requiere la matriz «despues» de E1: se genera aquí con la misma lógica de la validación de E1)
+Q -At -f $P/auto_e3_guardado_parcial.sql | grep -v '^COMMIT$' > /tmp/e3_$$.json 2>/tmp/e3err_$$.txt || { head -3 /tmp/e3err_$$.txt; fallo "E3 automática falló"; }
+python3 - /tmp/e3_$$.json <<'PY' && ok "E3 automática: permisos idénticos a E1 en todos los perfiles, edición concurrente real conservada y deshecha, función invoker sin acceso para anon" || fallo "resultado de E3"
+import json, sys
+v = json.loads(open(sys.argv[1]).read())
+assert v['funcion_existe'] and v['security_invoker'] and not v['ejecutable_por_anon'] and v['ejecutable_por_authenticated'] and v['casos_perfil_x_plan_con_mismo_permiso_que_E1'] > 0, v
+PY
 echo "PRUEBAS DE LOS SQL AUTOMÁTICOS OK"
