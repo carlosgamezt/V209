@@ -215,6 +215,10 @@ Deno.serve(async (req) => {
     // Egress (E1): los planes se leen por la vista ligera (sin miniaturas Base64); si la vista aún no existe se usa la tabla de siempre. El resultado es el mismo: aquí solo se usan fechas, estados y asignaciones.
     const lite = await a.from('pa_docs_lite').select('data').eq('col', 'plans').limit(5000)
     const { data: pl } = lite.error ? await a.from('pa_docs').select('data').eq('col', 'plans').limit(5000) : lite
+    // Medición real de lo que lee cada corrida (queda en la respuesta de pg_net y en los registros de la función): de dónde salen los planes y cuántos KB
+    const lectura = { fuente: lite.error ? 'tabla (RETROCESO: la vista no está disponible)' : 'vista ligera', planes: (pl || []).length, kb_planes: Math.round(JSON.stringify(pl || []).length / 1024) }
+    if (lite.error) console.error('recordatorios: la vista pa_docs_lite no respondió; se leyó la tabla pesada:', lite.error.message)
+    console.log('recordatorios lectura', JSON.stringify(lectura))
     const { data: us } = await a.from('pa_docs').select('id,data').eq('col', 'users').limit(5000)
     const plans = (pl || []).map((r: any) => r.data)
     const users = (us || []).map((r: any) => ({ id: r.id, role: r.data && r.data.role, region: r.data && r.data.region, branch: r.data && r.data.branch, assigned: r.data && r.data.assigned }))
@@ -228,7 +232,7 @@ Deno.serve(async (req) => {
 
     if (mode === 'badge') {
       const lista = contarPendientes(plans, users, descargados, invMailOn)
-      if (dry) return json({ ok: true, dry: true, mode, total: lista.length, usuarios: lista })
+      if (dry) return json({ ok: true, dry: true, mode, total: lista.length, usuarios: lista, lectura })
       const pub = env('VAPID_PUBLIC_KEY'), priv = env('VAPID_PRIVATE_KEY')
       if (!pub || !priv) return json({ ok: false, error: 'Faltan las claves VAPID' }, 500)
       webpush.setVapidDetails(env('VAPID_SUBJECT') || 'mailto:operaciones2@sistegua.com', pub, priv)
@@ -241,7 +245,7 @@ Deno.serve(async (req) => {
           catch (e: any) { if (e && (e.statusCode === 404 || e.statusCode === 410)) await a.from('pa_push').delete().eq('endpoint', s.endpoint) }
         }))
       }
-      return json({ ok: true, mode, usuarios: lista.length, push: n })
+      return json({ ok: true, mode, usuarios: lista.length, push: n, lectura })
     }
 
     const { data: ya } = await a.from('pa_recordatorios').select('clave').gte('created_at', new Date(Date.now() - 20 * 864e5).toISOString()).limit(20000)
@@ -252,9 +256,9 @@ Deno.serve(async (req) => {
       const { data: nt } = await a.from('pa_docs').select('data').eq('col', 'notifs').gte('data->>ts', String(desde)).limit(5000)
       avisos = construirSinLeer((nt || []).map((r: any) => r.data), plans, users, Date.now(), sent).concat(construirSinDescargar(plans, users, descargados, invMailOn, Date.now(), sent))
     } else avisos = construirAvisos(plans, users, hoy, slot, sent)
-    if (dry) return json({ ok: true, dry: true, mode, hoy, slot, total: avisos.length, avisos: avisos.map((x) => ({ plan: x.plan, para: x.aud, d: x.d, urgente: x.urgent, texto: x.text })) })
+    if (dry) return json({ ok: true, dry: true, mode, hoy, slot, lectura, total: avisos.length, avisos: avisos.map((x) => ({ plan: x.plan, para: x.aud, d: x.d, urgente: x.urgent, texto: x.text })) })
     const push = await enviar(a, avisos)
-    return json({ ok: true, mode, hoy, slot, avisos: avisos.length, push })
+    return json({ ok: true, mode, hoy, slot, avisos: avisos.length, push, lectura })
   } catch (e: any) {
     return json({ ok: false, error: String((e && e.message) || e) }, 500)
   }
