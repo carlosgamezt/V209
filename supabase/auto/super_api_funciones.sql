@@ -9,18 +9,19 @@ language plpgsql volatile security invoker set search_path = '' as $f$
 declare rol text; cfg jsonb; refd boolean := false;
 begin
   if p_k is not null and not p_escritura then
-    select exists (select 1 from public.pa_docs d where d.col = 'plans' and (
-        d.data @> jsonb_build_object('acts', jsonb_build_array(jsonb_build_object('ev', jsonb_build_object('k', p_k))))
-     or d.data @> jsonb_build_object('acts', jsonb_build_array(jsonb_build_object('ref', jsonb_build_object('k', p_k)))))) into refd;
+    -- los nombres de archivo salen de la clave cambiando todo lo que no sea letra, número, «_», «.» o «-» por «_» (p. ej. «PA-2026-045 - AUTO#ev0#…»): se compara con las claves saneadas de la misma manera
+    select exists (select 1 from public.pa_docs d, jsonb_array_elements(case when jsonb_typeof(d.data -> 'acts') = 'array' then d.data -> 'acts' else '[]'::jsonb end) as a(v)
+      where d.col = 'plans' and (regexp_replace(a.v -> 'ev' ->> 'k', '[^A-Za-z0-9_.-]', '_', 'g') = regexp_replace(p_k, '[^A-Za-z0-9_.-]', '_', 'g')
+                              or regexp_replace(a.v -> 'ref' ->> 'k', '[^A-Za-z0-9_.-]', '_', 'g') = regexp_replace(p_k, '[^A-Za-z0-9_.-]', '_', 'g'))) into refd;
     if refd then return true; end if;
   end if;
   if p_tipo = 'ev' then
     if p_planid is null then return false; end if;
     if p_escritura then
-      perform 1 from public.pa_docs where col = 'plans' and id = p_planid for share;
+      perform 1 from public.pa_docs where col = 'plans' and (id = p_planid or regexp_replace(id, '[^A-Za-z0-9_.-]', '_', 'g') = p_planid) for share;
       return found;
     end if;
-    return exists (select 1 from public.pa_docs where col = 'plans' and id = p_planid);
+    return exists (select 1 from public.pa_docs where col = 'plans' and (id = p_planid or regexp_replace(id, '[^A-Za-z0-9_.-]', '_', 'g') = p_planid));
   elsif p_tipo = 'ref' then
     if not p_escritura then return false; end if;
     select p.role into rol from public.pa_profiles p where p.auth_id = auth.uid();
@@ -65,7 +66,7 @@ $f$;
 revoke all on function public.nexa_push_pendientes(text[]) from public, anon, authenticated;
 grant execute on function public.nexa_push_pendientes(text[]) to service_role;
 -- Comprobación con los perfiles REALES: para cada perfil con sesión y cada plan, la función debe coincidir con lo que la persona realmente puede leer y actualizar (se deshace todo si algo difiere).
-create temp table sa_res (perfil uuid, plan text, lee_directo boolean, lee_fn boolean, escribe_directo boolean, escribe_fn boolean) on commit preserve rows;
+create temp table sa_res (perfil uuid, plan text, lee_directo boolean, lee_fn boolean, escribe_directo boolean, escribe_fn boolean, lee_san boolean, escribe_san boolean) on commit preserve rows;
 create or replace function pg_temp.sa_intento(p_plan text) returns int language plpgsql as $g$
 declare n int := 0;
 begin
@@ -83,12 +84,12 @@ do $v$ declare p record; pl record; acc jsonb; malos int; ids text[]; begin
     perform set_config('request.jwt.claims', json_build_object('sub', p.auth_id, 'role', 'authenticated')::text, true);
     acc := '[]'::jsonb;
     for pl in select x as id from unnest(ids) x loop
-      acc := acc || jsonb_build_array(jsonb_build_array(pl.id, exists (select 1 from public.pa_docs d where d.col = 'plans' and d.id = pl.id), public.nexa_foto_acceso('ev', pl.id, null, false), pg_temp.sa_intento(pl.id) > 0, public.nexa_foto_acceso('ev', pl.id, null, true)));
+      acc := acc || jsonb_build_array(jsonb_build_array(pl.id, exists (select 1 from public.pa_docs d where d.col = 'plans' and d.id = pl.id), public.nexa_foto_acceso('ev', pl.id, null, false), pg_temp.sa_intento(pl.id) > 0, public.nexa_foto_acceso('ev', pl.id, null, true), public.nexa_foto_acceso('ev', regexp_replace(pl.id, '[^A-Za-z0-9_.-]', '_', 'g'), null, false), public.nexa_foto_acceso('ev', regexp_replace(pl.id, '[^A-Za-z0-9_.-]', '_', 'g'), null, true)));
     end loop;
     execute 'reset role';
-    insert into sa_res select p.auth_id, e ->> 0, (e ->> 1)::boolean, (e ->> 2)::boolean, (e ->> 3)::boolean, (e ->> 4)::boolean from jsonb_array_elements(acc) e;
+    insert into sa_res select p.auth_id, e ->> 0, (e ->> 1)::boolean, (e ->> 2)::boolean, (e ->> 3)::boolean, (e ->> 4)::boolean, (e ->> 5)::boolean, (e ->> 6)::boolean from jsonb_array_elements(acc) e;
   end loop;
-  select count(*) into malos from sa_res where lee_directo is distinct from lee_fn or escribe_directo is distinct from escribe_fn;
+  select count(*) into malos from sa_res where lee_directo is distinct from lee_fn or escribe_directo is distinct from escribe_fn or lee_directo is distinct from lee_san or escribe_directo is distinct from escribe_san;
   if malos <> 0 then raise exception 'super_api_funciones DESHECHO: la función difiere de los permisos reales en % casos', malos; end if;
 end $v$;
 commit;

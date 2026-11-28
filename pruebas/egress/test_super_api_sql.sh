@@ -18,17 +18,23 @@ assert v['casos_perfil_x_plan_comprobados'] >= 100 and v['casos_donde_alguien_pu
 assert not v['foto_acceso_ejecutable_por_anon'] and not v['push_pendientes_ejecutable_por_authenticated'] and v['push_pendientes_ejecutable_por_service_role'], v
 PY
 Q -At -f $A/super_api_funciones.sql >/dev/null && ok "la migración es idempotente"
+# plan automático con espacios en el número («PA-2026-045 - AUTO»): la app guarda los archivos con el nombre saneado
+Q -c "insert into public.pa_docs (col, id, data) values ('plans', 'PA-2026-045 - AUTO', jsonb_build_object('id', 'PA-2026-045 - AUTO', 'region', '1', 'branch', 'b11', 'type', 'Operaciones', 'status', 'En proceso', 'acts', jsonb_build_array(jsonb_build_object('text', 'A', 'st', 'Enviada', 'ev', jsonb_build_object('k', 'PA-2026-045 - AUTO#ev0#1792703892149', 'o', 1, 'x', 'jpg')))))"
+# reversión: vuelve a la versión anterior (no reconoce el número con espacios) y se puede reaplicar la corrección
+Q -f supabase/propuestas/egress/super_api_foto_acceso_reversion.sql >/dev/null && [ "$(Q -At -c "select public.nexa_foto_acceso('ev','PA-2026-045_-_AUTO','PA-2026-045_-_AUTO#ev0#1792703892149',false)")" = f ] && ok "reversión: vuelve a la versión anterior (la foto del plan con espacios deja de reconocerse)" || fallo "reversión"
+Q -At -f $A/super_api_funciones.sql >/dev/null && [ "$(Q -At -c "select public.nexa_foto_acceso('ev','PA-2026-045_-_AUTO','PA-2026-045_-_AUTO#ev0#1792703892149',false)")" = t ] && ok "y reaplicar la corrección la restablece (reconoce la foto del plan con espacios)" || fallo "reaplicar tras reversión"
 # casos concretos con las políticas reales
 Q -At > $T/casos.txt <<'SQL'
-create temp table r (u text, ev_lee boolean, ev_escribe boolean, ref_lee_propia boolean, ref_lee_ajena boolean, ref_escribe boolean);
-do $$ declare z record; a boolean; b boolean; c boolean; d boolean; e boolean; begin
+create temp table r (u text, ev_lee boolean, ev_escribe boolean, ref_lee_propia boolean, ref_lee_ajena boolean, ref_escribe boolean, auto_lee_clave boolean, auto_lee_plan boolean, auto_escribe boolean);
+do $$ declare z record; a boolean; b boolean; c boolean; d boolean; e boolean; f boolean; g boolean; h boolean; begin
  for z in select * from public.zz_u loop
   execute 'set local role authenticated'; perform set_config('request.jwt.claim.sub', z.uid::text, true);
   a := public.nexa_foto_acceso('ev', 'PA-111', 'ev#111-1', false); b := public.nexa_foto_acceso('ev', 'PA-111', null, true);
   c := public.nexa_foto_acceso('ref', null, 'ref#111-1', false); d := public.nexa_foto_acceso('ref', null, 'ref#311-1', false); e := public.nexa_foto_acceso('ref', null, null, true);
-  execute 'reset role'; insert into r values (z.u, a, b, c, d, e);
+  f := public.nexa_foto_acceso('ev', 'PA-2026-045_-_AUTO', 'PA-2026-045_-_AUTO#ev0#1792703892149', false); g := public.nexa_foto_acceso('ev', 'PA-2026-045 - AUTO', null, false); h := public.nexa_foto_acceso('ev', 'PA-2026-045_-_AUTO', null, true);
+  execute 'reset role'; insert into r values (z.u, a, b, c, d, e, f, g, h);
  end loop; end $$;
-select u || ':' || ev_lee || '/' || ev_escribe || '/' || ref_lee_propia || '/' || ref_lee_ajena || '/' || ref_escribe from r order by u;
+select u || ':' || ev_lee || '/' || ev_escribe || '/' || ref_lee_propia || '/' || ref_lee_ajena || '/' || ref_escribe || '/' || auto_lee_clave || '/' || auto_lee_plan || '/' || auto_escribe from r order by u;
 SQL
 python3 - $T/casos.txt <<'PY' && ok "casos concretos: sucursal propia lee y escribe, otra sucursal NO; visualizador NO escribe; sin perfil NO accede; supervisor de otra región en modo «ver» lee y NO escribe" || fallo "casos concretos"
 import sys
@@ -36,11 +42,12 @@ d = {l.split(':')[0]: [x == 'true' for x in l.strip().split(':')[1].split('/')] 
 # PA-111 = región 1, sucursal b11
 assert d['suc11'][:2] == [True, True], d['suc11']
 assert d['suc21'][:2] == [False, False], d['suc21']          # otra sucursal/región
-assert d['sinperfil'] == [False] * 5, d['sinperfil']
+assert d['sinperfil'][:5] == [False] * 5, d['sinperfil']
 assert d['vis'][0] and not d['vis'][1], d['vis']   # visualizador: lectura sí, escritura no (analista/gerencia: según la política real)
 assert d['admin'][:2] == [True, True] and d['sup1'][:2] == [True, True], d
 assert d['supx'][0] and not d['supx'][1], d['supx']          # región 1 en modo «ver»
 assert d['suc21'][3] is False and d['suc11'][2] is True, d   # foto de referencia: visible solo si algún plan visible la referencia
+assert d['suc11'][5:] == [True, True, True] and d['admin'][5:] == [True, True, True] and d['suc21'][5:] == [False, False, False] and d['sinperfil'][5:] == [False, False, False], ('plan con espacios', d['suc11'][5:], d['suc21'][5:])
 assert d['admin'][4] and d['sup1'][4] and d['com1'][4] and not d['suc11'][4] and not d['vis'][4] and not d['sinperfil'][4], d   # quién puede crear planes
 PY
 # ---- contadores del aviso fijo ----
