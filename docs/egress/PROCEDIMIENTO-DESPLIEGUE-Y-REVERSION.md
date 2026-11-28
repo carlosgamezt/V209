@@ -24,3 +24,7 @@ Ejecutar `supabase/consultas/medicion_egress.sql` (flujo «Consulta Supabase» o
 
 ## Criterios para detenerse
 Cualquier diferencia de planes visibles entre `pa_docs` y `pa_docs_lite` para una cuenta, miniaturas de otra sucursal, error al guardar un plan, o foto que no se vea tras recargar → revertir el paso y avisar.
+
+## Estado de la ejecución (28-nov-2026)
+Paso 0 pendiente (necesita tu ejecución en el SQL Editor). **Paso 1 ejecutado:** `main` = 7d87921; flujos «Publicar Nexa en Cloudflare Pages» y «Publicar Supabase (SQL y funciones)» en verde; el paso «Ejecutar SQL cambiado» se omitió (ningún archivo de `supabase/auto` cambió) y solo se desplegó `recordatorios-de-nexa`. Pasos 2 y 3 (E1/E2): NO aplicados. Ver `INFORME-POSTPUBLICACION-V513.md` y `PREPARACION-E1.md`.
+Nota: la etiqueta `nexa-v512-referencia-egress` solo existe en el clon de trabajo (el proxy no deja publicar etiquetas); la referencia remota es el commit `d06e3c1` (v512), padre directo de v513 en `main`: para volver, `git revert 7d87921` en `main` o publicar ese commit.

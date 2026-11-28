@@ -41,6 +41,12 @@ set app.role = 'admin';
 insert into public.pa_descargas (plan_id, user_id, user_name, role, manual, created_at) select 'PA-2026-' || lpad((g % 40 + 1)::text, 3, '0'), 'u', 'Inv', case when g % 5 = 0 then 'admin' else 'inventarios' end, g % 7 = 0, now() - (g || ' hours')::interval from generate_series(1, 300) g;
 SQL
 ANTES=$(Q -At -c "select pg_total_relation_size('public.pa_docs')"); ok "datos de prueba: 40 planes con 400 miniaturas embebidas; 120 avisos; 300 descargas"
+# ---------- E0 (respaldo) ----------
+Q -f $P/E0_respaldo.sql 2>&1 | grep -q "E0 OK" && ok "E0: respaldo exacto de pa_docs y pa_descargas (mismas filas y misma huella)" || fallo "E0"
+if Q -f $P/E0_respaldo.sql >/dev/null 2>&1; then fallo "E0 sobrescribió un respaldo existente"; else ok "E0 no sobrescribe un respaldo existente"; fi
+Q <<'SQL' 2>&1 | grep -q "E0 ACCESO OK" && echo "OK    E0: las tablas de respaldo no son legibles por la app (authenticated/anon)" || { echo "FALLO acceso al respaldo"; exit 1; }
+do $$ begin set local role authenticated; begin perform 1 from public.pa_docs_respaldo_e0 limit 1; assert false, 'authenticated no debe leer el respaldo'; exception when insufficient_privilege then null; end; reset role; raise notice 'E0 ACCESO OK'; end $$;
+SQL
 # ---------- E1 ----------
 Q -f $P/E1_miniaturas_y_listados.sql >/dev/null; Q -f $P/E1_miniaturas_y_listados.sql >/dev/null; ok "E1 aplica y se puede volver a aplicar (idempotente)"
 [ "$(Q -At -c "select count(*) from public.pa_thumbs")" = 400 ] && ok "E1 copió las 400 miniaturas a pa_thumbs" || fallo "conteo de pa_thumbs"
@@ -100,6 +106,17 @@ do $$ declare n int; m int; begin
   reset role; set local role anon; begin perform count(*) from public.pa_docs_lite; assert false, 'anon no debe leer la vista'; exception when insufficient_privilege then null; end;
   reset role; raise notice 'ACCESO OK'; end $$;
 SQL
+# E1 no amplía permisos: quien puede editar SU plan no puede pisar ni leer la miniatura de otro plan reutilizando su llave
+Q <<'SQL' 2>&1 | grep -q "SIN AMPLIACION OK" && echo "OK    E1 no amplía permisos: reutilizar la llave de una miniatura ajena no la sobrescribe ni permite leerla" || { echo "FALLO ampliación de permisos"; exit 1; }
+do $$ declare antes text; n int; begin
+  select t into antes from public.pa_thumbs where k = 'ref#2-1';
+  set local role authenticated; perform set_config('app.role', 'sucursal', true); perform set_config('app.branch', 'Suc 1', true);
+  update public.pa_docs set data = jsonb_set(data, '{acts,0,ref}', jsonb_build_object('k', 'ref#2-1', 't', 'data:image/jpeg;base64,EVIL')) where col = 'plans' and id = 'PA-2026-001';
+  select count(*) into n from public.pa_thumbs where k = 'ref#2-1'; assert n = 0, 'la sucursal no debe poder leer la miniatura de otro plan';
+  reset role; assert (select t from public.pa_thumbs where k = 'ref#2-1') = antes, 'la miniatura ajena fue sobrescrita';
+  assert (select data::text from public.pa_docs where col = 'plans' and id = 'PA-2026-001') not like '%EVIL%', 'el contenido no debe quedar en el plan';
+  raise notice 'SIN AMPLIACION OK'; end $$;
+SQL
 # descargas: la agregación da el MISMO resultado que dlInfo sobre las 5 000 filas
 Q <<'SQL' 2>&1 | tee /tmp/desc.log | grep -q "DESCARGAS OK" && echo "OK    pa_descargas_resumen() = misma respuesta que la lógica anterior (última descarga relevante por plan), con las mismas reglas de acceso" || { echo "FALLO descargas"; exit 1; }
 do $$ declare mal int; begin
@@ -116,7 +133,7 @@ Q -f $P/E2_compactar_miniaturas.sql 2>&1 | grep -q "verificación OK" && ok "E2:
 DESP=$(Q -At -c "select pg_total_relation_size('public.pa_docs')"); echo "      tamaño de pa_docs: antes $ANTES B → después $DESP B (sin VACUUM FULL; el espacio se reutiliza)"
 Q -f $P/E2_reversion.sql >/dev/null && ok "E2_reversion: las miniaturas vuelven a los planes" || fallo "E2_reversion"
 Q <<'SQL' 2>&1 | grep -q "REV OK" && echo "OK    tras revertir E2 cada plan coincide con el original (+ las ediciones hechas durante la prueba)" || { echo "FALLO reversión E2"; exit 1; }
-do $$ begin assert (select count(*) from public.pa_docs d join public.zz_orig o on o.col = d.col and o.id = d.id where d.col = 'plans' and d.data <> o.data and d.id not in ('PA-2026-002', 'PA-2026-003')) = 0, 'planes distintos del original'; raise notice 'REV OK'; end $$;
+do $$ begin assert (select count(*) from public.pa_docs d join public.zz_orig o on o.col = d.col and o.id = d.id where d.col = 'plans' and d.data <> o.data and d.id not in ('PA-2026-001', 'PA-2026-002', 'PA-2026-003')) = 0, 'planes distintos del original'; raise notice 'REV OK'; end $$;
 SQL
 Q -f $P/E1_reversion.sql >/dev/null && ok "E1_reversion: sin disparador, vista ni RPC; pa_thumbs se conserva" || fallo "E1_reversion"
 [ "$(Q -At -c "select count(*) from pg_trigger where tgname = 'pa_docs_split_thumbs_t'")" = 0 ] && [ "$(Q -At -c "select count(*) from public.pa_thumbs")" -ge 400 ] && ok "tras revertir: no queda el disparador y no se perdió ninguna miniatura" || fallo "reversión incompleta"
