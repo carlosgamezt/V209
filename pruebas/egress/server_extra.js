@@ -1,0 +1,11 @@
+/* Capacidades de servidor de la propuesta de optimización (vista pa_docs_lite, tabla pa_thumbs, disparador que separa miniaturas, RPC de descargas), simuladas.
+   Se activa con __EG.caps.lite = true; sin eso, la base simulada se comporta como la actual. */
+(() => {
+  const X = window.__EG_X = window.__EG_X || {}; const on = () => !!((window.__EG || {}).caps || {}).lite;
+  const strip = j => { if (Array.isArray(j)) return j.map(strip); if (j && typeof j === 'object') { let o = j; if (typeof j.k === 'string' && typeof j.t === 'string' && j.t.startsWith('data:image/')) { o = { ...j }; delete o.t } const r = {}; for (const k in o) r[k] = strip(o[k]); return r } return j };
+  const walk = (j, f) => { if (Array.isArray(j)) j.forEach(x => walk(x, f)); else if (j && typeof j === 'object') { if (typeof j.k === 'string' && typeof j.t === 'string' && j.t.startsWith('data:image/')) f(j); for (const k in j) walk(j[k], f) } };
+  X.afterSeed = (db) => { if (!on()) return; /* paso 1 de la migración: copiar lo embebido a pa_thumbs (sin tocar pa_docs) */ db.pa_docs.filter(d => d.col === 'plans').forEach(d => walk(d.data, o => { if (!db.pa_thumbs.some(x => x.k === o.k)) db.pa_thumbs.push({ k: o.k, plan_id: d.id, t: o.t }) })); if (window.__EG.caps.compact) db.pa_docs.forEach(d => { if (d.col === 'plans') d.data = strip(d.data) }) };
+  X.view = !on() ? {} : { pa_docs_lite: db => db.pa_docs.map(d => d.col === 'plans' ? { ...d, data: strip(d.data) } : d).filter(d => !(d.col === 'notifs' && Date.now() - Date.parse(d.updated_at) > 45 * 864e5 && (d.data.to || []).every(u => (d.data.read || []).includes(u)))) };
+  X.beforeWrite = (T, op, row, prev, db) => { if (!on() || T !== 'pa_docs' || row.col !== 'plans') return; [prev && prev.data, row.data].forEach(d => d && walk(d, o => { if (!db.pa_thumbs.some(x => x.k === o.k)) db.pa_thumbs.push({ k: o.k, plan_id: row.id, t: o.t }) })); row.data = strip(row.data) };
+  X.rpc = { pa_descargas_resumen: (db, a, c) => { const seen = new Set(), out = []; db.pa_descargas.filter(r => (r.role === 'inventarios' || r.manual) && c.visible('pa_descargas', r)).sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).forEach(r => { if (!seen.has(r.plan_id)) { seen.add(r.plan_id); out.push({ plan_id: r.plan_id, user_name: r.user_name, role: r.role, manual: r.manual, created_at: r.created_at }) } }); return out } };
+})();

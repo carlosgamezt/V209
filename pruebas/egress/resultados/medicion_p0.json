@@ -1,0 +1,325 @@
+{
+ "datos": {
+  "maxPlans": 120,
+  "acts": 4,
+  "thumbs": 8,
+  "notifs": 1200,
+  "arqueos": 300,
+  "descargas": 1500,
+  "mensual": 600
+ },
+ "root": "/home/user/V209/nexa",
+ "escenarios": {
+  "login_admin": {
+   "total": {
+    "n": 9,
+    "raw": 11644426,
+    "gz": 7895802
+   },
+   "porTabla": {
+    "rest:pa_profiles": {
+     "n": 2,
+     "raw": 11181,
+     "gz": 2530
+    },
+    "rest:pa_docs": {
+     "n": 4,
+     "raw": 11439436,
+     "gz": 7878126
+    },
+    "rest:pa_descargas": {
+     "n": 1,
+     "raw": 192601,
+     "gz": 13938
+    },
+    "rest:pa_drafts": {
+     "n": 2,
+     "raw": 1208,
+     "gz": 1208
+    }
+   },
+   "planesVisibles": 54
+  },
+  "detalle_plan_admin": {
+   "total": {
+    "n": 0,
+    "raw": 0,
+    "gz": 0
+   },
+   "porTabla": {}
+  },
+  "hora_visible_admin": {
+   "total": {
+    "n": 92,
+    "raw": 2878288,
+    "gz": 1936686
+   },
+   "porTipo": {
+    "rest": {
+     "n": 38,
+     "raw": 217119,
+     "gz": 38456
+    },
+    "realtime": {
+     "n": 8,
+     "raw": 1222025,
+     "gz": 929887
+    }
+   },
+   "porTabla": {
+    "rest:pa_descargas": {
+     "n": 32,
+     "raw": 212534,
+     "gz": 33871
+    },
+    "rest:pa_docs": {
+     "n": 6,
+     "raw": 4585,
+     "gz": 4585
+    },
+    "realtime:pa_docs": {
+     "n": 8,
+     "raw": 1222025,
+     "gz": 871203
+    }
+   },
+   "nota": "30 min simulados ×2"
+  },
+  "hora_segundo_plano_admin": {
+   "total": {
+    "n": 16,
+    "raw": 2444050,
+    "gz": 1859774
+   },
+   "porTipo": {
+    "realtime": {
+     "n": 8,
+     "raw": 1222025,
+     "gz": 929887
+    }
+   },
+   "porTabla": {
+    "realtime:pa_docs": {
+     "n": 8,
+     "raw": 1222025,
+     "gz": 871203
+    }
+   }
+  },
+  "arqueos_10min_admin": {
+   "total": {
+    "n": 61,
+    "raw": 891901,
+    "gz": 68319
+   },
+   "porTabla": {
+    "rest:pa_arqueos": {
+     "n": 12,
+     "raw": 752232,
+     "gz": 22586
+    },
+    "rest:pa_arqueo_deposito": {
+     "n": 12,
+     "raw": 14395,
+     "gz": 8181
+    },
+    "rest:pa_ff_asignaciones": {
+     "n": 12,
+     "raw": 17140,
+     "gz": 8827
+    },
+    "rest:pa_arqueo_eliminados": {
+     "n": 12,
+     "raw": 7224,
+     "gz": 7224
+    },
+    "rest:pa_docs": {
+     "n": 3,
+     "raw": 94480,
+     "gz": 15071
+    },
+    "rest:pa_descargas": {
+     "n": 10,
+     "raw": 6430,
+     "gz": 6430
+    }
+   }
+  },
+  "historial_10min_admin": {
+   "total": {
+    "n": 12,
+    "raw": 7782,
+    "gz": 7782
+   },
+   "porTabla": {
+    "rest:pa_docs": {
+     "n": 2,
+     "raw": 1352,
+     "gz": 1352
+    },
+    "rest:pa_descargas": {
+     "n": 10,
+     "raw": 6430,
+     "gz": 6430
+    }
+   }
+  },
+  "realtime_caido_10min_admin": {
+   "total": {
+    "n": 18,
+    "raw": 539234,
+    "gz": 334218
+   },
+   "porTabla": {
+    "rest:pa_docs": {
+     "n": 4,
+     "raw": 95156,
+     "gz": 15749
+    },
+    "rest:pa_descargas": {
+     "n": 12,
+     "raw": 7716,
+     "gz": 7716
+    },
+    "realtime:pa_docs": {
+     "n": 2,
+     "raw": 436362,
+     "gz": 310753
+    }
+   },
+   "plansServidor": 54
+  },
+  "errores_admin": [],
+  "login_sucursal": {
+   "total": {
+    "n": 2,
+    "raw": 220771,
+    "gz": 147934
+   },
+   "porTabla": {
+    "rest:pa_profiles": {
+     "n": 1,
+     "raw": 746,
+     "gz": 746
+    },
+    "rest:pa_docs": {
+     "n": 1,
+     "raw": 220025,
+     "gz": 147188
+    }
+   },
+   "planesVisibles": 1
+  },
+  "detalle_plan_sucursal": {
+   "total": {
+    "n": 13,
+    "raw": 420640,
+    "gz": 298465
+   },
+   "porTabla": {
+    "realtime:pa_docs": {
+     "n": 5,
+     "raw": 206301,
+     "gz": 147879
+    },
+    "rest:pa_docs": {
+     "n": 8,
+     "raw": 214339,
+     "gz": 150586
+    }
+   }
+  },
+  "hora_visible_sucursal": {
+   "total": {
+    "n": 14,
+    "raw": 413748,
+    "gz": 296906
+   },
+   "porTipo": {
+    "rest": {
+     "n": 6,
+     "raw": 4331,
+     "gz": 4331
+    },
+    "realtime": {
+     "n": 1,
+     "raw": 202543,
+     "gz": 144122
+    }
+   },
+   "porTabla": {
+    "rest:pa_docs": {
+     "n": 6,
+     "raw": 4331,
+     "gz": 4331
+    },
+    "realtime:pa_docs": {
+     "n": 1,
+     "raw": 202543,
+     "gz": 144122
+    }
+   },
+   "nota": "30 min simulados ×2"
+  },
+  "hora_segundo_plano_sucursal": {
+   "total": {
+    "n": 2,
+    "raw": 405086,
+    "gz": 288244
+   },
+   "porTipo": {
+    "realtime": {
+     "n": 1,
+     "raw": 202543,
+     "gz": 144122
+    }
+   },
+   "porTabla": {
+    "realtime:pa_docs": {
+     "n": 1,
+     "raw": 202543,
+     "gz": 144122
+    }
+   }
+  },
+  "realtime_caido_10min_sucursal": {
+   "total": {
+    "n": 4,
+    "raw": 211150,
+    "gz": 147372
+   },
+   "porTabla": {
+    "rest:pa_docs": {
+     "n": 3,
+     "raw": 8607,
+     "gz": 3251
+    },
+    "realtime:pa_docs": {
+     "n": 1,
+     "raw": 202543,
+     "gz": 144121
+    }
+   },
+   "plansServidor": 54
+  },
+  "errores_sucursal": [],
+  "dos_pestanas_30min": {
+   "total": {
+    "n": 80,
+    "raw": 914084,
+    "gz": 120283
+   },
+   "pestanaA": {
+    "n": 75,
+    "raw": 526953,
+    "gz": 90510
+   },
+   "pestanaB": {
+    "n": 5,
+    "raw": 387131,
+    "gz": 29773
+   }
+  }
+ },
+ "segundos": 596
+}

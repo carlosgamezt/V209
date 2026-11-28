@@ -212,7 +212,9 @@ Deno.serve(async (req) => {
     const dry = !!b.dry // prueba: muestra qué enviaría, sin enviar ni guardar nada
     const hoy = dry && /^\d{4}-\d{2}-\d{2}$/.test(b.today || '') ? b.today : hoyGT()
     const a = db()
-    const { data: pl } = await a.from('pa_docs').select('data').eq('col', 'plans').limit(5000)
+    // Egress (E1): los planes se leen por la vista ligera (sin miniaturas Base64); si la vista aún no existe se usa la tabla de siempre. El resultado es el mismo: aquí solo se usan fechas, estados y asignaciones.
+    const lite = await a.from('pa_docs_lite').select('data').eq('col', 'plans').limit(5000)
+    const { data: pl } = lite.error ? await a.from('pa_docs').select('data').eq('col', 'plans').limit(5000) : lite
     const { data: us } = await a.from('pa_docs').select('id,data').eq('col', 'users').limit(5000)
     const plans = (pl || []).map((r: any) => r.data)
     const users = (us || []).map((r: any) => ({ id: r.id, role: r.data && r.data.role, region: r.data && r.data.region, branch: r.data && r.data.branch, assigned: r.data && r.data.assigned }))

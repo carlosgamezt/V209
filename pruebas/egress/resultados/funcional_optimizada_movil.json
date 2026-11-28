@@ -1,0 +1,1318 @@
+{
+ "admin": {
+  "planesVisibles": [
+   "PA-2026-001",
+   "PA-2026-002",
+   "PA-2026-003",
+   "PA-2026-004",
+   "PA-2026-005",
+   "PA-2026-006",
+   "PA-2026-007",
+   "PA-2026-008",
+   "PA-2026-009",
+   "PA-2026-010",
+   "PA-2026-011",
+   "PA-2026-012",
+   "PA-2026-013",
+   "PA-2026-014",
+   "PA-2026-015",
+   "PA-2026-016",
+   "PA-2026-017",
+   "PA-2026-018",
+   "PA-2026-019",
+   "PA-2026-020",
+   "PA-2026-021",
+   "PA-2026-022",
+   "PA-2026-023",
+   "PA-2026-024",
+   "PA-2026-025",
+   "PA-2026-026",
+   "PA-2026-027",
+   "PA-2026-028",
+   "PA-2026-029",
+   "PA-2026-030",
+   "PA-2026-031",
+   "PA-2026-032",
+   "PA-2026-033",
+   "PA-2026-034",
+   "PA-2026-035",
+   "PA-2026-036",
+   "PA-2026-037",
+   "PA-2026-038",
+   "PA-2026-039",
+   "PA-2026-040",
+   "PA-2026-041",
+   "PA-2026-042",
+   "PA-2026-043",
+   "PA-2026-044",
+   "PA-2026-045",
+   "PA-2026-046",
+   "PA-2026-047",
+   "PA-2026-048",
+   "PA-2026-049",
+   "PA-2026-050",
+   "PA-2026-051",
+   "PA-2026-052",
+   "PA-2026-053",
+   "PA-2026-054"
+  ],
+  "avisos": 100,
+  "sinLeer": 100,
+  "estados": {
+   "PA-2026-001": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-002": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-003": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-004": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-005": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-006": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-007": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-008": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-009": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-010": [
+    "Pendiente de envío",
+    50,
+    4
+   ],
+   "PA-2026-011": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-012": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-013": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-014": [
+    "Pendiente de autorización",
+    50,
+    4
+   ],
+   "PA-2026-015": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-016": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-017": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-018": [
+    "Pendiente de autorización",
+    50,
+    4
+   ],
+   "PA-2026-019": [
+    "Pendiente de autorización",
+    25,
+    4
+   ],
+   "PA-2026-020": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-021": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-022": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-023": [
+    "Por revisar",
+    100,
+    4
+   ],
+   "PA-2026-024": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-025": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-026": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-027": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-028": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-029": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-030": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-031": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-032": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-033": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-034": [
+    "Por revisar",
+    100,
+    4
+   ],
+   "PA-2026-035": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-036": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-037": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-038": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-039": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-040": [
+    "Por revisar",
+    100,
+    4
+   ],
+   "PA-2026-041": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-042": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-043": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-044": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-045": [
+    "Pendiente de autorización",
+    50,
+    4
+   ],
+   "PA-2026-046": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-047": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-048": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-049": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-050": [
+    "Pendiente de autorización",
+    25,
+    4
+   ],
+   "PA-2026-051": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-052": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-053": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-054": [
+    "Pendiente de autorización",
+    100,
+    4
+   ]
+  },
+  "vistas": {
+   "dash": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir ⬇ Excel ⬇ PDF GENERAL COMPARATIVO VISUAL PRESENTACIÓN ⚙ Filtros · Todo el tiempo ▾ 54 Total de planes 16 Concluidos 30% 0 En plazo 0% 0 Próximos a vencer 0% 38 Atrasados 70% 61 Evidencias por revisar Evolución de planes Últimos 3 meses Últimos 6 meses Últimos 12 meses Bimestral 0 10 20 30 40 0 0 38 0 0 0 0 0 16 0 0 0 Jun Jul Ago Sep Oct Nov Concluidos Total: 16 En proceso Total: 0 Atrasados Total: 38 Planes por tipo 54 Planes Operaciones 13 (24%) Inventarios 21 (39%) Estado de planes 16 Concluidos 0 En plazo 0 Próximos 38 Atrasados 26 Por revisar CUMPLIMIENTO 48% EFICACIA 100% PLANES 54 ACTIVIDADES 216 EVIDENCIAS 165 de 216 VENCIDAS 51 CUMPLIMIENTO POR REGIÓN ▏meta 85% Región 3 63% Región 2 60% Región 5 59% Región 4 53% Región 1 34% Región 6 34% ESTADO DE LAS ACTIVIDADES Aprobadas 104 En revisión 61 Vencidas 51 TIEMPO PROMEDIO DEL PROCESO APERTURA — › 1ª EVIDENCIA <1 min › REVISIÓN <1 min › CORRECCIÓN — Región con mayor cumplimiento: Región 3 · 63% ATENCIÓN ⛔ 51 actividades vencidas 📷 61 evidencias pendientes de revisión 📄 10 informes de Inventarios pendientes de envío LECTURA RÁPIDA Región 1 tiene el menor cumplimiento (34%), 14 puntos por debajo del promedio (48%). Región 3 destaca con 63% de cumplimiento. Región 1 concentra 15 de las 51 actividades vencidas (29%). Amatitlan es la sucursal que más tarda en subir su primera evidencia (<1 min en promedio). VER INFORME RESUMIDO ▲ MEJORES SUCURSALES Huehuetenango · R2 100% Amatitlan · R5 75% Cobán · R4 75% Cotzumalguapa · R5 75% Escuintla · R5 75% ▼ SUCURSALES POR ATENDER 4ta Calle · R1 0% Aguilar Batres, v.n. · R1 0% Jutiapa · R6 0% Zona 11 CD · R1 0% Chimaltenango · R2 25% PLANES DE ACCIÓN RECIENTES Carr. a El Salvador ⏱ Vencido hace 59 días 4/4 Ver Guastatoya Realizado 30 días antes 3/4 Ver Jutiapa ⏱ Vencido hace 59 días 3/4 Ver Chiquimula ⏱ Vencido hace 59 días 2/4 Ver Jalapa ⏱ Vencido hace 59 días 1/4 Ver CUMPLIMIENTO EN PLAZO 100% entregados a tiempo 17/17 sin atrasos +30 días de anticipación (promedio) Zona 12, Petapa PA-2026-002 30 días antes 30/08/2026 Zona 14 PA-2026-011 30 días antes 30/08/2026 Zona 12, Reformita PA-2026-012 30 días antes 30/08/2026 Huehuetenango PA-2026-020 30 días antes 30/08/2026 Totonicapan PA-2026-021 30 días antes 30/08/2026",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "plans": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir ⬇ Descargar Excel 12 Total 0 En plazo 0 Próximos 10 Atrasados 6 Por revisar 2 Concluidos 12 planes Región 2 PA-2026-026 Operaciones En proceso Tecpan Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-025 Inventarios En proceso Nebaj Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-024 Inventarios En proceso Xela 2 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-023 Auditoría Por revisar Solola Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-022 Inventarios Pendiente de autorización Jocotenango Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-021 Inventarios Pendiente de envío Totonicapan Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-020 Inventarios Pendiente de envío Huehuetenango Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-019 Inventarios Pendiente de autorización Quiche Región 2 30/08/2026 1/4 actividades · 25% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-018 Operaciones Pendiente de autorización Chimaltenango Región 2 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-017 Inventarios En proceso Sacapulas Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-016 Auditoría Pendiente de autorización Xela 1 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-015 Inventarios Pendiente de autorización San Juan Sac. Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "nuevo": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Región Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Sucursal * Selecciona… Chimaltenango Huehuetenango Jocotenango Nebaj Quiche Sacapulas San Juan Sac. Solola Tecpan Totonicapan Xela 1 Xela 2 Tipo Operaciones Inventarios Externos Otro Fecha de visita Fecha de culminación Actividades * 1. 🗑 Eliminar Foto de referencia (antes), opcional 📷 Tomar foto 🖼 Subir foto Encargado + Agregar actividad Total de tareas: 0 Crear plan",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "review": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir ⚠ 2 informes de Inventarios pendientes de envío Todavía no se ha enviado el correo al departamento de Inventarios. Este aviso se quita hasta que lo envíes. PA-2026-021 · Totonicapan (Región 2) Pendiente de envío Enviar informe por correo Ver plan PA-2026-020 · Huehuetenango (Región 2) Pendiente de envío Enviar informe por correo Ver plan PA-2026-016 · Xela 1 Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 3/4 actividades 1. Actividad 1 de Xela 1 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-018 · Chimaltenango Operaciones 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 2/4 actividades 1. Actividad 1 de Chimaltenango Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-021 · Totonicapan Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 4/4 actividades 1. Actividad 1 de Totonicapan Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-022 · Jocotenango Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 1. Actividad 1 de Jocotenango Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-022 · Jocotenango Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 4. Actividad 4 de Jocotenango Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-023 · Solola Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 1. Actividad 1 de Solola Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-025 · Nebaj Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 3/4 actividades 2. Actividad 2 de Nebaj Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-026 · Tecpan Operaciones 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 3/4 actividades 4. Actividad 4 de Tecpan Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección",
+    "fotosArriba": {
+     "total": 16,
+     "conImagen": 6
+    },
+    "fotos": {
+     "total": 16,
+     "conImagen": 16
+    }
+   },
+   "hist": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Sucursal Todos Chimaltenango Huehuetenango Jocotenango Nebaj Quiche Sacapulas San Juan Sac. Solola Tecpan Totonicapan Xela 1 Xela 2 Región Todos Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Tipo Todos Operaciones Inventarios Externos Otro Buscar ▸ PA-2026-026 30/08/2026 Región 2 Tecpan Operaciones 2 de 4 100% ▸ PA-2026-025 30/08/2026 Región 2 Nebaj Inventarios 2 de 4 100% ▸ PA-2026-024 30/08/2026 Región 2 Xela 2 Inventarios 3 de 4 100% ▸ PA-2026-023 30/08/2026 Región 2 Solola Auditoría 3 de 4 100% ▸ PA-2026-022 30/08/2026 Región 2 Jocotenango Inventarios 2 de 4 100% ▸ PA-2026-021 30/08/2026 Región 2 Totonicapan Inventarios 3 de 4 100% ▸ PA-2026-020 30/08/2026 Región 2 Huehuetenango Inventarios 4 de 4 100% ▸ PA-2026-019 30/08/2026 Región 2 Quiche Inventarios 1 de 4 100% ▸ PA-2026-018 30/08/2026 Región 2 Chimaltenango Operaciones 1 de 4 100% ▸ PA-2026-017 30/08/2026 Región 2 Sacapulas Inventarios 3 de 4 100% ▸ PA-2026-016 30/08/2026 Región 2 Xela 1 Auditoría 2 de 4 100% ▸ PA-2026-015 30/08/2026 Región 2 San Juan Sac. Inventarios 3 de 4 100%",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "arqueos": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Firma digital Firma en papel + Nuevo arqueo Sucursal Todas Chimaltenango Nebaj Sacapulas San Juan Sac. Solola Tecpan Totonicapan Xela 1 Xela 2 Estado Todos Borrador Falta firma del supervisor Falta firma del encargado Completo Depósito pendiente ▤ Total de arqueos 21 = Cuadrados 14 − Faltantes 0 + Sobrantes 0 AQ-00119 30/08/2026 Sacapulas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00112 30/08/2026 Totonicapan Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00109 30/08/2026 Xela 1 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00100 30/08/2026 Chimaltenango Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00081 30/08/2026 Tecpan Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00077 30/08/2026 Nebaj Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00071 30/08/2026 Chimaltenango Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00069 30/08/2026 Nebaj Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00060 30/08/2026 Tecpan Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00053 30/08/2026 Tecpan Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00052 30/08/2026 Solola Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00051 30/08/2026 San Juan Sac. Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00050 30/08/2026 Xela 1 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00046 30/08/2026 Tecpan Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00043 30/08/2026 Nebaj Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00034 30/08/2026 Solola Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00019 30/08/2026 Sacapulas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00016 30/08/2026 Sacapulas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00011 30/08/2026 Solola Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar AQ-00007 30/08/2026 Totonicapan Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor Eliminar AQ-00001 30/08/2026 Xela 2 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Eliminar Encargados de fondo fijo y monto por sucursal (administradores y supervisores)",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "sup": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Registrar visita Actualizar todo Mes a evaluar noviembre 2026 octubre 2026 septiembre 2026 agosto 2026 julio 2026 junio 2026 mayo 2026 abril 2026 marzo 2026 febrero 2026 enero 2026 diciembre 2025 Editar San Juan 57 Jocotenango 57 Chimaltenango 57 Sololá 57 Quiché 57 Huehuetenango 57 Xela 57 Totonicapán 57 Sacapulas 57 No hay datos de este mes todavía. Toca Actualizar todo para traerlos de tus hojas. Te faltan 57 datos de San Juan Escríbelos aquí abajo, en el campo rojo (toca el número para ir a él), o complétalos en tus hojas de Google y toca Actualizar todo. 4 Encargado 5 Código 6 Encargado (Titular o Suplente) 7 Última visita 8 Fecha UIG 9 Número UIG 10 Q de Sobrante UIG 11 Q de Faltante UIG 12 Eficiencia UIG 13 Fecha UVIT 14 Número UVIT 15 Total computadoras 16 Número de tickets pendientes de resolver 17 Transferencias entre sucursales 18 Entregas no finalizadas 19 Nota de SSO 20 Colaboradores en planilla 21 Vacantes (descripción) 22 Vacantes (cantidad) 23 Altas 24 Bajas 25 Horas extras reportadas 26 Horas extras autorizadas 27 Efectividad horas extras 28 Llamadas de atención 29 Permisos 30 Ausencias no justificadas 31 Vacaciones 32 Suspensiones IGSS 33 Suspensiones RRHH 34 Observaciones RRHH 35 Ingresos a bodega 36 Egresos de bodega 37 Material dañado 38 Meta de venta 39 Venta 40 Facturas 41 Notas de crédito 42 Ticket promedio 43 SKU 44 Rotación SKU 45 Apoyo de Comercial 46 Apoyo de Marketing 47 Comentario de apoyo 48 Monto entregas 49 Días operativos camión 50 Días operativos piloto 51 Cantidad entregas 52 Cantidad entregas flete 53 Total flete pagado 54 Kilómetros recorridos 55 Consumo de combustible Q 56 Consumo combustible Km/gl 57 Observaciones generales 58 Observaciones específicas 2 59 Observaciones específicas 1 60 Quejas Revisión General Mensual 1 Supervisor Seleccione nombre y región Auto Copiar 2 Sucursal Seleccione la sucursal a evaluar Auto Copiar 3 Mes Mes a evaluar (fecha) Auto Copiar 4 Encargado Nombre del administrador o encargado de sucursal Falta Copiar 5 Código Código de planilla del colaborador encargado Falta Copiar 6 Encargado (Titular o Suplente) Falta — Titular Suplente Copiar 7 Última visita Fecha de la visita anterior del SUPERVISOR Falta Copiar Inventario General UIG Información del ÚLTIMO inventario general 8 Fecha UIG Falta Copiar 9 Número UIG Falta Copiar 10 Q de Sobrante UIG Cantidad en dinero del sobrante Falta Copiar 11 Q de Faltante UIG Cantidad en dinero del faltante Falta Copiar 12 Eficiencia UIG SKU ajustados / Total SKU. Ejemplo: 70% es 0.7 Falta Copiar Soporte Técnico UVIT Última visita IT 13 Fecha UVIT Última visita de soporte técnico IT Falta Copiar 14 Número UVIT Correlativo de la última orden de servicio Falta Copiar 15 Total computadoras Falta Copiar 16 Número de tickets pendientes de resolver Tickets pendientes a fin de mes Falta Copiar ITCO 17 Transferencias entre sucursales Cantidad de transferencias NO finalizadas Falta Copiar 18 Entregas no finalizadas Cantidad de entregas NO finalizadas Falta Copiar RRHH 19 Nota de SSO Nota de calidad de seguridad industrial Falta Copiar 20 Colaboradores en planilla Autorizados en la sucursal, verificar con RRHH, incluyendo vacantes Falta Copiar 21 Vacantes (descripción) Plazas vacantes separadas por punto y coma ; Falta Copiar 22 Vacantes (cantidad) Valor numérico Falta Copiar 23 Altas Falta Copiar 24 Bajas Falta Copiar 25 Horas extras reportadas Falta Copiar 26 Horas extras autorizadas Falta Copiar 27 Efectividad horas extras Falta Copiar 28 Llamadas de atención Falta Copiar 29 Permisos Falta Copiar 30 Ausencias no justificadas Falta Copiar 31 Vacaciones Personal en vacaciones Falta Copiar 32 Suspensiones IGSS Personal incapacitado IGSS Falta Copiar 33 Suspensiones RRHH Personal suspendido RRHH con llamada de atención Falta Copiar 34 Observaciones RRHH Falta Copiar Mercadería 35 Ingresos a bodega Ingresos por compra y transferencias hacia la sucursal, excepto notas de crédito Falta Copiar 36 Egresos de bodega Salidas de mercadería excepto facturas Falta Copiar 37 Material dañado Valor de cotización de material dañado Falta Copiar Comercial 38 Meta de venta Meta del mes a evaluar Falta Copiar 39 Venta Venta del mes a evaluar (IVA incluido) Falta Copiar 40 Facturas Facturas EMITIDAS Falta Copiar 41 Notas de crédito Notas de crédito EMITIDAS Falta Copiar 42 Ticket promedio Venta Q / (Facturas - NC) Falta Copiar 43 SKU Total de códigos en sucursal Falta Copiar 44 Rotación SKU Códigos vendidos / total códigos (menor a 1) Falta Copiar 45 Apoyo de Comercial Apoyo de los asesores comerciales Falta — 1 2 3 4 5 6 7 8 9 10 Copiar 46 Apoyo de Marketing Apoyo del departamento de Marketing Falta — 1 2 3 4 5 6 7 8 9 10 Copiar 47 Comentario de apoyo Comentario sobre el apoyo comercial y marketing Falta Copiar Entregas Entregas de mercadería y consumo de combustible 48 Monto entregas Monto de entregas facturadas en Q Falta Copiar 49 Días operativos camión Días activo y operativo (restar taller/servicio) Falta Copiar 50 Días operativos piloto Días activo y operativo Falta Copiar 51 Cantidad entregas Entregas con vehículo propio Falta Copiar 52 Cantidad entregas flete Entregas con fletero Falta Copiar 53 Total flete pagado Monto pagado por fletes Q Falta Copiar 54 Kilómetros recorridos Km inicio de mes - Km fin de mes Falta Copiar 55 Consumo de combustible Q Valor en dinero del combustible Falta Copiar 56 Consumo combustible Km/gl Kilómetros entre galones Falta Copiar Final 57 Observaciones generales Falta Copiar 58 Observaciones específicas 2 Falta Copiar 59 Observaciones específicas 1 Falta Copiar 60 Quejas Quejas de clientes trasladadas de SAC a supervisores Falta Copiar Última sincronización: 27/11/2026 00:42 · sistema · 100 filas",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "suc": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Región 7 Agregar región Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Agregar 🗑 Papelera Cargando… Región 1 · Jose Boc 14 sucursales Eliminar región 4ta Calle 4tacalle Editar Aguilar Batres, v.n. aguilarbatres Editar Mixco mixco Editar Naranjo naranjo Editar Zona 11 CD zona11cd Editar Zona 11 Ventas zona11ventas Editar Zona 12, Petapa zona12petapa Editar Zona 12, Reformita zona12reformita Editar Zona 14 zona14 Editar Zona 15 zona15 Editar Zona 18 zona18 Editar Zona 5 zona5 Editar Zona 7 zona7 Editar Zona 9 zona9 Editar Región 2 · Carlos Gamez 12 sucursales Eliminar región Chimaltenango chimaltenango Editar Huehuetenango huehuetenango Editar Jocotenango jocotenango Editar Nebaj nebaj Editar Quiche quiche Editar Sacapulas sacapulas Editar San Juan Sac. sanjuan Editar Solola solola Editar Tecpan tecpan Editar Totonicapan totonicapan Editar Xela 1 xela1 Editar Xela 2 xela2 Editar Región 3 · Marco Martinez 2 sucursales Eliminar región San. M Petapa sanmiguelpetapa Editar Villa Canales villacanales Editar Región 4 · Oscar Chen 10 sucursales Eliminar región Cobán coban Editar La Libertad lalibertad Editar Morales morales Editar Poptún poptun Editar Puerto Barrios puertobarrios Editar Salamá salama Editar Santa Elena santaelena Editar Tactic tactic Editar Teculután teculutan Editar Zacapa zacapa Editar Región 5 · Edgar Ixcot 8 sucursales Eliminar región Amatitlan amatitlan Editar Chiquimulilla chiquimulilla Editar Coatepeque coatepeque Editar Cotzumalguapa cotzumalguapa Editar Escuintla escuintla Editar Mazatenango mazatenango Editar Retalhuleu retalhuleu Editar San Marcos sanmarcos Editar Región 6 · Jarbi Quezada 8 sucursales Eliminar región Barberena barberena Editar Carr. a El Salvador caes Editar Chiquimula chiquimula Editar El Progreso elprogreso Editar Esquipulas esquipulas Editar Guastatoya guastatoya Editar Jalapa jalapa Editar Jutiapa jutiapa Editar",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "users": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Planes automáticos de sucursal Si lo activas, las sucursales de la región pueden crear sus propios planes de Operaciones. Se registran con la terminación \"- AUTO\", sin necesitar autorización. Región 1 · Jose Boc Activado Desactivado Región 2 · Carlos Gamez Activado Desactivado Región 3 · Marco Martinez Activado Desactivado Región 4 · Oscar Chen Activado Desactivado Región 5 · Edgar Ixcot Activado Desactivado Región 6 · Jarbi Quezada Activado Desactivado Link de la app Es el que aparece en los mensajes de accesos y contraseñas. Si algún día cambias de página, escribe aquí el link nuevo y pulsa Guardar. Guardar Link actual en los mensajes: http://HOST/index.html Encargado de cada sucursal Escribe el nombre del encargado (cada supervisor edita los de su región). Se asigna solo a cada plan y a cada actividad nueva de esa sucursal, y quien crea o edita el plan puede cambiarlo. Región 1 (14) Región 2 (12) Región 3 (2) Región 4 (10) Región 5 (8) Región 6 (8) Guardar encargados Todas las sucursales (54) Crear las 0 contraseñas que faltan Restablecer las 54 que ya tienen \"Crear\" solo genera las que aún no tienen acceso. \"Restablecer\" cambia la contraseña de las que ya tienen, y por eso pide confirmación. Región 1 · Jose Boc (14 sucursales) Crear las 0 contraseñas que faltan Restablecer las 14 que ya tienen NOMBRE ROL SUCURSAL ACCESO 4ta Calle Sucursal 4ta Calle Nueva contraseña Quitar acceso Aguilar Batres, v.n. Sucursal Aguilar Batres, v.n. Nueva contraseña Quitar acceso Mixco Sucursal Mixco Nueva contraseña Quitar acceso Naranjo Sucursal Naranjo Nueva contraseña Quitar acceso Zona 11 CD Sucursal Zona 11 CD Nueva contraseña Quitar acceso Zona 11 Ventas Sucursal Zona 11 Ventas Nueva contraseña Quitar acceso Zona 12, Petapa Sucursal Zona 12, Petapa Nueva contraseña Quitar acceso Zona 12, Reformita Sucursal Zona 12, Reformita Nueva contraseña Quitar acceso Zona 14 Sucursal Zona 14 Nueva contraseña Quitar acceso Zona 15 Sucursal Zona 15 Nueva contraseña Quitar acceso Zona 18 Sucursal Zona 18 Nueva contraseña Quitar acceso Zona 5 Sucursal Zona 5 Nueva contraseña Quitar acceso Zona 7 Sucursal Zona 7 Nueva contraseña Quitar acceso Zona 9 Sucursal Zona 9 Nueva contraseña Quitar acceso Región 2 · Carlos Gamez (12 sucursales) Crear las 0 contraseñas que faltan Restablecer las 12 que ya tienen NOMBRE ROL SUCURSAL ACCESO Chimaltenango Sucursal Chimaltenango Nueva contraseña Quitar acceso Huehuetenango Sucursal Huehuetenango Nueva contraseña Quitar acceso Jocotenango Sucursal Jocotenango Nueva contraseña Quitar acceso Nebaj Sucursal Nebaj Nueva contraseña Quitar acceso Quiche Sucursal Quiche Nueva contraseña Quitar acceso Sacapulas Sucursal Sacapulas Nueva contraseña Quitar acceso San Juan Sac. Sucursal San Juan Sac. Nueva contraseña Quitar acceso Solola Sucursal Solola Nueva contraseña Quitar acceso Tecpan Sucursal Tecpan Nueva contraseña Quitar acceso Totonicapan Sucursal Totonicapan Nueva contraseña Quitar acceso Xela 1 Sucursal Xela 1 Nueva contraseña Quitar acceso Xela 2 Sucursal Xela 2 Nueva contraseña Quitar acceso Región 3 · Marco Martinez (2 sucursales) Crear las 0 contraseñas que faltan Restablecer las 2 que ya tienen NOMBRE ROL SUCURSAL ACCESO San. M Petapa Sucursal San. M Petapa Nueva contraseña Quitar acceso Villa Canales Sucursal Villa Canales Nueva contraseña Quitar acceso Región 4 · Oscar Chen (10 sucursales) Crear las 0 contraseñas que faltan Restablecer las 10 que ya tienen NOMBRE ROL SUCURSAL ACCESO Cobán Sucursal Cobán Nueva contraseña Quitar acceso La Libertad Sucursal La Libertad Nueva contraseña Quitar acceso Morales Sucursal Morales Nueva contraseña Quitar acceso Poptún Sucursal Poptún Nueva contraseña Quitar acceso Puerto Barrios Sucursal Puerto Barrios Nueva contraseña Quitar acceso Salamá Sucursal Salamá Nueva contraseña Quitar acceso Santa Elena Sucursal Santa Elena Nueva contraseña Quitar acceso Tactic Sucursal Tactic Nueva contraseña Quitar acceso Teculután Sucursal Teculután Nueva contraseña Quitar acceso Zacapa Sucursal Zacapa Nueva contraseña Quitar acceso Región 5 · Edgar Ixcot (8 sucursales) Crear las 0 contraseñas que faltan Restablecer las 8 que ya tienen NOMBRE ROL SUCURSAL ACCESO Amatitlan Sucursal Amatitlan Nueva contraseña Quitar acceso Chiquimulilla Sucursal Chiquimulilla Nueva contraseña Quitar acceso Coatepeque Sucursal Coatepeque Nueva contraseña Quitar acceso Cotzumalguapa Sucursal Cotzumalguapa Nueva contraseña Quitar acceso Escuintla Sucursal Escuintla Nueva contraseña Quitar acceso Mazatenango Sucursal Mazatenango Nueva contraseña Quitar acceso Retalhuleu Sucursal Retalhuleu Nueva contraseña Quitar acceso San Marcos Sucursal San Marcos Nueva contraseña Quitar acceso Región 6 · Jarbi Quezada (8 sucursales) Crear las 0 contraseñas que faltan Restablecer las 8 que ya tienen NOMBRE ROL SUCURSAL ACCESO Barberena Sucursal Barberena Nueva contraseña Quitar acceso Carr. a El Salvador Sucursal Carr. a El Salvador Nueva contraseña Quitar acceso Chiquimula Sucursal Chiquimula Nueva contraseña Quitar acceso El Progreso Sucursal El Progreso Nueva contraseña Quitar acceso Esquipulas Sucursal Esquipulas Nueva contraseña Quitar acceso Guastatoya Sucursal Guastatoya Nueva contraseña Quitar acceso Jalapa Sucursal Jalapa Nueva contraseña Quitar acceso Jutiapa Sucursal Jutiapa Nueva contraseña Quitar acceso Agregar comodín Elige la región y se crea el siguiente (Comodín 2, 3…) con su supervisor. Después escribe su correo en la tabla de abajo y pulsa \"Crear acceso\". Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Agregar comodín Agregar usuario Elige el rol (de fábrica o propio). Después escribe su correo en la tabla de abajo y pulsa \"Crear acceso\". Las sucursales se administran en su propia pantalla. Administrador Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Agregar Cambiar rol Pasa a una persona de un rol a otro sin perder su usuario ni su contraseña. Al cambiar, tendrá que cerrar sesión y volver a entrar. Supervisor y Comodín piden región. Si pasa a Inventarios, verá todas las sucursales hasta que le asignes algunas. El rol anterior deja de aplicar. Comodín de Jose Boc (Comodín · R1) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Comodín de Carlos Gamez (Comodín · R2) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Comodín de Marco Martinez (Comodín · R3) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Comodín de Oscar Chen (Comodín · R4) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Comodín de Edgar Ixcot (Comodín · R5) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Comodín de Jarbi Quezada (Comodín · R6) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Inventarios (Inventarios) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Cambiar Jose Boc (Supervisor · R1) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Carlos Gamez (Supervisor · R2) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Marco Martinez (Supervisor · R3) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Oscar Chen (Supervisor · R4) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Edgar Ixcot (Supervisor · R5) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Jarbi Quezada (Supervisor · R6) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Cambiar Visualizador (Visualizador) Supervisor Comodín Inventarios Visualizador Analista de operaciones Gerencia Cambiar Supervisores, comodín, inventarios y visualizadores Entran con su correo de la empresa: escríbelo en su fila y pulsa \"Crear acceso\". Si olvidan su contraseña, usa \"Nueva contraseña\". NOMBRE ROL SUCURSAL ACCESO Carlos Gamez Administrador Nueva contraseña Quitar acceso Editar nombre Comodín de Jose Boc Región 1 Comodín Nueva contraseña Quitar acceso Eliminar comodín Editar nombre Cambiar de persona Comodín de Carlos Gamez Región 2 Comodín Nueva contraseña Quitar acceso Eliminar comodín Editar nombre Cambiar de persona Comodín de Marco Martinez Región 3 Comodín Nueva contraseña Quitar acceso Eliminar comodín Editar nombre Cambiar de persona Comodín de Oscar Chen Región 4 Comodín Nueva contraseña Quitar acceso Eliminar comodín Editar nombre Cambiar de persona Comodín de Edgar Ixcot Región 5 Comodín Nueva contraseña Quitar acceso Eliminar comodín Editar nombre Cambiar de persona Comodín de Jarbi Quezada Región 6 Comodín Nueva contraseña Quitar acceso Eliminar comodín Editar nombre Cambiar de persona Inventarios Inventarios Todas las sucursales · solo planes de Inventarios Nueva contraseña Quitar acceso Sucursales asignadas Editar nombre Cambiar de persona Jose Boc Región 1 Supervisor Nueva contraseña Quitar acceso Editar nombre Cambiar de persona Carlos Gamez Región 2 Supervisor Nueva contraseña Quitar acceso Editar nombre Cambiar de persona Marco Martinez Región 3 Supervisor Nueva contraseña Quitar acceso Editar nombre Cambiar de persona Oscar Chen Región 4 Supervisor Nueva contraseña Quitar acceso Editar nombre Cambiar de persona Edgar Ixcot Región 5 Supervisor Nueva contraseña Quitar acceso Editar nombre Cambiar de persona Jarbi Quezada Región 6 Supervisor Nueva contraseña Quitar acceso Editar nombre Cambiar de persona Visualizador Visualizador Nueva contraseña Quitar acceso Editar nombre Cambiar de persona",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "data": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Datos Mis conexiones principales Lo que usa tu programa y dónde abrirlo. Solo lo ve el administrador. 🗄️ Base de datos (Supabase) 🟢 Conectada https://znicbyzszdztwyecydbl.supabase.co Abrir panel Copiar ✏️ Editar 📷 Fotos (OneDrive) 🔴 No se pudo contactar el servidor (Failed to fetch) Abrir OneDrive 🌐 Link de la app (Cloudflare) http://HOST/index.html Abrir Copiar Guardar link Si algún día cambias de página, escribe aquí el link nuevo. Es el que sale en los accesos que compartes. Conexión a la nube (Supabase) Estado: 🟢 Conectado, los datos se comparten en tiempo real La conexión viene incluida en la app (archivo config.js). Más enlaces de Supabase Panel de Supabase del proyecto https://supabase.com/dashboard/project/znicbyzszdztwyecydbl Abrir Copiar Usuarios (Authentication) https://supabase.com/dashboard/project/znicbyzszdztwyecydbl/auth/users Abrir Copiar Editor de tablas https://supabase.com/dashboard/project/znicbyzszdztwyecydbl/editor Abrir Copiar Almacén de fotos 🔴 No se pudo contactar el servidor (Failed to fetch) Mientras tanto, las fotos completas quedan solo en cada equipo (las miniaturas sí se comparten). Probar subida de foto Nombre del puesto de apoyo al supervisor Es solo la etiqueta que se muestra en pantalla (Usuarios, nombres automáticos, textos). Los permisos y datos no cambian. Ejemplo: Asistente de supervisor. Guardar nombre Acceso de supervisores a otras regiones Cada supervisor siempre tiene control total de su propia región. Aquí le das acceso extra: Todas las regiones o regiones sueltas, y en cada una eliges Solo ver (consulta, descarga, no cambia nada) o Ver y editar (autorizar, revisar evidencias, corregir, confirmar, enviar informes). Sirve, por ejemplo, para cubrir a quien sale de vacaciones. Para que lo respete la base de datos corre una vez el script acceso_regiones.sql. Restablecer todos Jose Boc · Región 1 (propia) Solo su región Restablecer Carlos Gamez · Región 2 (propia) Solo su región Restablecer Marco Martinez · Región 3 (propia) Solo su región Restablecer Oscar Chen · Región 4 (propia) Solo su región Restablecer Edgar Ixcot · Región 5 (propia) Solo su región Restablecer Jarbi Quezada · Región 6 (propia) Solo su región Restablecer Respaldo de datos Descarga un archivo con todos los planes, usuarios (sin contraseñas), avisos y configuración. Guárdalo en un lugar seguro, por ejemplo cada semana. Las fotos no se incluyen: quedan en OneDrive y el respaldo conserva sus enlaces. ⬇ Descargar respaldo Importar planes de acción Sube un archivo CSV (en Excel: Guardar como → CSV UTF-8) con una fila por actividad. Primero verás un resumen y los errores; no se guarda nada hasta que confirmes. Los planes ya existentes (misma sucursal, tipo, fecha y actividad) se omiten. ⬇ Plantilla CSV ⬆ Elegir archivo Eliminar planes por región o sucursal Sirve para limpiar planes antes de importar los reales. Antes de borrar se descarga un respaldo automáticamente. No se puede deshacer. Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Toda la región Chimaltenango Huehuetenango Jocotenango Nebaj Quiche Sacapulas San Juan Sac. Solola Tecpan Totonicapan Xela 1 Xela 2 🗑 Eliminar planes 12 planes se eliminarían. Inventarios: revisar planes Por defecto el rol Inventarios solo ve los planes de Inventarios (como un Visualizador). Si activas esto, también podrá revisar esas evidencias (calificar eficacia, aprobar o pedir corrección). No envía correos. Si crea planes va directo o con validación, según lo que actives por región en Usuarios y seguridad. Activado Desactivado Inventarios solo ve Avisos: administrador, Analista y Gerencia El administrador recibe por defecto los de la Región 2 (puedes cambiarlo). Analista y Gerencia no reciben nada hasta que los actives y elige si ve todas las regiones o solo algunas. Reciben los avisos de los planes de esas regiones, dentro de la app y en su teléfono si activaron los avisos. Carlos Gamez (Administrador) Avisos activados Todas las regiones Región 1 Región 2 Región 3 Región 4 Región 5 Región 6 Guardar avisos Quién puede eliminar planes Tú (administrador) siempre puedes. Aquí eliges, persona por persona, quién más puede eliminar planes de su propia región. Para que funcione en la base de datos hay que correr una vez el script eliminar_por_persona.sql en Supabase. Activar a todos Quitar a todos Con permiso: 0 de 12 PERSONA ROL REGIÓN ELIMINAR PLANES Comodín de Jose Boc Comodín 1 No puede (permitir) Jose Boc Supervisor 1 No puede (permitir) Comodín de Carlos Gamez Comodín 2 No puede (permitir) Carlos Gamez Supervisor 2 No puede (permitir) Comodín de Marco Martinez Comodín 3 No puede (permitir) Marco Martinez Supervisor 3 No puede (permitir) Comodín de Oscar Chen Comodín 4 No puede (permitir) Oscar Chen Supervisor 4 No puede (permitir) Comodín de Edgar Ixcot Comodín 5 No puede (permitir) Edgar Ixcot Supervisor 5 No puede (permitir) Comodín de Jarbi Quezada Comodín 6 No puede (permitir) Jarbi Quezada Supervisor 6 No puede (permitir) Informes de Inventarios por correo Un solo interruptor para todos los supervisores. Activado: los planes de Inventarios completados quedan \"Pendiente de envío\" hasta que se mande el correo al departamento. Desactivado: quedan como \"Completado\". Los planes de Operaciones nunca piden correo. Activado Desactivado Envío de correos ACTIVADO Correo(s) del departamento de Inventarios (separados por coma) Guardar correo App de correo para enviar el informe (todos los equipos) Automático (recomendado) Siempre aplicación de Outlook Siempre Outlook web Que cada equipo elija Automático abre la aplicación de Outlook en el teléfono y Outlook web (outlook.office.com) en la computadora, con la cuenta de la empresa. Así el correo no sale desde Gmail ni desde otro programa del equipo. Respaldo de planes, usuarios y notificaciones. Las fotos no se incluyen: se guardan en este navegador hasta conectar OneDrive. Exportar respaldo",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "roles": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir Los cambios aplican de inmediato a todos los usuarios de ese rol. Esto controla lo que muestra y permite la aplicación; la seguridad del servidor (Supabase) no se modifica desde aquí. Crear un rol nuevo Se crea copiando los permisos de un rol existente y luego los ajustas. Ejemplo: \"Demo\", copiando Visualizador para que solo consulte. Copiar de: Supervisor Copiar de: Comodín Copiar de: Inventarios Copiar de: Visualizador Copiar de: Analista de operaciones Copiar de: Gerencia Crear rol Administrador 1 usuario(s) 🔒 Protegido Pantallas: Dashboard, Planes, Nuevo plan, Evidencias, Historial de evidencias, Arqueos, Supervisión mensual, Sucursales, Usuarios, Datos, Roles Ve: Todo el sistema Puede: Corregir la eficacia de actividades ya evaluadas; Enviar informes de Inventarios por correo; Autorizar planes que quedan pendientes de autorización Supervisor 6 usuario(s) Editar Pantallas: Dashboard, Planes, Nuevo plan, Evidencias, Historial de evidencias, Arqueos, Usuarios Ve: Su región Puede: Corregir la eficacia de actividades ya evaluadas; Enviar informes de Inventarios por correo; Autorizar planes que quedan pendientes de autorización Comodín 6 usuario(s) Editar Pantallas: Dashboard, Planes, Nuevo plan Ve: Su región Puede: Sus planes nuevos quedan pendientes de autorización Inventarios 1 usuario(s) Editar Pantallas: Dashboard, Planes, Nuevo plan, Historial de evidencias Ve: Solo planes de Inventarios de las sucursales que tenga asignadas Puede: solo consultar Visualizador 1 usuario(s) Editar Pantallas: Dashboard, Planes, Historial de evidencias Ve: Todo el sistema Puede: solo consultar Analista de operaciones 0 usuario(s) Editar Pantallas: Dashboard, Planes, Evidencias, Historial de evidencias Ve: Todo el sistema Puede: Corregir la eficacia de actividades ya evaluadas Gerencia 0 usuario(s) Editar Pantallas: Dashboard, Planes, Evidencias, Historial de evidencias Ve: Todo el sistema Puede: Corregir la eficacia de actividades ya evaluadas Sucursal 54 usuario(s) Editar Pantallas: Dashboard, Planes por realizar, Planes en revisión, Planes, Datos del mes para supervisión, Arqueos Ve: Su sucursal Puede: Operar actividades y subir evidencias (como una sucursal)",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   }
+  },
+  "detalle": {
+   "texto": "Dashboard Planes Nuevo plan Evidencias 10 Más v512 Instalar Todas las regiones Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Avisos Salir ⬇ Descargar Excel 12 Total 0 En plazo 0 Próximos 10 Atrasados 6 Por revisar 2 Concluidos 12 planes Región 2 PA-2026-026 Operaciones En proceso Tecpan Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-025 Inventarios En proceso Nebaj Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-024 Inventarios En proceso Xela 2 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-023 Auditoría Por revisar Solola Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-022 Inventarios Pendiente de autorización Jocotenango Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-021 Inventarios Pendiente de envío Totonicapan Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-020 Inventarios Pendiente de envío Huehuetenango Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-019 Inventarios Pendiente de autorización Quiche Región 2 30/08/2026 1/4 actividades · 25% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-018 Operaciones Pendiente de autorización Chimaltenango Región 2 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-017 Inventarios En proceso Sacapulas Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-016 Auditoría Pendiente de autorización Xela 1 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-015 Inventarios Pendiente de autorización San Juan Sac. Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026",
+   "fotos": {
+    "total": 0,
+    "conImagen": 0
+   }
+  },
+  "errores": []
+ },
+ "supervisor": {
+  "planesVisibles": [
+   "PA-2026-001",
+   "PA-2026-002",
+   "PA-2026-003",
+   "PA-2026-004",
+   "PA-2026-005",
+   "PA-2026-006",
+   "PA-2026-007",
+   "PA-2026-008",
+   "PA-2026-009",
+   "PA-2026-010",
+   "PA-2026-011",
+   "PA-2026-012",
+   "PA-2026-013",
+   "PA-2026-014"
+  ],
+  "avisos": 0,
+  "sinLeer": 0,
+  "estados": {
+   "PA-2026-001": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-002": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-003": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-004": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-005": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-006": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-007": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-008": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-009": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-010": [
+    "Pendiente de envío",
+    50,
+    4
+   ],
+   "PA-2026-011": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-012": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-013": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-014": [
+    "Pendiente de autorización",
+    50,
+    4
+   ]
+  },
+  "vistas": {
+   "dash": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir ⬇ Excel ⬇ PDF GENERAL COMPARATIVO VISUAL PRESENTACIÓN ⚙ Filtros · Todo el tiempo ▾ 14 Total de planes 5 Concluidos 36% 0 En plazo 0% 0 Próximos a vencer 0% 9 Atrasados 64% 22 Evidencias por revisar Evolución de planes Últimos 3 meses Últimos 6 meses Últimos 12 meses Bimestral 0 5 10 0 0 9 0 0 0 0 0 5 0 0 0 Jun Jul Ago Sep Oct Nov Concluidos Total: 5 En proceso Total: 0 Atrasados Total: 9 Planes por tipo 14 Planes Operaciones 3 (21%) Inventarios 6 (43%) Estado de planes 5 Concluidos 0 En plazo 0 Próximos 9 Atrasados 9 Por revisar CUMPLIMIENTO 34% EFICACIA 100% PLANES 14 ACTIVIDADES 56 EVIDENCIAS 41 de 56 VENCIDAS 15 CUMPLIMIENTO POR SUCURSAL ▏meta 85% Zona 12, Petapa 75% Zona 14 75% Mixco 50% Zona 11 Ventas 50% Zona 12, Reformita 50% Zona 9 50% Naranjo 25% Zona 15 25% Zona 18 25% Zona 5 25% + 4 más (detalle completo en el Excel) ESTADO DE LAS ACTIVIDADES Aprobadas 19 En revisión 22 Vencidas 15 TIEMPO PROMEDIO DEL PROCESO APERTURA — › 1ª EVIDENCIA <1 min › REVISIÓN <1 min › CORRECCIÓN — Sucursal con mayor cumplimiento: Zona 12, Petapa · 75% ATENCIÓN ⛔ 15 actividades vencidas 📷 22 evidencias pendientes de revisión 📄 4 informes de Inventarios pendientes de envío LECTURA RÁPIDA 4ta Calle tiene el menor cumplimiento (0%), 34 puntos por debajo del promedio (34%). Zona 12, Petapa destaca con 75% de cumplimiento. Zona 11 CD concentra 2 de las 15 actividades vencidas (13%). Mixco es la sucursal que más tarda en subir su primera evidencia (<1 min en promedio). VER INFORME RESUMIDO ▲ MEJORES SUCURSALES Zona 12, Petapa · R1 75% Zona 14 · R1 75% Mixco · R1 50% Zona 11 Ventas · R1 50% Zona 12, Reformita · R1 50% ▼ SUCURSALES POR ATENDER 4ta Calle · R1 0% Aguilar Batres, v.n. · R1 0% Zona 11 CD · R1 0% Naranjo · R1 25% Zona 15 · R1 25% PLANES DE ACCIÓN RECIENTES Zona 11 CD ⏱ Vencido hace 59 días 2/4 Ver Zona 7 ⏱ Vencido hace 59 días 2/4 Ver Zona 12, Reformita ⏱ Vencido hace 59 días 4/4 Ver Zona 14 Realizado 30 días antes 4/4 Ver Zona 9 Realizado 30 días antes 2/4 Ver CUMPLIMIENTO EN PLAZO 100% entregados a tiempo 3/3 sin atrasos +30 días de anticipación (promedio) Zona 12, Petapa PA-2026-002 30 días antes 30/08/2026 Zona 14 PA-2026-011 30 días antes 30/08/2026 Zona 12, Reformita PA-2026-012 30 días antes 30/08/2026",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "plans": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir ⬇ Descargar Excel 14 Total 0 En plazo 0 Próximos 9 Atrasados 9 Por revisar 5 Concluidos 14 planes Región 1 PA-2026-014 Auditoría Pendiente de autorización Zona 11 CD Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-013 Auditoría En proceso Zona 7 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-012 Operaciones Pendiente de autorización Zona 12, Reformita Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-010 Inventarios Pendiente de envío Zona 9 Región 1 30/08/2026 2/4 actividades · 50% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-009 Inventarios Pendiente de envío Naranjo Región 1 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-008 Auditoría En proceso Zona 11 Ventas Región 1 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-007 Inventarios Pendiente de envío Mixco Región 1 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-006 Inventarios Pendiente de autorización Aguilar Batres, v.n. Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-005 Operaciones En proceso Zona 18 Región 1 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-004 Auditoría En proceso Zona 5 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-003 Inventarios En proceso Zona 15 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-002 Auditoría Pendiente de autorización Zona 12, Petapa Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-001 Inventarios Pendiente de envío 4ta Calle Región 1 30/08/2026 3/4 actividades · 75% ⬇ Inventarios descargó · 30/8/2026 PA-2026-011 Operaciones Completado Zona 14 Región 1 30/08/2026 4/4 actividades · 100% Realizado 30 días antes",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "nuevo": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir Región Región 1 · Jose Boc Sucursal * Selecciona… 4ta Calle Aguilar Batres, v.n. Mixco Naranjo Zona 11 CD Zona 11 Ventas Zona 12, Petapa Zona 12, Reformita Zona 14 Zona 15 Zona 18 Zona 5 Zona 7 Zona 9 Tipo Operaciones Inventarios Externos Otro Fecha de visita Fecha de culminación Actividades * 1. 🗑 Eliminar Foto de referencia (antes), opcional 📷 Tomar foto 🖼 Subir foto Encargado + Agregar actividad Total de tareas: 0 Crear plan",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "review": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir ⚠ 4 informes de Inventarios pendientes de envío Todavía no se ha enviado el correo al departamento de Inventarios. Este aviso se quita hasta que lo envíes. PA-2026-010 · Zona 9 (Región 1) Pendiente de envío Enviar informe por correo Ver plan PA-2026-009 · Naranjo (Región 1) Pendiente de envío Enviar informe por correo Ver plan PA-2026-007 · Mixco (Región 1) Pendiente de envío Enviar informe por correo Ver plan PA-2026-001 · 4ta Calle (Región 1) Pendiente de envío Enviar informe por correo Ver plan PA-2026-001 · 4ta Calle Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 3/4 actividades 1. Actividad 1 de 4ta Calle Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-001 · 4ta Calle Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 3/4 actividades 2. Actividad 2 de 4ta Calle Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-001 · 4ta Calle Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 3/4 actividades 4. Actividad 4 de 4ta Calle Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-002 · Zona 12, Petapa Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 4. Actividad 4 de Zona 12, Petapa Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-003 · Zona 15 Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 2/4 actividades 3. Actividad 3 de Zona 15 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-004 · Zona 5 Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 2/4 actividades 2. Actividad 2 de Zona 5 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-005 · Zona 18 Operaciones 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 3/4 actividades 1. Actividad 1 de Zona 18 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-005 · Zona 18 Operaciones 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 3/4 actividades 4. Actividad 4 de Zona 18 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-006 · Aguilar Batres, v.n. Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 1. Actividad 1 de Aguilar Batres, v.n. Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-006 · Aguilar Batres, v.n. Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 2. Actividad 2 de Aguilar Batres, v.n. Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-006 · Aguilar Batres, v.n. Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 3. Actividad 3 de Aguilar Batres, v.n. Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-006 · Aguilar Batres, v.n. Inventarios 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 4. Actividad 4 de Aguilar Batres, v.n. Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-007 · Mixco Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 3/4 actividades 1. Actividad 1 de Mixco Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-008 · Zona 11 Ventas Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 3/4 actividades 4. Actividad 4 de Zona 11 Ventas Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-009 · Naranjo Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 3/4 actividades 2. Actividad 2 de Naranjo Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-009 · Naranjo Inventarios 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 3/4 actividades 4. Actividad 4 de Naranjo Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-011 · Zona 14 Operaciones 📅 Creado 30/08/2026 · lleva 89 días 🏁 Límite 29/09/2026 🚫 Sin leer 4/4 actividades 1. Actividad 1 de Zona 14 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-012 · Zona 12, Reformita Operaciones 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 1. Actividad 1 de Zona 12, Reformita Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-012 · Zona 12, Reformita Operaciones 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 4/4 actividades 2. Actividad 2 de Zona 12, Reformita Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-013 · Zona 7 Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 2/4 actividades 1. Actividad 1 de Zona 7 Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-014 · Zona 11 CD Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 2/4 actividades 2. Actividad 2 de Zona 11 CD Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección PA-2026-014 · Zona 11 CD Auditoría 📅 Creado 30/08/2026 · lleva 89 días ⏱ Límite 29/09/2026 · vencido hace 59 días 🚫 Sin leer 2/4 actividades 4. Actividad 4 de Zona 11 CD Antes Después Eficiente Regular Deficiente Malo Aprobar Solicitar corrección",
+    "fotosArriba": {
+     "total": 44,
+     "conImagen": 4
+    },
+    "fotos": {
+     "total": 44,
+     "conImagen": 44
+    }
+   },
+   "hist": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir Sucursal Todos Mixco Naranjo Zona 11 Ventas Zona 12, Petapa Zona 12, Reformita Zona 14 Zona 15 Zona 18 Zona 5 Zona 7 Zona 9 Tipo Todos Operaciones Inventarios Externos Otro Buscar ▸ PA-2026-013 30/08/2026 Región 1 Zona 7 Auditoría 1 de 4 100% ▸ PA-2026-012 30/08/2026 Región 1 Zona 12, Reformita Operaciones 2 de 4 100% ▸ PA-2026-011 30/08/2026 Región 1 Zona 14 Operaciones 3 de 4 100% ▸ PA-2026-010 30/08/2026 Región 1 Zona 9 Inventarios 2 de 4 100% ▸ PA-2026-009 30/08/2026 Región 1 Naranjo Inventarios 1 de 4 100% ▸ PA-2026-008 30/08/2026 Región 1 Zona 11 Ventas Auditoría 2 de 4 100% ▸ PA-2026-007 30/08/2026 Región 1 Mixco Inventarios 2 de 4 100% ▸ PA-2026-005 30/08/2026 Región 1 Zona 18 Operaciones 1 de 4 100% ▸ PA-2026-004 30/08/2026 Región 1 Zona 5 Auditoría 1 de 4 100% ▸ PA-2026-003 30/08/2026 Región 1 Zona 15 Inventarios 1 de 4 100% ▸ PA-2026-002 30/08/2026 Región 1 Zona 12, Petapa Auditoría 3 de 4 100%",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "arqueos": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir Firma digital Firma en papel + Nuevo arqueo Sucursal Todas Aguilar Batres, v.n. Mixco Naranjo Zona 11 Ventas Zona 12, Petapa Zona 12, Reformita Zona 14 Zona 18 Zona 5 Zona 9 Estado Todos Borrador Falta firma del supervisor Falta firma del encargado Completo Depósito pendiente ▤ Total de arqueos 30 = Cuadrados 19 − Faltantes 0 + Sobrantes 0 AQ-00115 30/08/2026 Mixco Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00113 30/08/2026 Zona 12, Reformita Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00108 30/08/2026 Zona 18 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00107 30/08/2026 Zona 9 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00104 30/08/2026 Zona 14 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00102 30/08/2026 Zona 11 Ventas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00099 30/08/2026 Aguilar Batres, v.n. Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00092 30/08/2026 Mixco Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00089 30/08/2026 Zona 11 Ventas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00087 30/08/2026 Zona 5 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00080 30/08/2026 Zona 18 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00079 30/08/2026 Zona 18 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00073 30/08/2026 Mixco Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00068 30/08/2026 Zona 9 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00066 30/08/2026 Zona 18 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00062 30/08/2026 Zona 14 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00061 30/08/2026 Naranjo Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00057 30/08/2026 Zona 12, Petapa Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00049 30/08/2026 Zona 12, Reformita Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00042 30/08/2026 Naranjo Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00040 30/08/2026 Zona 11 Ventas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00037 30/08/2026 Zona 11 Ventas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00036 30/08/2026 Zona 5 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00033 30/08/2026 Zona 12, Petapa Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Falta firma del supervisor AQ-00028 30/08/2026 Zona 11 Ventas Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00026 30/08/2026 Mixco Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00022 30/08/2026 Zona 18 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00015 30/08/2026 Zona 12, Petapa Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00012 30/08/2026 Zona 18 Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo AQ-00010 30/08/2026 Mixco Sup Enc Q0.00 Q0.00 ▲ Sobrante Q0.00 Completo Encargados de fondo fijo y monto por sucursal (administradores y supervisores)",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "users": {
+    "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir Planes automáticos de sucursal Si lo activas, las sucursales de la región pueden crear sus propios planes de Operaciones. Se registran con la terminación \"- AUTO\", sin necesitar autorización. Región 1 · Jose Boc Activado Desactivado Encargado de cada sucursal Escribe el nombre del encargado (cada supervisor edita los de su región). Se asigna solo a cada plan y a cada actividad nueva de esa sucursal, y quien crea o edita el plan puede cambiarlo. Región 1 (14) Guardar encargados Aquí generas las contraseñas de las sucursales de tu región y se las compartes a cada una. Supervisor: Jose Boc. Región 1 · Jose Boc (14 sucursales) Crear las 0 contraseñas que faltan Restablecer las 14 que ya tienen NOMBRE ROL SUCURSAL ACCESO 4ta Calle Sucursal 4ta Calle Nueva contraseña Aguilar Batres, v.n. Sucursal Aguilar Batres, v.n. Nueva contraseña Mixco Sucursal Mixco Nueva contraseña Naranjo Sucursal Naranjo Nueva contraseña Zona 11 CD Sucursal Zona 11 CD Nueva contraseña Zona 11 Ventas Sucursal Zona 11 Ventas Nueva contraseña Zona 12, Petapa Sucursal Zona 12, Petapa Nueva contraseña Zona 12, Reformita Sucursal Zona 12, Reformita Nueva contraseña Zona 14 Sucursal Zona 14 Nueva contraseña Zona 15 Sucursal Zona 15 Nueva contraseña Zona 18 Sucursal Zona 18 Nueva contraseña Zona 5 Sucursal Zona 5 Nueva contraseña Zona 7 Sucursal Zona 7 Nueva contraseña Zona 9 Sucursal Zona 9 Nueva contraseña",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   }
+  },
+  "detalle": {
+   "texto": "Dashboard Planes Nuevo plan Evidencias 26 Más v512 Jose Boc Instalar Avisos Salir PA-2026-001 · 4ta Calle Inventarios Pendiente de envío⬇ Inventarios descargó · 30/8/2026 3 de 4 actividades con foto · 75% 1 Plan creado 2 Tareas pendientes 3 Evidencia subida 4 En revisión 5 Resultado Creación (visita) 30/08/2026 Lleva 89 días desde la creación Fecha límite 29/09/2026 Completado ✏ Editar plan Ver informe Enviar informe por correo Cambiar app de correo ⬇ Descargar plan 1. Actividad 1 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado ✎ Encargado Antes Después 2. Actividad 2 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado ✎ Encargado Antes Después 3. Actividad 3 de 4ta Calle Vencida Pendiente Vence 29/09/2026 · Encargado: Encargado ✎ Encargado Finalizar sin evidencia Antes 4. Actividad 4 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado ✎ Encargado Antes Después",
+   "fotos": {
+    "total": 7,
+    "conImagen": 7
+   }
+  },
+  "errores": []
+ },
+ "sucursal": {
+  "planesVisibles": [
+   "PA-2026-001"
+  ],
+  "avisos": 2,
+  "sinLeer": 2,
+  "estados": {
+   "PA-2026-001": [
+    "Completado",
+    75,
+    4
+   ]
+  },
+  "vistas": {
+   "dash": {
+    "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir Total de planes 1 Por realizar 0 Operaciones 0 Inventarios 1 En revisión 0 Completados 1 Entregas a tiempo — Eficacia promedio — Actividades vencidas 4 100% 1 de 1 planes finalizados 0 por realizar · 0 en revisión ⏱ Aún no hay entregas para medir tu puntualidad Aprobadas 0 En revisión 3 Pendientes 1 Cumplimiento en plazo Aún no hay planes entregados en el período.",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "todo": {
+    "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir ⬇ Descargar Excel 0 planes Región 1 Aún no hay planes.",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "rev": {
+    "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir ⬇ Descargar Excel 0 planes Región 1 Aún no hay planes.",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "plans": {
+    "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir ⬇ Descargar Excel Todos Por realizar En revisión Finalizados 1 plan Región 1 PA-2026-001 Inventarios Completado 4ta Calle Región 1 30/08/2026 3/4 actividades · 75%",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "datosmes": {
+    "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir Guardar datos Mes a capturar: octubre 2026 Solo se captura el mes vencido. Cargando…",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "arqueos": {
+    "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir Estado Todos Borrador Falta firma del supervisor Falta firma del encargado Completo Depósito pendiente ▤ Total de arqueos 0 = Cuadrados 0 − Faltantes 0 + Sobrantes 0 Todavía no hay arqueos.",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   }
+  },
+  "detalle": {
+   "texto": "Dashboard Planes por realizar Planes en revisión Planes Más v512 4ta Calle Instalar Avisos Salir PA-2026-001 · 4ta Calle Inventarios Completado 3 de 4 actividades con foto · 75% 1 Plan creado 2 Tareas pendientes 3 Evidencia subida 4 En revisión 5 Resultado Creación (visita) 30/08/2026 Lleva 89 días desde la creación Fecha límite 29/09/2026 Completado 1. Actividad 1 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después 2. Actividad 2 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después 3. Actividad 3 de 4ta Calle Vencida Pendiente Vence 29/09/2026 · Encargado: Encargado Antes 4. Actividad 4 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después",
+   "fotos": {
+    "total": 7,
+    "conImagen": 7
+   }
+  },
+  "errores": []
+ },
+ "inventarios": {
+  "planesVisibles": [
+   "PA-2026-001",
+   "PA-2026-003",
+   "PA-2026-006",
+   "PA-2026-007",
+   "PA-2026-009",
+   "PA-2026-010",
+   "PA-2026-015",
+   "PA-2026-017",
+   "PA-2026-019",
+   "PA-2026-020",
+   "PA-2026-021",
+   "PA-2026-022",
+   "PA-2026-024",
+   "PA-2026-025",
+   "PA-2026-032",
+   "PA-2026-041",
+   "PA-2026-042",
+   "PA-2026-044",
+   "PA-2026-048",
+   "PA-2026-049",
+   "PA-2026-050"
+  ],
+  "avisos": 0,
+  "sinLeer": 0,
+  "estados": {
+   "PA-2026-001": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-003": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-006": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-007": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-009": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-010": [
+    "Completado",
+    50,
+    4
+   ],
+   "PA-2026-015": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-017": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-019": [
+    "Pendiente de autorización",
+    25,
+    4
+   ],
+   "PA-2026-020": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-021": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-022": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-024": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-025": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-032": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-041": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-042": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-044": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-048": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-049": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-050": [
+    "Pendiente de autorización",
+    25,
+    4
+   ]
+  },
+  "vistas": {
+   "dash": {
+    "texto": "Dashboard Planes Nuevo plan Historial de evidencias v512 Inventarios Instalar Avisos Salir ⬇ Excel ⬇ PDF GENERAL COMPARATIVO VISUAL PRESENTACIÓN Último plan de Inventarios PA-2026-050 · Jalapa (Región 6) Visita 30/08/2026 · Pendiente de autorización · 1/4 actividades ⬇ Descargar plan Ver ⚙ Filtros · Todo el tiempo ▾ 21 Total de planes 10 Concluidos 48% 0 En plazo 0% 0 Próximos a vencer 0% 11 Atrasados 52% 25 Evidencias por revisar Evolución de planes Últimos 3 meses Últimos 6 meses Últimos 12 meses Bimestral 0 5 10 15 0 0 11 0 0 0 0 0 10 0 0 0 Jun Jul Ago Sep Oct Nov Concluidos Total: 10 En proceso Total: 0 Atrasados Total: 11 Planes por tipo 21 Planes Inventarios 21 (100%) Estado de planes 10 Concluidos 0 En plazo 0 Próximos 11 Atrasados 6 Por revisar CUMPLIMIENTO 46% EFICACIA 100% PLANES 21 ACTIVIDADES 84 EVIDENCIAS 64 de 84 VENCIDAS 20 CUMPLIMIENTO POR REGIÓN ▏meta 85% Región 5 67% Región 2 66% Región 1 25% Región 4 25% Región 6 25% ESTADO DE LAS ACTIVIDADES Aprobadas 39 En revisión 25 Vencidas 20 TIEMPO PROMEDIO DEL PROCESO APERTURA — › 1ª EVIDENCIA <1 min › REVISIÓN <1 min › CORRECCIÓN — Región con mayor cumplimiento: Región 5 · 67% ATENCIÓN ⛔ 20 actividades vencidas 📷 25 evidencias pendientes de revisión LECTURA RÁPIDA Región 1 tiene el menor cumplimiento (25%), 21 puntos por debajo del promedio (46%). Región 5 destaca con 67% de cumplimiento. Región 1 concentra 7 de las 20 actividades vencidas (35%). Amatitlan es la sucursal que más tarda en subir su primera evidencia (<1 min en promedio). VER INFORME RESUMIDO ▲ MEJORES SUCURSALES Huehuetenango · R2 100% Amatitlan · R5 75% Cotzumalguapa · R5 75% Sacapulas · R2 75% San Juan Sac. · R2 75% ▼ SUCURSALES POR ATENDER 4ta Calle · R1 0% Aguilar Batres, v.n. · R1 0% El Progreso · R6 25% Esquipulas · R6 25% Jalapa · R6 25% PLANES DE ACCIÓN RECIENTES Jalapa ⏱ Vencido hace 59 días 1/4 Ver Esquipulas Realizado 30 días antes 4/4 Ver El Progreso ⏱ Vencido hace 59 días 3/4 Ver Amatitlan Realizado 30 días antes 4/4 Ver Chiquimulilla ⏱ Vencido hace 59 días 3/4 Ver CUMPLIMIENTO EN PLAZO 100% entregados a tiempo 6/6 sin atrasos +30 días de anticipación (promedio) Huehuetenango PA-2026-020 30 días antes 30/08/2026 Totonicapan PA-2026-021 30 días antes 30/08/2026 Jocotenango PA-2026-022 30 días antes 30/08/2026 Cotzumalguapa PA-2026-041 30 días antes 30/08/2026 Amatitlan PA-2026-044 30 días antes 30/08/2026",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "plans": {
+    "texto": "Dashboard Planes Nuevo plan Historial de evidencias v512 Inventarios Instalar Avisos Salir ⬇ Descargar Excel 21 Total 0 En plazo 0 Próximos 11 Atrasados 6 Por revisar 10 Concluidos 21 planes Todas las regiones PA-2026-050 Inventarios Pendiente de autorización Jalapa Región 6 30/08/2026 1/4 actividades · 25% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-048 Inventarios Pendiente de autorización El Progreso Región 6 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-042 Inventarios En proceso Chiquimulilla Región 5 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-025 Inventarios En proceso Nebaj Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-024 Inventarios En proceso Xela 2 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-022 Inventarios Pendiente de autorización Jocotenango Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-019 Inventarios Pendiente de autorización Quiche Región 2 30/08/2026 1/4 actividades · 25% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-017 Inventarios En proceso Sacapulas Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-015 Inventarios Pendiente de autorización San Juan Sac. Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-006 Inventarios Pendiente de autorización Aguilar Batres, v.n. Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-003 Inventarios En proceso Zona 15 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-049 Inventarios Completado Esquipulas Región 6 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-044 Inventarios Completado Amatitlan Región 5 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-041 Inventarios Completado Cotzumalguapa Región 5 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-032 Inventarios Completado Santa Elena Región 4 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-021 Inventarios Completado Totonicapan Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-020 Inventarios Completado Huehuetenango Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-010 Inventarios Completado Zona 9 Región 1 30/08/2026 2/4 actividades · 50% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-009 Inventarios Completado Naranjo Región 1 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-007 Inventarios Completado Mixco Región 1 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-001 Inventarios Completado 4ta Calle Región 1 30/08/2026 3/4 actividades · 75% ⬇ Inventarios descargó · 30/8/2026",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "nuevo": {
+    "texto": "Dashboard Planes Nuevo plan Historial de evidencias v512 Inventarios Instalar Avisos Salir Región Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Sucursal * Selecciona… 4ta Calle Aguilar Batres, v.n. Mixco Naranjo Zona 11 CD Zona 11 Ventas Zona 12, Petapa Zona 12, Reformita Zona 14 Zona 15 Zona 18 Zona 5 Zona 7 Zona 9 Tipo Inventarios N.º inventario * Fecha de visita Fecha de culminación Actividades * 1. 🗑 Eliminar Foto de referencia (antes), opcional 📷 Tomar foto 🖼 Subir foto Encargado + Agregar actividad Total de tareas: 0 Crear y pedir validación Si el administrador activó la creación de planes en esta región, el plan va directo a la sucursal; si no, queda pendiente hasta que lo valide el supervisor de la región, Gerencia o el Analista.",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "hist": {
+    "texto": "Dashboard Planes Nuevo plan Historial de evidencias v512 Inventarios Instalar Avisos Salir Sucursal Todos Amatitlan Chiquimulilla Cotzumalguapa El Progreso Esquipulas Huehuetenango Jalapa Jocotenango Mixco Naranjo Nebaj Quiche Sacapulas San Juan Sac. Santa Elena Totonicapan Xela 2 Zona 15 Zona 9 Región Todos Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Buscar ▸ PA-2026-050 30/08/2026 Región 6 Jalapa Inventarios 1 de 4 100% ▸ PA-2026-049 30/08/2026 Región 6 Esquipulas Inventarios 1 de 4 100% ▸ PA-2026-048 30/08/2026 Región 6 El Progreso Inventarios 1 de 4 100% ▸ PA-2026-044 30/08/2026 Región 5 Amatitlan Inventarios 3 de 4 100% ▸ PA-2026-042 30/08/2026 Región 5 Chiquimulilla Inventarios 2 de 4 100% ▸ PA-2026-041 30/08/2026 Región 5 Cotzumalguapa Inventarios 3 de 4 100% ▸ PA-2026-032 30/08/2026 Región 4 Santa Elena Inventarios 1 de 4 100% ▸ PA-2026-025 30/08/2026 Región 2 Nebaj Inventarios 2 de 4 100% ▸ PA-2026-024 30/08/2026 Región 2 Xela 2 Inventarios 3 de 4 100% ▸ PA-2026-022 30/08/2026 Región 2 Jocotenango Inventarios 2 de 4 100% ▸ PA-2026-021 30/08/2026 Región 2 Totonicapan Inventarios 3 de 4 100% ▸ PA-2026-020 30/08/2026 Región 2 Huehuetenango Inventarios 4 de 4 100% ▸ PA-2026-019 30/08/2026 Región 2 Quiche Inventarios 1 de 4 100% ▸ PA-2026-017 30/08/2026 Región 2 Sacapulas Inventarios 3 de 4 100% ▸ PA-2026-015 30/08/2026 Región 2 San Juan Sac. Inventarios 3 de 4 100% ▸ PA-2026-010 30/08/2026 Región 1 Zona 9 Inventarios 2 de 4 100% ▸ PA-2026-009 30/08/2026 Región 1 Naranjo Inventarios 1 de 4 100% ▸ PA-2026-007 30/08/2026 Región 1 Mixco Inventarios 2 de 4 100% ▸ PA-2026-003 30/08/2026 Región 1 Zona 15 Inventarios 1 de 4 100%",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   }
+  },
+  "detalle": {
+   "texto": "Dashboard Planes Nuevo plan Historial de evidencias v512 Inventarios Instalar Avisos Salir PA-2026-001 · 4ta Calle Inventarios Completado⬇ Inventarios descargó · 30/8/2026 3 de 4 actividades con foto · 75% 1 Plan creado 2 Tareas pendientes 3 Evidencia subida 4 En revisión 5 Resultado Creación (visita) 30/08/2026 Lleva 89 días desde la creación Fecha límite 29/09/2026 Completado Ver informe ⬇ Descargar plan 1. Actividad 1 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después 2. Actividad 2 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después 3. Actividad 3 de 4ta Calle Vencida Pendiente Vence 29/09/2026 · Encargado: Encargado Antes 4. Actividad 4 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después",
+   "fotos": {
+    "total": 7,
+    "conImagen": 7
+   }
+  },
+  "errores": []
+ },
+ "visualizador": {
+  "planesVisibles": [
+   "PA-2026-001",
+   "PA-2026-002",
+   "PA-2026-003",
+   "PA-2026-004",
+   "PA-2026-005",
+   "PA-2026-006",
+   "PA-2026-007",
+   "PA-2026-008",
+   "PA-2026-009",
+   "PA-2026-010",
+   "PA-2026-011",
+   "PA-2026-012",
+   "PA-2026-013",
+   "PA-2026-014",
+   "PA-2026-015",
+   "PA-2026-016",
+   "PA-2026-017",
+   "PA-2026-018",
+   "PA-2026-019",
+   "PA-2026-020",
+   "PA-2026-021",
+   "PA-2026-022",
+   "PA-2026-023",
+   "PA-2026-024",
+   "PA-2026-025",
+   "PA-2026-026",
+   "PA-2026-027",
+   "PA-2026-028",
+   "PA-2026-029",
+   "PA-2026-030",
+   "PA-2026-031",
+   "PA-2026-032",
+   "PA-2026-033",
+   "PA-2026-034",
+   "PA-2026-035",
+   "PA-2026-036",
+   "PA-2026-037",
+   "PA-2026-038",
+   "PA-2026-039",
+   "PA-2026-040",
+   "PA-2026-041",
+   "PA-2026-042",
+   "PA-2026-043",
+   "PA-2026-044",
+   "PA-2026-045",
+   "PA-2026-046",
+   "PA-2026-047",
+   "PA-2026-048",
+   "PA-2026-049",
+   "PA-2026-050",
+   "PA-2026-051",
+   "PA-2026-052",
+   "PA-2026-053",
+   "PA-2026-054"
+  ],
+  "avisos": 0,
+  "sinLeer": 0,
+  "estados": {
+   "PA-2026-001": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-002": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-003": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-004": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-005": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-006": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-007": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-008": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-009": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-010": [
+    "Pendiente de envío",
+    50,
+    4
+   ],
+   "PA-2026-011": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-012": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-013": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-014": [
+    "Pendiente de autorización",
+    50,
+    4
+   ],
+   "PA-2026-015": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-016": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-017": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-018": [
+    "Pendiente de autorización",
+    50,
+    4
+   ],
+   "PA-2026-019": [
+    "Pendiente de autorización",
+    25,
+    4
+   ],
+   "PA-2026-020": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-021": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-022": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-023": [
+    "Por revisar",
+    100,
+    4
+   ],
+   "PA-2026-024": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-025": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-026": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-027": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-028": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-029": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-030": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-031": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-032": [
+    "Pendiente de envío",
+    75,
+    4
+   ],
+   "PA-2026-033": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-034": [
+    "Por revisar",
+    100,
+    4
+   ],
+   "PA-2026-035": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-036": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-037": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-038": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-039": [
+    "Pendiente de autorización",
+    100,
+    4
+   ],
+   "PA-2026-040": [
+    "Por revisar",
+    100,
+    4
+   ],
+   "PA-2026-041": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-042": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-043": [
+    "Completado",
+    100,
+    4
+   ],
+   "PA-2026-044": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-045": [
+    "Pendiente de autorización",
+    50,
+    4
+   ],
+   "PA-2026-046": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-047": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-048": [
+    "Pendiente de autorización",
+    75,
+    4
+   ],
+   "PA-2026-049": [
+    "Pendiente de envío",
+    100,
+    4
+   ],
+   "PA-2026-050": [
+    "Pendiente de autorización",
+    25,
+    4
+   ],
+   "PA-2026-051": [
+    "En proceso",
+    50,
+    4
+   ],
+   "PA-2026-052": [
+    "En proceso",
+    75,
+    4
+   ],
+   "PA-2026-053": [
+    "Completado",
+    75,
+    4
+   ],
+   "PA-2026-054": [
+    "Pendiente de autorización",
+    100,
+    4
+   ]
+  },
+  "vistas": {
+   "dash": {
+    "texto": "Dashboard Planes Historial de evidencias v512 Visualizador Instalar Avisos Salir ⬇ Excel ⬇ PDF GENERAL COMPARATIVO VISUAL PRESENTACIÓN ⚙ Filtros · Todo el tiempo ▾ 54 Total de planes 16 Concluidos 30% 0 En plazo 0% 0 Próximos a vencer 0% 38 Atrasados 70% 61 Evidencias por revisar Evolución de planes Últimos 3 meses Últimos 6 meses Últimos 12 meses Bimestral 0 10 20 30 40 0 0 38 0 0 0 0 0 16 0 0 0 Jun Jul Ago Sep Oct Nov Concluidos Total: 16 En proceso Total: 0 Atrasados Total: 38 Planes por tipo 54 Planes Operaciones 13 (24%) Inventarios 21 (39%) Estado de planes 16 Concluidos 0 En plazo 0 Próximos 38 Atrasados 26 Por revisar CUMPLIMIENTO 48% EFICACIA 100% PLANES 54 ACTIVIDADES 216 EVIDENCIAS 165 de 216 VENCIDAS 51 CUMPLIMIENTO POR REGIÓN ▏meta 85% Región 3 63% Región 2 60% Región 5 59% Región 4 53% Región 1 34% Región 6 34% ESTADO DE LAS ACTIVIDADES Aprobadas 104 En revisión 61 Vencidas 51 TIEMPO PROMEDIO DEL PROCESO APERTURA — › 1ª EVIDENCIA <1 min › REVISIÓN <1 min › CORRECCIÓN — Región con mayor cumplimiento: Región 3 · 63% ATENCIÓN ⛔ 51 actividades vencidas 📷 61 evidencias pendientes de revisión 📄 10 informes de Inventarios pendientes de envío LECTURA RÁPIDA Región 1 tiene el menor cumplimiento (34%), 14 puntos por debajo del promedio (48%). Región 3 destaca con 63% de cumplimiento. Región 1 concentra 15 de las 51 actividades vencidas (29%). Amatitlan es la sucursal que más tarda en subir su primera evidencia (<1 min en promedio). VER INFORME RESUMIDO ▲ MEJORES SUCURSALES Huehuetenango · R2 100% Amatitlan · R5 75% Cobán · R4 75% Cotzumalguapa · R5 75% Escuintla · R5 75% ▼ SUCURSALES POR ATENDER 4ta Calle · R1 0% Aguilar Batres, v.n. · R1 0% Jutiapa · R6 0% Zona 11 CD · R1 0% Chimaltenango · R2 25% PLANES DE ACCIÓN RECIENTES Carr. a El Salvador ⏱ Vencido hace 59 días 4/4 Ver Guastatoya Realizado 30 días antes 3/4 Ver Jutiapa ⏱ Vencido hace 59 días 3/4 Ver Chiquimula ⏱ Vencido hace 59 días 2/4 Ver Jalapa ⏱ Vencido hace 59 días 1/4 Ver CUMPLIMIENTO EN PLAZO 100% entregados a tiempo 17/17 sin atrasos +30 días de anticipación (promedio) Zona 12, Petapa PA-2026-002 30 días antes 30/08/2026 Zona 14 PA-2026-011 30 días antes 30/08/2026 Zona 12, Reformita PA-2026-012 30 días antes 30/08/2026 Huehuetenango PA-2026-020 30 días antes 30/08/2026 Totonicapan PA-2026-021 30 días antes 30/08/2026",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "plans": {
+    "texto": "Dashboard Planes Historial de evidencias v512 Visualizador Instalar Avisos Salir ⬇ Descargar Excel 54 Total 0 En plazo 0 Próximos 38 Atrasados 26 Por revisar 16 Concluidos 54 planes Todas las regiones PA-2026-054 Auditoría Pendiente de autorización Carr. a El Salvador Región 6 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-052 Auditoría En proceso Jutiapa Región 6 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-051 Auditoría En proceso Chiquimula Región 6 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-050 Inventarios Pendiente de autorización Jalapa Región 6 30/08/2026 1/4 actividades · 25% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-049 Inventarios Pendiente de envío Esquipulas Región 6 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-048 Inventarios Pendiente de autorización El Progreso Región 6 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-047 Operaciones Pendiente de autorización Barberena Región 6 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-046 Operaciones En proceso Coatepeque Región 5 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-045 Operaciones Pendiente de autorización Mazatenango Región 5 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-044 Inventarios Pendiente de envío Amatitlan Región 5 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-042 Inventarios En proceso Chiquimulilla Región 5 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-041 Inventarios Pendiente de envío Cotzumalguapa Región 5 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-040 Auditoría Por revisar Escuintla Región 5 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-039 Auditoría Pendiente de autorización San Marcos Región 5 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-036 Operaciones En proceso Poptún Región 4 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-035 Operaciones En proceso Salamá Región 4 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-034 Auditoría Por revisar Cobán Región 4 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-032 Inventarios Pendiente de envío Santa Elena Región 4 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-031 Auditoría En proceso Tactic Región 4 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-030 Operaciones En proceso Morales Región 4 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-029 Auditoría En proceso Puerto Barrios Región 4 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-028 Operaciones En proceso Villa Canales Región 3 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-027 Auditoría En proceso San. M Petapa Región 3 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-026 Operaciones En proceso Tecpan Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-025 Inventarios En proceso Nebaj Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-024 Inventarios En proceso Xela 2 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-023 Auditoría Por revisar Solola Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-022 Inventarios Pendiente de autorización Jocotenango Región 2 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-021 Inventarios Pendiente de envío Totonicapan Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-020 Inventarios Pendiente de envío Huehuetenango Región 2 30/08/2026 4/4 actividades · 100% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-019 Inventarios Pendiente de autorización Quiche Región 2 30/08/2026 1/4 actividades · 25% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-018 Operaciones Pendiente de autorización Chimaltenango Región 2 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-017 Inventarios En proceso Sacapulas Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-016 Auditoría Pendiente de autorización Xela 1 Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-015 Inventarios Pendiente de autorización San Juan Sac. Región 2 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-014 Auditoría Pendiente de autorización Zona 11 CD Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-013 Auditoría En proceso Zona 7 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-012 Operaciones Pendiente de autorización Zona 12, Reformita Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-010 Inventarios Pendiente de envío Zona 9 Región 1 30/08/2026 2/4 actividades · 50% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-009 Inventarios Pendiente de envío Naranjo Región 1 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-008 Auditoría En proceso Zona 11 Ventas Región 1 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-007 Inventarios Pendiente de envío Mixco Región 1 30/08/2026 3/4 actividades · 75% Realizado 30 días antes ⬇ Inventarios descargó · 30/8/2026 PA-2026-006 Inventarios Pendiente de autorización Aguilar Batres, v.n. Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-005 Operaciones En proceso Zona 18 Región 1 30/08/2026 3/4 actividades · 75% ⏱ Vencido hace 59 días PA-2026-004 Auditoría En proceso Zona 5 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días PA-2026-003 Inventarios En proceso Zona 15 Región 1 30/08/2026 2/4 actividades · 50% ⏱ Vencido hace 59 días ⬇ Inventarios descargó · 30/8/2026 PA-2026-002 Auditoría Pendiente de autorización Zona 12, Petapa Región 1 30/08/2026 4/4 actividades · 100% ⏱ Vencido hace 59 días PA-2026-001 Inventarios Pendiente de envío 4ta Calle Región 1 30/08/2026 3/4 actividades · 75% ⬇ Inventarios descargó · 30/8/2026 PA-2026-053 Auditoría Completado Guastatoya Región 6 30/08/2026 3/4 actividades · 75% Realizado 30 días antes PA-2026-043 Operaciones Completado Retalhuleu Región 5 30/08/2026 4/4 actividades · 100% Realizado 30 días antes PA-2026-038 Auditoría Completado Teculután Región 4 30/08/2026 4/4 actividades · 100% Realizado 30 días antes PA-2026-037 Auditoría Completado La Libertad Región 4 30/08/2026 4/4 actividades · 100% Realizado 30 días antes PA-2026-033 Auditoría Completado Zacapa Región 4 30/08/2026 3/4 actividades · 75% Realizado 30 días antes PA-2026-011 Operaciones Completado Zona 14 Región 1 30/08/2026 4/4 actividades · 100% Realizado 30 días antes",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   },
+   "hist": {
+    "texto": "Dashboard Planes Historial de evidencias v512 Visualizador Instalar Avisos Salir Sucursal Todos Amatitlan Barberena Carr. a El Salvador Chimaltenango Chiquimula Chiquimulilla Coatepeque Cobán Cotzumalguapa El Progreso Escuintla Esquipulas Guastatoya Huehuetenango Jalapa Jocotenango La Libertad Mazatenango Mixco Morales Naranjo Nebaj Poptún Puerto Barrios Quiche Retalhuleu Sacapulas Salamá San Juan Sac. San Marcos San. M Petapa Santa Elena Solola Tactic Tecpan Teculután Totonicapan Villa Canales Xela 1 Xela 2 Zacapa Zona 11 Ventas Zona 12, Petapa Zona 12, Reformita Zona 14 Zona 15 Zona 18 Zona 5 Zona 7 Zona 9 Región Todos Región 1 · Jose Boc Región 2 · Carlos Gamez Región 3 · Marco Martinez Región 4 · Oscar Chen Región 5 · Edgar Ixcot Región 6 · Jarbi Quezada Tipo Todos Operaciones Inventarios Externos Otro Buscar ▸ PA-2026-054 30/08/2026 Región 6 Carr. a El Salvador Auditoría 2 de 4 100% ▸ PA-2026-053 30/08/2026 Región 6 Guastatoya Auditoría 2 de 4 100% ▸ PA-2026-051 30/08/2026 Región 6 Chiquimula Auditoría 2 de 4 100% ▸ PA-2026-050 30/08/2026 Región 6 Jalapa Inventarios 1 de 4 100% ▸ PA-2026-049 30/08/2026 Región 6 Esquipulas Inventarios 1 de 4 100% ▸ PA-2026-048 30/08/2026 Región 6 El Progreso Inventarios 1 de 4 100% ▸ PA-2026-047 30/08/2026 Región 6 Barberena Operaciones 2 de 4 100% ▸ PA-2026-046 30/08/2026 Región 5 Coatepeque Operaciones 1 de 4 100% ▸ PA-2026-045 30/08/2026 Región 5 Mazatenango Operaciones 2 de 4 100% ▸ PA-2026-044 30/08/2026 Región 5 Amatitlan Inventarios 3 de 4 100% ▸ PA-2026-043 30/08/2026 Región 5 Retalhuleu Operaciones 2 de 4 100% ▸ PA-2026-042 30/08/2026 Región 5 Chiquimulilla Inventarios 2 de 4 100% ▸ PA-2026-041 30/08/2026 Región 5 Cotzumalguapa Inventarios 3 de 4 100% ▸ PA-2026-040 30/08/2026 Región 5 Escuintla Auditoría 3 de 4 100% ▸ PA-2026-039 30/08/2026 Región 5 San Marcos Auditoría 3 de 4 100% ▸ PA-2026-038 30/08/2026 Región 4 Teculután Auditoría 3 de 4 100% ▸ PA-2026-037 30/08/2026 Región 4 La Libertad Auditoría 2 de 4 100% ▸ PA-2026-036 30/08/2026 Región 4 Poptún Operaciones 2 de 4 100% ▸ PA-2026-035 30/08/2026 Región 4 Salamá Operaciones 2 de 4 100% ▸ PA-2026-034 30/08/2026 Región 4 Cobán Auditoría 3 de 4 100% ▸ PA-2026-033 30/08/2026 Región 4 Zacapa Auditoría 1 de 4 100% ▸ PA-2026-032 30/08/2026 Región 4 Santa Elena Inventarios 1 de 4 100% ▸ PA-2026-031 30/08/2026 Región 4 Tactic Auditoría 3 de 4 100% ▸ PA-2026-030 30/08/2026 Región 4 Morales Operaciones 1 de 4 100% ▸ PA-2026-029 30/08/2026 Región 4 Puerto Barrios Auditoría 3 de 4 100% ▸ PA-2026-028 30/08/2026 Región 3 Villa Canales Operaciones 3 de 4 100% ▸ PA-2026-027 30/08/2026 Región 3 San. M Petapa Auditoría 2 de 4 100% ▸ PA-2026-026 30/08/2026 Región 2 Tecpan Operaciones 2 de 4 100% ▸ PA-2026-025 30/08/2026 Región 2 Nebaj Inventarios 2 de 4 100% ▸ PA-2026-024 30/08/2026 Región 2 Xela 2 Inventarios 3 de 4 100% ▸ PA-2026-023 30/08/2026 Región 2 Solola Auditoría 3 de 4 100% ▸ PA-2026-022 30/08/2026 Región 2 Jocotenango Inventarios 2 de 4 100% ▸ PA-2026-021 30/08/2026 Región 2 Totonicapan Inventarios 3 de 4 100% ▸ PA-2026-020 30/08/2026 Región 2 Huehuetenango Inventarios 4 de 4 100% ▸ PA-2026-019 30/08/2026 Región 2 Quiche Inventarios 1 de 4 100% ▸ PA-2026-018 30/08/2026 Región 2 Chimaltenango Operaciones 1 de 4 100% ▸ PA-2026-017 30/08/2026 Región 2 Sacapulas Inventarios 3 de 4 100% ▸ PA-2026-016 30/08/2026 Región 2 Xela 1 Auditoría 2 de 4 100% ▸ PA-2026-015 30/08/2026 Región 2 San Juan Sac. Inventarios 3 de 4 100% ▸ PA-2026-013 30/08/2026 Región 1 Zona 7 Auditoría 1 de 4 100% ▸ PA-2026-012 30/08/2026 Región 1 Zona 12, Reformita Operaciones 2 de 4 100% ▸ PA-2026-011 30/08/2026 Región 1 Zona 14 Operaciones 3 de 4 100% ▸ PA-2026-010 30/08/2026 Región 1 Zona 9 Inventarios 2 de 4 100% ▸ PA-2026-009 30/08/2026 Región 1 Naranjo Inventarios 1 de 4 100% ▸ PA-2026-008 30/08/2026 Región 1 Zona 11 Ventas Auditoría 2 de 4 100% ▸ PA-2026-007 30/08/2026 Región 1 Mixco Inventarios 2 de 4 100% ▸ PA-2026-005 30/08/2026 Región 1 Zona 18 Operaciones 1 de 4 100% ▸ PA-2026-004 30/08/2026 Región 1 Zona 5 Auditoría 1 de 4 100% ▸ PA-2026-003 30/08/2026 Región 1 Zona 15 Inventarios 1 de 4 100% ▸ PA-2026-002 30/08/2026 Región 1 Zona 12, Petapa Auditoría 3 de 4 100%",
+    "fotosArriba": {
+     "total": 0,
+     "conImagen": 0
+    },
+    "fotos": {
+     "total": 0,
+     "conImagen": 0
+    }
+   }
+  },
+  "detalle": {
+   "texto": "Dashboard Planes Historial de evidencias v512 Visualizador Instalar Avisos Salir PA-2026-001 · 4ta Calle Inventarios Pendiente de envío⬇ Inventarios descargó · 30/8/2026 3 de 4 actividades con foto · 75% 1 Plan creado 2 Tareas pendientes 3 Evidencia subida 4 En revisión 5 Resultado Creación (visita) 30/08/2026 Lleva 89 días desde la creación Fecha límite 29/09/2026 Completado Ver informe ⬇ Descargar plan 1. Actividad 1 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después 2. Actividad 2 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después 3. Actividad 3 de 4ta Calle Vencida Pendiente Vence 29/09/2026 · Encargado: Encargado Antes 4. Actividad 4 de 4ta Calle Vencida Enviada Vence 29/09/2026 · Encargado: Encargado Antes Después",
+   "fotos": {
+    "total": 7,
+    "conImagen": 7
+   }
+  },
+  "errores": []
+ },
+ "escritura": {
+  "plan": "PA-2026-001",
+  "servidorSinImagenEnData": {
+   "tieneImagenEmbebida": false,
+   "acts": [
+    "Enviada",
+    "Enviada",
+    "Enviada",
+    "Enviada"
+   ]
+  },
+  "miniaturaEnServidor": true,
+  "fotosTrasGuardar": {
+   "total": 8,
+   "conImagen": 8
+  },
+  "fotosSinCacheLocal": {
+   "total": 8,
+   "conImagen": 8
+  }
+ }
+}

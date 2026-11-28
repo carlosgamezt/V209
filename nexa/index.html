@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v512</title>
+</script><title>Nexa v513</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -1073,7 +1073,7 @@ new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v512';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v513';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -1113,22 +1113,30 @@ const Photos={_d:null,
    Si no hay conexión configurada, la app sigue en modo local de pruebas (sin contraseñas reales). */
 const PA_CFG=window.PA_CONFIG||{},SUPA_URL=PA_CFG.url||'',SUPA_KEY=PA_CFG.key||'';
 let CONN='local',CHG=false,NOCONN='',LOGIN_ERR='',CRED=[],RM=null;
+/* v513 · Sincronización económica: una sola pestaña hace cada consulta periódica (puerta compartida por localStorage) y avisa a las demás por BroadcastChannel solo cuando algo cambió realmente */
+const Poll={gate(k,ms){try{const key='nx_poll_'+k,t=+localStorage.getItem(key)||0,n=Date.now();if(n-t<ms)return false;localStorage.setItem(key,String(n));return true}catch(e){return true}},
+ bc:(()=>{try{return new BroadcastChannel('nexa-sync')}catch(e){return null}})(),on:{},tell(k){try{this.bc&&this.bc.postMessage({k})}catch(e){}}};
+if(Poll.bc)Poll.bc.onmessage=e=>{try{const f=Poll.on[e.data&&e.data.k];if(f&&!document.hidden)f()}catch(x){}};
 const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,profiles:[],ch:null,
  cfg(){if(PA_CFG.url&&PA_CFG.key)return{url:PA_CFG.url,key:PA_CFG.key};try{const c=JSON.parse(localStorage.getItem('pa_supa_cfg')||'{}');if(c.off)return{url:'',key:''};return{url:c.url||SUPA_URL,key:c.key||SUPA_KEY}}catch(e){return{url:SUPA_URL,key:SUPA_KEY}}},
  lib(){return window.supabase?Promise.resolve():new Promise((ok,ko)=>{const cargar=(src,sig)=>{const t=document.createElement('script');t.src=src;t.onload=ok;t.onerror=()=>sig?sig():ko(new Error('No se pudo cargar la librería de Supabase (¿hay internet?)'));document.head.appendChild(t)};cargar('supabase.js',()=>cargar('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'))})},
  init(c){this.sb=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}})},
  path:k=>String(k).replace(/[^\w.-]/g,'_')+'.jpg',
  rows(d){const r=[];['users','plans','notifs'].forEach(c=>(d[c]||[]).forEach(x=>{if(c==='notifs'&&!x.id)x.id='n'+x.ts+'-'+Math.random().toString(36).slice(2,7);r.push({col:c,id:String(x.id),data:x})}));for(const k in d)if(!['users','plans','notifs'].includes(k))r.push({col:'meta',id:k,data:d[k]});return r},
- fromRows(rows){const d={users:[],plans:[],notifs:[]};this.snap.clear();this.ua=new Map();rows.forEach(r=>{this.ua.set(r.col+'|'+r.id,r.updated_at||'');this.snap.set(r.col+'|'+r.id,JSON.stringify(r.data));if(r.col==='meta')d[r.id]=r.data;else(d[r.col]=d[r.col]||[]).push(r.data)});d.plans.sort((a,b)=>String(a.id).localeCompare(String(b.id)));d.notifs.sort((a,b)=>b.ts-a.ts);return d},
- async loadAll(){const rows=[];for(let f=0;;f+=1000){const{data,error}=await this.sb.from('pa_docs').select('col,id,data,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;rows.push(...data);if(data.length<1000)break}return this.fromRows(rows)},
+ fromRows(rows){const d={users:[],plans:[],notifs:[]};this.snap.clear();this.ua=new Map();this.maxUa=0;rows.forEach(r=>{this.ua.set(r.col+'|'+r.id,r.updated_at||'');this.bump(r.updated_at);this.snap.set(r.col+'|'+r.id,JSON.stringify(r.data));if(r.col==='meta')d[r.id]=r.data;else(d[r.col]=d[r.col]||[]).push(r.data)});d.plans.sort((a,b)=>String(a.id).localeCompare(String(b.id)));d.notifs.sort((a,b)=>b.ts-a.ts);return d},
+ bump(u){const t=u?Date.parse(u):0;if(t>(this.maxUa||0))this.maxUa=t},
+ /* v513 · P1: con la migración de miniaturas aplicada (vista pa_docs_lite + tabla pa_thumbs) los planes se leen SIN miniaturas y estas se piden solo al verlas. Sin la migración (o con localStorage nx_nolite=1) todo funciona como antes. */
+ lite:false,tbl(){return this.lite?'pa_docs_lite':'pa_docs'},
+ async probeLite(){this.lite=false;try{if(localStorage.getItem('nx_nolite')==='1')return;const[a,b]=await Promise.all([this.sb.from('pa_docs_lite').select('id').limit(1),this.sb.from('pa_thumbs').select('k').limit(1)]);this.lite=!(a.error||b.error)}catch(e){this.lite=false}},
+ async loadAll(){const rows=[];for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;rows.push(...data);if(data.length<1000)break}return this.fromRows(rows)},
  async session(){return(await this.sb.auth.getSession()).data.session},
  async afterLogin(){const s=await this.session();if(!s)throw new Error('Sin sesión');
   const{data:p,error}=await this.sb.from('pa_profiles').select('*').eq('auth_id',s.user.id).maybeSingle();if(error)throw error;
   if(!p)throw new Error('Tu cuenta todavía no tiene permisos en Planes de Acción. Pide al administrador que te cree el acceso.');
-  this.profile=p;db=await this.loadAll();const u=db.users.find(x=>x.id===p.user_id);if(!u)throw new Error('Tu usuario no existe en la app. Avisa al administrador.');
+  this.profile=p;await this.probeLite();db=await this.loadAll();const u=db.users.find(x=>x.id===p.user_id);if(!u)throw new Error('Tu usuario no existe en la app. Avisa al administrador.');
   me=u;if(p.role==='admin'||p.role==='supervisor')await this.loadProfiles();try{await loadDls()}catch(e){}this.listen();CHG=!!p.must_change},
  async loadProfiles(){const{data}=await this.sb.from('pa_profiles').select('*').order('user_id');this.profiles=data||[]},
- cleanup(){if(this.ch){try{this.sb.removeChannel(this.ch)}catch(e){}this.ch=null}this.snap.clear();this.profile=null;this.profiles=[];CRED=[];CHG=false;RM=null},
+ cleanup(){this.tok=null;if(this.rt){clearTimeout(this.rt.tm);this.rt=null}if(this.ch){try{this.sb.removeChannel(this.ch)}catch(e){}this.ch=null}this.snap.clear();this.profile=null;this.profiles=[];CRED=[];CHG=false;RM=null},
  save(d){if(!d)return;const next=new Map(),ch=[];this.rows(d).forEach(r=>{const k=r.col+'|'+r.id,j=JSON.stringify(r.data);next.set(k,j);const old=this.snap.get(k);if(old!==j)ch.push({r,isNew:old===undefined})});
   const del=[];this.snap.forEach((_,k)=>{if(!next.has(k)){const i=k.indexOf('|');del.push({col:k.slice(0,i),id:k.slice(i+1)})}});
   this.snap=next;if(!ch.length&&!del.length)return;const hk=ch.map(x=>x.r.col+'|'+x.r.id).concat(del.map(x=>x.col+'|'+x.id));this.hold=this.hold||new Map();hk.forEach(k=>{const h=this.hold.get(k)||{n:0,until:0};h.n++;this.hold.set(k,h)});const rel=()=>hk.forEach(k=>{const h=this.hold.get(k);if(h){h.n--;if(h.n<=0)h.until=Date.now()+4000}});
@@ -1138,21 +1146,29 @@ const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,pro
    for(const x of ch.filter(x=>!x.isNew)){const{data,error}=await this.sb.from('pa_docs').update({data:x.r.data,updated_at:new Date().toISOString()}).eq('col',x.r.col).eq('id',x.r.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para guardar ese cambio')}
    for(const x of del){const{data,error}=await this.sb.from('pa_docs').delete().eq('col',x.col).eq('id',x.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para eliminar eso')}
   rel()}catch(e){rel();this.hold.clear();toast('No se pudo guardar: '+(e.message||e)+'. Se recargan los datos.');await this.resync()}})},
- async refresh(force){if(!me||!db||!this.sb||this.rbusy||document.hidden&&!force)return;const now=Date.now();if(!force&&now-(this.rlt||0)<4000)return;if(this.hold&&[...this.hold.values()].some(h=>h.n>0))return;this.rbusy=1;
-  try{const cur=new Map();for(let f=0;;f+=1000){const{data,error}=await this.sb.from('pa_docs').select('col,id,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;data.forEach(r=>cur.set(r.col+'|'+r.id,r.updated_at||''));if(data.length<1000)break}
-   if(!this.ua)this.ua=new Map();const chg=[],del=[];cur.forEach((u,k)=>{if(this.ua.get(k)!==u)chg.push(k)});this.ua.forEach((_,k)=>{if(!cur.has(k))del.push(k)});
+ async refresh(force,full){if(!me||!db||!this.sb||this.rbusy||document.hidden&&!force)return;const now=Date.now();if(!force&&now-(this.rlt||0)<15000)return;if(this.hold&&[...this.hold.values()].some(h=>h.n>0))return;this.rbusy=1;
+  try{if(!this.ua)this.ua=new Map();const chg=[],del=[];
+   /* v513: normalmente SOLO se piden las filas modificadas desde la última sincronización (con 5 min de holgura por relojes distintos); el listado completo (necesario para detectar borrados) solo al recuperar Realtime o cada 30 min */
+   const inc=!full&&this.maxUa&&now-(this.lfull||0)<1800000;
+   if(inc){const since=new Date(this.maxUa-300000).toISOString();for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,updated_at').gt('updated_at',since).order('updated_at').range(f,f+999);if(error)throw error;data.forEach(r=>{const k=r.col+'|'+r.id;if(this.ua.get(k)!==(r.updated_at||''))chg.push(k)});if(data.length<1000)break}}
+   else{const cur=new Map();for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;data.forEach(r=>cur.set(r.col+'|'+r.id,r.updated_at||''));if(data.length<1000)break}
+    this.lfull=Date.now();cur.forEach((u,k)=>{if(this.ua.get(k)!==u)chg.push(k)});this.ua.forEach((_,k)=>{if(!cur.has(k))del.push(k)})}
    if(!chg.length&&!del.length)return;
    if(chg.length>60){const d=await this.loadAll();db=d;if(me)me=db.users.find(u=>u.id===me.id)||me;refreshUI();return}
    const by={};chg.forEach(k=>{const i=k.indexOf('|');(by[k.slice(0,i)]=by[k.slice(0,i)]||[]).push(k.slice(i+1))});
-   for(const col in by){const{data,error}=await this.sb.from('pa_docs').select('col,id,data,updated_at').eq('col',col).in('id',by[col]);if(error)throw error;for(const r of data){const k=r.col+'|'+r.id,hh=this.hold&&this.hold.get(k);this.ua.set(k,r.updated_at||'');if(hh&&(hh.n>0||Date.now()<hh.until))continue;const j=JSON.stringify(r.data);if(this.snap.get(k)===j)continue;this.snap.set(k,j);this.apply(r.col,String(r.id),r.data)}}
+   for(const col in by){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').eq('col',col).in('id',by[col]);if(error)throw error;for(const r of data){const k=r.col+'|'+r.id,hh=this.hold&&this.hold.get(k);this.ua.set(k,r.updated_at||'');this.bump(r.updated_at);if(hh&&(hh.n>0||Date.now()<hh.until))continue;const j=JSON.stringify(r.data);if(this.snap.get(k)===j)continue;this.snap.set(k,j);this.apply(r.col,String(r.id),r.data)}}
    for(const k of del){const i=k.indexOf('|'),col=k.slice(0,i),id=k.slice(i+1);this.ua.delete(k);if(this.snap.has(k)){this.snap.delete(k);this.apply(col,id,undefined)}}
   }catch(e){}finally{this.rbusy=0;this.rlt=Date.now()}},
  async resync(){try{const d=await this.loadAll();db=d;if(me)me=db.users.find(u=>u.id===me.id)||me;render()}catch(e){}},
- listen(){if(this.ch)return;this.ch=this.sb.channel('pa-docs').on('postgres_changes',{event:'*',schema:'public',table:'pa_docs'},p=>this.onChange(p)).subscribe()},
+ listen(){if(this.ch)return;const tok={};this.tok=tok;this.rt=this.rt||{ok:false,dropped:false,tries:0};
+  this.ch=this.sb.channel('pa-docs').on('postgres_changes',{event:'*',schema:'public',table:'pa_docs'},p=>this.onChange(p)).subscribe(st=>{if(this.tok===tok)this.rtStatus(st)})},
+ /* v513 · Realtime con recuperación: si se cae, sube el sondeo de respaldo (cada 60 s, incremental); si no vuelve en 45 s se recrea el canal; al volver se hace UNA sincronización completa (también detecta borrados) */
+ rtStatus(st){const r=this.rt;if(!r)return;if(st==='SUBSCRIBED'){const was=r.dropped;r.ok=true;r.dropped=false;r.tries=0;clearTimeout(r.tm);if(was&&me&&db)this.refresh(true,true)}
+  else if(st==='CLOSED'||st==='CHANNEL_ERROR'||st==='TIMED_OUT'){if(r.dropped)return;r.ok=false;r.dropped=true;clearTimeout(r.tm);r.tm=setTimeout(()=>{if(!r.ok&&this.ch&&me){this.tok=null;try{this.sb.removeChannel(this.ch)}catch(e){}this.ch=null;r.tries++;this.listen()}},Math.min(45000*(r.tries+1),300000))}},
  async onChange(p){try{const t=p.eventType,row=t==='DELETE'?p.old:p.new;if(!row||!row.col||row.id==null)return;const key=row.col+'|'+row.id;
-  if(t==='DELETE'){this.snap.delete(key);this.apply(row.col,String(row.id),undefined);return}
-  const hh=this.hold&&this.hold.get(key);if(t!=='DELETE'&&hh&&(hh.n>0||Date.now()<hh.until))return;let data=row.data;if(data===undefined){const r=await this.sb.from('pa_docs').select('data').eq('col',row.col).eq('id',row.id).maybeSingle();data=r.data&&r.data.data}
-  if(data===undefined)return;const j=JSON.stringify(data);if(this.snap.get(key)===j)return;this.snap.set(key,j);this.apply(row.col,String(row.id),data)}catch(e){}},
+  if(t==='DELETE'){if(this.ua)this.ua.delete(key);this.snap.delete(key);this.apply(row.col,String(row.id),undefined);return}
+  const hh=this.hold&&this.hold.get(key);if(t!=='DELETE'&&hh&&(hh.n>0||Date.now()<hh.until))return;let data=row.data;if(data===undefined){const r=await this.sb.from(this.tbl()).select('data').eq('col',row.col).eq('id',row.id).maybeSingle();data=r.data&&r.data.data}
+  if(data===undefined)return;if(row.updated_at&&this.ua){this.ua.set(key,row.updated_at);this.bump(row.updated_at)}const j=JSON.stringify(data);if(this.snap.get(key)===j)return;this.snap.set(key,j);this.apply(row.col,String(row.id),data)}catch(e){}},
  apply(col,id,data){if(!db)return;if(col==='meta'){if(data===undefined)delete db[id];else db[id]=data}else{const a=db[col]=db[col]||[],i=a.findIndex(x=>String(x.id)===id);if(data===undefined){if(i>=0)a.splice(i,1)}else if(i>=0)a[i]=data;else if(col==='notifs')a.unshift(data);else a.push(data)}
   if(me)me=db.users.find(u=>u.id===me.id)||me;refreshUI()}};
 let pendR=false;const isEd=()=>/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'');
@@ -1169,6 +1185,21 @@ const Fn=PhotoCloud;
 const _lp=Photos.put.bind(Photos),_lg=Photos.get.bind(Photos);
 Photos.put=async function(k,u){await _lp(k,u);if(!Supa.on||!me)return;let j=await PhotoCloud.call({action:'put',name:Supa.path(k),data:u});if(!j.ok){await new Promise(r=>setTimeout(r,1200));j=await PhotoCloud.call({action:'put',name:Supa.path(k),data:u})}if(!j.ok){PhotoCloud.lastPutErr=j.error||'sin respuesta';const d=document.createElement('div');d.style.cssText='position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:120;background:#fef2f2;border:2px solid #dc2626;color:#7f1d1d;border-radius:12px;padding:14px 18px;max-width:min(92vw,560px);font:600 14px system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25)';d.innerHTML='⚠️ La foto NO se subió a OneDrive y otras personas no la verán grande.<br><small style="font-weight:400">Motivo: '+esc(PhotoCloud.lastPutErr)+' · archivo: '+esc(Supa.path(k))+'</small><br><button style="margin-top:8px" onclick="this.parentNode.remove()">Entendido</button>';document.body.appendChild(d)}};
 Photos.get=async function(k){const v=await _lg(k);if(v)return v;if(!Supa.on||!me)return null;return PhotoCloud.url(Supa.path(k))};
+/* v513 · MINIATURAS BAJO DEMANDA: con la lectura ligera el plan no trae las miniaturas; cada <img data-tk> las pide (por lotes, solo cuando está cerca de la pantalla) y las guarda en memoria y en este equipo, así no se vuelven a descargar */
+const TH={mem:new Map(),q:new Set(),BLANK:'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+ src(p){return p&&(p.t||this.mem.get(p.k))||this.BLANK},
+ put(k,t){this.mem.set(k,t);try{_lp('th:'+k,t).catch(()=>{})}catch(e){}},
+ async local(k){if(this.mem.has(k))return this.mem.get(k);try{const v=await _lg('th:'+k);if(v&&String(v).startsWith('data:')){this.mem.set(k,v);return v}}catch(e){}return null},
+ async remote(keys){const out={};for(let i=0;i<keys.length;i+=20){const b=keys.slice(i,i+20);try{const{data,error}=await Supa.sb.from('pa_thumbs').select('k,t').in('k',b);if(error)continue;(data||[]).forEach(r=>{out[r.k]=r.t;this.put(r.k,r.t)})}catch(e){}}return out},
+ async get(k){const l=await this.local(k);if(l)return l;const r=await this.remote([k]);return r[k]||null},
+ io:null,tm:0,
+ watch(){if(!Supa.lite)return;const imgs=[...document.querySelectorAll('img[data-tk]')].filter(i=>!i.dataset.th);if(!imgs.length)return;
+  if(!this.io&&typeof IntersectionObserver!=='undefined')this.io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){this.io.unobserve(e.target);this.q.add(e.target)}});clearTimeout(this.tm);this.tm=setTimeout(()=>this.flush(),60)},{rootMargin:'400px'});
+  imgs.forEach(i=>{i.dataset.th='w';if(this.io)this.io.observe(i);else this.q.add(i)});if(!this.io){clearTimeout(this.tm);this.tm=setTimeout(()=>this.flush(),60)}},
+ async flush(){const els=[...this.q].filter(i=>i.isConnected);this.q.clear();if(!els.length)return;const need=new Set();
+  for(const i of els){const k=i.dataset.tk,l=await this.local(k);if(l){i.src=l;i.dataset.th='1'}else need.add(k)}
+  if(need.size){const r=await this.remote([...need]);els.forEach(i=>{const k=i.dataset.tk;if(i.dataset.th==='1')return;if(r[k]){i.src=r[k];i.dataset.th='1'}else i.dataset.th='x'})}}};
+try{new MutationObserver(()=>{clearTimeout(TH.mt);TH.mt=setTimeout(()=>TH.watch(),80)}).observe(document.documentElement,{childList:true,subtree:true})}catch(e){}
 function photoTest(){const o=document.getElementById('pt');if(!o)return;o.textContent='Probando…';const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');x.fillStyle='#4654F5';x.fillRect(0,0,64,64);x.fillStyle='#fff';x.font='bold 24px sans-serif';x.fillText('PA',16,40);
  PhotoCloud.call({action:'put',name:'prueba_conexion.jpg',data:c.toDataURL('image/jpeg',.7)}).then(j=>{o.innerHTML=j.ok?'✅ Subida correcta. Busca <b>prueba_conexion.jpg</b> en tu OneDrive, dentro de PlanesAccion/evidencias.':'🔴 '+esc(j.error||'Error desconocido')})}
 function showPhotoStatus(){PhotoCloud.status().then(j=>{const t=document.getElementById('pst');if(t)t.innerHTML=j.ok?'🟢 Vinculado con <b>'+esc(j.account)+'</b>':'🔴 '+esc(j.error||'Sin configurar');const e=document.getElementById('ps');if(!e)return;e.innerHTML=j.ok?'🟢 <b>'+esc(j.provider==='onedrive'?'OneDrive':j.provider)+'</b> vinculado con la cuenta <b>'+esc(j.account)+'</b>':'🔴 '+esc(j.error||'Sin configurar')+'<br><small>Mientras tanto, las fotos completas quedan solo en cada equipo (las miniaturas sí se comparten).</small>'})}
@@ -1356,7 +1387,7 @@ function sessionExpired(){if(window.__sx||!Supa.on||!me)return;window.__sx=1;
   if(me){try{Supa.cleanup()}catch(e){}me=null;db=null;view='dash';cur=null;pnOpen=false;render()}}}
 function fixFlag(k,save_){let ch=false;try{db.plans.forEach(p=>p.acts.forEach(a=>['ev','ref'].forEach(w=>{if(a[w]&&a[w].k===k&&a[w].o){delete a[w].o;delete a[w].x;ch=true}})))}catch(e){}if(ch)save()}
 async function indexedDBdel(key){try{const d=await Photos.open();d.transaction('p','readwrite').objectStore('p').delete(key)}catch(e){}}
-async function procPhoto(f,pre){const k=pre+'#'+Date.now(),{full,t}=await shrinkBoth(f);await _lp(k,full);const ph={k,t};
+async function procPhoto(f,pre){const k=pre+'#'+Date.now(),{full,t}=await shrinkBoth(f);await _lp(k,full);const ph={k,t};try{TH.put(k,t)}catch(e){}
  if(f.size>MAXORIG){toast('La foto original pesa más de 60 MB: se guardó solo una versión reducida.')}else{ph.o=1;ph.x=origExt(f);try{await _lp(k+'~src',f)}catch(e){}}
  Up.start(k,f);return ph}
 function zoom(k,t,cap){const o=document.createElement('div');o.className='zoomov';o.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.85);display:grid;place-items:center;align-content:center;gap:12px;z-index:99;cursor:pointer;padding:12px';o.onclick=()=>o.remove();
@@ -1373,7 +1404,7 @@ function zoom(k,t,cap){const o=document.createElement('div');o.className='zoomov
   const n=new Image();n.onload=()=>{clearTimeout(tm);i.src=u;i.style.filter='';m.remove()};n.onerror=()=>{clearTimeout(tm);fail('el almacén no la entregó')};n.src=u}).catch(e=>{clearTimeout(tm);fail(e&&e.message||'error')})}
 addEventListener('keydown',e=>{if(e.key!=='Escape')return;const z=document.querySelectorAll('.zoomov');if(z.length){z[z.length-1].remove();e.preventDefault()}});
 const loadPhotos=()=>{};
-const thumb=(p,l,txt,n,pid)=>p?`<img class="th" src="${p.t}" data-cap="${esc(JSON.stringify({l,t:txt||'',n:n||0,p:pid||''}))}" onclick="zoom('${p.k}',this.src,this.dataset.cap)" title="Ver grande">`:'';
+const thumb=(p,l,txt,n,pid)=>p?`<img class="th" src="${TH.src(p)}" data-tk="${esc(p.k)}" data-cap="${esc(JSON.stringify({l,t:txt||'',n:n||0,p:pid||''}))}" onclick="zoom('${p.k}',this.src,this.dataset.cap)" title="Ver grande">`:'';
 const pair=(a,i,p,bor)=>(a.ref||a.ev)?`<div class="row">${a.ref?`<div><label>Antes</label>${thumb(a.ref,'Antes',a.text,i+1,p&&p.id)}</div>`:''}${a.ev?`<div><label>Después${bor?' <small style="color:#b45309;font-weight:600">· borrador</small>':''}</label>${bor?`<div style="outline:2px dashed #f59e0b;outline-offset:2px;border-radius:8px;display:inline-block">${thumb(a.ev,'Después',a.text,i+1,p&&p.id)}</div><div><small style="color:#b45309">La sucursal ya subió esta foto, pero aún no la envía a revisión.</small></div>`:thumb(a.ev,'Después',a.text,i+1,p&&p.id)}</div>`:''}</div>`:'';
 const picker=js=>{const o=js.replace('@','this.files[0]');return `<div class="row"><label class="btn">📷 Tomar foto<input type="file" accept="image/*" capture="environment" hidden onchange="${o}"></label><label class="btn sec">🖼 Subir foto<input type="file" accept="image/*" hidden onchange="${o}"></label></div>`};
 
@@ -1433,7 +1464,7 @@ const allReady=p=>{const n=p.acts.filter(x=>['Pendiente','Rechazada'].includes(x
 async function prepEv(id,i,f){if(!f)return;const ph=await procPhoto(f,id+'#ev'+i),p=db.plans.find(x=>x.id===id),a=p.acts[i];a.ev=ph;a.dr=1;save();render();if(allReady(p))confirmPlan(id)}
 const actList=(p,op)=>{const l=p.acts.map((a,i)=>({a,i}));if(!op)return l;const hecha=x=>x.a.dr||['Enviada','Aprobada'].includes(x.a.st);return l.sort((x,y)=>(hecha(x)?1:0)-(hecha(y)?1:0)||x.i-y.i)};
 function confirmPlan(id){if(ropl(db.plans.find(x=>x.id===id))){roMsg();return}const p=db.plans.find(x=>x.id===id),l=p.acts.map((a,i)=>({a,i})).filter(x=>x.a.dr),o=document.createElement('div');o.className='ov';
- o.innerHTML=`<div class="card" style="max-width:560px;margin:16px auto"><h2 style="margin:4px 0">¿Estás seguro de las fotos?</h2><p>Plan ${esc(p.id)} · ${esc(p.branch)}. Revisa que cada foto corresponda a su actividad. Al enviarlas, el plan pasa a revisión y ya no podrás cambiarlas.</p><div style="max-height:46vh;overflow:auto">${l.map(({a,i})=>`<div class="row" style="flex-wrap:nowrap"><img class="th" src="${a.ev.t}" style="width:72px;height:72px;object-fit:cover;margin:0" data-cap="${esc(JSON.stringify({l:'Después',t:a.text,n:i+1,p:p.id}))}" onclick="zoom('${a.ev.k}',this.src,this.dataset.cap)"><div><small>Actividad ${i+1}</small><div><b>${esc(a.text)}</b></div></div></div>`).join('')}</div><div id="cpg" style="margin-top:12px"></div><div class="row" style="margin-top:12px"><button id="cok">Enviar a revisión</button><button class="sec" onclick="this.closest('.ov').remove()">Revisar y modificar</button></div></div>`;
+ o.innerHTML=`<div class="card" style="max-width:560px;margin:16px auto"><h2 style="margin:4px 0">¿Estás seguro de las fotos?</h2><p>Plan ${esc(p.id)} · ${esc(p.branch)}. Revisa que cada foto corresponda a su actividad. Al enviarlas, el plan pasa a revisión y ya no podrás cambiarlas.</p><div style="max-height:46vh;overflow:auto">${l.map(({a,i})=>`<div class="row" style="flex-wrap:nowrap"><img class="th" src="${TH.src(a.ev)}" data-tk="${esc(a.ev.k)}" style="width:72px;height:72px;object-fit:cover;margin:0" data-cap="${esc(JSON.stringify({l:'Después',t:a.text,n:i+1,p:p.id}))}" onclick="zoom('${a.ev.k}',this.src,this.dataset.cap)"><div><small>Actividad ${i+1}</small><div><b>${esc(a.text)}</b></div></div></div>`).join('')}</div><div id="cpg" style="margin-top:12px"></div><div class="row" style="margin-top:12px"><button id="cok">Enviar a revisión</button><button class="sec" onclick="this.closest('.ov').remove()">Revisar y modificar</button></div></div>`;
  document.body.appendChild(o);
  const btn=o.querySelector('#cok'),upd=()=>{if(!o.isConnected){clearInterval(iv);return}const g=o.querySelector('#cpg');if(!g||btn.dataset.go)return;
   if(Up.pending.size){const p=Up.pct();g.innerHTML=`<div style="display:flex;justify-content:space-between;font-weight:600"><span>☁ Subiendo fotos…</span><span>${p}%</span></div><div style="height:10px;background:#e2e8f0;border-radius:99px;margin-top:6px;overflow:hidden"><div style="height:100%;width:${p}%;background:#4654F5;border-radius:99px;transition:width .3s"></div></div><small style="color:#64748b">Puedes pulsar Enviar: se enviará solo al terminar. No cierres la página.</small>`}
@@ -1623,7 +1654,7 @@ function dashCompact(ps,S,av,G,att,rows,top){const G_='#16a34a',A_='#a4a4a4',R_=
 window.DV={m:'all',r:'',b:'',n:12,f:''};
 const vPh=ps=>ps.flatMap(p=>p.acts.flatMap((a,i)=>[DV.f!=='d'&&a.ref&&{x:a.ref,l:'Antes',t:a.text,n:i+1,p},DV.f!=='a'&&a.ev&&{x:a.ev,l:'Después',t:a.text,n:i+1,p}].filter(Boolean)));
 const vGrid=ph=>{const l=ph.slice(0,DV.n);if(DV.f)return`<div class="vg">${l.map(vTile).join('')}</div>`;const g=[];l.forEach(h=>{const q=g[g.length-1];if(q&&q[0].p===h.p&&q[0].n===h.n)q.push(h);else g.push([h])});return`<div class="vg vg2">${g.map(q=>`<div class="vp">${q.map(vTile).join('')}</div>`).join('')}</div>`};
-const vTile=h=>`<div class="vt"><img loading="lazy" src="${h.x.t}" data-cap="${esc(JSON.stringify({l:h.l,t:h.t||'',n:h.n,p:h.p.id}))}" onclick="zoom('${h.x.k}',this.src,this.dataset.cap)" title="${esc(h.p.branch+' · '+h.p.id)}"><i class="${h.l==='Antes'?'a':'d'}">${h.l==='Antes'?'A':'D'}</i></div>`;
+const vTile=h=>`<div class="vt"><img loading="lazy" src="${TH.src(h.x)}" data-tk="${esc(h.x.k)}" data-cap="${esc(JSON.stringify({l:h.l,t:h.t||'',n:h.n,p:h.p.id}))}" onclick="zoom('${h.x.k}',this.src,this.dataset.cap)" title="${esc(h.p.branch+' · '+h.p.id)}"><i class="${h.l==='Antes'?'a':'d'}">${h.l==='Antes'?'A':'D'}</i></div>`;
 const vSec=(tit,sub,ph,more)=>`<div class="card vsec"><div class="vh"><b>${tit}</b><small>${sub} · ${ph.length} foto${ph.length===1?'':'s'}</small>${more||''}</div>${ph.length?`${vGrid(ph)}${ph.length>DV.n?`<button class="sec vmore" onclick="DV.n+=24;render()">Ver más (${ph.length-DV.n})</button>`:''}`:'<p class="vempty">Sin fotos en este período.</p>'}</div>`;
 function dashVis(ps){
  const regs=[...new Set(ps.map(p=>p.region))].sort((a,b)=>a-b),sucs=[...new Set(ps.map(p=>p.branch))].sort((a,b)=>a.localeCompare(b,'es'));
@@ -1654,7 +1685,7 @@ function prSlides(ps){const out=[];ps.slice().sort(planDesc).forEach(p=>{
   const it=p.acts.map((a,i)=>({p,a,n:i+1})).filter(x=>(x.a.ref||x.a.ev)&&(!PR.par||(x.a.ref&&x.a.ev))&&(!PR.st||prStG(x.a.st)===PR.st)&&(!PR.ef||x.a.eff===PR.ef));
   for(let k=0;k<it.length;k+=PRP)out.push({p,items:it.slice(k,k+PRP),idx:k/PRP+1,of:Math.ceil(it.length/PRP)})});return out}
 const prTile=(h,lado,suc,txt,n,pid)=>{const cls=lado==='Antes'?'a':'d',cap=`<figcaption><i class="pc ${cls}">${lado}</i><span><em class="lb">Sucursal: </em><b>${esc(suc)}</b></span><span title="${esc(txt)}"><em class="lb">Actividad: </em><b>${esc(txt)}</b></span></figcaption>`;
- return h?`<figure class="pt"><img loading="lazy" src="${h.t}" alt="${lado} · ${esc(txt)}" data-cap="${esc(JSON.stringify({l:lado,t:txt||'',n,p:pid}))}" onclick="zoom('${h.k}',this.src,this.dataset.cap)">${cap}</figure>`:`<figure class="pt"><div class="nof">Sin foto de ${lado==='Antes'?'antes':'después'}</div>${cap}</figure>`};
+ return h?`<figure class="pt"><img loading="lazy" src="${TH.src(h)}" data-tk="${esc(h.k)}" alt="${lado} · ${esc(txt)}" data-cap="${esc(JSON.stringify({l:lado,t:txt||'',n,p:pid}))}" onclick="zoom('${h.k}',this.src,this.dataset.cap)">${cap}</figure>`:`<figure class="pt"><div class="nof">Sin foto de ${lado==='Antes'?'antes':'después'}</div>${cap}</figure>`};
 function prSlideHtml(s,N,i){const p=s.p,as=s.items.map(x=>x.a),ef=prEfLbl(effPct(as)),done=p.status==='Completado',enc=(as.find(a=>a.enc)||{}).enc||'Encargado de sucursal',
   actTxt=as.length===1?as[0].text:as.length+' actividades'+(s.of>1?' · parte '+s.idx+' de '+s.of:'');
  const meta=`<div class="pmeta"><div class="pmi">${pIc('pin')}<div><small>Sucursal</small><b>${esc(p.branch)}</b></div></div><div class="pmi">${pIc('layers')}<div><small>Plan</small><b>${esc(p.type)}</b></div></div><div class="pmi act">${pIc('clip')}<div><small>Actividad</small><b title="${esc(as.map(a=>a.text).join(' · '))}">${esc(actTxt)}</b></div></div><div class="pmi">${pIc('cal')}<div><small>Fecha</small><b>${prFecha(p.visit)}</b></div></div><div class="pmi">${pIc('user')}<div><small>Responsable</small><b>${esc(enc)}</b></div></div><div class="pmf"><div class="pmi ef">${pIc('bars')}<div><small>Eficacia</small>${ef?`<span class="pchip ${prEfCls[ef]}">${ef}</span>`:'<span class="pchip n">Sin calificar</span>'}</div></div><div class="pmi end"><span class="pchip ${done?'ok':'in'}">${done?pIc('ok')+'Completada':'En proceso'}</span><span class="pchip n">${i+1} de ${N}</span></div></div></div>`;
@@ -2334,7 +2365,7 @@ async function getFull(ph){if(!ph)return null;const x=ph.x||'jpg';
  try{const u=await _lg(ph.k+'~orig');if(u&&String(u).startsWith('data:'))return{bytes:b64ToBytes(u.split(',')[1]),kind:'orig',x}}catch(e){}
  try{const u=await _lg(ph.k);if(u&&String(u).startsWith('data:'))return{bytes:b64ToBytes(u.split(',')[1]),kind:'reducida',x:'jpg'}}catch(e){}
  if(Supa.on){const b=await cloudBytes(Supa.path(ph.k));if(b)return{bytes:b,kind:'reducida',x:'jpg'}}
- if(ph.t&&String(ph.t).startsWith('data:'))return{bytes:b64ToBytes(ph.t.split(',')[1]),kind:'miniatura',x:'jpg'};return null}
+ {const tt=ph.t||await TH.get(ph.k);if(tt&&String(tt).startsWith('data:'))return{bytes:b64ToBytes(tt.split(',')[1]),kind:'miniatura',x:'jpg'}}return null}
 const KIND={orig:'',reducida:' (versión reducida)',miniatura:' (solo miniatura)'};
 const planHtml=(p,items,cn)=>{const e=effPct(p.acts),ap=p.acts.filter(a=>a.st==='Aprobada').length,img=(x,t)=>x?`<figure><img src="${esc(x.nm)}" alt="${t}"><figcaption>${t}${KIND[x.kind]}</figcaption></figure>`:'';
  const nota=(cn.reducida||cn.miniatura)?`<p class="bad">${cn.reducida?cn.reducida+' foto'+(cn.reducida>1?'s':'')+' en versión reducida (1280 px): se subieron antes de que la app guardara las originales. ':''}${cn.miniatura?cn.miniatura+' foto'+(cn.miniatura>1?'s':'')+' solo en miniatura. ':''}${cn.orig?cn.orig+' en resolución original.':''}</p>`:'<p class="k">Las fotos están en su <b>resolución original</b>, tal como salieron de la cámara (carpeta <b>fotos</b>).</p>';
@@ -2354,9 +2385,13 @@ async function downloadPlan(id){const p=db.plans.find(x=>x.id===id);if(!p)return
 /* ===== v433 · registro de descargas de planes de Inventarios (tabla pa_descargas, la hora la pone el servidor) ===== */
 const DLS_ROLES=['admin','supervisor','visualizador','analista','gerencia','inventarios'];
 async function loadDls(){if(!Supa.on||!Supa.sb||!me||!DLS_ROLES.includes(me.role)){DLS_OK=false;return}
- try{const{data,error}=await Supa.sb.from('pa_descargas').select('plan_id,user_name,role,manual,created_at').order('created_at',{ascending:false}).limit(5000);if(error)throw error;const m={};(data||[]).forEach(r=>(m[r.plan_id]=m[r.plan_id]||[]).push(r));const j=JSON.stringify(m),ch=j!==DLS_J||!DLS_OK;DLS_J=j;DLS=m;DLS_OK=true;
+ try{const{data,error}=Supa.lite?await Supa.sb.rpc('pa_descargas_resumen'):await Supa.sb.from('pa_descargas').select('plan_id,user_name,role,manual,created_at').order('created_at',{ascending:false}).limit(5000);if(error)throw error;const m={};(data||[]).forEach(r=>(m[r.plan_id]=m[r.plan_id]||[]).push(r));const j=JSON.stringify(m),ch=j!==DLS_J||!DLS_OK;DLS_J=j;DLS=m;DLS_OK=true;
   if(ch&&me&&db&&!(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)))render()}catch(e){DLS_OK=false}}
-setInterval(()=>{try{if(Supa.on&&me&&!document.hidden)loadDls()}catch(e){}},60000);
+/* v513 · descargas: se pregunta solo si cambió (conteo + última fecha) y se baja la lista únicamente cuando hay novedades */
+let DLS_SIG=null;async function dlsSig(){try{const r=await Supa.sb.from('pa_descargas').select('created_at',{count:'exact'}).order('created_at',{ascending:false}).limit(1);if(r.error)return null;return JSON.stringify([r.count,(r.data&&r.data[0])||null])}catch(e){return null}}
+async function dlsProbe(){if(!Supa.on||!Supa.sb||!me||!DLS_ROLES.includes(me.role))return;const g=await dlsSig();if(g!==null&&g===DLS_SIG&&DLS_OK)return;await loadDls();DLS_SIG=await dlsSig();Poll.tell('dls')}
+Poll.on.dls=()=>{try{loadDls()}catch(e){}};
+setInterval(()=>{try{if(Supa.on&&me&&!document.hidden&&Poll.gate('dls',55000))dlsProbe()}catch(e){}},60000);
 const dlInfo=p=>(DLS[p.id]||[]).find(r=>r.role==='inventarios'||r.manual)||null;
 const dlTag=p=>{if(!DLS_OK||!me||p.type!=='Inventarios'||!DLS_ROLES.includes(me.role))return '';const r=dlInfo(p);
  if(r){const d=new Date(r.created_at);return `<span class="tm tg" title="${esc((r.manual?'Registrado por ':'Descargó: ')+(r.user_name||''))} · ${esc(d.toLocaleString())}">⬇ ${r.manual?'Descarga registrada':'Inventarios descargó'} · ${esc(d.toLocaleDateString('es-GT'))}</span>`}
@@ -2526,6 +2561,8 @@ addEventListener('storage',async e=>{if(Supa.on||e.key!==Local.key)return;db=awa
 })();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}))}
 /* ===== v451 · ARQUEO DE CAJA Y FONDO FIJO (las escrituras pasan por la función "arqueos" de Supabase) ===== */
+/* v513 · listado de arqueos SIN el cuerpo (data): solo lo que muestra la lista + el recibo del último arqueo; el cuerpo completo se pide al abrir el arqueo */
+const ARQ_COLS='folio,version,estado,corrige_de,motivo_correccion,branch_user_id,region,branch,fecha,fondo,supervisor_user_id,supervisor_name,ff_user_id,ff_name,totales,resultado,tipo_resultado,modo_firma,hash,bloqueado_at,created_at,updated_at,recibo:data->recibo';
 const ARQ={ff:{open:false,dr:{}},modo:(()=>{try{return localStorage.getItem('nx_aqmodo')==='papel'?'papel':'digital'}catch(e){return'digital'}})(),loaded:false,loading:false,err:'',elim:new Set(),list:[],dep:[],asig:{},asigAll:[],d:null,step:1,det:null,fil:{r:'',s:'',e:''},busy:false};
 const AQ_DEN=[['200',20000],['100',10000],['50',5000],['20',2000],['10',1000],['5',500],['1',100],['0.5',50],['0.25',25],['0.1',10],['0.05',5]];
 const AQ_EST={borrador:['Borrador','gr'],pend_supervisor:['Falta firma del supervisor','wr'],pend_encargado:['Falta firma del encargado','wr'],completo:['Completo','ok']};
@@ -2554,13 +2591,17 @@ async function arqFn(b,retry){const c=Supa.cfg();let tk=c.key;try{const s=await 
   if(r.status===401&&!retry){try{const{data,error}=await Supa.sb.auth.refreshSession();if(!error&&data&&data.session)return arqFn(b,1)}catch(e){}}
   return j}catch(e){return{ok:false,error:'No se pudo contactar el servidor ('+(e.message||e)+')'}}}
 async function arqLoad(){if(!Supa.on||!Supa.sb||!me||ARQ.loading)return;ARQ.loading=true;
- try{const[a,d,f]=await Promise.all([Supa.sb.from('pa_arqueos').select('*').order('created_at',{ascending:false}).limit(600),Supa.sb.from('pa_arqueo_deposito').select('folio,version,numero_confirmacion,comprobante').limit(3000),Supa.sb.from('pa_ff_asignaciones').select('*').order('desde',{ascending:false}).limit(3000)]);
+ try{const[a,d,f]=await Promise.all([Supa.sb.from('pa_arqueos').select(Supa.lite?ARQ_COLS:'*').order('created_at',{ascending:false}).limit(600),Supa.sb.from('pa_arqueo_deposito').select('folio,version,numero_confirmacion,comprobante').limit(3000),Supa.sb.from('pa_ff_asignaciones').select('*').order('desde',{ascending:false}).limit(3000)]);
   const er=a.error||d.error||f.error;
   if(er)ARQ.err=/does not exist|relation|schema cache/i.test(er.message||'')?'Falta crear las tablas de arqueos en Supabase (corre el archivo arqueos.sql).':String(er.message||er);
-  else{ARQ.err='';ARQ.list=a.data||[];ARQ.dep=d.data||[];ARQ.asigAll=f.data||[];ARQ.asig={};ARQ.asigAll.forEach(x=>{if(!x.hasta&&!ARQ.asig[x.branch_user_id])ARQ.asig[x.branch_user_id]=x})}
+  else{ARQ.err='';ARQ.list=a.data||[];if(Supa.lite)ARQ.list.forEach(r=>{r.data={recibo:r.recibo};r._lite=1;delete r.recibo});ARQ.dep=d.data||[];ARQ.asigAll=f.data||[];ARQ.asig={};ARQ.asigAll.forEach(x=>{if(!x.hasta&&!ARQ.asig[x.branch_user_id])ARQ.asig[x.branch_user_id]=x})}
  }catch(e){ARQ.err=String(e.message||e)}
  try{const e=await Supa.sb.from('pa_arqueo_eliminados').select('folio').limit(5000);if(!e.error){ARQ.elim=new Set((e.data||[]).map(x=>x.folio));const j=arqStored();if(j&&j.d&&j.d.folio&&ARQ.elim.has(j.d.folio))localStorage.removeItem(ARQ_LS())}}catch(x){}
- ARQ.loaded=true;ARQ.loading=false;if(view==='arqueos'&&!ARQ.d)render()}
+ ARQ.loaded=true;ARQ.loading=false;arqSig().then(g=>{ARQ.sig=g}).catch(()=>{});if(view==='arqueos'&&!ARQ.d)render()}
+/* v513 · firma barata de lo que muestra Arqueos (solo conteos y la última modificación, sin traer filas); el listado completo solo se vuelve a pedir si la firma cambió */
+async function arqSig(){if(!Supa.on||!Supa.sb)return null;const q=(t,c)=>Supa.sb.from(t).select(c,{count:'exact'}).order(c,{ascending:false}).limit(1);try{const r=await Promise.all([q('pa_arqueos','updated_at'),q('pa_arqueo_deposito','agregado_at'),q('pa_ff_asignaciones','desde'),q('pa_arqueo_eliminados','eliminado_at')]);if(r.some(x=>x.error))return null;return JSON.stringify(r.map(x=>[x.count,(x.data&&x.data[0])||null]))}catch(e){return null}}
+async function arqProbe(){if(ARQ.loading)return;if(!ARQ.loaded||!ARQ.sig){await arqLoad();return}const g=await arqSig();if(g!==null&&g===ARQ.sig)return;await arqLoad();Poll.tell('arq')}
+Poll.on.arq=()=>{if(view==='arqueos'&&!ARQ.d)arqLoad()};
 async function arqLoadDet(){const d=ARQ.d;if(!d||!d.folio||!Supa.sb)return;const q=(t,s)=>Supa.sb.from(t).select(s).eq('folio',d.folio);
  try{const[f,a,p,v]=await Promise.all([q('pa_arqueo_firmas','*').eq('version',d.version),q('pa_arqueo_audit','*').order('at'),q('pa_arqueo_deposito','*').eq('version',d.version).order('agregado_at'),q('pa_arqueos','folio,version,estado,corrige_de,motivo_correccion,created_at,hash').order('version')]);
   ARQ.det={firmas:f.data||[],audit:a.data||[],dep:p.data||[],vers:v.data||[]};const me0=ARQ.det.vers.find(x=>x.version===d.version);if(me0&&me0.hash)d.hash=me0.hash}catch(e){ARQ.det={firmas:[],audit:[],dep:[],vers:[]}}}
@@ -2598,7 +2639,7 @@ async function arqFF1(){const d=ARQ.d;if(!d||!d.branch_user_id||d.folio)return;c
  const r=await arqFn({action:'ff_assign',branch_user_id:d.branch_user_id,nombre:e.trim(),monto:m});if(!r.ok){toast(r.error||'No se pudo guardar');return}
  toast(r.sinCambios?'Sin cambios':'Encargado y monto guardados');await arqLoad();const a=ARQ.asig[d.branch_user_id];if(a){d.fondo=Number(a.monto);d.ff_user_id=a.branch_user_id;d.ff_name=a.encargado_nombre||''}render()}
 function arqNew(){arqWarm();AQS.sup=AQS.enc=null;if(arqStored()&&!confirm('Tienes un borrador sin terminar. ¿Empezar uno nuevo? El borrador anterior se descartará (si ya se guardó en el servidor, queda en la lista).'))return;try{localStorage.removeItem(ARQ_LS())}catch(e){}const bs=arqBranches();ARQ.d={folio:null,version:1,estado:'borrador',branch_user_id:'',branch:'',fecha:aqToday(),fondo:0,ff_user_id:'',ff_name:'',supervisor_name:me.name,data:{den:{},docs:[],caja:[],fact:[],recibo:{fecha:'',ultimo:'',blanco:''},obs:''}};ARQ.det=null;ARQ.step=1;render()}
-async function arqOpen(f,v){arqWarm();const r=ARQ.list.find(x=>x.folio===f&&x.version===v);if(!r)return;ARQ.d=JSON.parse(JSON.stringify(r));ARQ.d.data=Object.assign({den:{},docs:[],caja:[],fact:[],recibo:{fecha:'',ultimo:'',blanco:''},obs:''},ARQ.d.data||{});ARQ.d.fondo=Number(r.fondo);
+async function arqOpen(f,v){arqWarm();const r=ARQ.list.find(x=>x.folio===f&&x.version===v);if(!r)return;if(r._lite){try{const{data,error}=await Supa.sb.from('pa_arqueos').select('data').eq('folio',f).eq('version',v).maybeSingle();if(error||!data){toast('No se pudo abrir el arqueo. Intenta de nuevo.');return}r.data=data.data;r._lite=0}catch(e){toast('No se pudo abrir el arqueo. Intenta de nuevo.');return}}ARQ.d=JSON.parse(JSON.stringify(r));delete ARQ.d._lite;ARQ.d.data=Object.assign({den:{},docs:[],caja:[],fact:[],recibo:{fecha:'',ultimo:'',blanco:''},obs:''},ARQ.d.data||{});ARQ.d.fondo=Number(r.fondo);
  ARQ.step={borrador:1,pend_supervisor:5,pend_encargado:6,completo:7}[r.estado]||1;{const j=arqStored();if(j&&r.estado==='borrador'&&j.d.folio===f&&j.d.version===v){ARQ.d=arqFull(j.d);ARQ.step=Math.min(j.step||1,4)}}ARQ.det=null;render();await arqLoadDet();render()}
 const ARQ_LS=()=>'nx_arqdraft_'+(me&&me.id);
 const arqStored=()=>{try{const j=JSON.parse(localStorage.getItem(ARQ_LS())||'null');return j&&j.d?j:null}catch(e){return null}};
@@ -2752,7 +2793,7 @@ V.arqueos=()=>arqView();
 function arqFit(){document.querySelectorAll('.aqprev').forEach(p=>{const sh=p.querySelector('.aqsheet');if(!sh)return;const W=740,cs=getComputedStyle(p),inner=p.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);if(inner<=0)return;const k=Math.min(1,inner/W);sh.style.transform=k<1?'scale('+k+')':'';sh.style.height='';const h=sh.offsetHeight;p.style.height=k<1?Math.ceil(h*k+parseFloat(cs.paddingTop)+parseFloat(cs.paddingBottom))+'px':''})}
 addEventListener('resize',()=>{if(typeof view!=='undefined'&&view==='arqueos')arqFit()});
 const _render1=render;render=function(){_render1.apply(this,arguments);if(view==='arqueos'&&ARQ.d){arqPadInit('aqp');if(ARQ.step===4||ARQ.step===3||ARQ.step===2)arqLive();arqFit();setTimeout(arqFit,120);setTimeout(arqFit,600)}};
-setInterval(()=>{try{if(view==='arqueos'&&!ARQ.d&&!document.hidden&&Supa.on)arqLoad()}catch(e){}},60000);
+setInterval(()=>{try{if(view==='arqueos'&&!ARQ.d&&!document.hidden&&Supa.on&&Poll.gate('arq',55000))arqProbe()}catch(e){}},60000);
 /* ===== v474 · SUPERVISIÓN MENSUAL (solo administrador): guía para llenar el Forms "Supervisión General a Sucursal Mensual SG" ===== */
 const SUP_SEC={1:["Revisión General Mensual",""],8:["Inventario General UIG","Información del ÚLTIMO inventario general"],13:["Soporte Técnico UVIT","Última visita IT"],17:["ITCO",""],19:["RRHH",""],35:["Mercadería",""],38:["Comercial",""],48:["Entregas","Entregas de mercadería y consumo de combustible"],57:["Final",""]};
 // [n, título, ayuda, tipo]  t=texto, a=varias líneas, s=Titular/Suplente, r=calificación 1-10
@@ -2796,8 +2837,12 @@ async function supLoad(silent){
   if(er)SUP.err=/does not exist|relation|schema cache/i.test(er.message||'')?'Faltan las tablas de supervisión en Supabase (supervision_mensual y supervision_sync_log).':/permission|denied|row-level/i.test(er.message||'')?'Sin permiso para leer la supervisión. Entra con el usuario administrador.':String(er.message||er);
   else{SUP.err='';const R={};(a.data||[]).forEach(r=>{R[r.sucursal_codigo+'|'+r.pregunta]={v:r.valor==null?'':String(r.valor),f:r.fuente}});SUP.rows=R;SUP.log=(b.data&&b.data[0])||null;const NM={};(a.data||[]).forEach(r=>{if(+r.pregunta===0&&r.valor)NM[r.sucursal_codigo]=String(r.valor)});if(Object.keys(NM).length){SUP_SUC=Object.keys(NM).sort((x,y)=>{const i=SUP_SUC0.indexOf(x),j=SUP_SUC0.indexOf(y);return (i<0?99:i)-(j<0?99:j)||x.localeCompare(y)}).map(c=>[c,NM[c]]);if(!SUP_SUC.some(x=>x[0]===SUP.suc))SUP.suc=SUP_SUC[0][0]}}
  }catch(e){SUP.err=String(e.message||e)}
- SUP.loaded=true;SUP.loading=false;
+ SUP.loaded=true;SUP.loading=false;supSig().then(g=>{SUP.sig=g}).catch(()=>{});
  if(view==='sup'&&!supTyping()&&(!silent||antes!==JSON.stringify([SUP.rows,SUP.log])))render()}
+/* v513 · supervisión: firma barata (conteo + última modificación del mes y última sincronización); se recarga solo si cambió */
+async function supSig(){try{const m=SUP.mes+'-01';const[a,b]=await Promise.all([Supa.sb.from('supervision_mensual').select('actualizado_en',{count:'exact'}).eq('mes',m).order('actualizado_en',{ascending:false}).limit(1),Supa.sb.from('supervision_sync_log').select('ejecutado_en').order('ejecutado_en',{ascending:false}).limit(1)]);if(a.error||b.error)return null;return JSON.stringify([SUP.mes,a.count,a.data&&a.data[0],b.data&&b.data[0]])}catch(e){return null}}
+async function supProbe(){if(SUP.loading)return;const g=await supSig();if(g!==null&&g===SUP.sig)return;await supLoad(true);Poll.tell('sup')}
+Poll.on.sup=()=>{if(view==='sup'&&!SUP.running&&!supTyping())supLoad(true)};
 async function supSync(){
  if(SUP.running)return;SUP.running=true;SUP.avisos=[];
  const bt=document.getElementById('supBtn');if(bt){bt.textContent='Actualizando…';bt.disabled=true}
@@ -2940,7 +2985,7 @@ function dmView(){
  return head+bar+DM_G.map(g=>'<div class="sqsec"><h3>'+esc(g[0])+'</h3></div>'+g[1].map(campo).join('')).join('')+(ed?'<div style="margin:14px 0"><button onclick="dmSave()">Guardar datos</button></div>':'')}
 V.datosmes=()=>dmView();
 
-setInterval(()=>{try{if(view==='sup'&&!document.hidden&&Supa.on&&!SUP.running&&!supTyping())supLoad(true)}catch(e){}},60000);
+setInterval(()=>{try{if(view==='sup'&&!document.hidden&&Supa.on&&!SUP.running&&!supTyping()&&Poll.gate('sup',55000))supProbe()}catch(e){}},60000);
 
 
 /* ===== Sesión por inactividad + actualización automática (minutos; 0 = nunca) ===== */
@@ -2981,5 +3026,5 @@ const IDLE_MIN={admin:120,supervisor:120,def:30},UPD_CHECK_MIN=0.25,UPD_IDLE_SEG
 </script><script>(function(){const sync=()=>{try{if(typeof view==='undefined')return;const grp=!(window.__MV||[]).includes(view),op=!!document.querySelector('aside.open')&&window.__mv===view&&!grp;document.querySelectorAll('aside .nv').forEach(b=>{const o=b.getAttribute('onclick')||'';if(b.classList.contains('more'))b.classList.toggle('act',op);else if(/^navTo\(/.test(o))b.classList.toggle('act',!op&&o==="navTo('"+view+"')")})}catch(x){}};
 setInterval(sync,1500);window.__navSync=sync})();</script>
 <script>(()=>{const cv=document.createElement('canvas').getContext('2d');const fit=()=>{try{if(!matchMedia('(max-width:820px)').matches){document.querySelectorAll('header.top #fcs,header.top .hwho').forEach(e=>e.style.removeProperty('font-size'));return}document.querySelectorAll('header.top #fcs,header.top .hwho,header.top select[onchange^="swap"]').forEach(e=>{const t=e.tagName==='SELECT'?((e.options[e.selectedIndex]||{}).text||''):e.textContent,av=e.clientWidth-(e.tagName==='SELECT'?56:18);if(av<=0)return;const cs=getComputedStyle(e),ff=cs.fontFamily,fw=cs.fontWeight;let f=12;for(;f>6.5;f-=.5){cv.font=fw+' '+f+'px '+ff;if(cv.measureText(t).width<=av)break}e.style.setProperty('font-size',f+'px','important')})}catch(x){}};setInterval(fit,700);addEventListener('resize',fit);addEventListener('orientationchange',fit);new MutationObserver(fit).observe(document.body,{childList:true,subtree:true})})();</script>
-<script>(function(){const T=()=>{try{if(Supa.on&&me)Supa.refresh()}catch(e){}};document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(T,150)});addEventListener('pageshow',()=>setTimeout(T,150));addEventListener('focus',()=>setTimeout(T,150));addEventListener('online',()=>setTimeout(()=>{try{Supa.refresh(true)}catch(e){}},500));setInterval(T,20000)})();</script>
+<script>(function(){const T=()=>{try{if(Supa.on&&me)Supa.refresh()}catch(e){}};document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(T,150)});addEventListener('pageshow',()=>setTimeout(T,150));addEventListener('focus',()=>setTimeout(T,150));addEventListener('online',()=>setTimeout(()=>{try{Supa.refresh(true)}catch(e){}},500));setInterval(()=>{try{if(document.hidden||!Supa.on||!me)return;const gap=(Supa.rt&&Supa.rt.ok)?300000:60000;if(Date.now()-(Supa.rlt||0)<gap-1000)return;if(!Poll.gate('refresh',gap-2000))return;T()}catch(e){}},20000)})();</script>
 </body></html>
