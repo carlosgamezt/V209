@@ -9,10 +9,10 @@ run recordatorios ./test_recordatorios.sh
 run funcion_recordatorios deno run -A recordatorios_fn_test.ts
 run funcional node funcional.cjs --root $R --out $T/f.json $X --caps "$C"
 run recuperacion node recuperacion.cjs --root $R --out $T/r.json $X --caps "$C"
-run cache node cache_test.cjs --root $R --out $T/c.json $X --caps "$C"
+run cache node cache_test.cjs --root $R --out $T/c.json --cache true $X --caps "$C"
 run arqueos node arqueos_test.cjs --root $R --out $T/a.json $X --caps "$C"
 run guardado_parcial node parcial_test.cjs --root $R --out $T/p.json $X --caps "$C"
 for m in cors nocors exp; do run descarga_$m node descarga_test.cjs --root $R --out $T/d.json --od $m --directo $X --caps "$C"; done
 for m in cors nocors mid; do run subida_$m node subida_test.cjs --root $R --out $T/s.json --od $m $X --caps "$C"; done
-run descarga_apagada node descarga_test.cjs --root $R --out $T/d.json --odoff --directo $X --caps "$C"
+run descarga_apagada node descarga_test.cjs --root $R --out $T/d.json --odoff $X --caps "$C"
 [ $fall = 0 ] && echo "SUITE INTEGRAL OK" || echo "SUITE INTEGRAL CON FALLOS"; exit $fall
