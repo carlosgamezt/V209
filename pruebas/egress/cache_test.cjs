@@ -90,6 +90,14 @@ const kb = n => Math.round(n / 1024);
     await e2(() => { PA_CFG.cache = false; Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(4000);
     const desp = await e2(async () => ({ bd: (await indexedDB.databases()).some(x => x.name === 'pa_cache'), flag: !!localStorage.getItem('nx_pc_used'), planes: db.plans.length }));
     ok(!desp.bd && !desp.flag && desp.planes > 0, 'tras apagar la caché por configuración: la base local se borra por completo y la app sigue funcionando'); }
+  // 11) Piloto por dispositivo: con la caché apagada por configuración, solo el administrador que lo activa en su equipo guarda copia (modo sesión)
+  { const pg = await abrir(browser, port, 'admin'), e2 = (fn, a) => pg.evaluate(fn, a); await pg.clock.runFor(3000);
+    await e2(() => { PA_CFG.cache = false; localStorage.setItem('nx_cache_pilot', '1'); window.__lo = 1; Supa.cleanup(); window.__lo = 0; me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(5000);
+    const a1 = await e2(async () => { const d = await PCache.open(); const n = await new Promise(r => { const q = d.transaction('rows').objectStore('rows').count(); q.onsuccess = () => r(q.result) }); return { on: PCache.on(), n } });
+    ok(a1.on && a1.n > 0, 'piloto por dispositivo (administrador): la caché se activa solo en este equipo (' + a1.n + ' filas)');
+    await e2(() => { localStorage.removeItem('nx_cache_pilot'); Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(4000);
+    const a2 = await e2(async () => ({ on: PCache.on(), bd: (await indexedDB.databases()).some(x => x.name === 'pa_cache'), planes: db.plans.length }));
+    ok(!a2.on && !a2.bd && a2.planes > 0, 'al quitar el piloto: la caché se apaga, la copia local se borra por completo y la app sigue funcionando'); }
   console.log(fallo ? 'CACHE FALLO ' + fallo : 'CACHE OK'); await browser.close(); srv.close(); process.exit(fallo ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1) });
 let R_warm = 0;

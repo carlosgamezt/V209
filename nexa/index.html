@@ -1116,7 +1116,9 @@ let CONN='local',CHG=false,NOCONN='',LOGIN_ERR='',CRED=[],RM=null;
 /* v514 · CACHÉ PERSISTENTE DE DATOS (apagada: se activa con PA_CONFIG.cache = true | 'dispositivo'). Guarda en este equipo, por persona, la última copia ligera de planes/avisos/usuarios; al iniciar sesión solo se piden las filas modificadas desde entonces.
    Seguridad: una entrada por persona (auth_id); se borra al cambiar de perfil/rol/región/sucursal, al entrar otra persona en el equipo y al cerrar sesión (true = siempre; 'dispositivo' = solo al cerrar sesión voluntariamente, se conserva tras cerrar por inactividad). Los borrados y los planes que dejaron de ser visibles se detectan comparando conteos y con un listado completo al menos cada 24 h. */
 const PCache={FULL_MS:864e5,tm:0,sn:new Map(),dbp:null,
- on(){return !!PA_CFG.cache&&!this.dead&&this.roleOk()&&Supa.lite&&typeof indexedDB!=='undefined'},roleOk(){const r=PA_CFG.cacheRoles;if(!Array.isArray(r))return true;const p=Supa.profile;return !!(p&&r.includes(p.role))},
+ /* Piloto por dispositivo (solo administrador, modo sesión): localStorage.setItem('nx_cache_pilot','1') lo activa; removeItem lo apaga y la próxima vez que abre la app se borra la copia local. */
+ pilot(){try{const p=Supa.profile;return !!(p&&p.role==='admin'&&localStorage.getItem('nx_cache_pilot')==='1')}catch(e){return false}},
+ on(){return (!!PA_CFG.cache||this.pilot())&&!this.dead&&this.roleOk()&&Supa.lite&&typeof indexedDB!=='undefined'},roleOk(){const r=PA_CFG.cacheRoles;if(!Array.isArray(r))return true;const p=Supa.profile;return !!(p&&r.includes(p.role))},
  /* Seguridad: nunca se guarda en el equipo un registro con campos de credencial (contraseñas, tokens, claves); si aparece uno, se borra la copia y no se vuelve a guardar en esta sesión. */
  SENS:/"(pw|pass|password|passwd|token|secret|clave|api_?key|access_token|refresh_token)"\s*:/i,
  /* Desactivación reversible: si la caché se apagó por configuración (o este perfil ya no califica), se borra por completo la base local de la copia. */
@@ -1378,7 +1380,8 @@ const origExt=f=>{const m=/\.(jpe?g|png|webp|heic|heif)$/i.exec(f.name||'');if(m
 const origName=(k,x)=>Supa.path(k).replace(/\.jpg$/,'_orig.'+x);
 /* Subida DIRECTA a OneDrive (opcional, PA_CFG.odDirect): super-api sigue autorizando (put_begin entrega la sesión de carga temporal de ESA ruta); los bytes van del equipo a OneDrive sin pasar por Supabase. Sin CORS/red: se usa la función de siempre y se recuerda 24 h. */
 /* Activación controlada de la transferencia directa: PA_CFG.odDirect = true (todos) | 'admin' (solo administradores, piloto) | ['id1','id2'] (personas concretas) | false/ausente (apagada). */
-const odOn=()=>{const v=PA_CFG.odDirect;if(v===true)return true;if(v==='admin')return !!(me&&me.role==='admin');if(Array.isArray(v))return !!(me&&v.includes(me.id));return false};
+/* Piloto por dispositivo (solo administrador, sin publicar nada): en la consola, localStorage.setItem('nx_od_pilot','1') lo activa y localStorage.removeItem('nx_od_pilot') lo apaga. */
+const odOn=()=>{const v=PA_CFG.odDirect;if(v===true)return true;if(v==='admin')return !!(me&&me.role==='admin');if(Array.isArray(v))return !!(me&&v.includes(me.id));try{if(me&&me.role==='admin'&&localStorage.getItem('nx_od_pilot')==='1')return true}catch(e){}return false};
 const OU_FLAG='nx_od_up';const ouOff=()=>{try{const t=+localStorage.getItem(OU_FLAG)||0;return t&&Date.now()-t<864e5}catch(e){return false}};const ouMark=()=>{try{localStorage.setItem(OU_FLAG,String(Date.now()))}catch(e){}};
 const ouOn=()=>odOn()&&!ouOff();
 async function odPutDirect(url,blob,ch,prog){const n=Math.ceil(blob.size/ch);try{for(let i=0;i<n;i++){const off=i*ch,end=Math.min(off+ch,blob.size),r=await fetch(url,{method:'PUT',headers:{'Content-Range':'bytes '+off+'-'+(end-1)+'/'+blob.size},body:blob.slice(off,end),credentials:'omit',referrerPolicy:'no-referrer'});if(i<n-1?r.status!==202:!(r.status===200||r.status===201)){if(r.status>=400&&r.status<500&&r.status!==416)ouMark();return false}prog&&prog((i+1)/n)}return true}catch(e){ouMark();return false}}
