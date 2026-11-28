@@ -1,0 +1,40 @@
+# PLANTILLA (inerte aquí). Copiar a .github/workflows/preview-{{PRODUCTO}}.yml EN LA RAMA {{RAMA}} y reemplazar {{...}}.
+# Publica una VISTA PREVIA de {{CARPETA}} (carpeta de la app) como despliegue de VISTA PREVIA del proyecto de Cloudflare Pages {{PROYECTO_PAGES}} (un proyecto propio del producto, no «nexacorp»).
+# NUNCA publica en producción: la rama del despliegue es {{RAMA}} (no main) y antes se LEE la API de Cloudflare para comprobar el destino. No usa Supabase ni secretos de producción: solo los dos secretos de Cloudflare.
+# Solo se ejecuta cuando TÚ la lanzas a mano (Actions → este flujo → Run workflow) escribiendo VISTA PREVIA. Dirección habitual: https://{{RAMA}}.{{PROYECTO_PAGES}}.pages.dev
+# Antes de usarla: crear el proyecto de Pages (gratuito, subida directa) con rama de producción «main» y agregar a este repositorio los secretos CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID (ya existen para NEXA; con permiso de Pages).
+name: {{PRODUCTO}} · vista previa (manual, rama {{RAMA}})
+on:
+  workflow_dispatch:
+    inputs:
+      confirmar:
+        description: "Escribe VISTA PREVIA para confirmar"
+        type: string
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: preview-{{PRODUCTO}}
+  cancel-in-progress: false
+jobs:
+  vista-previa:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/{{RAMA}}' && inputs.confirmar == 'VISTA PREVIA'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verificar el destino (solo lectura)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash docs/plantillas/verificar-destino.sh {{PROYECTO_PAGES}} {{RAMA}}
+      - name: Publicar como VISTA PREVIA (rama {{RAMA}}; nunca main)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy {{CARPETA}} --project-name={{PROYECTO_PAGES}} --branch={{RAMA}} --commit-dirty=true
+      - name: Resumen
+        run: echo "Vista previa publicada (rama {{RAMA}} del proyecto {{PROYECTO_PAGES}}). Producción (main) no se tocó."

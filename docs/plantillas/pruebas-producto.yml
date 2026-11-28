@@ -1,0 +1,44 @@
+# PLANTILLA (inerte aquí). Copiar a .github/workflows/{{PRODUCTO}}-tests.yml EN LA RAMA {{RAMA}}.
+# Solo pruebas con PostgreSQL LOCAL efímero y navegador; no se conecta a ningún proyecto real ni publica nada.
+name: {{PRODUCTO}} · pruebas
+on:
+  workflow_dispatch:
+  push:
+    branches: ['{{RAMA}}']
+    paths: ['{{PRODUCTO}}/**', 'pruebas/{{PRODUCTO}}/**', '.github/workflows/{{PRODUCTO}}-tests.yml']
+permissions:
+  contents: read
+jobs:
+  funciones:
+    name: Funciones (Deno, con simulaciones)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Pruebas de funciones
+        run: for t in pruebas/{{PRODUCTO}}/*_test.ts; do [ -f "$t" ] && deno run -A "$t"; done; true
+  base-y-permisos:
+    name: SQL y permisos (PostgreSQL local)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pruebas SQL
+        run: for t in pruebas/{{PRODUCTO}}/test_*.sh; do [ -f "$t" ] && bash "$t"; done; true
+  interfaz:
+    name: Interfaz (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Instalar navegador de pruebas
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1.49.1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Pruebas de interfaz
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: for t in pruebas/{{PRODUCTO}}/*.cjs; do [ -f "$t" ] && node "$t"; done; true
