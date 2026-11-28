@@ -11,10 +11,11 @@ const MIN = 60000, H = 60 * MIN;
 async function nuevo(browser, port, user, opts = {}) {
   const ctx = opts.ctx || await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
   const page = await ctx.newPage(); const fnlog = [];
-  await page.route('**/config.js', r => r.fulfill({ contentType: 'text/javascript', body: "window.PA_CONFIG={url:'https://fake.supabase.co',key:'fake-publishable'};" }));
-  await page.route('https://fake.supabase.co/functions/v1/**', async r => { const b = JSON.stringify({ ok: true, url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', exists: true }); fnlog.push(b.length + 600); await r.fulfill({ contentType: 'application/json', body: b }) });
+  await page.route(/config\.js/, r => r.fulfill({ contentType: 'text/javascript', body: "window.PA_CONFIG={url:'https://fake.supabase.co',key:'fake-publishable',cache:" + JSON.stringify(arg('cache', '') === 'true' ? true : (arg('cache', '') || false)) + "};" }));
+  await page.route('**/functions/v1/**', async r => { const b = JSON.stringify({ ok: true, url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', exists: true }); fnlog.push(b.length + 600); await r.fulfill({ contentType: 'application/json', body: b }) });
   await page.route(/fonts\.(googleapis|gstatic)|jsdelivr/, r => r.abort());
   await page.addInitScript(({ P }) => { window.__EG = P }, { P: { ...DATA, user, caps: opts.caps || DATA.caps || {} } });
+  { const c = arg('cache', ''); await page.addInitScript(({ C }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = Object.assign({}, x, { cache: C }) } }) }, { C: c === 'true' ? true : (c || false) }) }
   if (XTRA) await page.addInitScript(XTRA);
   await page.addInitScript(FAKE);
   await page.addInitScript(() => { Object.defineProperty(document, 'hidden', { get: () => !!window.__hid, configurable: true }); Object.defineProperty(document, 'visibilityState', { get: () => window.__hid ? 'hidden' : 'visible', configurable: true }) });
