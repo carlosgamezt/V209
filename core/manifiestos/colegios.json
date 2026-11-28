@@ -1,0 +1,80 @@
+{
+ "modulo": "colegios",
+ "nombre": "NEXA Colegios",
+ "descripcion": "Estudiantes, familias, cuotas, asistencia y comunicados",
+ "version_api": 1,
+ "estado": "beta",
+ "permisos": [
+  {
+   "codigo": "estudiantes.ver",
+   "descripcion": "Ver estudiantes"
+  },
+  {
+   "codigo": "estudiantes.gestionar",
+   "descripcion": "Gestionar estudiantes y familias",
+   "sensible": true
+  },
+  {
+   "codigo": "cobros.ver",
+   "descripcion": "Ver cuotas y estados de cuenta"
+  },
+  {
+   "codigo": "cobros.gestionar",
+   "descripcion": "Registrar cobros y descuentos",
+   "sensible": true
+  },
+  {
+   "codigo": "asistencia.registrar",
+   "descripcion": "Registrar asistencia"
+  },
+  {
+   "codigo": "comunicados.enviar",
+   "descripcion": "Enviar comunicados"
+  }
+ ],
+ "roles": [
+  {
+   "codigo": "administracion",
+   "nombre": "Administración",
+   "permisos": [
+    "estudiantes.ver",
+    "estudiantes.gestionar",
+    "cobros.ver",
+    "cobros.gestionar",
+    "asistencia.registrar",
+    "comunicados.enviar"
+   ]
+  },
+  {
+   "codigo": "secretaria",
+   "nombre": "Secretaría",
+   "permisos": [
+    "estudiantes.ver",
+    "estudiantes.gestionar",
+    "cobros.ver",
+    "comunicados.enviar"
+   ]
+  },
+  {
+   "codigo": "docente",
+   "nombre": "Docente",
+   "permisos": [
+    "estudiantes.ver",
+    "asistencia.registrar"
+   ]
+  },
+  {
+   "codigo": "lector",
+   "nombre": "Lector",
+   "permisos": [
+    "estudiantes.ver"
+   ]
+  }
+ ],
+ "eventos": [
+  {
+   "tipo": "col_cobro_registrado",
+   "descripcion": "Se registró un cobro"
+  }
+ ]
+}

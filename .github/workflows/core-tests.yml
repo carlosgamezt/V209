@@ -1,0 +1,20 @@
+# NEXA CORE · pruebas (solo pruebas con PostgreSQL local efímero; no usa secretos ni se conecta a ningún proyecto real ni publica nada).
+name: NEXA CORE · pruebas
+on:
+  workflow_dispatch:
+  push:
+    branches: ['nexa-core']
+    paths: ['core/**', 'pruebas/core/**', '.github/workflows/core-tests.yml']
+permissions:
+  contents: read
+jobs:
+  core:
+    name: Comportamiento, reversión y mutaciones (PostgreSQL local)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar PostgreSQL
+        run: sudo apt-get update -y >/dev/null && sudo apt-get install -y postgresql >/dev/null
+      - name: Suite integral de CORE
+        run: sudo bash pruebas/core/suite_core.sh

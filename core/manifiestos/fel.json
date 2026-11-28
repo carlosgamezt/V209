@@ -1,0 +1,77 @@
+{
+ "modulo": "fel",
+ "nombre": "NEXA FEL",
+ "descripcion": "Facturación electrónica (SAT Guatemala) mediante certificador",
+ "version_api": 1,
+ "estado": "beta",
+ "permisos": [
+  {
+   "codigo": "documentos.ver",
+   "descripcion": "Ver documentos"
+  },
+  {
+   "codigo": "documentos.emitir",
+   "descripcion": "Emitir y certificar documentos",
+   "sensible": true
+  },
+  {
+   "codigo": "documentos.anular",
+   "descripcion": "Anular documentos",
+   "sensible": true
+  },
+  {
+   "codigo": "clientes.gestionar",
+   "descripcion": "Gestionar clientes"
+  },
+  {
+   "codigo": "conceptos.gestionar",
+   "descripcion": "Gestionar conceptos"
+  },
+  {
+   "codigo": "configuracion.gestionar",
+   "descripcion": "Configurar emisor y certificador",
+   "sensible": true
+  }
+ ],
+ "roles": [
+  {
+   "codigo": "administrador",
+   "nombre": "Administrador",
+   "permisos": [
+    "documentos.ver",
+    "documentos.emitir",
+    "documentos.anular",
+    "clientes.gestionar",
+    "conceptos.gestionar",
+    "configuracion.gestionar"
+   ]
+  },
+  {
+   "codigo": "emisor",
+   "nombre": "Emisor",
+   "permisos": [
+    "documentos.ver",
+    "documentos.emitir",
+    "clientes.gestionar",
+    "conceptos.gestionar"
+   ]
+  },
+  {
+   "codigo": "lector",
+   "nombre": "Lector",
+   "permisos": [
+    "documentos.ver"
+   ]
+  }
+ ],
+ "eventos": [
+  {
+   "tipo": "fel_documento_certificado",
+   "descripcion": "Un documento fue certificado"
+  },
+  {
+   "tipo": "fel_documento_anulado",
+   "descripcion": "Un documento fue anulado"
+  }
+ ]
+}

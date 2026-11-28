@@ -1,0 +1,83 @@
+{
+ "modulo": "pos",
+ "nombre": "NEXA POS",
+ "descripcion": "Punto de venta, inventario y caja",
+ "version_api": 1,
+ "estado": "beta",
+ "permisos": [
+  {
+   "codigo": "ventas.ver",
+   "descripcion": "Ver ventas"
+  },
+  {
+   "codigo": "ventas.registrar",
+   "descripcion": "Registrar ventas"
+  },
+  {
+   "codigo": "ventas.anular",
+   "descripcion": "Anular ventas",
+   "sensible": true
+  },
+  {
+   "codigo": "caja.abrir_cerrar",
+   "descripcion": "Abrir y cerrar caja",
+   "sensible": true
+  },
+  {
+   "codigo": "inventario.ver",
+   "descripcion": "Ver inventario"
+  },
+  {
+   "codigo": "inventario.gestionar",
+   "descripcion": "Gestionar inventario"
+  },
+  {
+   "codigo": "catalogo.gestionar",
+   "descripcion": "Gestionar catálogo y precios",
+   "sensible": true
+  }
+ ],
+ "roles": [
+  {
+   "codigo": "administrador",
+   "nombre": "Administrador",
+   "permisos": [
+    "ventas.ver",
+    "ventas.registrar",
+    "ventas.anular",
+    "caja.abrir_cerrar",
+    "inventario.ver",
+    "inventario.gestionar",
+    "catalogo.gestionar"
+   ]
+  },
+  {
+   "codigo": "cajero",
+   "nombre": "Cajero",
+   "permisos": [
+    "ventas.ver",
+    "ventas.registrar",
+    "caja.abrir_cerrar",
+    "inventario.ver"
+   ]
+  },
+  {
+   "codigo": "lector",
+   "nombre": "Lector",
+   "permisos": [
+    "ventas.ver",
+    "inventario.ver"
+   ]
+  }
+ ],
+ "eventos": [
+  {
+   "tipo": "pos_venta_registrada",
+   "descripcion": "Se registró una venta"
+  },
+  {
+   "tipo": "pos_caja_cerrada",
+   "descripcion": "Se cerró una caja"
+  }
+ ]
+}

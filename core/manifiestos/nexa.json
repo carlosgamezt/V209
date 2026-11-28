@@ -1,0 +1,78 @@
+{
+ "modulo": "nexa",
+ "nombre": "NEXA Planes de Acción",
+ "descripcion": "Planes de acción, evidencias, arqueos y supervisión (producto actual)",
+ "version_api": 1,
+ "estado": "beta",
+ "permisos": [
+  {
+   "codigo": "planes.ver",
+   "descripcion": "Ver planes"
+  },
+  {
+   "codigo": "planes.crear",
+   "descripcion": "Crear planes"
+  },
+  {
+   "codigo": "evidencias.enviar",
+   "descripcion": "Enviar evidencias"
+  },
+  {
+   "codigo": "evidencias.revisar",
+   "descripcion": "Revisar evidencias"
+  },
+  {
+   "codigo": "arqueos.gestionar",
+   "descripcion": "Hacer arqueos"
+  },
+  {
+   "codigo": "usuarios.gestionar",
+   "descripcion": "Administrar usuarios del módulo",
+   "sensible": true
+  }
+ ],
+ "roles": [
+  {
+   "codigo": "admin",
+   "nombre": "Administrador",
+   "permisos": [
+    "planes.ver",
+    "planes.crear",
+    "evidencias.revisar",
+    "arqueos.gestionar",
+    "usuarios.gestionar"
+   ]
+  },
+  {
+   "codigo": "supervisor",
+   "nombre": "Supervisor",
+   "permisos": [
+    "planes.ver",
+    "planes.crear",
+    "evidencias.revisar",
+    "arqueos.gestionar"
+   ]
+  },
+  {
+   "codigo": "sucursal",
+   "nombre": "Sucursal",
+   "permisos": [
+    "planes.ver",
+    "evidencias.enviar"
+   ]
+  },
+  {
+   "codigo": "lector",
+   "nombre": "Solo lectura",
+   "permisos": [
+    "planes.ver"
+   ]
+  }
+ ],
+ "eventos": [
+  {
+   "tipo": "nexa_plan_completado",
+   "descripcion": "Un plan de acción quedó completado"
+  }
+ ]
+}

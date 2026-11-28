@@ -1,0 +1,72 @@
+{
+ "modulo": "hotel",
+ "nombre": "NEXA Hotel",
+ "descripcion": "Reservas, habitaciones, tarifas y ocupación",
+ "version_api": 1,
+ "estado": "beta",
+ "permisos": [
+  {
+   "codigo": "reservas.ver",
+   "descripcion": "Ver reservas"
+  },
+  {
+   "codigo": "reservas.gestionar",
+   "descripcion": "Crear y modificar reservas"
+  },
+  {
+   "codigo": "habitaciones.gestionar",
+   "descripcion": "Gestionar habitaciones y tarifas",
+   "sensible": true
+  },
+  {
+   "codigo": "checkin.operar",
+   "descripcion": "Check-in y check-out"
+  },
+  {
+   "codigo": "limpieza.operar",
+   "descripcion": "Estado de limpieza"
+  }
+ ],
+ "roles": [
+  {
+   "codigo": "administrador",
+   "nombre": "Administrador",
+   "permisos": [
+    "reservas.ver",
+    "reservas.gestionar",
+    "habitaciones.gestionar",
+    "checkin.operar",
+    "limpieza.operar"
+   ]
+  },
+  {
+   "codigo": "recepcion",
+   "nombre": "Recepción",
+   "permisos": [
+    "reservas.ver",
+    "reservas.gestionar",
+    "checkin.operar"
+   ]
+  },
+  {
+   "codigo": "limpieza",
+   "nombre": "Limpieza",
+   "permisos": [
+    "limpieza.operar"
+   ]
+  },
+  {
+   "codigo": "lector",
+   "nombre": "Lector",
+   "permisos": [
+    "reservas.ver"
+   ]
+  }
+ ],
+ "eventos": [
+  {
+   "tipo": "hotel_reserva_confirmada",
+   "descripcion": "Se confirmó una reserva"
+  }
+ ]
+}
