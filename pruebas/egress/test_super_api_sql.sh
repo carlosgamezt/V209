@@ -20,6 +20,9 @@ PY
 Q -At -f $A/super_api_funciones.sql >/dev/null && ok "la migración es idempotente"
 # plan automático con espacios en el número («PA-2026-045 - AUTO»): la app guarda los archivos con el nombre saneado
 Q -c "insert into public.pa_docs (col, id, data) values ('plans', 'PA-2026-045 - AUTO', jsonb_build_object('id', 'PA-2026-045 - AUTO', 'region', '1', 'branch', 'b11', 'type', 'Operaciones', 'status', 'En proceso', 'acts', jsonb_build_array(jsonb_build_object('text', 'A', 'st', 'Enviada', 'ev', jsonb_build_object('k', 'PA-2026-045 - AUTO#ev0#1792703892149', 'o', 1, 'x', 'jpg')))))"
+# reversión: vuelve a la versión anterior (no reconoce el número con espacios) y se puede reaplicar la corrección
+Q -f supabase/propuestas/egress/super_api_foto_acceso_reversion.sql >/dev/null && [ "$(Q -At -c "select public.nexa_foto_acceso('ev','PA-2026-045_-_AUTO','PA-2026-045_-_AUTO#ev0#1792703892149',false)")" = f ] && ok "reversión: vuelve a la versión anterior (la foto del plan con espacios deja de reconocerse)" || fallo "reversión"
+Q -At -f $A/super_api_funciones.sql >/dev/null && [ "$(Q -At -c "select public.nexa_foto_acceso('ev','PA-2026-045_-_AUTO','PA-2026-045_-_AUTO#ev0#1792703892149',false)")" = t ] && ok "y reaplicar la corrección la restablece (reconoce la foto del plan con espacios)" || fallo "reaplicar tras reversión"
 # casos concretos con las políticas reales
 Q -At > $T/casos.txt <<'SQL'
 create temp table r (u text, ev_lee boolean, ev_escribe boolean, ref_lee_propia boolean, ref_lee_ajena boolean, ref_escribe boolean, auto_lee_clave boolean, auto_lee_plan boolean, auto_escribe boolean);
