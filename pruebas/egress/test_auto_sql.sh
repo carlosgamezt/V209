@@ -68,6 +68,6 @@ Q -At -f $P/auto_e2_compactar.sql | grep -v '^COMMIT$' > /tmp/e2_$$.json 2>/tmp/
 python3 - /tmp/e2_$$.json <<'PY' && ok "E2 automática: 96 miniaturas ya estaban separadas, 0 imágenes embebidas, la vista ligera es idéntica antes y después, permisos de escritura idénticos" || fallo "resultado de E2"
 import json, sys
 v = json.loads(open(sys.argv[1]).read())
-assert v['miniaturas_que_estaban_embebidas'] == 96 and v['planes_con_imagenes_embebidas_ahora'] == 0 and v['matriz_escritura_identica_casos'] > 0 and v['miniaturas_en_pa_thumbs'] >= 96, v
+assert v['miniaturas_que_estaban_embebidas'] == 96 and v['planes_con_imagenes_embebidas_ahora'] == 0 and v['matriz_escritura_identica_casos'] > 0 and v['miniaturas_en_pa_thumbs'] >= 96 and v['respaldo_actualizado_planes'] > 0 and v['politicas_rls_identicas'] and v['updated_at_intacto'] and v['reversion_reproduce_el_respaldo'], v
 PY
 echo "PRUEBAS DE LOS SQL AUTOMÁTICOS OK"

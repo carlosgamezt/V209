@@ -203,12 +203,11 @@ async function enviar(a: any, avisos: any[]) {
   return enviados
 }
 
-// Autenticación de las tareas programadas. FASE 1 de la rotación: se acepta el secreto de la base (tabla nexa_cron_secret, comprobado con nexa_cron_check, sin que la función lo lea)
-// y, mientras dure la transición, también el CRON_SECRET anterior del entorno. La fase 2 elimina esta segunda vía.
+// Autenticación de las tareas programadas: el secreto vive solo en la base (tabla nexa_cron_secret) y se comprueba con nexa_cron_check; la función no lo lee ni lo registra.
+// (El CRON_SECRET del entorno ya no se usa: quedó anulado en la rotación.)
 async function autorizado(req: Request) {
   const h = req.headers.get('x-cron-secret') || ''
   if (!h || h.length > 200) return false
-  if (env('CRON_SECRET') && h === env('CRON_SECRET')) return true
   try { const { data } = await db().rpc('nexa_cron_check', { p: h }); return data === true } catch (_) { return false }
 }
 
