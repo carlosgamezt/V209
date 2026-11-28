@@ -12,6 +12,8 @@ Aplica a NEXA principal y, sin modificarlos ahora, a NEXA FEL, POS, Hotel, inven
 9. **Compatibilidad hacia atrás.** Toda migración se aplica con clientes antiguos activos: no pierde datos, no pisa evidencias y se prueba con el cliente anterior.
 10. **Toda migración es aditiva, idempotente, con respaldo previo y reversión independiente** (y se prueba la recuperación, no solo el respaldo).
 11. **Todo ahorro se mide** (banco de pruebas con datos equivalentes) y se confirma en Supabase real antes de declararlo.
+12. **Tareas programadas y funciones**: leer vistas ligeras con columnas mínimas, medir y registrar lo que leen cada corrida y no regresar en silencio a la consulta pesada.
+13. **Independencia entre módulos y arquitectura multiempresa**: cada módulo con sus esquemas, permisos y contrato de API propios; `empresa_id` y membresías desde el inicio; sin tablas compartidas entre módulos; el núcleo común (identidad, empresas, planes) se consulta por API estable.
 ## 2. Reglas de implementación
 - Diseño de datos: separar metadatos livianos de cuerpos pesados; claves estables (`k`) para recursos externos; ninguna columna JSON con binarios.
 - Consultas: paginación o conjunto de trabajo con totales; filtros en la base; índices revisados con `EXPLAIN` para los filtros usados; límites explícitos.
@@ -32,3 +34,8 @@ Aplica a NEXA principal y, sin modificarlos ahora, a NEXA FEL, POS, Hotel, inven
 - [ ] ¿Qué se mide en Supabase real después y qué cifra se espera?
 ## 4. Pruebas obligatorias (plantillas en `pruebas/egress/`)
 Funcional comparativa por rol (`funcional.cjs`), recuperación de Realtime (`recuperacion.cjs`), caché (`cache_test.cjs`), listados incrementales (`arqueos_test.cjs`), descargas (`descarga_test.cjs`), guardado parcial (`parcial_test.cjs`), matriz de consumo (`escala.cjs`), SQL real con RLS reales (`test_rls_real.sh`, `test_sql.sh`) y mutaciones sobre cada regla nueva.
+
+## 5. Despliegue seguro de migraciones (aprendido en esta intervención)
+Respaldo exacto con huella → vista/migración aditiva en una transacción con **comprobaciones con los perfiles y funciones RLS reales** (lectura, escritura, miniaturas visibles) que la deshacen por completo si algo difiere → resultado (conteos y huellas) en el registro → reversión independiente → higiene del archivo aplicado. Nada se aplica sin respaldo ni validación con los perfiles reales.
+## 6. Caché persistente en equipos compartidos
+Apagada por omisión. Modo `true` (recomendado en equipos compartidos): se borra al cerrar sesión por cualquier motivo (voluntario, inactividad o vencimiento); modo `dispositivo`: solo al cierre voluntario. En ambos: una entrada por persona, se anula al cambiar de perfil, rol, región o sucursal (incluye pérdida de permisos) y se eliminan las copias de otras personas al entrar una nueva.

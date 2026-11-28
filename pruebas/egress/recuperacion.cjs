@@ -12,7 +12,7 @@ async function abrir(browser, port, user) {
   await page.route('**/functions/v1/**', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', exists: true }) }));
   await page.route(/fonts\.(googleapis|gstatic)|jsdelivr/, r => r.abort());
   await page.addInitScript(({ P }) => { window.__EG = P }, { P: { ...DATA, user } }); if (XTRA) await page.addInitScript(XTRA); await page.addInitScript(FAKE); await page.addInitScript(() => { Object.defineProperty(document, 'hidden', { get: () => !!window.__hid, configurable: true }); Object.defineProperty(document, 'visibilityState', { get: () => window.__hid ? 'hidden' : 'visible', configurable: true }) });
-  { const c = arg('cache', ''); await page.addInitScript(({ C }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = Object.assign({}, x, { cache: C }) } }) }, { C: c === 'true' ? true : (c || false) }) }
+  { const c = arg('cache', ''); await page.addInitScript(({ C, OD }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = Object.assign({ odDirect: OD }, x, { cache: C }) } }) }, { C: c === 'true' ? true : (c || false), OD: !process.argv.includes('--odoff') }) }
   await page.clock.install({ time: new Date('2026-11-27T14:00:00Z') });
   await page.goto(`http://127.0.0.1:${port}/index.html`); await page.waitForFunction(() => typeof me !== 'undefined' && me && db, null, { timeout: 60000 }); await page.clock.runFor(2500); return page;
 }

@@ -14,7 +14,7 @@ async function abrir(browser, port, user, B, caps, cache) {
   await page.route('**/functions/v1/**', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', exists: true }) })); await page.route(/fonts\.(googleapis|gstatic)|jsdelivr/, r => r.abort());
   const data = REAL ? { branchCount: B, maxPlans: B, maxTotal: Math.round(B * 5.4), photoPlanRatio: 48 / 146, plansPerBranch: 6, acts: 4, thumbs: 8, notifs: Math.round(B * 37), notifLeidoFrac: 247 / 996, notifViejoFrac: 169 / 247, arqueos: Math.max(16, Math.round(B * 0.6)), descargas: Math.max(18, Math.round(B * 0.7)), mensual: 477, caps } : { branchCount: B, maxPlans: B * 4, plansPerBranch: 1, acts: 3, thumbs: 8, notifs: B * 20, arqueos: Math.min(B * 6, 1500), descargas: B * 5, mensual: 600, caps };
   await page.addInitScript(({ P }) => { window.__EG = P }, { P: { ...data, user } });
-  await page.addInitScript(({ C }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = Object.assign({}, x, { cache: C }) } }) }, { C: cache || false });
+  await page.addInitScript(({ C }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = Object.assign({ odDirect: true }, x, { cache: C }) } }) }, { C: cache || false });
   await page.addInitScript(XTRA); await page.addInitScript(FAKE);
   await page.addInitScript(() => { Object.defineProperty(document, 'hidden', { get: () => !!window.__hid, configurable: true }); Object.defineProperty(document, 'visibilityState', { get: () => window.__hid ? 'hidden' : 'visible', configurable: true }) });
   await page.clock.install({ time: new Date('2026-11-27T14:00:00Z') }); const t0 = Date.now();

@@ -1,0 +1,13 @@
+# Estado en producción (proyecto «pa carlos») — 28-nov-2026
+Aplicado mediante el flujo «Publicar Supabase (SQL y funciones)» (archivos de `supabase/auto/` en `main`), con comprobaciones que detienen o deshacen el paso si algo falla. Los resultados salen del registro público del flujo (solo conteos y huellas).
+| Paso | Commit en `main` | Resultado verificado |
+|---|---|---|
+| **E0** respaldo (`e0_respaldo_pa_docs.sql`) + función `recordatorios-de-nexa` con medición de lectura | a761861 | PostgreSQL 17.11; 1 228 filas de `pa_docs` = 1 228 en el respaldo; **huella idéntica** (`09815505…`); **146 planes y 386 miniaturas en el respaldo** (confirma el conteo real); 14.66 MB; 18 descargas; RLS activa en el respaldo y **0 privilegios** para anon/authenticated; base de 48.9 MB |
+| **E1a** vista ligera (`e1a_vista_ligera.sql`) | 4933ad7 | vista con `security_invoker=true`; 1 059 filas en la vista de 1 228 (169 avisos antiguos y leídos omitidos, como midió el usuario); 146 planes sin imágenes; planes **14 114 KB → 324 KB (−97.7 %)**; datos idénticos al respaldo; **0 filas visibles sin sesión** (no elude RLS); 0 disparadores en `pa_docs` |
+| **V1** validación con funciones/políticas reales (`v1_validacion_roles.sql`) | 1a73c69 | **55 perfiles reales** (admin, analista, gerencia, comodín ×2, inventarios ×2, rol personalizado, 42 sucursales, 5 supervisores): la vista ligera da **las mismas filas que la tabla en los 55**; se guardó la matriz de escritura de referencia (932 casos perfil × plan); 0 rechazos por WITH CHECK |
+## Pendiente / bloqueado
+- **E1** (miniaturas aparte): archivo `supabase/propuestas/egress/auto_e1_miniaturas.sql`, probado localmente, listo para copiarse a `supabase/auto/e1_miniaturas.sql` en `main`. El intento de publicarlo fue **bloqueado por el control de permisos de la sesión** (migración de producción): requiere tu aprobación explícita de esa acción. Se deshace por completo si falla cualquier comprobación (integridad de miniaturas, matriz de escritura idéntica a V1, lectura idéntica y sin miniaturas de planes no visibles para ninguno de los 55 perfiles).
+- **Medición real** de las tareas programadas: la primera corrida con la función nueva es a las 12:00 UTC (6:00 GT). Mientras tanto se puede probar con `supabase/consultas/probar_tareas_programadas.sql` (modo dry, sin avisos).
+- **E3**, **v515** (cliente) y descarga directa de OneDrive (inactiva hasta validar CORS: `PA_CONFIG.odDirect`).
+## Higiene tras aplicar
+Los archivos `v1_*` y `e1_*` no deben quedar como están en `supabase/auto/` (una ejecución manual completa del flujo los repetiría y se detendrían porque `pa_docs` ya cambió); tras aplicarlos se sustituyen por un archivo inerte.

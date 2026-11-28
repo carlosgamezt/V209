@@ -2390,10 +2390,10 @@ function zipBlob(files){const enc=new TextEncoder(),parts=[],cen=[],d=new Date()
 const b64ToBytes=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u};
 const DLCH=3000000;
 const catBytes=ps=>{let n=0;ps.forEach(u=>n+=u.length);const o=new Uint8Array(n);let p=0;ps.forEach(u=>{o.set(u,p);p+=u.length});return o};
-/* v514 · HALLAZGO DE EGRESS: al descargar un plan (informe + fotos originales) cada foto pasaba en base64 por la función super-api, o sea, por Supabase. Ahora se baja DIRECTO de OneDrive con su enlace temporal (no cuenta como Egress de Supabase); si el navegador no puede leerla (CORS/red) se usa la función como antes y se recuerda 24 h para no reintentar. */
+/* v515 · INACTIVA por omisión (se activa con PA_CONFIG.odDirect = true tras validar CORS/permisos de OneDrive). HALLAZGO DE EGRESS: al descargar un plan (informe + fotos originales) cada foto pasaba en base64 por la función super-api, o sea, por Supabase. Ahora se baja DIRECTO de OneDrive con su enlace temporal (no cuenta como Egress de Supabase); si el navegador no puede leerla (CORS/red) se usa la función como antes y se recuerda 24 h para no reintentar. */
 const OD_FLAG='nx_od_direct';const odOff=()=>{try{const t=+localStorage.getItem(OD_FLAG)||0;return t&&Date.now()-t<864e5}catch(e){return false}};const odMark=()=>{try{localStorage.setItem(OD_FLAG,String(Date.now()))}catch(e){}};
 async function cloudBytes(name){
- if(!odOff()){try{const u=await PhotoCloud.url(name);if(u){const r=await fetch(u,{credentials:'omit',referrerPolicy:'no-referrer'});if(r.ok){const b=new Uint8Array(await r.arrayBuffer()),cl=+r.headers.get('content-length')||0;if(b.length&&(!cl||cl===b.length))return b}}}catch(e){odMark()}}
+ if(PA_CFG.odDirect===true&&!odOff()){try{const u=await PhotoCloud.url(name);if(u){const r=await fetch(u,{credentials:'omit',referrerPolicy:'no-referrer'});if(r.ok){const b=new Uint8Array(await r.arrayBuffer()),cl=+r.headers.get('content-length')||0;if(b.length&&(!cl||cl===b.length))return b}}}catch(e){odMark()}}
  const ps=[];let off=0,total=Infinity;while(off<total){const j=await Fn.call({action:'photo_data',name,offset:off,length:DLCH});if(!j.ok||!j.data)return null;total=j.total;const u=b64ToBytes(j.data);if(!u.length)break;ps.push(u);off+=u.length}return total===off?catBytes(ps):null}
 async function getFull(ph){if(!ph)return null;const x=ph.x||'jpg';
  if(Supa.on&&ph.o){const b=await cloudBytes(origName(ph.k,x));if(b)return{bytes:b,kind:'orig',x}}
