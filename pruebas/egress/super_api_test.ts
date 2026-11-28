@@ -5,11 +5,12 @@ const T: Record<string, any> = { admin: { auth_id: 'a1', user_id: 'admin', role:
 const bearer = (k: string) => 'Bearer tok-' + k
 const store = new Map<string, Uint8Array>(), log: string[] = [], calls: Record<string, number> = {}
 const cnt = (k: string) => { calls[k] = (calls[k] || 0) + 1 }
+const vistos: any[] = []
 let rpcFoto: (tok: string, b: any) => any = () => true, pendMode = 'ok', dlFail = 0
 const pa_docs: any[] = [
   { col: 'users', id: 's1', data: { id: 's1', role: 'sucursal', region: '1', branch: 'Mixco', name: 'Mixco' } }, { col: 'users', id: 'sup2', data: { id: 'sup2', role: 'supervisor', region: '2' } },
   { col: 'plans', id: 'PA-1', data: { id: 'PA-1', region: '1', branch: 'Mixco', acts: [] } }, { col: 'plans', id: 'PA-2', data: { id: 'PA-2', region: '1', branch: 'Mixco', acts: [] } },
-  { col: 'users', id: 'u9', data: { role: 'sucursal', region: '1', branch: 'Mixco' } }, { col: 'plans', id: 'PA-9', data: { id: 'PA-9', region: '1', branch: 'X', status: 'En proceso', acts: [{ st: 'Pendiente' }] } }]
+  { col: 'users', id: 'u9', data: { role: 'sucursal', region: '1', branch: 'Mixco' } }, { col: 'plans', id: 'PA-2026-045 - AUTO', data: { id: 'PA-2026-045 - AUTO', region: '9', branch: 'Otra', acts: [] } }, { col: 'plans', id: 'PA-9', data: { id: 'PA-9', region: '1', branch: 'X', status: 'En proceso', acts: [{ st: 'Pendiente' }] } }]
 const trash: any[] = [{ id: 'T1', payload: { plans: [{ id: 'PA-7', data: { acts: [{ ev: { k: 'PA-7#ev1#1795000000001', o: 1, x: 'jpg' }, ref: { k: 'ref#1795000000002' } }] } }] } }]
 const jr = (o: unknown, s = 200, h: Record<string, string> = {}) => s === 204 ? new Response(null, { status: 204 }) : new Response(JSON.stringify(o), { status: s, headers: { 'content-type': 'application/json', ...h } })
 const getp = (u: URL, k: string) => u.searchParams.get(k) || ''
@@ -17,9 +18,10 @@ function filtra(rows: any[], u: URL) {
   let r = rows
   for (const [k, v] of u.searchParams) {
     if (['select', 'order', 'limit'].includes(k)) continue
-    const m = /^(eq|in)\.(.*)$/.exec(v); if (!m) continue
+    const m = /^(eq|in|like)\.(.*)$/.exec(v); if (!m) continue
     const get = (x: any) => { if (k.startsWith('data->>')) return x.data && x.data[k.slice(7)] !== undefined ? String(x.data[k.slice(7)]) : undefined; return x[k] }
-    if (m[1] === 'eq') r = r.filter((x) => String(get(x)) === m[2])
+    if (m[1] === 'like') { const re = new RegExp('^' + m[2].replace(/[.*+?^${}()|[\]\\-]/g, '\\$&').replace(/_/g, '.').replace(/%/g, '.*') + '$'); r = r.filter((x) => re.test(String(get(x)))) }
+    else if (m[1] === 'eq') r = r.filter((x) => String(get(x)) === m[2])
     else { const set = new Set(m[2].replace(/^\(|\)$/g, '').split(',').map((s) => s.replace(/^"|"$/g, ''))); r = r.filter((x) => set.has(String(get(x)))) }
   }
   return r
@@ -30,7 +32,7 @@ const fake = Deno.serve({ port: 0, onListen() {} }, async (req) => {
   const respond = (rows: any[]) => single ? (rows.length ? jr(rows[0]) : jr({ code: 'PGRST116', message: 'no rows' }, 406)) : jr(rows)
   if (p === '/auth/v1/user') { const k = auth.replace('Bearer tok-', ''); return T[k] ? jr({ id: T[k].auth_id }) : jr({ message: 'bad' }, 401) }
   if (p === '/rest/v1/pa_profiles') return respond(filtra(Object.values(T), u).filter((x: any) => !u.searchParams.get('auth_id') || x.auth_id === u.searchParams.get('auth_id').replace('eq.', '')).concat([]))
-  if (p === '/rest/v1/rpc/nexa_foto_acceso') { cnt('rpc_foto'); const b = await req.json(); const r = rpcFoto(auth, b); return r === 'error' ? jr({ message: 'no existe la función' }, 404) : jr(r) }
+  if (p === '/rest/v1/rpc/nexa_foto_acceso') { cnt('rpc_foto'); const b = await req.json(); vistos.push(b); const r = rpcFoto(auth, b); return r === 'error' ? jr({ message: 'no existe la función' }, 404) : jr(r) }
   if (p === '/rest/v1/rpc/nexa_push_pendientes') { cnt('rpc_push'); return pendMode === 'ok' ? jr({ u1: 3 }) : jr({ message: 'no existe' }, 404) }
   if (p === '/rest/v1/rpc/pa_docs_patch') { cnt('patch'); const b = await req.json(); log.push('patch ' + b.p_id + ' ' + JSON.stringify(b.p_ops)); const row = pa_docs.find((x) => x.col === b.p_col && x.id === b.p_id); if (!row) return jr(null); for (const o of b.p_ops) row.data[o.path[0]] = o.value; return jr('2026-11-28T10:00:00Z') }
   if (p === '/rest/v1/pa_push') { cnt('pa_push'); return jr([]) }
@@ -38,7 +40,7 @@ const fake = Deno.serve({ port: 0, onListen() {} }, async (req) => {
   if (p === '/rest/v1/pa_thumbs') { log.push('thumbs ' + req.method + ' ' + u.search); return jr({}, 204) }
   if (p === '/rest/v1/pa_trash') { if (req.method === 'DELETE') { cnt('trash_del'); return jr({}, 204) } return respond(filtra(trash, u)) }
   if (p === '/rest/v1/pa_docs') {
-    cnt('pa_docs_' + req.method + '_' + (getp(u, 'col').replace('eq.', '') || 'x'))
+    cnt('pa_docs_' + req.method + '_' + (getp(u, 'col').replace('eq.', '') || 'x') + (getp(u, 'id').startsWith('like.') ? '_like' : ''))
     if (req.method === 'PATCH') { const b = await req.json(); for (const r of filtra(pa_docs, u)) r.data = b.data; log.push('update ' + u.search); return jr({}, 204) }
     if (req.method === 'GET') return respond(filtra(pa_docs, u))
     return jr({}, 204)
@@ -97,6 +99,9 @@ r = await S.call('suc', { action: 'get', name: 'ARQ_123_v1_dep_1795000000001.jpg
 r = await S.call('otra', { action: 'put_begin', name: 'ARQ_123_v1_dep_1795000000001.jpg', size: 100 }); ok(r.s === 403, 'enforce: la sucursal NO sube comprobantes de arqueo')
 rpcFoto = () => 'error'; r = await S.call('suc', { action: 'get', name: EV }); ok(r.s === 403, 'enforce: si la comprobación falla se NIEGA (falla cerrada)')
 rpcFoto = (tok, b) => { const w = tok.replace('Bearer tok-', ''); if (b.p_tipo === 'ev') return w === 'suc' || w === 'admin' || (w === 'sup' && !b.p_escritura); if (b.p_tipo === 'ref') return b.p_escritura ? ['admin', 'sup'].includes(w) : w !== 'otra'; return false }
+// plan automático con espacios en el número: el servidor resuelve el número REAL y la función SQL recibe número y clave exactos
+vistos.length = 0; r = await S.call('suc', { action: 'photo_data', name: 'PA-2026-045_-_AUTO_ev0_1792703892149.jpg', offset: 0, length: 100 }); ok(vistos.length === 1 && vistos[0].p_planid === 'PA-2026-045 - AUTO' && vistos[0].p_k === 'PA-2026-045 - AUTO#ev0#1792703892149', 'plan con espacios: la autorización recibe el número y la clave REALES → ' + JSON.stringify(vistos[0]))
+vistos.length = 0; r = await S.call('suc', { action: 'photo_data', name: EV, offset: 0, length: 100 }); ok(vistos.length === 1 && vistos[0].p_planid === 'PA-111' && vistos[0].p_k === 'PA-111#ev1#1795000000001', 'plan normal: sin cambios (número y clave tal cual)')
 // caché del enlace y enlace vencido
 store.set('PA-222_ev1_1795000000555.jpg', PH); calls['graph_meta'] = 0; calls['dl'] = 0
 for (let i = 0; i < 3; i++) await S.call('suc', { action: 'photo_data', name: 'PA-222_ev1_1795000000555.jpg', offset: i * 700000, length: 700000 })

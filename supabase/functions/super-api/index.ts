@@ -179,7 +179,7 @@ function classifyPhoto(name) {
   if (name === 'prueba_conexion.jpg') return { t: 'prueba' }
   const base = name.replace(/_orig\.[a-z0-9]+$/i, '').replace(/\.(jpe?g|png|webp|heic|heif)$/i, '')
   let m = /^(.+)_ev(\d+)_(\d{10,})$/.exec(base)
-  if (m) return { t: 'ev', planId: m[1], k: `${m[1]}#ev${m[2]}#${m[3]}` }
+  if (m) return { t: 'ev', planId: m[1], n: m[2], ts: m[3], k: `${m[1]}#ev${m[2]}#${m[3]}` }
   m = /^ref_(\d{10,})$/.exec(base)
   if (m) return { t: 'ref', k: `ref#${m[1]}` }
   if (/^ARQ_/.test(name)) return { t: 'arq' }
@@ -190,9 +190,21 @@ async function photoAllowed(req, me, name, write) {
   if (c.t === 'prueba') return { ok: me.role === 'admin', why: 'prueba: solo administrador' }
   if (c.t === 'arq') return { ok: write ? ['admin', 'supervisor'].includes(me.role) : ['admin', 'supervisor', 'sucursal'].includes(me.role), why: 'comprobante de arqueo: rol ' + me.role }
   if (c.t === 'otro') return { ok: me.role === 'admin', why: 'nombre sin plan asociado' }
-  const { data, error } = await userDb(req).rpc('nexa_foto_acceso', { p_tipo: c.t, p_planid: c.planId || null, p_k: c.k || null, p_escritura: !!write })
-  if (error) throw new Error('nexa_foto_acceso: ' + error.message)
-  return { ok: data === true, why: (write ? 'escritura' : 'lectura') + ' de ' + c.t + ' sin permiso sobre el plan' }
+  // Evidencia: el archivo trae el número del plan con los símbolos cambiados por «_» (p. ej. «PA-2026-045_-_AUTO» por «PA-2026-045 - AUTO»). Se resuelve al número REAL con una consulta del servidor
+  // (solo devuelve números de plan; no concede nada) y la PERSONA se comprueba, con sus propios permisos, sobre ese plan y esa clave exactos.
+  let intentos = [{ planId: c.planId || null, k: c.k || null }]
+  if (c.t === 'ev') {
+    const san = (x) => String(x).replace(/[^A-Za-z0-9_.-]/g, '_')
+    const { data: cand } = await db().from('pa_docs').select('id').eq('col', 'plans').like('id', c.planId).limit(20)
+    const reales = (cand || []).map((r) => String(r.id)).filter((id) => san(id) === c.planId)
+    if (reales.length) intentos = reales.map((id) => ({ planId: id, k: `${id}#ev${c.n}#${c.ts}` }))
+  }
+  for (const it of intentos) {
+    const { data, error } = await userDb(req).rpc('nexa_foto_acceso', { p_tipo: c.t, p_planid: it.planId, p_k: it.k, p_escritura: !!write })
+    if (error) throw new Error('nexa_foto_acceso: ' + error.message)
+    if (data === true) return { ok: true, why: 'permitido' }
+  }
+  return { ok: false, why: (write ? 'escritura' : 'lectura') + ' de ' + c.t + ' sin permiso sobre el plan' }
 }
 // Devuelve una respuesta de rechazo (solo en modo enforce) o null si se puede continuar. En modo log solo deja constancia.
 async function guardPhoto(req, me, name, write) {

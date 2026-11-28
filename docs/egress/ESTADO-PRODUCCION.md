@@ -48,3 +48,12 @@ Funcional 5 roles × vistas (PC y teléfono) idéntico a v512 con base actual y 
 | Service Worker | Solo archivos propios (la app, librería, íconos); no intercepta datos ni fotos; no afecta al Egress de Supabase |
 | Consultas y guardado | Listados incrementales por `updated_at`; guardado parcial con E3 (probado concurrencia); miniaturas bajo demanda |
 **Conclusión:** no queda ninguna optimización de Egress técnicamente justificada sin implementar; lo que falta es **activar** (caché persistente, descarga/subida directa de OneDrive) y **medir** en Usage. E2 reduce tamaño de base, no Egress.
+
+## 28-nov (tarde): v517, autorización de fotos y fotos de planes con espacios
+| Paso | Resultado |
+|---|---|
+| v517 publicada (`e5a9736`): OneDrive directo y caché solo administrador | Flujo en verde; `nexa/` idéntico al candidato 96f5c8c (24 de 24 pruebas); CORS real validado por el usuario (descarga 200, subida 201) |
+| Auditoría de nombres de foto en producción | 386 claves: 190 evidencias + 196 referencias, todas con clase; 3 evidencias de planes automáticos con espacios en el número no se reconocerían al obligar la autorización con la lógica actual |
+| Intento de publicar la corrección SQL `abb824e` (`9c3e8cb`) | **Falló por tiempo (statement timeout) y se deshizo sola: producción sin cambios.** Causa: búsqueda por número saneado con barrido y RLS por fila repetida miles de veces |
+| Solución elegida | `super-api` resuelve el número REAL del plan (consulta del servidor, solo ids) y la función SQL ya desplegada recibe número y clave exactos. Verificado en producción con la función desplegada: **386/386 fotos reconocidas, 190 evidencias con plan único, 0 ambiguas** (`verificar_fotos_funcion.sql`). Permisos sin ampliar: el SQL de permisos no cambia |
+| Pendiente de autorización | Publicar: restaurar `supabase/auto/super_api_funciones.sql` a su versión probada (en `main` quedó la versión pesada del intento, inerte salvo que se vuelva a ejecutar) y desplegar `super-api` con la resolución. `PHOTO_AUTH` sigue en modo registro |
