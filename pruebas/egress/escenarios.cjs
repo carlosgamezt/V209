@@ -15,7 +15,7 @@ async function nuevo(browser, port, user, opts = {}) {
   await page.route('**/functions/v1/**', async r => { const b = JSON.stringify({ ok: true, url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', exists: true }); fnlog.push(b.length + 600); await r.fulfill({ contentType: 'application/json', body: b }) });
   await page.route(/fonts\.(googleapis|gstatic)|jsdelivr/, r => r.abort());
   await page.addInitScript(({ P }) => { window.__EG = P }, { P: { ...DATA, user, caps: opts.caps || DATA.caps || {} } });
-  { const c = arg('cache', ''); await page.addInitScript(({ C, OD }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = Object.assign({ odDirect: OD }, x, { cache: C }) } }) }, { C: c === 'true' ? true : (c || false), OD: !process.argv.includes('--odoff') }) }
+  { const c = arg('cache', ''); await page.addInitScript(({ C, OD, RC }) => { let v; Object.defineProperty(window, 'PA_CONFIG', { configurable: true, get: () => v, set: x => { v = RC ? x : Object.assign({}, x, { odDirect: OD, cache: C, cacheRoles: undefined }) } }) }, { C: c === 'true' ? true : (c || false), OD: !process.argv.includes('--odoff'), RC: process.argv.includes('--realcfg') }) }
   if (XTRA) await page.addInitScript(XTRA);
   await page.addInitScript(FAKE);
   await page.addInitScript(() => { Object.defineProperty(document, 'hidden', { get: () => !!window.__hid, configurable: true }); Object.defineProperty(document, 'visibilityState', { get: () => window.__hid ? 'hidden' : 'visible', configurable: true }) });

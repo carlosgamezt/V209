@@ -35,3 +35,15 @@ Dependencias revisadas: `super-api` (código recibido) no lo usa; `recordatorios
 
 ## 8. Consumo real (a los 3 días completos)
 Supabase → **Project Settings → Usage** (o Organization → Usage) → **Egress** → rango «Last 7 days» o el ciclo actual. Anota el total diario de los últimos días. Nota: las tareas programadas leen por PostgreSQL → función (tráfico interno), que puede o no contarse como Egress; si el número baja pero no lo suficiente, lo medimos por rutas con los registros de la API.
+
+## 9. Android: activación solo para administrador (v517, preparada, NO publicada)
+**Qué cambia:** en la configuración de la app (`PA_CONFIG`) quedan `odDirect: 'admin'`, `cache: true` y `cacheRoles: ['admin']`. Solo las cuentas de administrador usan la descarga/subida directa de OneDrive y la copia local (modo sesión: se borra al cerrar sesión). Sucursal, supervisor, inventarios y los demás siguen exactamente igual que hoy. Probado: configuración real, por rol, en escritorio y en pantalla de teléfono (`activacion_test.cjs`).
+**Antes de publicar:** tu piloto en PC (§4 y §5) sin problemas y los registros `photo_auth_deny` sin casos legítimos. Cuando me autorices, publico solo ese cambio (v517) y lo verifico.
+**Comprobación en el Android (con tu cuenta de administrador):**
+1. Cierra y abre NEXA (si la instalaste como app, ciérrala del todo y ábrela). En el encabezado debe verse **v517**. Si ves v516, abre NEXA en Chrome, espera unos segundos y vuelve a abrirla.
+2. Descarga un plan con fotos: el archivo debe abrir completo, con las fotos nítidas (no miniaturas).
+3. Sube una foto a una actividad de prueba; luego mira desde la computadora que se vea completa.
+4. Cierra sesión (Salir), vuelve a entrar con el mismo usuario: debe cargar normal (la copia local se borró al salir).
+5. Entra con una cuenta de sucursal en el mismo teléfono: debe verse y funcionar igual que antes (sin cambios).
+**Confirmar que de verdad va directo (no por Supabase), desde la computadora:** (a) En el Android: Ajustes → Acerca del teléfono → toca 7 veces «Número de compilación»; luego Ajustes → Sistema → Opciones de desarrollador → activa «Depuración por USB». (b) Conecta el teléfono a la computadora por USB y acepta el aviso en el teléfono. (c) En Chrome de la computadora abre `chrome://inspect/#devices`, espera a que aparezca el teléfono con la pestaña de NEXA y presiona **inspect**. (d) En la ventana que abre: pestaña **Network**, escribe `super-api` en el filtro, haz la descarga del plan desde el teléfono: NO deben aparecer peticiones `photo_data` (sí pueden verse `get`, que son pequeñas); y las fotos deben bajar desde un dominio `sharepoint.com`. Si ves muchos `photo_data`, la descarga directa no se usó (el teléfono cayó al camino anterior): avísame con una captura.
+**Reversión:** se publica `odDirect: false` y `cache: false` (cada una por separado si hace falta). Además, cada equipo se autoprotege 24 horas tras un fallo de OneDrive, y al apagar la copia local se borra sola en la siguiente apertura de la app. No pierde datos ni fotos.
