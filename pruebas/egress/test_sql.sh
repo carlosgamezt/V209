@@ -12,7 +12,7 @@ Q() { "$PGBIN/psql" -h /tmp -p $PORT -U postgres -d nexa -v ON_ERROR_STOP=1 -q -
 ok() { echo "OK    $1"; }; fallo() { echo "FALLO $1"; exit 1; }
 "$PGBIN/psql" -h /tmp -p $PORT -U postgres -d postgres -q -X -c "create database nexa"
 Q <<'SQL'
-create role anon nologin; create role authenticated nologin;
+create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
 create function public.pa_uid() returns text language sql stable as $$ select nullif(current_setting('app.uid', true), '') $$;
 create function public.pa_role() returns text language sql stable as $$ select nullif(current_setting('app.role', true), '') $$;
 create table public.pa_docs (col text not null, id text not null, data jsonb not null, updated_at timestamptz not null default now(), primary key (col, id));
@@ -47,6 +47,20 @@ if Q -f $P/E0_respaldo.sql >/dev/null 2>&1; then fallo "E0 sobrescribió un resp
 Q <<'SQL' 2>&1 | grep -q "E0 ACCESO OK" && echo "OK    E0: las tablas de respaldo no son legibles por la app (authenticated/anon)" || { echo "FALLO acceso al respaldo"; exit 1; }
 do $$ begin set local role authenticated; begin perform 1 from public.pa_docs_respaldo_e0 limit 1; assert false, 'authenticated no debe leer el respaldo'; exception when insufficient_privilege then null; end; reset role; raise notice 'E0 ACCESO OK'; end $$;
 SQL
+# ---------- E1a (solo la vista ligera: para las tareas programadas; no cambia nada para los clientes) ----------
+HASH0=$(Q -At -c "select md5(string_agg(data::text, '' order by col, id)) from public.pa_docs")
+Q -f $P/E1a_vista_ligera.sql >/dev/null 2>&1 && ok "E1a aplica (solo vista + función; sin tablas ni disparadores)"
+[ "$(Q -At -c "select md5(string_agg(data::text, '' order by col, id)) from public.pa_docs")" = "$HASH0" ] && ok "E1a no modificó ni un byte de pa_docs" || fallo "E1a modificó pa_docs"
+[ "$(Q -At -c "select count(*) from pg_trigger where tgrelid = 'public.pa_docs'::regclass and not tgisinternal")" = 0 ] && [ "$(Q -At -c "select count(*) from pg_class where relname = 'pa_thumbs'")" = 0 ] && ok "E1a no crea disparadores ni la tabla pa_thumbs (los clientes siguen sin modo ligero)" || fallo "E1a creó de más"
+Q <<'SQL' 2>&1 | tee /tmp/e1a_dbg.log | grep -q "E1A OK" && echo "OK    E1a: la lectura del rol de servicio (tareas programadas) por la vista pesa una fracción y conserva fechas/estados; authenticated ve las mismas filas" || { echo "FALLO E1a lectura"; exit 1; }
+do $$ declare a int; b int; begin
+  select sum(octet_length(data::text)) into a from public.pa_docs where col = 'plans'; select sum(octet_length(data::text)) into b from public.pa_docs_lite where col = 'plans';
+  assert b < a / 10, 'la vista debe pesar mucho menos: ' || b || ' vs ' || a;
+  assert (select count(*) from public.pa_docs_lite where col = 'plans') = (select count(*) from public.pa_docs where col = 'plans');
+  assert not exists (select 1 from public.pa_docs d join public.pa_docs_lite l on l.col = d.col and l.id = d.id where d.col = 'plans' and (l.data -> 'acts' -> 0 -> 'rv') is distinct from (d.data -> 'acts' -> 0 -> 'rv')), 'la vista alteró datos que no son imágenes';
+  raise notice 'E1A OK (% bytes -> % bytes)', a, b; end $$;
+SQL
+Q -f $P/E1a_reversion.sql >/dev/null 2>&1 && [ "$(Q -At -c "select count(*) from pg_class where relname = 'pa_docs_lite'")" = 0 ] && ok "E1a_reversion retira la vista sin tocar datos" || fallo "E1a_reversion"
 # ---------- E1 ----------
 Q -f $P/E1_miniaturas_y_listados.sql >/dev/null; Q -f $P/E1_miniaturas_y_listados.sql >/dev/null; ok "E1 aplica y se puede volver a aplicar (idempotente)"
 [ "$(Q -At -c "select count(*) from public.pa_thumbs")" = 400 ] && ok "E1 copió las 400 miniaturas a pa_thumbs" || fallo "conteo de pa_thumbs"

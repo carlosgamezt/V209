@@ -4,11 +4,13 @@ Supuestos explícitos (cámbialos abajo): composición = 3 administradores + 5 s
 cada día: 1 inicio de sesión + 4 h con la app abierta; administradores y supervisores además 30 min en Arqueos. Los puntos no medidos se extrapolan (ajuste potencial sobre lo medido) y se marcan con *."""
 import json, glob, math, sys
 D = sys.argv[1] if len(sys.argv) > 1 else 'resultados'
+PFX = sys.argv[2] if len(sys.argv) > 2 else 'escala_'
+LOGINS = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0   # inicios de sesión por persona activa y día (la inactividad cierra la sesión a los 30 min en sucursales)
 ADM, SUP, DAU, DIAS, HORAS, ARQ_MIN = 3, 5, 0.7, 26, 4, 30
 VERS = ['v512', 'v513_P0', 'v513_E1', 'v513_E1_E2', 'v514_completa']
 ETQ = {'v512': 'v512 original', 'v513_P0': 'v513 (P0)', 'v513_E1': 'v513 + E1', 'v513_E1_E2': 'v513 + E1 + E2', 'v514_completa': 'v514 completa (+caché*)'}
 R = {}
-for f in glob.glob(f'{D}/escala_*.json'):
+for f in glob.glob(f'{D}/{PFX}*.json'):
     for x in json.load(open(f))['resultados']:
         if 'error' in x and not x.get('admin'): continue
         R.setdefault(x['version'], {})[x['B']] = x
@@ -29,7 +31,7 @@ def fit(v, rol, k, B):
     return math.exp(ic + sl * math.log(B)), True
 def dia(v, rol, B):
     e = False; tot = 0
-    for k, mult in (('login', 1), ('hora', HORAS), ('arq', ARQ_MIN / 5 if rol != 'sucursal' else 0)):
+    for k, mult in (('login', LOGINS), ('hora', HORAS), ('arq', ARQ_MIN / 5 if rol != 'sucursal' else 0)):
         if mult == 0: continue
         y, ex = fit(v, rol, k, B); e = e or ex
         if y is None: return None, True
@@ -53,6 +55,7 @@ for v in VERS:
         print(f"{ETQ[v]:26}{B:5}  {la/1e3:11,.0f}KB{ls/1e3:11,.0f}KB{a['hora_visible']['raw']/1e3:18,.0f}KB{s['hora_visible']['raw']/1e3:17,.0f}KB")
 print('\nPROYECCIÓN MENSUAL (supuestos en la cabecera del archivo; * = extrapolado de lo medido)')
 Us = (35, 100, 250, 500, 1000)
+print(f'(inicios de sesión por persona y día: {LOGINS})')
 print(f"{'usuarios activos mensuales':28}" + ''.join(f"{u:>18}" for u in Us))
 ref = {u: mes('v512', u)[0] for u in Us}
 for v in VERS:
@@ -76,3 +79,10 @@ for v in ('v512', 'v513_E1', 'v514_completa'):
             row.append(f"{by*8/BW + n*RTT:9.1f} s")
         print(f"{ETQ[v]:26}{u:9}{row[0]:>12}{row[1]:>12}")
 print("\nDESCARGA DE PLANES (aparte de la matriz): con las fotos originales, v512–v513 mueven 1.33 MB de Supabase por cada MB de foto original descargada (base64) → 23.3 MB por un plan de 7 fotos de 2.5 MB (medido); v514 con OneDrive legible: ~0.")
+
+# ---- tareas programadas (recordatorios-de-nexa): 71 corridas/día; cada una lee TODOS los planes. Volumen real de producción (medicion_egress.sql): 13.78 MB de planes (146) a ~35 usuarios, 0.32 MB sin miniaturas
+CORR = 71; DIAS_CRON = 30; REAL_MB, LITE_MB = 13.78, 0.32
+print(f"\nTAREAS PROGRAMADAS ({CORR} corridas/día = badge 56 + sin-leer 13 + recordatorios 2; {DIAS_CRON} días; bytes brutos; el volumen escala con los usuarios)")
+print(f"{'':32}" + ''.join(f"{u:>14}" for u in Us))
+print(f"{'lectura de planes por la tabla':32}" + ''.join(f"{G(CORR*DIAS_CRON*REAL_MB*1e6*u/35):>14}" for u in Us))
+print(f"{'lectura por la vista (E1a/E1)':32}" + ''.join(f"{G(CORR*DIAS_CRON*(LITE_MB+0.05)*1e6*u/35):>14}" for u in Us))
