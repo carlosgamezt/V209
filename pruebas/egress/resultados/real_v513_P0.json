@@ -1,0 +1,256 @@
+{
+ "resultados": [
+  {
+   "version": "v513_P0",
+   "B": 27,
+   "plansTotal": 108,
+   "admin": {
+    "login_frio": {
+     "n": 9,
+     "raw": 11549173,
+     "gz": 7951084
+    },
+    "planes": 146,
+    "avisos": 999,
+    "fotos": 384,
+    "cpu_login_ms": 501,
+    "login_caliente": {
+     "n": 5,
+     "raw": 11463750,
+     "gz": 7935290
+    },
+    "cpu_caliente_ms": 492,
+    "hora_visible": {
+     "n": 102,
+     "raw": 93492,
+     "gz": 80748
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 67178,
+     "gz": 24714
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 7,
+     "raw": 6333188,
+     "gz": 4451761
+    },
+    "planes": 84,
+    "avisos": 0,
+    "fotos": 384,
+    "cpu_login_ms": 317,
+    "login_caliente": {
+     "n": 4,
+     "raw": 6321837,
+     "gz": 4448527
+    },
+    "cpu_caliente_ms": 325,
+    "hora_visible": {
+     "n": 96,
+     "raw": 82416,
+     "gz": 82416
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 44553,
+     "gz": 23503
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 485662,
+     "gz": 333753
+    },
+    "planes": 6,
+    "avisos": 46,
+    "fotos": 384,
+    "cpu_login_ms": 135,
+    "login_caliente": {
+     "n": 2,
+     "raw": 485662,
+     "gz": 333753
+    },
+    "cpu_caliente_ms": 150,
+    "hora_visible": {
+     "n": 30,
+     "raw": 33828,
+     "gz": 33828
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_P0",
+   "B": 92,
+   "plansTotal": 368,
+   "admin": {
+    "login_frio": {
+     "n": 10,
+     "raw": 38895773,
+     "gz": 26942106
+    },
+    "planes": 497,
+    "avisos": 3404,
+    "fotos": 1304,
+    "cpu_login_ms": 1339,
+    "login_caliente": {
+     "n": 8,
+     "raw": 38894565,
+     "gz": 26940898
+    },
+    "cpu_caliente_ms": 1208,
+    "hora_visible": {
+     "n": 144,
+     "raw": 192234,
+     "gz": 147474
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 177707,
+     "gz": 26914
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 7,
+     "raw": 8925625,
+     "gz": 6265265
+    },
+    "planes": 114,
+    "avisos": 0,
+    "fotos": 1304,
+    "cpu_login_ms": 441,
+    "login_caliente": {
+     "n": 4,
+     "raw": 8907354,
+     "gz": 6260890
+    },
+    "cpu_caliente_ms": 418,
+    "hora_visible": {
+     "n": 126,
+     "raw": 139854,
+     "gz": 139854
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 55975,
+     "gz": 24301
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 498252,
+     "gz": 335793
+    },
+    "planes": 6,
+    "avisos": 44,
+    "fotos": 1304,
+    "cpu_login_ms": 133,
+    "login_caliente": {
+     "n": 2,
+     "raw": 498252,
+     "gz": 335793
+    },
+    "cpu_caliente_ms": 154,
+    "hora_visible": {
+     "n": 48,
+     "raw": 64692,
+     "gz": 64692
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_P0",
+   "B": 242,
+   "plansTotal": 968,
+   "admin": {
+    "login_frio": {
+     "n": 16,
+     "raw": 102812810,
+     "gz": 71222043
+    },
+    "planes": 1307,
+    "avisos": 8954,
+    "fotos": 3448,
+    "cpu_login_ms": 3326,
+    "login_caliente": {
+     "n": 14,
+     "raw": 102811602,
+     "gz": 71220835
+    },
+    "cpu_caliente_ms": 3278,
+    "hora_visible": {
+     "n": 258,
+     "raw": 8733276,
+     "gz": 6210246
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 426177,
+     "gz": 32975
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 7,
+     "raw": 19278044,
+     "gz": 13515171
+    },
+    "planes": 252,
+    "avisos": 0,
+    "fotos": 3448,
+    "cpu_login_ms": 767,
+    "login_caliente": {
+     "n": 4,
+     "raw": 19239081,
+     "gz": 13507941
+    },
+    "cpu_caliente_ms": 738,
+    "hora_visible": {
+     "n": 204,
+     "raw": 8588070,
+     "gz": 6158850
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 82723,
+     "gz": 25519
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 525046,
+     "gz": 339355
+    },
+    "planes": 6,
+    "avisos": 41,
+    "fotos": 3448,
+    "cpu_login_ms": 176,
+    "login_caliente": {
+     "n": 2,
+     "raw": 525046,
+     "gz": 339355
+    },
+    "cpu_caliente_ms": 165,
+    "hora_visible": {
+     "n": 48,
+     "raw": 64992,
+     "gz": 64992
+    },
+    "errores": []
+   }
+  }
+ ]
+}

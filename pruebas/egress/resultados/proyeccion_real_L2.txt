@@ -1,0 +1,49 @@
+POR SESIÓN (medido; bytes brutos, sin comprimir)
+versión                       B   inicio admin  inicio suc.  hora abierta admin  hora abierta suc.
+v512 original                27       11,465KB        486KB            15,390KB            1,392KB
+v512 original                92       38,896KB        498KB            52,073KB            2,283KB
+v512 original               242      102,813KB        525KB           153,223KB            4,100KB
+v513 (P0)                    27       11,549KB        486KB                93KB               34KB
+v513 (P0)                    92       38,896KB        498KB               192KB               65KB
+v513 (P0)                   242      102,813KB        525KB             8,733KB               65KB
+v513 + E1                    27          365KB         25KB                93KB               34KB
+v513 + E1                    92        1,215KB         38KB               190KB               65KB
+v513 + E1                   242        3,176KB         66KB               438KB               65KB
+v513 + E1                   492        6,462KB        110KB               839KB               66KB
+v513 + E1                   992       13,067KB        207KB             1,658KB               78KB
+v514 completa (+caché*)      27           13KB          3KB                93KB               34KB
+v514 completa (+caché*)      92           28KB          4KB               190KB               65KB
+v514 completa (+caché*)     242           61KB          4KB               438KB               65KB
+v514 completa (+caché*)     492          117KB          5KB               839KB               66KB
+v514 completa (+caché*)     992          230KB          7KB             1,658KB               78KB
+
+PROYECCIÓN MENSUAL (supuestos en la cabecera del archivo; * = extrapolado de lo medido)
+(inicios de sesión por persona y día: 2.0)
+usuarios activos mensuales                  35               100               250               500              1000
+v512 original                         10.38 GB          37.42 GB         138.86 GB        328.73 GB*        831.21 GB*
+v513 (P0)                              3.05 GB           8.16 GB          25.72 GB         50.52 GB*        122.81 GB*
+v513 + E1                              0.23 GB           0.85 GB           2.41 GB           5.67 GB          15.62 GB
+v513 + E1 + E2                             n/d               n/d               n/d               n/d               n/d
+v514 completa (+caché*)                0.15 GB           0.59 GB           1.46 GB           2.99 GB           6.76 GB
+Ahorro de v514 vs v512                   98.5%             98.4%             98.9%             99.1%             99.2%
+
+Definición de usuarios: activos mensuales = U; activos diarios = 70 % de U; concurrentes ≈ 20–25 % de los diarios (no cambian la cantidad total de datos, sí el pico de conexiones Realtime: límite gratuito 200).
+
+INICIO DE SESIÓN: tiempo de red estimado en 4G (10 Mbps, 80 ms/solicitud, cota superior; el procesamiento local no está incluido)
+versión                    usuarios       admin    sucursal
+v512 original                    35       9.7 s       0.5 s
+v512 original                   250      83.5 s       0.6 s
+v512 original                  1000     337.9 s       0.6 s
+v513 + E1                        35       1.0 s       0.3 s
+v513 + E1                       250       3.9 s       0.4 s
+v513 + E1                      1000      14.0 s       0.6 s
+v514 completa (+caché*)          35       0.6 s       0.4 s
+v514 completa (+caché*)         250       0.6 s       0.4 s
+v514 completa (+caché*)        1000       0.7 s       0.4 s
+
+DESCARGA DE PLANES (aparte de la matriz): con las fotos originales, v512–v513 mueven 1.33 MB de Supabase por cada MB de foto original descargada (base64) → 23.3 MB por un plan de 7 fotos de 2.5 MB (medido); v514 con OneDrive legible: ~0.
+
+TAREAS PROGRAMADAS (71 corridas/día = badge 56 + sin-leer 13 + recordatorios 2; 30 días; bytes brutos; el volumen escala con los usuarios)
+                                            35           100           250           500          1000
+lectura de planes por la tabla        29.35 GB      83.86 GB     209.65 GB     419.31 GB     838.61 GB
+lectura por la vista (E1a/E1)          0.79 GB       2.25 GB       5.63 GB      11.26 GB      22.52 GB
