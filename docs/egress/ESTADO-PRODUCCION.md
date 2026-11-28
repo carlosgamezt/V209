@@ -17,3 +17,10 @@ Funcional 5 roles × vistas (PC y teléfono) idéntico a v512 con base actual y 
 - **OneDrive:** validar CORS y permisos (consola, `PLAN-V514-Y-VENTANA-E1.md` §1.1) antes de activar `odDirect`.
 - **Medición real** en Usage tras 3 días completos (`PROCEDIMIENTO-MEDICION-REAL.md`).
 - E2 (opcional) y caché persistente: sin aplicar.
+
+## Preparado y probado en local (NO publicado; pendiente de tu autorización)
+- **Recuperación desde E0 que preserva lo legítimo posterior** (`E0_recuperacion.sql`): fusiona los planes indicados (conserva lo actual y agrega solo las claves que faltan), no reinserta filas eliminadas a propósito salvo que se indiquen, no pisa avisos leídos ni planes nuevos. Probado con edición, plan nuevo, plan eliminado, aviso leído, plan vacío y plan con clave borrada.
+- **E2** (`auto_e2_compactar.sql`): una transacción que se deshace si la vista ligera cambia (huella idéntica antes/después), si falta una miniatura o si cambia quién puede escribir. Ahorro medido (PG, 200 planes × 8 miniaturas): `pa_docs` 48 MB → 184 KB, lectura de la vista 93 → 37 ms; **Egress adicional: 0** para clientes v513+ (la vista ya omite las miniaturas). En producción `pa_docs` bajaría de 19.3 MB a unos 5 MB. Se aplicaría solo con tu autorización.
+- **Caché persistente** (apagada): validada además con permisos revocados (el plan que deja de ser visible desaparece de la pantalla y de la copia local) y con cambio de rol (copia rehecha).
+- **Descarga directa de OneDrive:** ver `ONEDRIVE-DESCARGA-DIRECTA.md` (enlace vencido probado).
+- **Auditoría de Edge Functions:** `arqueos` y `supervision-sucursal` leen filas puntuales o tablas pequeñas (sin hallazgos); `recordatorios-de-nexa` ya lee la vista ligera; `super-api` sin acceso.

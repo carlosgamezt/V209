@@ -27,8 +27,8 @@ async function vista(page, v) { await page.evaluate(x => { try { go(x) } catch (
 (async () => {
   await new Promise(r => srv.listen(0, '127.0.0.1', r)); const port = srv.address().port, browser = await chromium.launch(); let fallo = 0;
   const ok = (c, m) => { console.log((c ? 'OK    ' : 'FALLO ') + m); if (!c) fallo++ };
-  const PH = 2.5e6, CORS = arg('od', 'cors') === 'cors';   // foto original simulada de 2.5 MB; OneDrive con o sin cabecera CORS
-  const od = require('http').createServer((q, r) => { const h = { 'content-type': 'application/octet-stream', 'content-length': PH }; if (CORS) h['access-control-allow-origin'] = '*'; r.writeHead(200, h); r.end(Buffer.alloc(PH, 7)) }); await new Promise(r => od.listen(0, '127.0.0.1', r)); const odPort = od.address().port;
+  const PH = 2.5e6, MODO = arg('od', 'cors'), CORS = MODO === 'cors' || MODO === 'exp';   // foto original simulada de 2.5 MB; OneDrive con o sin cabecera CORS
+  const od = require('http').createServer((q, r) => { if (MODO === 'exp') { r.writeHead(403, { 'access-control-allow-origin': '*' }); return r.end('expired') } const h = { 'content-type': 'application/octet-stream', 'content-length': PH }; if (CORS) h['access-control-allow-origin'] = '*'; r.writeHead(200, h); r.end(Buffer.alloc(PH, 7)) }); await new Promise(r => od.listen(0, '127.0.0.1', r)); const odPort = od.address().port;
   const page = await abrir(browser, port, 'admin'); const fn = { bytes: 0, llamadas: {} }; let directo = 0;
   await page.route('**/functions/v1/**', async r => { const b = JSON.parse(r.request().postData() || '{}'); let out;
     if (b.action === 'get') out = { ok: true, url: `http://127.0.0.1:${odPort}/${encodeURIComponent(b.name)}`, exists: true };
@@ -42,7 +42,7 @@ async function vista(page, v) { await page.evaluate(x => { try { go(x) } catch (
   const d2 = await bajar(); console.log('      descarga 2:', JSON.stringify(d2));
   console.log('RESUMEN ' + JSON.stringify({ od: CORS ? 'con CORS' : 'sin CORS', fotos: plan.fotos, egressSupabase_descarga1_MB: +d1.fnMB, egressSupabase_descarga2_MB: +d2.fnMB, desdeOneDrive_descarga1_MB: +d1.directoMB }));
   ok(d2.fotosEnZip === plan.fotos, 'la segunda descarga también es completa');
-  if (process.argv.includes('--directo')) ok(!CORS || +d1.fnMB < 1, 'con OneDrive legible, las fotos NO pasan por Supabase (' + d1.fnMB + ' MB de la función)');
-  if (process.argv.includes('--directo') && !CORS) ok(d2.intentosOneDrive === 0 && !(d2.llamadas.get > 0), 'sin CORS: se recuerda y no se reintenta (segunda descarga: ' + d2.intentosOneDrive + ' intentos a OneDrive)');
+  if (process.argv.includes('--directo')) ok(MODO !== 'cors' || +d1.fnMB < 1, 'con OneDrive legible, las fotos NO pasan por Supabase (' + d1.fnMB + ' MB de la función)');
+  if (process.argv.includes('--directo') && MODO === 'nocors') ok(d2.intentosOneDrive === 0 && !(d2.llamadas.get > 0), 'sin CORS: se recuerda y no se reintenta (segunda descarga: ' + d2.intentosOneDrive + ' intentos a OneDrive)');
   console.log(fallo ? 'DESCARGA FALLO ' + fallo : 'DESCARGA OK'); await browser.close(); srv.close(); od.close(); process.exit(fallo ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1) });

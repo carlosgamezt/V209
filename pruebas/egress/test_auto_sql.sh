@@ -63,4 +63,11 @@ import json, sys
 v = json.loads(open(sys.argv[1]).read())
 assert v['funcion_existe'] and v['security_invoker'] and not v['ejecutable_por_anon'] and v['ejecutable_por_authenticated'] and v['casos_perfil_x_plan_con_mismo_permiso_que_E1'] > 0, v
 PY
+# E2 automática (preparada, no aplicada en producción)
+Q -At -f $P/auto_e2_compactar.sql | grep -v '^COMMIT$' > /tmp/e2_$$.json 2>/tmp/e2err_$$.txt || { head -3 /tmp/e2err_$$.txt; fallo "E2 automática falló"; }
+python3 - /tmp/e2_$$.json <<'PY' && ok "E2 automática: 96 miniaturas ya estaban separadas, 0 imágenes embebidas, la vista ligera es idéntica antes y después, permisos de escritura idénticos" || fallo "resultado de E2"
+import json, sys
+v = json.loads(open(sys.argv[1]).read())
+assert v['miniaturas_que_estaban_embebidas'] == 96 and v['planes_con_imagenes_embebidas_ahora'] == 0 and v['matriz_escritura_identica_casos'] > 0 and v['miniaturas_en_pa_thumbs'] >= 96, v
+PY
 echo "PRUEBAS DE LOS SQL AUTOMÁTICOS OK"

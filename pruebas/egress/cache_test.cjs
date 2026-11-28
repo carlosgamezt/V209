@@ -62,6 +62,16 @@ const kb = n => Math.round(n / 1024);
   if (MODO === 'dispositivo') ok(i6.rows > 0, 'modo dispositivo: el cierre por inactividad CONSERVA la copia (' + i6.rows + ' filas)'); else ok(i6.rows === 0, 'modo sesión: cualquier cierre borra la copia');
   await ev(async () => { me = null; db = null; window.__lo = 0; await Supa.afterLogin() }); await page.clock.runFor(4000);
   await ev(() => { window.__lo = 1; window.__idle = 0; Supa.cleanup() }); await page.clock.runFor(1000); const i7 = await idb(); ok(i7.rows === 0 && i7.meta === 0, 'cierre de sesión voluntario: la copia local se borra por completo');
+  // 7) permisos revocados: un supervisor pierde la visibilidad de un plan (cambia de región) → tras volver a entrar el plan desaparece de la pantalla Y de la copia local; perfil cambiado → copia anulada
+  { const us = await ev(() => __EG.api.db.__users); const sup = us.find(u => u.role === 'supervisor').id; const pg = await abrir(browser, port, sup), e2 = (fn, a) => pg.evaluate(fn, a);
+    await pg.clock.runFor(4000); const pid = await e2(() => db.plans[0] && db.plans[0].id); ok(!!pid, 'supervisor con planes visibles y copia guardada');
+    await e2(id => { const d = __EG.api.db.pa_docs.find(x => x.col === 'plans' && x.id === id); d.data.region = '99'; d.updated_at = new Date().toISOString(); Supa.cleanup(); me = null; db = null }, pid);
+    await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(6000);
+    ok(!(await e2(id => db.plans.some(p => p.id === id), pid)), 'plan que dejó de ser visible (permiso/región revocados) desaparece tras volver a entrar');
+    const en = await e2(async id => { const d = await PCache.open(); return await new Promise(r => { const q = d.transaction('rows').objectStore('rows').getAllKeys(); q.onsuccess = () => r(q.result.some(k => k.endsWith('|plans|' + id))) }) }, pid);
+    ok(!en, 'y desaparece también de la copia local (invalidación por conteo + listado completo)');
+    await e2(() => { __EG.api.db.pa_profiles.find(p => p.user_id === Supa.profile.user_id).role = 'visualizador'; Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(4000);
+    ok(await e2(() => Supa.profile.role) === 'visualizador' && (await e2(() => db.plans.length)) > 0 && (await e2(() => PCache.fp())).includes('visualizador'), 'cambio de rol: la copia se rehace con el perfil nuevo (huella distinta)'); }
   console.log(fallo ? 'CACHE FALLO ' + fallo : 'CACHE OK'); await browser.close(); srv.close(); process.exit(fallo ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1) });
 let R_warm = 0;
