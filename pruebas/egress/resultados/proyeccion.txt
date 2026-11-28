@@ -1,0 +1,48 @@
+POR SESIÓN (medido; bytes brutos, sin comprimir)
+versión                       B   inicio admin  inicio suc.  hora abierta admin  hora abierta suc.
+v512 original                26        4,219KB        157KB            11,296KB            2,621KB
+v512 original                75       11,978KB        167KB            34,405KB            3,291KB
+v512 original               190       29,990KB        218KB            87,613KB            5,087KB
+v513 (P0)                    26        4,219KB        157KB             2,084KB              874KB
+v513 (P0)                    75       12,096KB        167KB             5,951KB              880KB
+v513 (P0)                   190       29,990KB        218KB            14,651KB            1,057KB
+v513 + E1                    26           86KB         12KB               100KB               17KB
+v513 + E1                    75          231KB         22KB               192KB               18KB
+v513 + E1                   190          564KB         43KB               398KB               19KB
+v513 + E1                   375        1,102KB         78KB               751KB               18KB
+v513 + E1                   750        2,198KB        148KB             1,447KB               18KB
+v513 + E1 + E2               26           86KB         12KB               100KB               17KB
+v513 + E1 + E2               75          231KB         22KB               192KB               18KB
+v513 + E1 + E2              190          564KB         43KB               398KB               19KB
+v513 + E1 + E2              375        1,102KB         78KB               751KB               18KB
+v513 + E1 + E2              750        2,198KB        148KB             1,447KB               18KB
+v514 completa (+caché*)      26           14KB          3KB               100KB               17KB
+v514 completa (+caché*)      75           27KB          3KB               192KB               18KB
+v514 completa (+caché*)     190           57KB          3KB               398KB               19KB
+v514 completa (+caché*)     375          105KB          3KB               751KB               18KB
+v514 completa (+caché*)     750          203KB          3KB             1,447KB               18KB
+
+PROYECCIÓN MENSUAL (supuestos en la cabecera del archivo; * = extrapolado de lo medido)
+usuarios activos mensuales                  35               100               250               500              1000
+v512 original                        11.77 GB*         45.32 GB*        140.26 GB*        330.44 GB*        784.98 GB*
+v513 (P0)                             3.74 GB*         12.06 GB*         31.39 GB*         64.27 GB*        131.77 GB*
+v513 + E1                             0.18 GB*          0.41 GB*          0.98 GB*          2.14 GB*          5.26 GB*
+v513 + E1 + E2                        0.18 GB*          0.41 GB*          0.98 GB*          2.14 GB*          5.26 GB*
+v514 completa (+caché*)               0.17 GB*          0.35 GB*          0.70 GB*          1.22 GB*          2.18 GB*
+Ahorro de v514 vs v512                   98.6%             99.2%             99.5%             99.6%             99.7%
+
+Definición de usuarios: activos mensuales = U; activos diarios = 70 % de U; concurrentes ≈ 20–25 % de los diarios (no cambian la cantidad total de datos, sí el pico de conexiones Realtime: límite gratuito 200).
+
+INICIO DE SESIÓN: tiempo de red estimado en 4G (10 Mbps, 80 ms/solicitud, cota superior; el procesamiento local no está incluido)
+versión                    usuarios       admin    sucursal
+v512 original                    35       4.0 s       0.3 s
+v512 original                   250      31.2 s       0.3 s
+v512 original                  1000     123.2 s       0.4 s
+v513 + E1                        35       0.7 s       0.3 s
+v513 + E1                       250       1.3 s       0.4 s
+v513 + E1                      1000       3.4 s       0.5 s
+v514 completa (+caché*)          35       0.6 s       0.4 s
+v514 completa (+caché*)         250       0.6 s       0.4 s
+v514 completa (+caché*)        1000       0.7 s       0.4 s
+
+DESCARGA DE PLANES (aparte de la matriz): con las fotos originales, v512–v513 mueven 1.33 MB de Supabase por cada MB de foto original descargada (base64) → 23.3 MB por un plan de 7 fotos de 2.5 MB (medido); v514 con OneDrive legible: ~0.

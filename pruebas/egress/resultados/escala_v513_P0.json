@@ -1,0 +1,238 @@
+{
+ "resultados": [
+  {
+   "version": "v513_P0",
+   "B": 26,
+   "plansTotal": 104,
+   "admin": {
+    "login_frio": {
+     "n": 6,
+     "raw": 4218904,
+     "gz": 2899814
+    },
+    "planes": 26,
+    "cpu_login_ms": 286,
+    "login_caliente": {
+     "n": 4,
+     "raw": 4217696,
+     "gz": 2898606
+    },
+    "cpu_caliente_ms": 284,
+    "hora_visible": {
+     "n": 102,
+     "raw": 2083656,
+     "gz": 1439892
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 419637,
+     "gz": 29984
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 6,
+     "raw": 2228568,
+     "gz": 1569538
+    },
+    "planes": 14,
+    "cpu_login_ms": 184,
+    "login_caliente": {
+     "n": 4,
+     "raw": 2227360,
+     "gz": 1568330
+    },
+    "cpu_caliente_ms": 197,
+    "hora_visible": {
+     "n": 96,
+     "raw": 2030610,
+     "gz": 1432614
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 228248,
+     "gz": 25862
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 156503,
+     "gz": 105631
+    },
+    "planes": 1,
+    "cpu_login_ms": 98,
+    "login_caliente": {
+     "n": 2,
+     "raw": 156503,
+     "gz": 105631
+    },
+    "cpu_caliente_ms": 146,
+    "hora_visible": {
+     "n": 18,
+     "raw": 874356,
+     "gz": 625668
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_P0",
+   "B": 75,
+   "plansTotal": 300,
+   "admin": {
+    "login_frio": {
+     "n": 9,
+     "raw": 12095834,
+     "gz": 8252629
+    },
+    "planes": 75,
+    "cpu_login_ms": 479,
+    "login_caliente": {
+     "n": 5,
+     "raw": 11977153,
+     "gz": 8233729
+    },
+    "cpu_caliente_ms": 481,
+    "hora_visible": {
+     "n": 138,
+     "raw": 5950608,
+     "gz": 4086594
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 1155758,
+     "gz": 46406
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 6,
+     "raw": 2771383,
+     "gz": 1943674
+    },
+    "planes": 18,
+    "cpu_login_ms": 226,
+    "login_caliente": {
+     "n": 4,
+     "raw": 2770175,
+     "gz": 1942466
+    },
+    "cpu_caliente_ms": 229,
+    "hora_visible": {
+     "n": 120,
+     "raw": 5711736,
+     "gz": 4053108
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 291334,
+     "gz": 28424
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 166993,
+     "gz": 107847
+    },
+    "planes": 1,
+    "cpu_login_ms": 151,
+    "login_caliente": {
+     "n": 2,
+     "raw": 166993,
+     "gz": 107847
+    },
+    "cpu_caliente_ms": 145,
+    "hora_visible": {
+     "n": 18,
+     "raw": 879540,
+     "gz": 629814
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_P0",
+   "B": 190,
+   "plansTotal": 760,
+   "admin": {
+    "login_frio": {
+     "n": 10,
+     "raw": 29989734,
+     "gz": 20629852
+    },
+    "planes": 190,
+    "cpu_login_ms": 1145,
+    "login_caliente": {
+     "n": 8,
+     "raw": 29988526,
+     "gz": 20628644
+    },
+    "cpu_caliente_ms": 1056,
+    "hora_visible": {
+     "n": 216,
+     "raw": 14651400,
+     "gz": 10268826
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 1542130,
+     "gz": 54505
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 6,
+     "raw": 5631845,
+     "gz": 3939325
+    },
+    "planes": 37,
+    "cpu_login_ms": 403,
+    "login_caliente": {
+     "n": 4,
+     "raw": 5630637,
+     "gz": 3938117
+    },
+    "cpu_caliente_ms": 343,
+    "hora_visible": {
+     "n": 144,
+     "raw": 9163884,
+     "gz": 6458862
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 570416,
+     "gz": 33626
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 218102,
+     "gz": 132220
+    },
+    "planes": 1,
+    "cpu_login_ms": 151,
+    "login_caliente": {
+     "n": 2,
+     "raw": 218102,
+     "gz": 132220
+    },
+    "cpu_caliente_ms": 135,
+    "hora_visible": {
+     "n": 18,
+     "raw": 1057080,
+     "gz": 755880
+    },
+    "errores": []
+   }
+  }
+ ]
+}

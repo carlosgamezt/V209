@@ -1,0 +1,394 @@
+{
+ "resultados": [
+  {
+   "version": "v514_completa",
+   "B": 26,
+   "plansTotal": 104,
+   "admin": {
+    "login_frio": {
+     "n": 8,
+     "raw": 86441,
+     "gz": 14363
+    },
+    "planes": 26,
+    "cpu_login_ms": 143,
+    "login_caliente": {
+     "n": 7,
+     "raw": 13832,
+     "gz": 5916
+    },
+    "cpu_caliente_ms": 161,
+    "hora_visible": {
+     "n": 102,
+     "raw": 100128,
+     "gz": 82440
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 105152,
+     "gz": 26900
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 33733,
+     "gz": 10170
+    },
+    "planes": 14,
+    "cpu_login_ms": 143,
+    "login_caliente": {
+     "n": 7,
+     "raw": 18935,
+     "gz": 7800
+    },
+    "cpu_caliente_ms": 152,
+    "hora_visible": {
+     "n": 96,
+     "raw": 87846,
+     "gz": 87846
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 64884,
+     "gz": 24483
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 11844,
+     "gz": 4382
+    },
+    "planes": 1,
+    "cpu_login_ms": 107,
+    "login_caliente": {
+     "n": 5,
+     "raw": 3420,
+     "gz": 3420
+    },
+    "cpu_caliente_ms": 145,
+    "hora_visible": {
+     "n": 18,
+     "raw": 17040,
+     "gz": 17040
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v514_completa",
+   "B": 75,
+   "plansTotal": 300,
+   "admin": {
+    "login_frio": {
+     "n": 8,
+     "raw": 231335,
+     "gz": 30410
+    },
+    "planes": 75,
+    "cpu_login_ms": 172,
+    "login_caliente": {
+     "n": 7,
+     "raw": 26801,
+     "gz": 6908
+    },
+    "cpu_caliente_ms": 177,
+    "hora_visible": {
+     "n": 138,
+     "raw": 192120,
+     "gz": 139596
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 241219,
+     "gz": 35837
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 53852,
+     "gz": 13242
+    },
+    "planes": 18,
+    "cpu_login_ms": 186,
+    "login_caliente": {
+     "n": 7,
+     "raw": 21207,
+     "gz": 10068
+    },
+    "cpu_caliente_ms": 168,
+    "hora_visible": {
+     "n": 120,
+     "raw": 130656,
+     "gz": 130656
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 73778,
+     "gz": 26761
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 21576,
+     "gz": 5977
+    },
+    "planes": 1,
+    "cpu_login_ms": 117,
+    "login_caliente": {
+     "n": 5,
+     "raw": 3420,
+     "gz": 3420
+    },
+    "cpu_caliente_ms": 152,
+    "hora_visible": {
+     "n": 18,
+     "raw": 17736,
+     "gz": 17736
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v514_completa",
+   "B": 190,
+   "plansTotal": 760,
+   "admin": {
+    "login_frio": {
+     "n": 9,
+     "raw": 563705,
+     "gz": 66127
+    },
+    "planes": 190,
+    "cpu_login_ms": 251,
+    "login_caliente": {
+     "n": 7,
+     "raw": 56895,
+     "gz": 9365
+    },
+    "cpu_caliente_ms": 228,
+    "hora_visible": {
+     "n": 216,
+     "raw": 398076,
+     "gz": 264978
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 321441,
+     "gz": 42057
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 111272,
+     "gz": 16607
+    },
+    "planes": 37,
+    "cpu_login_ms": 208,
+    "login_caliente": {
+     "n": 7,
+     "raw": 38063,
+     "gz": 8494
+    },
+    "cpu_caliente_ms": 184,
+    "hora_visible": {
+     "n": 144,
+     "raw": 189120,
+     "gz": 163788
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 124171,
+     "gz": 29360
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 42833,
+     "gz": 8607
+    },
+    "planes": 1,
+    "cpu_login_ms": 207,
+    "login_caliente": {
+     "n": 5,
+     "raw": 3423,
+     "gz": 3423
+    },
+    "cpu_caliente_ms": 156,
+    "hora_visible": {
+     "n": 18,
+     "raw": 19272,
+     "gz": 19272
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v514_completa",
+   "B": 375,
+   "plansTotal": 1500,
+   "admin": {
+    "login_frio": {
+     "n": 12,
+     "raw": 1102940,
+     "gz": 125573
+    },
+    "planes": 375,
+    "cpu_login_ms": 333,
+    "login_caliente": {
+     "n": 7,
+     "raw": 105329,
+     "gz": 12841
+    },
+    "cpu_caliente_ms": 295,
+    "hora_visible": {
+     "n": 360,
+     "raw": 750768,
+     "gz": 486774
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 352263,
+     "gz": 45664
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 9,
+     "raw": 206391,
+     "gz": 26264
+    },
+    "planes": 68,
+    "cpu_login_ms": 352,
+    "login_caliente": {
+     "n": 7,
+     "raw": 67776,
+     "gz": 11542
+    },
+    "cpu_caliente_ms": 246,
+    "hora_visible": {
+     "n": 144,
+     "raw": 212970,
+     "gz": 166500
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 153497,
+     "gz": 31756
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 77789,
+     "gz": 13155
+    },
+    "planes": 1,
+    "cpu_login_ms": 222,
+    "login_caliente": {
+     "n": 5,
+     "raw": 3423,
+     "gz": 3423
+    },
+    "cpu_caliente_ms": 191,
+    "hora_visible": {
+     "n": 18,
+     "raw": 18408,
+     "gz": 18408
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v514_completa",
+   "B": 750,
+   "plansTotal": 3000,
+   "admin": {
+    "login_frio": {
+     "n": 15,
+     "raw": 2198753,
+     "gz": 243454
+    },
+    "planes": 750,
+    "cpu_login_ms": 621,
+    "login_caliente": {
+     "n": 7,
+     "raw": 202932,
+     "gz": 20245
+    },
+    "cpu_caliente_ms": 427,
+    "hora_visible": {
+     "n": 642,
+     "raw": 1446768,
+     "gz": 889764
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 414968,
+     "gz": 48432
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 9,
+     "raw": 395112,
+     "gz": 43998
+    },
+    "planes": 130,
+    "cpu_login_ms": 702,
+    "login_caliente": {
+     "n": 7,
+     "raw": 126448,
+     "gz": 15950
+    },
+    "cpu_caliente_ms": 321,
+    "hora_visible": {
+     "n": 174,
+     "raw": 302634,
+     "gz": 212652
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 156008,
+     "gz": 31470
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 147912,
+     "gz": 22077
+    },
+    "planes": 1,
+    "cpu_login_ms": 366,
+    "login_caliente": {
+     "n": 5,
+     "raw": 3425,
+     "gz": 3425
+    },
+    "cpu_caliente_ms": 217,
+    "hora_visible": {
+     "n": 18,
+     "raw": 17838,
+     "gz": 17838
+    },
+    "errores": []
+   }
+  }
+ ]
+}

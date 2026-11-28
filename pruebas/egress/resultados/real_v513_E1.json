@@ -1,0 +1,424 @@
+{
+ "resultados": [
+  {
+   "version": "v513_E1",
+   "B": 27,
+   "plansTotal": 108,
+   "admin": {
+    "login_frio": {
+     "n": 9,
+     "raw": 364957,
+     "gz": 43255
+    },
+    "planes": 146,
+    "avisos": 831,
+    "fotos": 384,
+    "cpu_login_ms": 215,
+    "login_caliente": {
+     "n": 7,
+     "raw": 363749,
+     "gz": 42047
+    },
+    "cpu_caliente_ms": 171,
+    "hora_visible": {
+     "n": 102,
+     "raw": 92724,
+     "gz": 92724
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 34522,
+     "gz": 24161
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 107138,
+     "gz": 13640
+    },
+    "planes": 84,
+    "avisos": 0,
+    "fotos": 384,
+    "cpu_login_ms": 167,
+    "login_caliente": {
+     "n": 6,
+     "raw": 105930,
+     "gz": 12432
+    },
+    "cpu_caliente_ms": 149,
+    "hora_visible": {
+     "n": 96,
+     "raw": 82416,
+     "gz": 82416
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 28225,
+     "gz": 23092
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 24960,
+     "gz": 5846
+    },
+    "planes": 6,
+    "avisos": 39,
+    "fotos": 384,
+    "cpu_login_ms": 129,
+    "login_caliente": {
+     "n": 4,
+     "raw": 24960,
+     "gz": 5846
+    },
+    "cpu_caliente_ms": 138,
+    "hora_visible": {
+     "n": 30,
+     "raw": 33828,
+     "gz": 33828
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_E1",
+   "B": 92,
+   "plansTotal": 368,
+   "admin": {
+    "login_frio": {
+     "n": 11,
+     "raw": 1214689,
+     "gz": 131440
+    },
+    "planes": 497,
+    "avisos": 2842,
+    "fotos": 1304,
+    "cpu_login_ms": 266,
+    "login_caliente": {
+     "n": 9,
+     "raw": 1213481,
+     "gz": 130232
+    },
+    "cpu_caliente_ms": 200,
+    "hora_visible": {
+     "n": 144,
+     "raw": 189930,
+     "gz": 147366
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 65452,
+     "gz": 25570
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 160419,
+     "gz": 19267
+    },
+    "planes": 114,
+    "avisos": 0,
+    "fotos": 1304,
+    "cpu_login_ms": 195,
+    "login_caliente": {
+     "n": 6,
+     "raw": 159211,
+     "gz": 18059
+    },
+    "cpu_caliente_ms": 157,
+    "hora_visible": {
+     "n": 126,
+     "raw": 139854,
+     "gz": 139854
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 31483,
+     "gz": 23805
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 38293,
+     "gz": 7651
+    },
+    "planes": 6,
+    "avisos": 40,
+    "fotos": 1304,
+    "cpu_login_ms": 140,
+    "login_caliente": {
+     "n": 4,
+     "raw": 38293,
+     "gz": 7651
+    },
+    "cpu_caliente_ms": 151,
+    "hora_visible": {
+     "n": 48,
+     "raw": 64692,
+     "gz": 64692
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_E1",
+   "B": 242,
+   "plansTotal": 968,
+   "admin": {
+    "login_frio": {
+     "n": 17,
+     "raw": 3175863,
+     "gz": 338971
+    },
+    "planes": 1307,
+    "avisos": 7451,
+    "fotos": 3448,
+    "cpu_login_ms": 541,
+    "login_caliente": {
+     "n": 15,
+     "raw": 3174655,
+     "gz": 337763
+    },
+    "cpu_caliente_ms": 314,
+    "hora_visible": {
+     "n": 264,
+     "raw": 438018,
+     "gz": 325260
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 130232,
+     "gz": 29892
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 356357,
+     "gz": 31167
+    },
+    "planes": 252,
+    "avisos": 0,
+    "fotos": 3448,
+    "cpu_login_ms": 314,
+    "login_caliente": {
+     "n": 6,
+     "raw": 355149,
+     "gz": 29959
+    },
+    "cpu_caliente_ms": 229,
+    "hora_visible": {
+     "n": 204,
+     "raw": 291792,
+     "gz": 269286
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 39862,
+     "gz": 24877
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 66099,
+     "gz": 11024
+    },
+    "planes": 6,
+    "avisos": 41,
+    "fotos": 3448,
+    "cpu_login_ms": 245,
+    "login_caliente": {
+     "n": 4,
+     "raw": 66099,
+     "gz": 11024
+    },
+    "cpu_caliente_ms": 180,
+    "hora_visible": {
+     "n": 48,
+     "raw": 64992,
+     "gz": 64992
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_E1",
+   "B": 492,
+   "plansTotal": 1968,
+   "admin": {
+    "login_frio": {
+     "n": 26,
+     "raw": 6461946,
+     "gz": 681470
+    },
+    "planes": 2657,
+    "avisos": 15143,
+    "fotos": 7008,
+    "cpu_login_ms": 1238,
+    "login_caliente": {
+     "n": 24,
+     "raw": 6460738,
+     "gz": 680262
+    },
+    "cpu_caliente_ms": 635,
+    "hora_visible": {
+     "n": 444,
+     "raw": 838884,
+     "gz": 606180
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 235464,
+     "gz": 37065
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 8,
+     "raw": 674594,
+     "gz": 52861
+    },
+    "planes": 474,
+    "avisos": 0,
+    "fotos": 7008,
+    "cpu_login_ms": 643,
+    "login_caliente": {
+     "n": 6,
+     "raw": 673386,
+     "gz": 51653
+    },
+    "cpu_caliente_ms": 259,
+    "hora_visible": {
+     "n": 324,
+     "raw": 533196,
+     "gz": 492222
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 64039,
+     "gz": 27165
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 4,
+     "raw": 110097,
+     "gz": 16648
+    },
+    "planes": 6,
+    "avisos": 31,
+    "fotos": 7008,
+    "cpu_login_ms": 588,
+    "login_caliente": {
+     "n": 4,
+     "raw": 110097,
+     "gz": 16648
+    },
+    "cpu_caliente_ms": 207,
+    "hora_visible": {
+     "n": 48,
+     "raw": 66444,
+     "gz": 66444
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v513_E1",
+   "B": 992,
+   "plansTotal": 3968,
+   "admin": {
+    "login_frio": {
+     "n": 44,
+     "raw": 13067359,
+     "gz": 1370687
+    },
+    "planes": 5357,
+    "avisos": 30548,
+    "fotos": 14136,
+    "cpu_login_ms": 3826,
+    "login_caliente": {
+     "n": 42,
+     "raw": 13066151,
+     "gz": 1369479
+    },
+    "cpu_caliente_ms": 1944,
+    "hora_visible": {
+     "n": 822,
+     "raw": 1657758,
+     "gz": 1185312
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 446292,
+     "gz": 50895
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 9,
+     "raw": 1323255,
+     "gz": 98077
+    },
+    "planes": 924,
+    "avisos": 0,
+    "fotos": 14136,
+    "cpu_login_ms": 2308,
+    "login_caliente": {
+     "n": 7,
+     "raw": 1322047,
+     "gz": 96869
+    },
+    "cpu_caliente_ms": 570,
+    "hora_visible": {
+     "n": 426,
+     "raw": 772632,
+     "gz": 657786
+    },
+    "arqueos_5min": {
+     "n": 34,
+     "raw": 97939,
+     "gz": 28238
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 5,
+     "raw": 207323,
+     "gz": 29403
+    },
+    "planes": 6,
+    "avisos": 45,
+    "fotos": 14136,
+    "cpu_login_ms": 2110,
+    "login_caliente": {
+     "n": 5,
+     "raw": 207323,
+     "gz": 29403
+    },
+    "cpu_caliente_ms": 367,
+    "hora_visible": {
+     "n": 48,
+     "raw": 77838,
+     "gz": 77838
+    },
+    "errores": []
+   }
+  }
+ ]
+}

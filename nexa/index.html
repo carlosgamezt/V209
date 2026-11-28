@@ -9,7 +9,7 @@ window.PA_CONFIG = {
   url: 'https://znicbyzszdztwyecydbl.supabase.co',
   key: 'sb_publishable_dCjC4ID4-ma2fk7G5wN3YA_G7j99weg'
 };
-</script><title>Nexa v513</title>
+</script><title>Nexa v515</title>
 <style>
 :root{--nexa-primary:#4654F5;--nexa-secondary:#747CF5;--nexa-background:#EDEEF9;--nexa-neutral:#D0D2DC;--nexa-surface:#FFFFFF;--nexa-text:#19191D;--nexa-text-secondary:#8B8D9B;--nexa-success:#79ED91;--nexa-danger:#FF5967;--nexa-logo-background:#C1FF72;--nexa-logo-symbol:#000000;--ink:#19191D;--mut:#8B8D9B;--line:#E7E8F3;--pri:#4654F5;--soft:#E8EAFF;--ok:#16a34a;--bad:#ef233c;--warn:#f59e0b}
 *{box-sizing:border-box}button,input,select,textarea{font-family:inherit}body{margin:0;font:14px/1.5 'Plus Jakarta Sans',Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;background:linear-gradient(135deg,#f9fbff,#f1f6fd);color:var(--ink);letter-spacing:-.01em}
@@ -1073,7 +1073,7 @@ new MutationObserver(ms=>{ms.forEach(m=>{m.addedNodes.forEach(fix);if(m.type==='
 <div id="app"><div class="boot" aria-hidden="true"><img src="icon-192.png?v=473" alt="" width="84" height="84"><i></i></div></div>
 <script>
 const CAT={"regions": {"1": {"supervisor": "Jose Boc", "aliases": ["Jose Boc", "Julio Boc"]}, "2": {"supervisor": "Carlos Gamez", "aliases": ["Carlos Gamez"]}, "3": {"supervisor": "Marco Martinez", "aliases": ["Marco Martinez"]}, "4": {"supervisor": "Oscar Chen", "aliases": ["Oscar Chen"]}, "5": {"supervisor": "Edgar Ixcot", "aliases": ["Edgar Ixcot"]}, "6": {"supervisor": "Jarbi Quezada", "aliases": ["Jarbi Quezada", "Jarby Quezada"]}}, "branches": {"Carlos Gamez": ["San Juan Sac.", "Xela 1", "Sacapulas", "Chimaltenango", "Quiche", "Huehuetenango", "Totonicapan", "Jocotenango", "Solola", "Xela 2", "Nebaj", "Tecpan"], "Edgar Ixcot": ["San Marcos", "Escuintla", "Cotzumalguapa", "Chiquimulilla", "Retalhuleu", "Amatitlan", "Mazatenango", "Coatepeque"], "Jarbi Quezada": ["Barberena", "El Progreso", "Esquipulas", "Jalapa", "Chiquimula", "Jutiapa", "Guastatoya", "Carr. a El Salvador"], "Julio Boc": ["4ta Calle", "Zona 12, Petapa", "Zona 15", "Zona 5", "Zona 18", "Aguilar Batres, v.n.", "Mixco", "Zona 11 Ventas", "Naranjo", "Zona 9", "Zona 14", "Zona 12, Reformita", "Zona 7", "Zona 11 CD"], "Marco Martinez": ["San. M Petapa", "Villa Canales"], "Oscar Chen": ["Puerto Barrios", "Morales", "Tactic", "Santa Elena", "Zacapa", "Cobán", "Salamá", "Poptún", "La Libertad", "Teculután"], "Construccion": ["Academia 1", "Malacatán", "Fray Bartolomé de las Casas", "Tecpán", "Nebaj", "Poptún - Traslado"], "Hugo Reyes": ["CD 11"], "Jose Estrada": ["Desarrollo IT", "Planta Produccion"], "Luis Antonio": ["Soporte IT", "CD", "Planta Produccion"], "Lusvin Martinez": ["Desarrollo IT", "El Salvador", "Nicaragua"], "Roberto Lopez": ["Administracion"]}};
-const APP_VER='v513';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
+const APP_VER='v515';const VER_LBL=v=>String(v);document.title='Nexa '+VER_LBL(APP_VER);
 const comLabel=()=>((db&&db.cfg&&db.cfg.comLabel)||'').trim()||'Comodín';
 const comNameRe=l=>new RegExp('^'+l.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'( de |\\s\\d+ de )');
 const ROLES_DEF={admin:'Administrador',supervisor:'Supervisor',get comodin(){return comLabel()},inventarios:'Inventarios',visualizador:'Visualizador',analista:'Analista de operaciones',gerencia:'Gerencia',sucursal:'Sucursal'};
@@ -1113,37 +1113,68 @@ const Photos={_d:null,
    Si no hay conexión configurada, la app sigue en modo local de pruebas (sin contraseñas reales). */
 const PA_CFG=window.PA_CONFIG||{},SUPA_URL=PA_CFG.url||'',SUPA_KEY=PA_CFG.key||'';
 let CONN='local',CHG=false,NOCONN='',LOGIN_ERR='',CRED=[],RM=null;
+/* v514 · CACHÉ PERSISTENTE DE DATOS (apagada: se activa con PA_CONFIG.cache = true | 'dispositivo'). Guarda en este equipo, por persona, la última copia ligera de planes/avisos/usuarios; al iniciar sesión solo se piden las filas modificadas desde entonces.
+   Seguridad: una entrada por persona (auth_id); se borra al cambiar de perfil/rol/región/sucursal, al entrar otra persona en el equipo y al cerrar sesión (true = siempre; 'dispositivo' = solo al cerrar sesión voluntariamente, se conserva tras cerrar por inactividad). Los borrados y los planes que dejaron de ser visibles se detectan comparando conteos y con un listado completo al menos cada 24 h. */
+const PCache={FULL_MS:864e5,tm:0,sn:new Map(),dbp:null,
+ on(){return !!PA_CFG.cache&&Supa.lite&&typeof indexedDB!=='undefined'},keep(){return PA_CFG.cache==='dispositivo'},aid(){return Supa.profile&&Supa.profile.auth_id},
+ open(){return this.dbp||(this.dbp=new Promise((ok,ko)=>{try{const r=indexedDB.open('pa_cache',1);r.onupgradeneeded=()=>{r.result.createObjectStore('rows',{keyPath:'k'});r.result.createObjectStore('meta',{keyPath:'id'})};r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error)}catch(e){ko(e)}}))},
+ fp(){const p=Supa.profile||{};return JSON.stringify([2,p.auth_id,p.user_id,p.role,p.region,p.branch,p.assigned])},
+ async purgeOthers(a){try{const d=await this.open();const ids=await new Promise(r=>{const q=d.transaction('meta').objectStore('meta').getAllKeys();q.onsuccess=()=>r(q.result||[]);q.onerror=()=>r([])});for(const o of ids)if(o!==a)await this.wipe(o)}catch(e){}},
+ async start(){if(!this.on())return null;try{const d=await this.open(),a=this.aid();await this.purgeOthers(a);const meta=await new Promise(r=>{const q=d.transaction('meta').objectStore('meta').get(a);q.onsuccess=()=>r(q.result);q.onerror=()=>r(null)});if(!meta||meta.fp!==this.fp()){await this.wipe(a);return null}
+   const rows=await new Promise(r=>{const out=[],q=d.transaction('rows').objectStore('rows').openCursor(IDBKeyRange.bound(a+'|',a+'|\uffff'));q.onsuccess=()=>{const c=q.result;if(c){out.push(c.value);c.continue()}else r(out)};q.onerror=()=>r(null)});
+   if(!rows||!rows.length)return null;this.sn=new Map(rows.map(x=>[x.col+'|'+x.id,x.j+'|'+x.u]));return{meta,rows:rows.map(x=>({col:x.col,id:x.id,data:JSON.parse(x.j),updated_at:x.u}))}}catch(e){return null}},
+ touch(){if(!this.on())return;clearTimeout(this.tm);this.tm=setTimeout(()=>this.flush(),2500)},
+ async flush(){if(!this.on()||!me||!db)return;const snap=new Map(Supa.snap),ua=new Map(Supa.ua||[]),a=this.aid(),fp=this.fp(),lf=Supa.lfull||0;try{const d=await this.open(),put=[],del=[],seen=new Set();
+   snap.forEach((j,k)=>{seen.add(k);const u=ua.get(k)||'',sig=j+'|'+u;if(this.sn.get(k)!==sig){const i=k.indexOf('|');put.push({k:a+'|'+k,col:k.slice(0,i),id:k.slice(i+1),j,u});this.sn.set(k,sig)}});
+   this.sn.forEach((_,k)=>{if(!seen.has(k)){del.push(a+'|'+k);this.sn.delete(k)}});
+   await new Promise((ok,ko)=>{const t=d.transaction(['rows','meta'],'readwrite'),rs=t.objectStore('rows');put.forEach(x=>rs.put(x));del.forEach(k=>rs.delete(k));t.objectStore('meta').put({id:a,fp,savedAt:Date.now(),lfull:lf});t.oncomplete=ok;t.onerror=()=>ko(t.error)})}catch(e){}},
+ async wipe(a){try{const d=await this.open();a=a||this.aid();await new Promise(ok=>{const t=d.transaction(['rows','meta'],'readwrite');if(a){t.objectStore('rows').delete(IDBKeyRange.bound(a+'|',a+'|\uffff'));t.objectStore('meta').delete(a)}else{t.objectStore('rows').clear();t.objectStore('meta').clear()}t.oncomplete=ok;t.onerror=ok})}catch(e){}this.sn=new Map()}};
 /* v513 · Sincronización económica: una sola pestaña hace cada consulta periódica (puerta compartida por localStorage) y avisa a las demás por BroadcastChannel solo cuando algo cambió realmente */
 const Poll={gate(k,ms){try{const key='nx_poll_'+k,t=+localStorage.getItem(key)||0,n=Date.now();if(n-t<ms)return false;localStorage.setItem(key,String(n));return true}catch(e){return true}},
  bc:(()=>{try{return new BroadcastChannel('nexa-sync')}catch(e){return null}})(),on:{},tell(k){try{this.bc&&this.bc.postMessage({k})}catch(e){}}};
 if(Poll.bc)Poll.bc.onmessage=e=>{try{const f=Poll.on[e.data&&e.data.k];if(f&&!document.hidden)f()}catch(x){}};
+/* v515 · GUARDADO PARCIAL: compara el JSON anterior y el nuevo y devuelve solo los cambios puntuales [{path,value}|{path,del}]. Los arreglos de igual largo se comparan elemento a elemento; si el largo cambia se reemplaza el arreglo completo. */
+function diffOps(a,b,path,out){if(a===b)return out;const ta=Object.prototype.toString.call(a),tb=Object.prototype.toString.call(b);
+ if(ta==='[object Object]'&&tb==='[object Object]'){for(const k of Object.keys(b))if(!(k in a))out.push({path:path.concat(k),value:b[k]});else diffOps(a[k],b[k],path.concat(k),out);for(const k of Object.keys(a))if(!(k in b))out.push({path:path.concat(k),del:true})}
+ else if(ta==='[object Array]'&&tb==='[object Array]'&&a.length===b.length){for(let i=0;i<b.length;i++)diffOps(a[i],b[i],path.concat(String(i)),out)}
+ else if(JSON.stringify(a)!==JSON.stringify(b))out.push({path,value:b});return out}
 const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,profiles:[],ch:null,
  cfg(){if(PA_CFG.url&&PA_CFG.key)return{url:PA_CFG.url,key:PA_CFG.key};try{const c=JSON.parse(localStorage.getItem('pa_supa_cfg')||'{}');if(c.off)return{url:'',key:''};return{url:c.url||SUPA_URL,key:c.key||SUPA_KEY}}catch(e){return{url:SUPA_URL,key:SUPA_KEY}}},
  lib(){return window.supabase?Promise.resolve():new Promise((ok,ko)=>{const cargar=(src,sig)=>{const t=document.createElement('script');t.src=src;t.onload=ok;t.onerror=()=>sig?sig():ko(new Error('No se pudo cargar la librería de Supabase (¿hay internet?)'));document.head.appendChild(t)};cargar('supabase.js',()=>cargar('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'))})},
- init(c){this.sb=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}})},
+ init(c){this.sb=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false},global:{headers:{'X-Client-Info':'supabase-js-web/2.45.4 nexa/'+APP_VER}}})},
  path:k=>String(k).replace(/[^\w.-]/g,'_')+'.jpg',
  rows(d){const r=[];['users','plans','notifs'].forEach(c=>(d[c]||[]).forEach(x=>{if(c==='notifs'&&!x.id)x.id='n'+x.ts+'-'+Math.random().toString(36).slice(2,7);r.push({col:c,id:String(x.id),data:x})}));for(const k in d)if(!['users','plans','notifs'].includes(k))r.push({col:'meta',id:k,data:d[k]});return r},
  fromRows(rows){const d={users:[],plans:[],notifs:[]};this.snap.clear();this.ua=new Map();this.maxUa=0;rows.forEach(r=>{this.ua.set(r.col+'|'+r.id,r.updated_at||'');this.bump(r.updated_at);this.snap.set(r.col+'|'+r.id,JSON.stringify(r.data));if(r.col==='meta')d[r.id]=r.data;else(d[r.col]=d[r.col]||[]).push(r.data)});d.plans.sort((a,b)=>String(a.id).localeCompare(String(b.id)));d.notifs.sort((a,b)=>b.ts-a.ts);return d},
  bump(u){const t=u?Date.parse(u):0;if(t>(this.maxUa||0))this.maxUa=t},
  /* v513 · P1: con la migración de miniaturas aplicada (vista pa_docs_lite + tabla pa_thumbs) los planes se leen SIN miniaturas y estas se piden solo al verlas. Sin la migración (o con localStorage nx_nolite=1) todo funciona como antes. */
  lite:false,tbl(){return this.lite?'pa_docs_lite':'pa_docs'},
- async probeLite(){this.lite=false;try{if(localStorage.getItem('nx_nolite')==='1')return;const[a,b]=await Promise.all([this.sb.from('pa_docs_lite').select('id').limit(1),this.sb.from('pa_thumbs').select('k').limit(1)]);this.lite=!(a.error||b.error)}catch(e){this.lite=false}},
- async loadAll(){const rows=[];for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;rows.push(...data);if(data.length<1000)break}return this.fromRows(rows)},
+ async probeLite(){this.lite=false;try{if(localStorage.getItem('nx_nolite')==='1')return;const[a,b]=await Promise.all([this.sb.from('pa_docs_lite').select('id').limit(1),this.sb.from('pa_thumbs').select('k').limit(1)]);this.lite=!(a.error||b.error);this.patch=false;if(this.lite)try{const q=await this.sb.rpc('pa_docs_patch',{p_col:'plans',p_id:'__sonda__',p_ops:[]});this.patch=!q.error}catch(e){}}catch(e){this.lite=false}},
+ async loadAll(fresh){if(!fresh){const c=await PCache.start();if(c){try{const d=await this.loadCached(c);if(d)return d}catch(e){await PCache.wipe()}}}
+  const rows=[];for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;rows.push(...data);if(data.length<1000)break}const d=this.fromRows(rows);this.lfull=Date.now();PCache.touch();return d},
+ /* inicio con caché: solo las filas modificadas desde la última copia (+ un conteo sin cuerpo para detectar borrados o planes que dejaron de ser visibles) */
+ async loadCached(c){const m=new Map(c.rows.map(r=>[r.col+'|'+r.id,r]));this.fromRows(c.rows);const since=new Date(Math.max(0,this.maxUa-300000)).toISOString();
+  for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').gt('updated_at',since).order('updated_at').range(f,f+999);if(error)throw error;data.forEach(r=>m.set(r.col+'|'+r.id,r));if(data.length<1000)break}
+  const cn=await this.sb.from(this.tbl()).select('id',{count:'exact',head:true});if(cn.error)throw cn.error;
+  const rows=[...m.values()],d=this.fromRows(rows);this.lfull=(c.meta&&c.meta.lfull)||0;if(cn.count!==rows.length||Date.now()-this.lfull>PCache.FULL_MS)this._needFull=true;PCache.touch();return d},
  async session(){return(await this.sb.auth.getSession()).data.session},
  async afterLogin(){const s=await this.session();if(!s)throw new Error('Sin sesión');
   const{data:p,error}=await this.sb.from('pa_profiles').select('*').eq('auth_id',s.user.id).maybeSingle();if(error)throw error;
   if(!p)throw new Error('Tu cuenta todavía no tiene permisos en Planes de Acción. Pide al administrador que te cree el acceso.');
-  this.profile=p;await this.probeLite();db=await this.loadAll();const u=db.users.find(x=>x.id===p.user_id);if(!u)throw new Error('Tu usuario no existe en la app. Avisa al administrador.');
-  me=u;if(p.role==='admin'||p.role==='supervisor')await this.loadProfiles();try{await loadDls()}catch(e){}this.listen();CHG=!!p.must_change},
+  window.__idle=0;this.profile=p;await this.probeLite();db=await this.loadAll();const u=db.users.find(x=>x.id===p.user_id);if(!u)throw new Error('Tu usuario no existe en la app. Avisa al administrador.');
+  me=u;if(p.role==='admin'||p.role==='supervisor')await this.loadProfiles();try{await loadDls()}catch(e){}this.listen();CHG=!!p.must_change;if(this._needFull){this._needFull=false;this.refresh(true,true)}},
  async loadProfiles(){const{data}=await this.sb.from('pa_profiles').select('*').order('user_id');this.profiles=data||[]},
- cleanup(){this.tok=null;if(this.rt){clearTimeout(this.rt.tm);this.rt=null}if(this.ch){try{this.sb.removeChannel(this.ch)}catch(e){}this.ch=null}this.snap.clear();this.profile=null;this.profiles=[];CRED=[];CHG=false;RM=null},
- save(d){if(!d)return;const next=new Map(),ch=[];this.rows(d).forEach(r=>{const k=r.col+'|'+r.id,j=JSON.stringify(r.data);next.set(k,j);const old=this.snap.get(k);if(old!==j)ch.push({r,isNew:old===undefined})});
+ cleanup(){try{if(PCache.on()&&(!PCache.keep()||(window.__lo&&!window.__idle)))PCache.wipe();else PCache.flush()}catch(e){}this.tok=null;if(this.rt){clearTimeout(this.rt.tm);this.rt=null}if(this.ch){try{this.sb.removeChannel(this.ch)}catch(e){}this.ch=null}this.snap.clear();this.profile=null;this.profiles=[];CRED=[];CHG=false;RM=null},
+ save(d){if(!d)return;const next=new Map(),ch=[];this.rows(d).forEach(r=>{const k=r.col+'|'+r.id,j=JSON.stringify(r.data);next.set(k,j);const old=this.snap.get(k);if(old!==j)ch.push({r,isNew:old===undefined,old})});
   const del=[];this.snap.forEach((_,k)=>{if(!next.has(k)){const i=k.indexOf('|');del.push({col:k.slice(0,i),id:k.slice(i+1)})}});
-  this.snap=next;if(!ch.length&&!del.length)return;const hk=ch.map(x=>x.r.col+'|'+x.r.id).concat(del.map(x=>x.col+'|'+x.id));this.hold=this.hold||new Map();hk.forEach(k=>{const h=this.hold.get(k)||{n:0,until:0};h.n++;this.hold.set(k,h)});const rel=()=>hk.forEach(k=>{const h=this.hold.get(k);if(h){h.n--;if(h.n<=0)h.until=Date.now()+4000}});
+  this.snap=next;if(!ch.length&&!del.length)return;PCache.touch();const hk=ch.map(x=>x.r.col+'|'+x.r.id).concat(del.map(x=>x.col+'|'+x.id));this.hold=this.hold||new Map();hk.forEach(k=>{const h=this.hold.get(k)||{n:0,until:0};h.n++;this.hold.set(k,h)});const rel=()=>hk.forEach(k=>{const h=this.hold.get(k);if(h){h.n--;if(h.n<=0)h.until=Date.now()+4000}});
   this.q=this.q.then(async()=>{try{
    const ins=ch.filter(x=>x.isNew).map(x=>({col:x.r.col,id:x.r.id,data:x.r.data}));
    for(let i=0;i<ins.length;i+=25){const{error}=await this.sb.from('pa_docs').insert(ins.slice(i,i+25));if(error)throw error}
-   for(const x of ch.filter(x=>!x.isNew)){const{data,error}=await this.sb.from('pa_docs').update({data:x.r.data,updated_at:new Date().toISOString()}).eq('col',x.r.col).eq('id',x.r.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para guardar ese cambio')}
+   for(const x of ch.filter(x=>!x.isNew)){
+    /* v515: con E3 aplicada y solo para planes, se envían únicamente los cambios puntuales (si son muchos o la función falla, se guarda la fila completa como antes) */
+    if(this.patch&&x.r.col==='plans'&&x.old){let ops=null;try{ops=diffOps(JSON.parse(x.old),JSON.parse(JSON.stringify(x.r.data)),[],[])}catch(e){}
+     if(ops&&ops.length&&JSON.stringify(ops).length<JSON.stringify(x.r.data).length*0.7){const q=await this.sb.rpc('pa_docs_patch',{p_col:x.r.col,p_id:x.r.id,p_ops:ops});if(!q.error&&q.data){this.ua&&this.ua.set(x.r.col+'|'+x.r.id,q.data);this.bump(q.data);continue}if(!q.error&&q.data===null)throw new Error('No tienes permiso para guardar ese cambio')}}
+const{data,error}=await this.sb.from('pa_docs').update({data:x.r.data,updated_at:new Date().toISOString()}).eq('col',x.r.col).eq('id',x.r.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para guardar ese cambio')}
    for(const x of del){const{data,error}=await this.sb.from('pa_docs').delete().eq('col',x.col).eq('id',x.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para eliminar eso')}
   rel()}catch(e){rel();this.hold.clear();toast('No se pudo guardar: '+(e.message||e)+'. Se recargan los datos.');await this.resync()}})},
  async refresh(force,full){if(!me||!db||!this.sb||this.rbusy||document.hidden&&!force)return;const now=Date.now();if(!force&&now-(this.rlt||0)<15000)return;if(this.hold&&[...this.hold.values()].some(h=>h.n>0))return;this.rbusy=1;
@@ -1154,12 +1185,12 @@ const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,pro
    else{const cur=new Map();for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;data.forEach(r=>cur.set(r.col+'|'+r.id,r.updated_at||''));if(data.length<1000)break}
     this.lfull=Date.now();cur.forEach((u,k)=>{if(this.ua.get(k)!==u)chg.push(k)});this.ua.forEach((_,k)=>{if(!cur.has(k))del.push(k)})}
    if(!chg.length&&!del.length)return;
-   if(chg.length>60){const d=await this.loadAll();db=d;if(me)me=db.users.find(u=>u.id===me.id)||me;refreshUI();return}
+   if(chg.length>60){const d=await this.loadAll(true);db=d;if(me)me=db.users.find(u=>u.id===me.id)||me;refreshUI();return}
    const by={};chg.forEach(k=>{const i=k.indexOf('|');(by[k.slice(0,i)]=by[k.slice(0,i)]||[]).push(k.slice(i+1))});
    for(const col in by){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').eq('col',col).in('id',by[col]);if(error)throw error;for(const r of data){const k=r.col+'|'+r.id,hh=this.hold&&this.hold.get(k);this.ua.set(k,r.updated_at||'');this.bump(r.updated_at);if(hh&&(hh.n>0||Date.now()<hh.until))continue;const j=JSON.stringify(r.data);if(this.snap.get(k)===j)continue;this.snap.set(k,j);this.apply(r.col,String(r.id),r.data)}}
    for(const k of del){const i=k.indexOf('|'),col=k.slice(0,i),id=k.slice(i+1);this.ua.delete(k);if(this.snap.has(k)){this.snap.delete(k);this.apply(col,id,undefined)}}
-  }catch(e){}finally{this.rbusy=0;this.rlt=Date.now()}},
- async resync(){try{const d=await this.loadAll();db=d;if(me)me=db.users.find(u=>u.id===me.id)||me;render()}catch(e){}},
+  }catch(e){}finally{this.rbusy=0;this.rlt=Date.now();PCache.touch()}},
+ async resync(){try{const d=await this.loadAll(true);db=d;if(me)me=db.users.find(u=>u.id===me.id)||me;render()}catch(e){}},
  listen(){if(this.ch)return;const tok={};this.tok=tok;this.rt=this.rt||{ok:false,dropped:false,tries:0};
   this.ch=this.sb.channel('pa-docs').on('postgres_changes',{event:'*',schema:'public',table:'pa_docs'},p=>this.onChange(p)).subscribe(st=>{if(this.tok===tok)this.rtStatus(st)})},
  /* v513 · Realtime con recuperación: si se cae, sube el sondeo de respaldo (cada 60 s, incremental); si no vuelve en 45 s se recrea el canal; al volver se hace UNA sincronización completa (también detecta borrados) */
@@ -1170,7 +1201,7 @@ const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,pro
   const hh=this.hold&&this.hold.get(key);if(t!=='DELETE'&&hh&&(hh.n>0||Date.now()<hh.until))return;let data=row.data;if(data===undefined){const r=await this.sb.from(this.tbl()).select('data').eq('col',row.col).eq('id',row.id).maybeSingle();data=r.data&&r.data.data}
   if(data===undefined)return;if(row.updated_at&&this.ua){this.ua.set(key,row.updated_at);this.bump(row.updated_at)}const j=JSON.stringify(data);if(this.snap.get(key)===j)return;this.snap.set(key,j);this.apply(row.col,String(row.id),data)}catch(e){}},
  apply(col,id,data){if(!db)return;if(col==='meta'){if(data===undefined)delete db[id];else db[id]=data}else{const a=db[col]=db[col]||[],i=a.findIndex(x=>String(x.id)===id);if(data===undefined){if(i>=0)a.splice(i,1)}else if(i>=0)a[i]=data;else if(col==='notifs')a.unshift(data);else a.push(data)}
-  if(me)me=db.users.find(u=>u.id===me.id)||me;refreshUI()}};
+  if(me)me=db.users.find(u=>u.id===me.id)||me;PCache.touch();refreshUI()}};
 let pendR=false;const isEd=()=>/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement||{}).tagName||'');
 addEventListener('pageshow',e=>{if(e.persisted&&me&&view!=='dash'){view='dash';cur=null;pnOpen=false;try{render()}catch(x){}}});
 function refreshUI(){if(!me||!db)return;if(isEd()){pendR=true;return}if(view==='nuevo'){const c=$('#cnt');if(c)c.textContent=unread().length||'';return}render()}
@@ -2359,7 +2390,11 @@ function zipBlob(files){const enc=new TextEncoder(),parts=[],cen=[],d=new Date()
 const b64ToBytes=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u};
 const DLCH=3000000;
 const catBytes=ps=>{let n=0;ps.forEach(u=>n+=u.length);const o=new Uint8Array(n);let p=0;ps.forEach(u=>{o.set(u,p);p+=u.length});return o};
-async function cloudBytes(name){const ps=[];let off=0,total=Infinity;while(off<total){const j=await Fn.call({action:'photo_data',name,offset:off,length:DLCH});if(!j.ok||!j.data)return null;total=j.total;const u=b64ToBytes(j.data);if(!u.length)break;ps.push(u);off+=u.length}return total===off?catBytes(ps):null}
+/* v515 · INACTIVA por omisión (se activa con PA_CONFIG.odDirect = true tras validar CORS/permisos de OneDrive). HALLAZGO DE EGRESS: al descargar un plan (informe + fotos originales) cada foto pasaba en base64 por la función super-api, o sea, por Supabase. Ahora se baja DIRECTO de OneDrive con su enlace temporal (no cuenta como Egress de Supabase); si el navegador no puede leerla (CORS/red) se usa la función como antes y se recuerda 24 h para no reintentar. */
+const OD_FLAG='nx_od_direct';const odOff=()=>{try{const t=+localStorage.getItem(OD_FLAG)||0;return t&&Date.now()-t<864e5}catch(e){return false}};const odMark=()=>{try{localStorage.setItem(OD_FLAG,String(Date.now()))}catch(e){}};
+async function cloudBytes(name){
+ if(PA_CFG.odDirect===true&&!odOff()){try{const u=await PhotoCloud.url(name);if(u){const r=await fetch(u,{credentials:'omit',referrerPolicy:'no-referrer'});if(r.ok){const b=new Uint8Array(await r.arrayBuffer()),cl=+r.headers.get('content-length')||0;if(b.length&&(!cl||cl===b.length))return b}}}catch(e){odMark()}}
+ const ps=[];let off=0,total=Infinity;while(off<total){const j=await Fn.call({action:'photo_data',name,offset:off,length:DLCH});if(!j.ok||!j.data)return null;total=j.total;const u=b64ToBytes(j.data);if(!u.length)break;ps.push(u);off+=u.length}return total===off?catBytes(ps):null}
 async function getFull(ph){if(!ph)return null;const x=ph.x||'jpg';
  if(Supa.on&&ph.o){const b=await cloudBytes(origName(ph.k,x));if(b)return{bytes:b,kind:'orig',x}}
  try{const u=await _lg(ph.k+'~orig');if(u&&String(u).startsWith('data:'))return{bytes:b64ToBytes(u.split(',')[1]),kind:'orig',x}}catch(e){}
@@ -2590,18 +2625,28 @@ async function arqFn(b,retry){const c=Supa.cfg();let tk=c.key;try{const s=await 
   const j=await r.json().catch(()=>({ok:false,error:'Respuesta no válida ('+r.status+')'}));
   if(r.status===401&&!retry){try{const{data,error}=await Supa.sb.auth.refreshSession();if(!error&&data&&data.session)return arqFn(b,1)}catch(e){}}
   return j}catch(e){return{ok:false,error:'No se pudo contactar el servidor ('+(e.message||e)+')'}}}
-async function arqLoad(){if(!Supa.on||!Supa.sb||!me||ARQ.loading)return;ARQ.loading=true;
- try{const[a,d,f]=await Promise.all([Supa.sb.from('pa_arqueos').select(Supa.lite?ARQ_COLS:'*').order('created_at',{ascending:false}).limit(600),Supa.sb.from('pa_arqueo_deposito').select('folio,version,numero_confirmacion,comprobante').limit(3000),Supa.sb.from('pa_ff_asignaciones').select('*').order('desde',{ascending:false}).limit(3000)]);
+async function arqLoad(force){if(!Supa.on||!Supa.sb||!me||ARQ.loading)return;if(!force&&ARQ.loaded&&ARQ.sigs&&!ARQ.err){await arqSync();return}ARQ.loading=true;
+ try{const[a,d,f]=await Promise.all([Supa.sb.from('pa_arqueos').select(Supa.lite&&!ARQ.noLite?ARQ_COLS:'*').order('created_at',{ascending:false}).limit(600),Supa.sb.from('pa_arqueo_deposito').select('id,folio,version,numero_confirmacion,comprobante,agregado_at').limit(3000),Supa.sb.from('pa_ff_asignaciones').select('*').order('desde',{ascending:false}).limit(3000)]);
+  if(a.error&&Supa.lite&&!ARQ.noLite){ARQ.noLite=true;ARQ.loading=false;return arqLoad(true)}   /* v515: si el servidor rechazara el listado ligero se vuelve al completo sin romper Arqueos */
   const er=a.error||d.error||f.error;
   if(er)ARQ.err=/does not exist|relation|schema cache/i.test(er.message||'')?'Falta crear las tablas de arqueos en Supabase (corre el archivo arqueos.sql).':String(er.message||er);
-  else{ARQ.err='';ARQ.list=a.data||[];if(Supa.lite)ARQ.list.forEach(r=>{r.data={recibo:r.recibo};r._lite=1;delete r.recibo});ARQ.dep=d.data||[];ARQ.asigAll=f.data||[];ARQ.asig={};ARQ.asigAll.forEach(x=>{if(!x.hasta&&!ARQ.asig[x.branch_user_id])ARQ.asig[x.branch_user_id]=x})}
+  else{ARQ.err='';ARQ.list=a.data||[];if(Supa.lite&&!ARQ.noLite)ARQ.list.forEach(r=>{r.data={recibo:r.recibo};r._lite=1;delete r.recibo});ARQ.dep=d.data||[];ARQ.asigAll=f.data||[];ARQ.asig={};ARQ.asigAll.forEach(x=>{if(!x.hasta&&!ARQ.asig[x.branch_user_id])ARQ.asig[x.branch_user_id]=x})}
  }catch(e){ARQ.err=String(e.message||e)}
  try{const e=await Supa.sb.from('pa_arqueo_eliminados').select('folio').limit(5000);if(!e.error){ARQ.elim=new Set((e.data||[]).map(x=>x.folio));const j=arqStored();if(j&&j.d&&j.d.folio&&ARQ.elim.has(j.d.folio))localStorage.removeItem(ARQ_LS())}}catch(x){}
- ARQ.loaded=true;ARQ.loading=false;arqSig().then(g=>{ARQ.sig=g}).catch(()=>{});if(view==='arqueos'&&!ARQ.d)render()}
+ ARQ.loaded=true;ARQ.loading=false;arqSigs().then(g=>{ARQ.sigs=g}).catch(()=>{});if(view==='arqueos'&&!ARQ.d)render()}
 /* v513 · firma barata de lo que muestra Arqueos (solo conteos y la última modificación, sin traer filas); el listado completo solo se vuelve a pedir si la firma cambió */
-async function arqSig(){if(!Supa.on||!Supa.sb)return null;const q=(t,c)=>Supa.sb.from(t).select(c,{count:'exact'}).order(c,{ascending:false}).limit(1);try{const r=await Promise.all([q('pa_arqueos','updated_at'),q('pa_arqueo_deposito','agregado_at'),q('pa_ff_asignaciones','desde'),q('pa_arqueo_eliminados','eliminado_at')]);if(r.some(x=>x.error))return null;return JSON.stringify(r.map(x=>[x.count,(x.data&&x.data[0])||null]))}catch(e){return null}}
-async function arqProbe(){if(ARQ.loading)return;if(!ARQ.loaded||!ARQ.sig){await arqLoad();return}const g=await arqSig();if(g!==null&&g===ARQ.sig)return;await arqLoad();Poll.tell('arq')}
-Poll.on.arq=()=>{if(view==='arqueos'&&!ARQ.d)arqLoad()};
+async function arqSigs(){if(!Supa.on||!Supa.sb)return null;const q=(t,c)=>Supa.sb.from(t).select(c,{count:'exact'}).order(c,{ascending:false}).limit(1);try{const r=await Promise.all([q('pa_arqueos','updated_at'),q('pa_arqueo_deposito','agregado_at'),q('pa_ff_asignaciones','desde'),q('pa_arqueo_eliminados','eliminado_at')]);if(r.some(x=>x.error))return null;return r.map(x=>JSON.stringify([x.count,(x.data&&x.data[0])||null]))}catch(e){return null}}
+/* v514 · sincronización incremental de Arqueos: solo se vuelve a pedir la tabla cuya firma cambió, y de arqueos solo las versiones modificadas desde la última (las versiones no se borran; la baja es lógica) */
+async function arqSync(){if(ARQ.loading||!ARQ.sigs)return false;const sg=await arqSigs();if(!sg)return false;const ch=sg.map((x,i)=>x!==ARQ.sigs[i]);if(!ch.some(Boolean))return false;ARQ.loading=true;
+ try{const lite=Supa.lite&&!ARQ.noLite,cols=lite?ARQ_COLS:'*';
+  if(ch[0]){const mx=ARQ.list.reduce((m,r)=>r.updated_at>m?r.updated_at:m,'');const{data,error}=await Supa.sb.from('pa_arqueos').select(cols).gte('updated_at',mx||'1970-01-01').order('created_at',{ascending:false}).limit(600);if(error)throw error;const m=new Map(ARQ.list.map(r=>[r.folio+'|'+r.version,r]));(data||[]).forEach(r=>{if(lite){r.data={recibo:r.recibo};r._lite=1;delete r.recibo}m.set(r.folio+'|'+r.version,r)});ARQ.list=[...m.values()].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,600)}
+  if(ch[1]){const mx=ARQ.dep.reduce((m,r)=>(r.agregado_at||'')>m?r.agregado_at:m,'');const{data,error}=await Supa.sb.from('pa_arqueo_deposito').select('id,folio,version,numero_confirmacion,comprobante,agregado_at').gte('agregado_at',mx||'1970-01-01').limit(3000);if(error)throw error;const m=new Map(ARQ.dep.map(r=>[r.id,r]));(data||[]).forEach(r=>m.set(r.id,r));ARQ.dep=[...m.values()]}
+  if(ch[2]){const{data,error}=await Supa.sb.from('pa_ff_asignaciones').select('*').order('desde',{ascending:false}).limit(3000);if(error)throw error;ARQ.asigAll=data||[];ARQ.asig={};ARQ.asigAll.forEach(x=>{if(!x.hasta&&!ARQ.asig[x.branch_user_id])ARQ.asig[x.branch_user_id]=x})}
+  if(ch[3]){const e=await Supa.sb.from('pa_arqueo_eliminados').select('folio').limit(5000);if(e.error)throw e.error;ARQ.elim=new Set((e.data||[]).map(x=>x.folio));const j=arqStored();if(j&&j.d&&j.d.folio&&ARQ.elim.has(j.d.folio))localStorage.removeItem(ARQ_LS())}
+  ARQ.sigs=sg}catch(e){ARQ.sigs=null}finally{ARQ.loading=false}
+ if(view==='arqueos'&&!ARQ.d)render();return true}
+async function arqProbe(){if(ARQ.loading)return;if(!ARQ.loaded||!ARQ.sigs){await arqLoad(true);return}if(await arqSync())Poll.tell('arq')}
+Poll.on.arq=()=>{if(view==='arqueos'&&!ARQ.d)arqSync()};
 async function arqLoadDet(){const d=ARQ.d;if(!d||!d.folio||!Supa.sb)return;const q=(t,s)=>Supa.sb.from(t).select(s).eq('folio',d.folio);
  try{const[f,a,p,v]=await Promise.all([q('pa_arqueo_firmas','*').eq('version',d.version),q('pa_arqueo_audit','*').order('at'),q('pa_arqueo_deposito','*').eq('version',d.version).order('agregado_at'),q('pa_arqueos','folio,version,estado,corrige_de,motivo_correccion,created_at,hash').order('version')]);
   ARQ.det={firmas:f.data||[],audit:a.data||[],dep:p.data||[],vers:v.data||[]};const me0=ARQ.det.vers.find(x=>x.version===d.version);if(me0&&me0.hash)d.hash=me0.hash}catch(e){ARQ.det={firmas:[],audit:[],dep:[],vers:[]}}}
@@ -3002,7 +3047,7 @@ const IDLE_MIN={admin:120,supervisor:120,def:30},UPD_CHECK_MIN=0.25,UPD_IDLE_SEG
   if(busy())last=Date.now();
   const idle=Date.now()-last;
   if(me&&Supa.on){const L=lim();if(L>0){
-    if(idle>=L&&!busy()){if(warn){warn.__fin=1;warn.remove();warn=null}LOGIN_ERR='Tu sesión se cerró por inactividad. Entra de nuevo.';nxLog('cierre por inactividad');logout();last=Date.now();return}
+    if(idle>=L&&!busy()){if(warn){warn.__fin=1;warn.remove();warn=null}LOGIN_ERR='Tu sesión se cerró por inactividad. Entra de nuevo.';nxLog('cierre por inactividad');window.__idle=1;logout();last=Date.now();return}
     if(idle>=L-60000&&!warn&&!busy()){warn=box('<div class="nxb-t">Sesión por cerrarse</div><div class="nxb-d">Tu sesión se cerrará en 1 minuto por inactividad.</div><div class="nxb-a"><button class="nxb-pri" id="__keep">Seguir conectado</button></div>');warn.querySelector('#__keep').onclick=act}}}
   if(newVer&&idle>=UPD_IDLE_SEG*1000&&!busy()){applyUpdate()}
  }
