@@ -106,6 +106,34 @@ do $$ declare n int; m int; begin
   reset role; set local role anon; begin perform count(*) from public.pa_docs_lite; assert false, 'anon no debe leer la vista'; exception when insufficient_privilege then null; end;
   reset role; raise notice 'ACCESO OK'; end $$;
 SQL
+# verificación de integridad (la que se correrá en producción) y recuperación desde E0 tras un desastre simulado
+Q -At -f supabase/consultas/verificacion_e1.sql > /tmp/ver1_$$.json
+python3 - /tmp/ver1_$$.json <<'PY' && echo "OK    verificacion_e1.sql tras E1 y escrituras: las 400 miniaturas del respaldo siguen en pa_thumbs con contenido idéntico (ninguna faltante ni distinta; huellas iguales)" || { echo "FALLO verificación de integridad"; exit 1; }
+import json, sys
+v = json.load(open(sys.argv[1]))
+assert v['miniaturas_embebidas_en_pa_docs'] <= 400 and v['miniaturas_en_pa_thumbs'] >= 400 and v['faltan_en_pa_thumbs'] == 0 and v['distintas'] == 0, v
+assert v['respaldo_miniaturas'] == 400 and v['respaldo_faltan_en_pa_thumbs'] == 0 and v['huella_miniaturas_respaldo'] == v['huella_pa_thumbs_de_esas_llaves'], v
+PY
+Q <<'SQL'
+create table public.zz_n as select count(*) as n from public.pa_thumbs where k like 'ref#1-%';
+create table public.zz_antes as select (select md5(string_agg(k || md5(t), '' order by k)) from public.pa_thumbs where k in (select x.k from public.pa_docs_respaldo_e0 r, lateral public.pa_extract_thumbs(r.data) x where r.col = 'plans')) as huella, (select count(*) from public.pa_docs) as filas;
+delete from public.pa_thumbs where k like 'ref#1-%';                         -- se pierden las miniaturas ref#1-*
+delete from public.pa_docs where col = 'plans' and id in ('PA-2026-010', 'PA-2026-011');   -- se borran 2 planes
+update public.pa_docs set data = '{}' where col = 'plans' and id = 'PA-2026-020';          -- un plan dañado
+select count(*) from public.pa_thumbs where k like 'ref#1-%';
+SQL
+Q -f supabase/propuestas/egress/E0_recuperacion.sql >/dev/null 2>&1
+Q -v planes="'{PA-2026-020}'" -f supabase/propuestas/egress/E0_recuperacion.sql >/dev/null 2>&1
+Q -At -f supabase/consultas/verificacion_e1.sql > /tmp/ver2_$$.json
+Q <<'SQL' 2>&1 | tee /tmp/rec_dbg.log | grep -q "RECUPERACION OK" && echo "OK    recuperación desde E0: planes borrados y miniaturas perdidas repuestos; un plan dañado restaurado solo cuando se pide (probado con un desastre simulado)" || { echo "FALLO recuperación desde E0"; exit 1; }
+do $$ begin
+  assert (select count(*) from public.pa_docs where col = 'plans' and id in ('PA-2026-010', 'PA-2026-011')) = 2, 'planes borrados no repuestos';
+  assert (select count(*) from public.pa_thumbs where k like 'ref#1-%') = (select n from public.zz_n), 'miniaturas perdidas no repuestas';
+  assert (select md5(string_agg(k || md5(t), '' order by k)) from public.pa_thumbs where k in (select x.k from public.pa_docs_respaldo_e0 r, lateral public.pa_extract_thumbs(r.data) x where r.col = 'plans')) = (select huella from public.zz_antes), 'huella de miniaturas distinta tras recuperar';
+  assert (select data = (select public.pa_strip_thumbs(data) from public.pa_docs_respaldo_e0 where col = 'plans' and id = 'PA-2026-020') from public.pa_docs where col = 'plans' and id = 'PA-2026-020'), 'plan dañado no restaurado (el disparador de E1 separa las miniaturas, que siguen en pa_thumbs)';
+  assert (select count(*) from public.pa_docs where col = 'plans' and id not in ('PA-2026-020') and data = '{}'::jsonb) = 0;
+  raise notice 'RECUPERACION OK'; end $$;
+SQL
 # E1 no amplía permisos: quien puede editar SU plan no puede pisar ni leer la miniatura de otro plan reutilizando su llave
 Q <<'SQL' 2>&1 | grep -q "SIN AMPLIACION OK" && echo "OK    E1 no amplía permisos: reutilizar la llave de una miniatura ajena no la sobrescribe ni permite leerla" || { echo "FALLO ampliación de permisos"; exit 1; }
 do $$ declare antes text; n int; begin
