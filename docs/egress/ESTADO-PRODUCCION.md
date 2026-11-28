@@ -48,3 +48,10 @@ Funcional 5 roles × vistas (PC y teléfono) idéntico a v512 con base actual y 
 | Service Worker | Solo archivos propios (la app, librería, íconos); no intercepta datos ni fotos; no afecta al Egress de Supabase |
 | Consultas y guardado | Listados incrementales por `updated_at`; guardado parcial con E3 (probado concurrencia); miniaturas bajo demanda |
 **Conclusión:** no queda ninguna optimización de Egress técnicamente justificada sin implementar; lo que falta es **activar** (caché persistente, descarga/subida directa de OneDrive) y **medir** en Usage. E2 reduce tamaño de base, no Egress.
+
+## Publicación controlada 28-nov-2026 (candidato f73561c, suite integral completa en verde)
+| Parte | Commit en main | Resultado verificado en producción |
+|---|---|---|
+| SQL `super_api_funciones.sql` + `super-api` | 55fefa9 | migración comprobada con los 55 perfiles reales × 146 planes (8 030 casos: la función coincide con los permisos reales de lectura y escritura); `anon` sin acceso; `nexa_push_pendientes` solo `service_role`; función desplegada con `verify_jwt = false`; prueba de humo: 401 sin sesión, 403 `setup` sin clave, 401 token falso |
+| Cliente v516 | 93b3a0e | «Publicar Nexa» en verde; `nexa/` idéntico al candidato probado; descarga directa, subida directa y caché **apagadas** (sin `odDirect` ni `cache` en la configuración) |
+Autorización de fotos en modo **registro** (secreto `PHOTO_AUTH` sin definir): no bloquea a nadie. Reversión: `PHOTO_AUTH=off`. Piloto de administrador por dispositivo: `nx_od_pilot` y `nx_cache_pilot` (ver `COMPROBACIONES-Y-ACTIVACION.md`). Flujo `inspeccionar-funcion.yml` NO publicado. E2 sin aplicar.
