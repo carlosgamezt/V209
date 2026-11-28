@@ -1,7 +1,7 @@
 # Activación controlada, retiro del secreto antiguo y requisitos de E2 (guía exacta)
 Todo cambio de abajo es **reversible por configuración** y no requiere tocar la base. Nada de esto está activo hoy.
 
-## 1. Obtener el código de `super-api` (no está en `nexa-planes-de-accion` ni en `V209`; solo hay clientes antiguos y notas)
+## 1. Código de `super-api` — RECIBIDO el 28-nov y auditado: ver `AUDITORIA-SUPER-API.md` (ya está en `supabase/functions/super-api/`, con las mejoras, sin publicar)
 **Desde Supabase (navegador, 1 minuto):** Dashboard del proyecto → **Edge Functions** → `super-api` → pestaña **Code** → abrir cada archivo (normalmente `index.ts`) → **seleccionar todo y copiar**. Pégalo en el chat. Antes de pegarlo, revisa que no contenga valores de claves (los secretos deben leerse con `Deno.env.get(...)`, que es seguro).
 **Desde un equipo con la CLI:** `supabase login` → `supabase functions download super-api --project-ref znicbyzszdztwyecydbl --use-api` (crea `supabase/functions/super-api/`). Súbelo a una rama nueva de `V209` o pega el contenido.
 **Qué busco en ese código:** (a) la acción `get` (¿entrega `@microsoft.graph.downloadUrl` del archivo original, y con qué vigencia?); (b) `put_begin` (¿devuelve la `uploadUrl` de Graph?); (c) si comprueba sesión, sucursal y región en cada acción (el cliente nunca ve tokens de OneDrive); (d) si lee `pa_docs` con miniaturas (dependencia de E2); (e) si usa `CRON_SECRET`.
@@ -19,7 +19,7 @@ Verificado en banco local: aislamiento entre personas (una copia por cuenta; ent
 Activación sugerida: Fase A `cache: true, cacheRoles: ['admin']` (modo sesión: se borra al cerrar la sesión; en administradores el primer inicio baja 0.37 MB y los siguientes ~13 KB). Fase B `cache: true` (todos, modo sesión). Fase C `cache: 'dispositivo'` solo en equipos propios de la persona (conserva la copia tras cerrar; **no usar en equipos compartidos de sucursal**). Reversión: `cache: false`.
 
 ## 4. Retirar el `CRON_SECRET` antiguo
-Verificado en producción: solo existen 4 tareas programadas, todas llaman a `recordatorios-de-nexa` y leen el secreto nuevo de la base; ninguna conserva un secreto escrito. En el repositorio ninguna otra función lo usa. **Falta confirmar `super-api`** (su código no está en el repositorio): en el código descargado (sección 1) buscar `CRON_SECRET`; si no aparece, retirarlo así: Dashboard → **Project Settings → Edge Functions → Secrets** (o Edge Functions → *Secrets*) → fila `CRON_SECRET` → **Delete**; o con la CLI `supabase secrets unset CRON_SECRET --project-ref znicbyzszdztwyecydbl`. Después correr `supabase/consultas/verificar_tareas.sql` (flujo «Consultar Supabase») y confirmar que la siguiente corrida real da 200.
+Verificado en producción: solo existen 4 tareas programadas, todas llaman a `recordatorios-de-nexa` y leen el secreto nuevo de la base; ninguna conserva un secreto escrito. En el repositorio ninguna otra función lo usa. **`super-api` también confirmado: no usa `CRON_SECRET`.** Se puede retirar ya así: Dashboard → **Project Settings → Edge Functions → Secrets** (o Edge Functions → *Secrets*) → fila `CRON_SECRET` → **Delete**; o con la CLI `supabase secrets unset CRON_SECRET --project-ref znicbyzszdztwyecydbl`. Después correr `supabase/consultas/verificar_tareas.sql` (flujo «Consultar Supabase») y confirmar que la siguiente corrida real da 200.
 
 ## 5. Requisitos para aplicar E2 (compactar miniaturas) — pendientes
 1. **Sin clientes antiguos:** Dashboard → **Logs → API Edge Logs** (consulta SQL) durante la jornada: 

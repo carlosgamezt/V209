@@ -6,6 +6,8 @@ run sql ./test_sql.sh
 run rls_reales ./test_rls_real.sh
 run sql_automaticos ./test_auto_sql.sh
 run recordatorios ./test_recordatorios.sh
+run sql_super_api ./test_super_api_sql.sh
+run super_api deno run -A super_api_test.ts
 run funcion_recordatorios deno run -A recordatorios_fn_test.ts
 run funcional node funcional.cjs --root $R --out $T/f.json $X --caps "$C"
 run recuperacion node recuperacion.cjs --root $R --out $T/r.json $X --caps "$C"
