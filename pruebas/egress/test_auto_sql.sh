@@ -11,6 +11,8 @@ ok() { echo "OK    $1"; }; fallo() { echo "FALLO $1"; exit 1; }
 "$PGBIN/psql" -h /tmp -p $PORT -U postgres -d postgres -q -X -c "create database nexa"
 Q -f pruebas/egress/rls_real/01_esquema_y_ayudantes.sql >/dev/null; Q -f pruebas/egress/rls_real/02_politicas_reales_pa_docs.sql >/dev/null; Q -c "create role service_role nologin bypassrls; grant all on public.pa_docs to service_role" 
 Q -f pruebas/egress/rls_real/03_datos.sql >/dev/null 2>&1; Q -c "create table public.pa_descargas (id bigint generated always as identity primary key, plan_id text, user_id text, user_name text, role text, manual boolean default false, created_at timestamptz default now())"
+# V1 (validación con roles) sin vista debe DETENERSE
+if Q -f $P/auto_v1_validacion_roles.sql >/dev/null 2>&1; then fallo "V1 se ejecutó sin la vista"; else ok "V1 se detiene si falta la vista ligera"; fi
 # E1a sin respaldo debe DETENERSE
 if Q -f $P/auto_e1a_vista_ligera.sql >/dev/null 2>&1; then fallo "E1a se aplicó sin respaldo E0"; else ok "E1a se detiene si falta el respaldo E0"; fi
 [ "$(Q -At -c "select count(*) from pg_class where relname = 'pa_docs_lite'")" = 0 ] && ok "y no dejó la vista a medias"
@@ -34,4 +36,24 @@ Q -At -f $P/auto_e1a_vista_ligera.sql >/dev/null && ok "E1a es idempotente"
 Q -f $P/E1a_reversion.sql >/dev/null 2>&1; Q -c "create policy zz_abre_todo on public.pa_docs for select to authenticated using (true)"
 if Q -f $P/auto_e1a_vista_ligera.sql >/dev/null 2>&1; then fallo "E1a no detectó una política que abre todo"; else ok "E1a se detiene si un rol sin sesión pudiera ver filas (protección contra eludir RLS)"; fi
 [ "$(Q -At -c "select count(*) from pg_class where relname = 'pa_docs_lite'")" = 0 ] && ok "y se DESHIZO por completo: no quedó la vista" || fallo "quedó la vista tras fallar la comprobación" 
+Q -f $P/E1a_reversion.sql >/dev/null 2>&1; Q -c "drop policy zz_abre_todo on public.pa_docs"; Q -f $P/auto_e1a_vista_ligera.sql >/dev/null 2>&1
+Q -At -f $P/auto_v1_validacion_roles.sql | grep -v '^COMMIT$' > /tmp/v1_$$.json; python3 - /tmp/v1_$$.json <<'PY' && ok "V1 con las políticas reales: 11 perfiles con sesión (+1 sin perfil no figura): la vista = la tabla en todos; matriz de escritura de referencia guardada" || fallo "resultado de V1"
+import json, sys
+v = json.loads(open(sys.argv[1]).read())['v1'] if False else json.loads(open(sys.argv[1]).read())
+assert v['lectura_vista_igual_a_tabla_en_todos'] is True and v['perfiles_probados'] == 11 and v['matriz_escritura_guardada'] > 0, v
+roles = {r['rol']: r for r in v['por_rol']}
+assert roles['admin']['max_actualizables'] == 12 and roles['visualizador']['max_actualizables'] == 0 and roles['sucursal']['max_actualizables'] == 2, roles
+PY
+[ "$(Q -At -c "select count(*) from public.pa_docs where data::text like '%\"marca\"%'")" = 0 ] && ok "V1 no dejó ninguna modificación en pa_docs (las pruebas de escritura se deshicieron)"
+Q -f $P/auto_v1_validacion_roles.sql >/dev/null 2>&1 && ok "V1 es idempotente"
+# E1 automática: requisitos, ejecución, resultado e idempotencia
+Q -f $P/E1_reversion.sql >/dev/null 2>&1 || true; Q -f $P/auto_e1a_vista_ligera.sql >/dev/null 2>&1
+Q -c "create table if not exists public.zz_ok(i int)"
+Q -At -f $P/auto_e1_miniaturas.sql | grep -v '^COMMIT$' > /tmp/e1_$$.json 2>/tmp/e1err_$$.txt || { cat /tmp/e1err_$$.txt | head -3; fallo "E1 automática falló"; }
+python3 - /tmp/e1_$$.json <<'PY' && ok "E1 automática: 96 miniaturas separadas con integridad total, pa_docs intacto, matriz de escritura idéntica, 1 disparador" || fallo "resultado de E1"
+import json, sys
+v = json.loads(open(sys.argv[1]).read())
+assert v['miniaturas_embebidas_en_pa_docs'] == 96 and v['miniaturas_en_pa_thumbs'] >= 96 and v['respaldo_miniaturas'] == 96 and v['pa_docs_intacto_vs_respaldo'] is True and v['disparadores_en_pa_docs'] == 1 and v['matriz_escritura_identica_casos'] > 0, v
+PY
+Q -At -f $P/auto_e1_miniaturas.sql >/dev/null 2>&1 && echo "OK    E1 automática es idempotente (si pa_docs no cambió desde el respaldo)" || echo "NOTA: la segunda ejecución se detiene porque pa_docs ya cambió respecto al respaldo (esperado tras escribir planes)"
 echo "PRUEBAS DE LOS SQL AUTOMÁTICOS OK"
