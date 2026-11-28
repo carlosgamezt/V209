@@ -35,3 +35,16 @@ Funcional 5 roles × vistas (PC y teléfono) idéntico a v512 con base actual y 
 **Qué cuenta como qué:** ese ahorro es tráfico INTERNO PostgreSQL → Edge Function (no es el Egress contabilizado de Supabase, que mide lo que sale hacia internet; que el interno cuente es un dato no confirmado). Las respuestas de la función a `pg_net` son de pocos bytes. El Egress contabilizado depende de los clientes (v513+/v515) y de las descargas de evidencias.
 **Pendiente del usuario:** quitar la variable `CRON_SECRET` de los secretos de la función (ya no se usa) y no reutilizar el valor expuesto.
 **E2 NO aplicada (condiciones no verificables):** no hay forma de comprobar desde la base qué versiones de la app siguen activas (E2 dejaría sin miniaturas a un cliente v512 que lea la tabla) ni el código de `super-api` (si lee `pa_docs` con miniaturas); además no reduce el Egress. `auto_e2_compactar.sql` quedó reforzada (respaldo actualizado `pa_docs_respaldo_e2`, políticas RLS y `updated_at` idénticos, reversión comprobada dentro de la transacción) y probada localmente: se aplica en cuanto se confirme 24 h sin v512 (consulta de registros de la API del procedimiento) y se revise `super-api`.
+
+## Auditoría final (28-nov) — qué queda y por qué
+| Área | Conclusión (con datos) |
+|---|---|
+| Tareas programadas / Edge Functions | Hecho y verificado en producción (lectura mínima 295 → 18/1 KB; secreto en la base; 60 s). `arqueos` y `supervision-sucursal`: sin lecturas pesadas pendientes. `super-api`: su código no está en ningún repositorio autorizado (instrucciones en `ACTIVACION-Y-RETIRO.md` §1) |
+| Dashboard e indicadores | Se calculan en el equipo con los planes ya cargados (0 consultas extra). Pasarlos a PostgreSQL solo ahorra bytes cuando los planes superen ~1 500 (≈ 3 MB por inicio de administrador); con la caché persistente activada el inicio baja a ~13 KB, que resuelve lo mismo sin rediseño visible → **no se justifica ahora** |
+| Paginación | Cambiaría la interfaz; con la vista ligera (≈ 2.2 KB por plan) y la caché el costo es incremental. Se reevalúa si la medición real de Usage lo pide |
+| Arqueos / Supervisión mensual | Listado incremental con firmas (Arqueos) y sondeo cada 60 s solo con la pantalla abierta, con puerta entre pestañas (Supervisión); sin trabajo pendiente |
+| Notificaciones / Realtime | La vista omite avisos antiguos leídos; Realtime sin cambios de payload (eventos «ligeros» no ahorran: cada cliente debe volver a leer la fila) y con recuperación automática probada |
+| Autenticación | Una renovación de token por hora y por sesión; `Supa.session()` es local; sin consultas repetidas |
+| Service Worker | Solo archivos propios (la app, librería, íconos); no intercepta datos ni fotos; no afecta al Egress de Supabase |
+| Consultas y guardado | Listados incrementales por `updated_at`; guardado parcial con E3 (probado concurrencia); miniaturas bajo demanda |
+**Conclusión:** no queda ninguna optimización de Egress técnicamente justificada sin implementar; lo que falta es **activar** (caché persistente, descarga/subida directa de OneDrive) y **medir** en Usage. E2 reduce tamaño de base, no Egress.
