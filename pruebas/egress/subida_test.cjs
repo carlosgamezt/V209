@@ -22,13 +22,13 @@ const norm = t => t.replace(/127\.0\.0\.1:\d+/g, 'HOST').replace(/\s+/g, ' ').tr
   await new Promise(r => srv.listen(0, '127.0.0.1', r)); const port = srv.address().port, browser = await chromium.launch(); let fallo = 0;
   const ok = (c, m) => { console.log((c ? 'OK    ' : 'FALLO ') + m); if (!c) fallo++ };
   const MODO = arg('od', 'cors'), SIZE = 3.2e6, CH = 983040;   // foto original simulada de 3.2 MB (4 tramos)
-  let recibido = 0, tramos = 0, auth = 0, prefl = 0, expectedRange = true;
+  const partes = []; let recibido = 0, tramos = 0, auth = 0, prefl = 0, expectedRange = true;
   const od = require('http').createServer((q, r) => {
     const h = { 'access-control-allow-origin': MODO === 'nocors' ? undefined : '*', 'access-control-allow-headers': 'content-range,content-type', 'access-control-allow-methods': 'PUT' }; Object.keys(h).forEach(k => h[k] === undefined && delete h[k]);
     if (q.method === 'OPTIONS') { prefl++; r.writeHead(204, h); return r.end() }
     if (q.headers.authorization) auth++;
-    const m = /bytes (\d+)-(\d+)\/(\d+)/.exec(q.headers['content-range'] || ''); let n = 0; q.on('data', c => n += c.length); q.on('end', () => {
-      tramos++; if (!m || +m[2] - +m[1] + 1 !== n || +m[3] !== SIZE) expectedRange = false; recibido += n;
+    const m = /bytes (\d+)-(\d+)\/(\d+)/.exec(q.headers['content-range'] || ''); let n = 0; const bufs = []; q.on('data', c => { n += c.length; bufs.push(c) }); q.on('end', () => {
+      partes.push(Buffer.concat(bufs)); tramos++; if (!m || +m[2] - +m[1] + 1 !== n || +m[3] !== SIZE) expectedRange = false; recibido += n;
       if (MODO === 'mid' && tramos === 2) { r.writeHead(500, h); return r.end() }
       const ultimo = m && +m[2] + 1 === +m[3]; r.writeHead(ultimo ? 201 : 202, h); r.end('{}') })
   }); await new Promise(r => od.listen(0, '127.0.0.1', r)); const odPort = od.address().port;
@@ -41,9 +41,11 @@ const norm = t => t.replace(/127\.0\.0\.1:\d+/g, 'HOST').replace(/\s+/g, ' ').tr
   console.log('RESUMEN ' + JSON.stringify({ modo: MODO, subido: !!res.o, egressSupabase_MB: +(fn.bytes / 1e6).toFixed(3), base64_por_funcion_MB: +(fn.b64 / 1e6).toFixed(2), directoAOneDrive_MB: +(recibido / 1e6).toFixed(2), llamadas: fn.llamadas, preflight: prefl, conAuthorization: auth }));
   ok(!!res.o, 'la subida termina correctamente (' + MODO + ')');
   ok(auth === 0, 'ninguna petición a OneDrive lleva credenciales (Authorization)');
-  if (MODO === 'cors') { ok(recibido === SIZE && expectedRange, 'OneDrive recibe los ' + SIZE / 1e6 + ' MB exactos, con Content-Range correcto'); ok(!fn.llamadas.put_chunk && fn.b64 === 0 && fn.bytes < 5e3, 'los bytes de la foto NO pasan por Supabase (' + (fn.bytes / 1e6).toFixed(3) + ' MB solo de autorización)') }
+  if (MODO === 'cors') { ok(require('crypto').createHash('sha256').update(Buffer.concat(partes)).digest('hex') === require('crypto').createHash('sha256').update(Buffer.alloc(SIZE, 9)).digest('hex'), 'integridad: el SHA-256 de lo recibido por OneDrive es idéntico al del archivo original'); ok(recibido === SIZE && expectedRange, 'OneDrive recibe los ' + SIZE / 1e6 + ' MB exactos, con Content-Range correcto'); ok(!fn.llamadas.put_chunk && fn.b64 === 0 && fn.bytes < 5e3, 'los bytes de la foto NO pasan por Supabase (' + (fn.bytes / 1e6).toFixed(3) + ' MB solo de autorización)') }
   else { ok(fn.llamadas.put_chunk === Math.ceil(SIZE / CH), 'con ' + (MODO === 'nocors' ? 'OneDrive sin CORS' : 'un fallo a mitad de subida') + ' se usa la función como hoy (' + fn.llamadas.put_chunk + ' tramos)'); ok(Math.abs(fn.b64 - Math.ceil(SIZE / 3) * 4) < 4 * Math.ceil(SIZE / CH), 'el archivo completo llega por la alternativa (' + (fn.b64 / 1e6).toFixed(2) + ' MB en base64)') }
   if (MODO !== 'cors') { const antes = fn.llamadas.put_begin; const r2 = await page.evaluate(async SIZE => { const f = new File([new Uint8Array(SIZE).fill(9)], 'y.jpg', { type: 'image/jpeg' }); return !!await putOriginal('k2', f, () => { }, () => { }) }, SIZE); const t = tramos; ok(r2 && (fn.llamadas.put_begin - antes) === 1, 'la siguiente subida va directo a la función (se recuerda el fallo, sin reintentar OneDrive)') }
   if (MODO === 'cors') { const r3 = await page.evaluate(async () => { const u = 'data:image/jpeg;base64,' + btoa('x'.repeat(5000)); const ok = await odPutBlob('pequena.jpg', dataUrlBlob(u)); return ok }); ok(r3 === true, 'la versión reducida (data URL) también sube directa') }
+  if (MODO === 'cors') { const c = await page.evaluate(() => { const r = {}; const v0 = PA_CFG.odDirect; PA_CFG.odDirect = false; r.apagada = odOn(); PA_CFG.odDirect = 'admin'; r.admin_siendo_admin = odOn(); const rol = me.role; me.role = 'sucursal'; r.admin_siendo_sucursal = odOn(); me.role = rol; PA_CFG.odDirect = [me.id]; r.lista_incluida = odOn(); PA_CFG.odDirect = ['otra-persona']; r.lista_excluida = odOn(); PA_CFG.odDirect = true; r.todos = odOn(); PA_CFG.odDirect = v0; return r });
+    ok(c.apagada === false && c.admin_siendo_admin === true && c.admin_siendo_sucursal === false && c.lista_incluida === true && c.lista_excluida === false && c.todos === true, 'activación controlada: apagada / solo administradores / lista de personas / todos → ' + JSON.stringify(c)) }
   console.log(fallo ? 'SUBIDA FALLO ' + fallo : 'SUBIDA OK'); await browser.close(); srv.close(); od.close(); process.exit(fallo ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1) });
