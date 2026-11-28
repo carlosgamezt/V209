@@ -1,0 +1,35 @@
+name: Inspeccionar función de Supabase (solo lectura, salida filtrada)
+
+on:
+  workflow_dispatch:
+    inputs:
+      funcion:
+        description: 'Nombre de la función (por ejemplo super-api)'
+        required: true
+      patron:
+        description: 'Expresión regular de las líneas a mostrar (por ejemplo downloadUrl|Access-Control|action)'
+        required: true
+
+jobs:
+  inspeccionar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      FN: ${{ github.event.inputs.funcion }}
+      PAT: ${{ github.event.inputs.patron }}
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Descargar y mostrar solo las líneas pedidas (sin líneas que mencionen claves o secretos; nada se guarda)
+        run: |
+          echo "$FN" | grep -Eq '^[a-z0-9_-]+$' || { echo "Nombre no válido"; exit 1; }
+          mkdir -p /tmp/insp && cd /tmp/insp
+          supabase functions download "$FN" --project-ref "$PROJECT_REF" --use-api >/dev/null 2>&1 || { echo "No se pudo descargar $FN"; exit 1; }
+          echo "Archivos descargados:"; find . -type f \( -name '*.ts' -o -name '*.js' -o -name '*.json' \) | sed 's#^\./##' | head -20
+          echo "Líneas de código (total): $(cat $(find . -type f -name '*.ts' -o -type f -name '*.js') 2>/dev/null | wc -l)"
+          echo "--- líneas que coinciden con el patrón (máx. 150; se omiten las que mencionan secret/token/key/password/bearer/auth) ---"
+          grep -rnEi -- "$PAT" . --include='*.ts' --include='*.js' | grep -Evi 'secret|token|password|bearer|apikey|api_key|service_role|private' | cut -c1-220 | head -150
