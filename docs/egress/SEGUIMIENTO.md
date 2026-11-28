@@ -4,9 +4,9 @@ Rama `ccr-9b56cef8-3yibwu`; `main` = v513 (7d87921). Referencia v512 = d06e3c1. 
 | Área | Estado | Dónde |
 |---|---|---|
 | P0 v513 (sondeo incremental, Realtime con recuperación, puerta entre pestañas, firmas de Arqueos/Descargas/Supervisión) | **Publicada** (main) | `INFORME-POSTPUBLICACION-V513.md` |
-| v515 en rama: Arqueos incremental, descarga directa de fotos originales, baliza de versión, caché persistente (inactiva), guardado parcial (inactivo hasta E3) | Implementado y probado local; **NO publicado** | `nexa/index.html` (APP_VER v514 → subir a v515 al publicar) |
+| v515 (Arqueos incremental, guardado parcial, baliza; caché y descarga directa apagadas) | **Publicada** (main 3be8cf2) | `ESTADO-PRODUCCION.md` |
 | E0 respaldo / recuperación / verificación de 386 miniaturas | Probado en PostgreSQL local | `supabase/propuestas/egress/E0_*.sql`, `consultas/verificacion_e1.sql` |
-| **E1a** (solo vista ligera: arregla las tareas programadas) | Probado con las políticas reales; **pendiente de tu autorización** | `E1a_vista_ligera.sql` |
+| E0, E1a, V1, E1, E3 | **Aplicados en producción y verificados** | `ESTADO-PRODUCCION.md` |
 | E1 completa (miniaturas aparte + disparador) | Probada con las políticas reales y 12 perfiles; pendiente de funciones `pa_*` reales | `E1_miniaturas_y_listados.sql`, `rls_real/` |
 | E2 compactar | Evaluada; opcional | `E2_*.sql`, `medir_e2.sh` |
 | E3 guardado parcial | Probado (PG real + cliente) | `E3_guardado_parcial.sql`, `parcial_test.cjs` |

@@ -62,6 +62,42 @@ const kb = n => Math.round(n / 1024);
   if (MODO === 'dispositivo') ok(i6.rows > 0, 'modo dispositivo: el cierre por inactividad CONSERVA la copia (' + i6.rows + ' filas)'); else ok(i6.rows === 0, 'modo sesión: cualquier cierre borra la copia');
   await ev(async () => { me = null; db = null; window.__lo = 0; await Supa.afterLogin() }); await page.clock.runFor(4000);
   await ev(() => { window.__lo = 1; window.__idle = 0; Supa.cleanup() }); await page.clock.runFor(1000); const i7 = await idb(); ok(i7.rows === 0 && i7.meta === 0, 'cierre de sesión voluntario: la copia local se borra por completo');
+  // 7) permisos revocados: un supervisor pierde la visibilidad de un plan (cambia de región) → tras volver a entrar el plan desaparece de la pantalla Y de la copia local; perfil cambiado → copia anulada
+  { const us = await ev(() => __EG.api.db.__users); const sup = us.find(u => u.role === 'supervisor').id; const pg = await abrir(browser, port, sup), e2 = (fn, a) => pg.evaluate(fn, a);
+    await pg.clock.runFor(4000); const pid = await e2(() => db.plans[0] && db.plans[0].id); ok(!!pid, 'supervisor con planes visibles y copia guardada');
+    await e2(id => { const d = __EG.api.db.pa_docs.find(x => x.col === 'plans' && x.id === id); d.data.region = '99'; d.updated_at = new Date().toISOString(); Supa.cleanup(); me = null; db = null }, pid);
+    await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(6000);
+    ok(!(await e2(id => db.plans.some(p => p.id === id), pid)), 'plan que dejó de ser visible (permiso/región revocados) desaparece tras volver a entrar');
+    const en = await e2(async id => { const d = await PCache.open(); return await new Promise(r => { const q = d.transaction('rows').objectStore('rows').getAllKeys(); q.onsuccess = () => r(q.result.some(k => k.endsWith('|plans|' + id))) }) }, pid);
+    ok(!en, 'y desaparece también de la copia local (invalidación por conteo + listado completo)');
+    await e2(() => { __EG.api.db.pa_profiles.find(p => p.user_id === Supa.profile.user_id).role = 'visualizador'; Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(4000);
+    ok(await e2(() => Supa.profile.role) === 'visualizador' && (await e2(() => db.plans.length)) > 0 && (await e2(() => PCache.fp())).includes('visualizador'), 'cambio de rol: la copia se rehace con el perfil nuevo (huella distinta)'); }
+  // 8) Seguridad: un registro con campo de credencial NUNCA se guarda en el equipo (se borra la copia y no se vuelve a guardar)
+  { const pg = await abrir(browser, port, 'admin'), e2 = (fn, a) => pg.evaluate(fn, a); await pg.clock.runFor(4000);
+    const i = await e2(async () => { const d = await PCache.open(); return await new Promise(r => { const q = d.transaction('rows').objectStore('rows').count(); q.onsuccess = () => r(q.result) }) }); ok(i > 0, 'control: sin campos sensibles la copia sí se guarda (' + i + ' filas)');
+    await e2(() => { const d = __EG.api.db.pa_docs.find(x => x.col === 'users'); d.data.pw = 'contraseña-de-prueba'; d.updated_at = new Date().toISOString(); Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(8000);
+    await e2(() => { __EG.api.othersTouchPlan(1) }); await pg.clock.runFor(6000);
+    const j = await e2(async () => { const d = await PCache.open(); const rows = await new Promise(r => { const q = d.transaction('rows').objectStore('rows').getAll(); q.onsuccess = () => r(q.result) }); return { n: rows.length, hay: rows.some(x => /contraseña-de-prueba/.test(x.j)), dead: !!PCache.dead, planes: db.plans.length } });
+    ok(j.n === 0 && !j.hay && j.dead && j.planes > 0, 'registro con campo «pw»: no se guarda NADA en el equipo, la caché se apaga en la sesión y la app sigue funcionando (' + j.planes + ' planes)'); }
+  // 9) Piloto por rol: con cacheRoles=['sucursal'] el administrador no guarda copia
+  { const pg = await abrir(browser, port, 'admin'), e2 = (fn, a) => pg.evaluate(fn, a); await pg.clock.runFor(3000);
+    await e2(() => { PA_CFG.cacheRoles = ['sucursal']; Supa.cleanup(); me = null; db = null; window.__lo = 1; Supa.cleanup(); window.__lo = 0 }); await e2(async () => { me = null; db = null; await Supa.afterLogin() }); await pg.clock.runFor(5000);
+    ok(!(await e2(() => PCache.on())), 'cacheRoles=["sucursal"]: la caché no se activa para un administrador'); }
+  // 10) Desactivación reversible: al apagar la caché por configuración se borra por completo la base local
+  { const pg = await abrir(browser, port, 'admin'), e2 = (fn, a) => pg.evaluate(fn, a); await pg.clock.runFor(4000);
+    const antes = await e2(async () => { const d = await PCache.open(); const n = await new Promise(r => { const q = d.transaction('rows').objectStore('rows').count(); q.onsuccess = () => r(q.result) }); return { n, bd: (await indexedDB.databases()).some(x => x.name === 'pa_cache'), flag: !!localStorage.getItem('nx_pc_used') } });
+    ok(antes.n > 0 && antes.bd && antes.flag, 'antes de apagar: la copia existe (' + antes.n + ' filas)');
+    await e2(() => { PA_CFG.cache = false; Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(4000);
+    const desp = await e2(async () => ({ bd: (await indexedDB.databases()).some(x => x.name === 'pa_cache'), flag: !!localStorage.getItem('nx_pc_used'), planes: db.plans.length }));
+    ok(!desp.bd && !desp.flag && desp.planes > 0, 'tras apagar la caché por configuración: la base local se borra por completo y la app sigue funcionando'); }
+  // 11) Piloto por dispositivo: con la caché apagada por configuración, solo el administrador que lo activa en su equipo guarda copia (modo sesión)
+  { const pg = await abrir(browser, port, 'admin'), e2 = (fn, a) => pg.evaluate(fn, a); await pg.clock.runFor(3000);
+    await e2(() => { PA_CFG.cache = false; localStorage.setItem('nx_cache_pilot', '1'); window.__lo = 1; Supa.cleanup(); window.__lo = 0; me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(5000);
+    const a1 = await e2(async () => { const d = await PCache.open(); const n = await new Promise(r => { const q = d.transaction('rows').objectStore('rows').count(); q.onsuccess = () => r(q.result) }); return { on: PCache.on(), n } });
+    ok(a1.on && a1.n > 0, 'piloto por dispositivo (administrador): la caché se activa solo en este equipo (' + a1.n + ' filas)');
+    await e2(() => { localStorage.removeItem('nx_cache_pilot'); Supa.cleanup(); me = null; db = null }); await e2(async () => { await Supa.afterLogin() }); await pg.clock.runFor(4000);
+    const a2 = await e2(async () => ({ on: PCache.on(), bd: (await indexedDB.databases()).some(x => x.name === 'pa_cache'), planes: db.plans.length }));
+    ok(!a2.on && !a2.bd && a2.planes > 0, 'al quitar el piloto: la caché se apaga, la copia local se borra por completo y la app sigue funcionando'); }
   console.log(fallo ? 'CACHE FALLO ' + fallo : 'CACHE OK'); await browser.close(); srv.close(); process.exit(fallo ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1) });
 let R_warm = 0;

@@ -130,22 +130,31 @@ assert v['respaldo_miniaturas'] == 400 and v['respaldo_faltan_en_pa_thumbs'] == 
 PY
 Q <<'SQL'
 create table public.zz_n as select count(*) as n from public.pa_thumbs where k like 'ref#1-%';
-create table public.zz_antes as select (select md5(string_agg(k || md5(t), '' order by k)) from public.pa_thumbs where k in (select x.k from public.pa_docs_respaldo_e0 r, lateral public.pa_extract_thumbs(r.data) x where r.col = 'plans')) as huella, (select count(*) from public.pa_docs) as filas;
-delete from public.pa_thumbs where k like 'ref#1-%';                         -- se pierden las miniaturas ref#1-*
-delete from public.pa_docs where col = 'plans' and id in ('PA-2026-010', 'PA-2026-011');   -- se borran 2 planes
-update public.pa_docs set data = '{}' where col = 'plans' and id = 'PA-2026-020';          -- un plan dañado
-select count(*) from public.pa_thumbs where k like 'ref#1-%';
+create table public.zz_antes as select (select md5(string_agg(k || md5(t), '' order by k)) from public.pa_thumbs where k in (select x.k from public.pa_docs_respaldo_e0 r, lateral public.pa_extract_thumbs(r.data) x where r.col = 'plans')) as huella;
+-- cambios LEGÍTIMOS posteriores al respaldo: edición del plan 030, plan nuevo, plan 012 eliminado a propósito, aviso marcado como leído
+update public.pa_docs set data = jsonb_set(data, '{acts,0,text}', '"edición legítima posterior"') where col = 'plans' and id = 'PA-2026-030';
+insert into public.pa_docs (col, id, data) values ('plans', 'PA-NUEVO-POST', '{"id":"PA-NUEVO-POST","region":"1","branch":"b1","acts":[]}');
+delete from public.pa_docs where col = 'plans' and id = 'PA-2026-012';
+update public.pa_docs set data = jsonb_set(data, '{read}', '["u1","u2"]') where col = 'notifs' and id = 'n1';
+-- desastre: se pierden miniaturas, se borran 2 planes por error, un plan queda vacío y otro con una clave borrada
+delete from public.pa_thumbs where k like 'ref#1-%';
+delete from public.pa_docs where col = 'plans' and id in ('PA-2026-010', 'PA-2026-011');
+update public.pa_docs set data = '{}' where col = 'plans' and id = 'PA-2026-020';
+update public.pa_docs set data = data - 'branch' where col = 'plans' and id = 'PA-2026-021';
 SQL
 Q -f supabase/propuestas/egress/E0_recuperacion.sql >/dev/null 2>&1
-Q -v planes="'{PA-2026-020}'" -f supabase/propuestas/egress/E0_recuperacion.sql >/dev/null 2>&1
-Q -At -f supabase/consultas/verificacion_e1.sql > /tmp/ver2_$$.json
-Q <<'SQL' 2>&1 | tee /tmp/rec_dbg.log | grep -q "RECUPERACION OK" && echo "OK    recuperación desde E0: planes borrados y miniaturas perdidas repuestos; un plan dañado restaurado solo cuando se pide (probado con un desastre simulado)" || { echo "FALLO recuperación desde E0"; exit 1; }
+Q -v planes="'{PA-2026-020,PA-2026-021,PA-2026-030}'" -v faltantes=true -v ids="'{PA-2026-010,PA-2026-011}'" -f supabase/propuestas/egress/E0_recuperacion.sql >/dev/null 2>&1
+Q <<'SQL' 2>&1 | tee /tmp/rec_dbg.log | grep -q "RECUPERACION OK" && echo "OK    recuperación desde E0 (modo fusionar): repone lo perdido y PRESERVA lo legítimo posterior (edición, plan nuevo, plan eliminado a propósito, aviso leído)" || { echo "FALLO recuperación desde E0"; exit 1; }
 do $$ begin
-  assert (select count(*) from public.pa_docs where col = 'plans' and id in ('PA-2026-010', 'PA-2026-011')) = 2, 'planes borrados no repuestos';
+  assert (select count(*) from public.pa_docs where col = 'plans' and id in ('PA-2026-010', 'PA-2026-011')) = 2, 'planes borrados por error no repuestos';
   assert (select count(*) from public.pa_thumbs where k like 'ref#1-%') = (select n from public.zz_n), 'miniaturas perdidas no repuestas';
-  assert (select md5(string_agg(k || md5(t), '' order by k)) from public.pa_thumbs where k in (select x.k from public.pa_docs_respaldo_e0 r, lateral public.pa_extract_thumbs(r.data) x where r.col = 'plans')) = (select huella from public.zz_antes), 'huella de miniaturas distinta tras recuperar';
-  assert (select data = (select public.pa_strip_thumbs(data) from public.pa_docs_respaldo_e0 where col = 'plans' and id = 'PA-2026-020') from public.pa_docs where col = 'plans' and id = 'PA-2026-020'), 'plan dañado no restaurado (el disparador de E1 separa las miniaturas, que siguen en pa_thumbs)';
-  assert (select count(*) from public.pa_docs where col = 'plans' and id not in ('PA-2026-020') and data = '{}'::jsonb) = 0;
+  assert (select md5(string_agg(k || md5(t), '' order by k)) from public.pa_thumbs where k in (select x.k from public.pa_docs_respaldo_e0 r, lateral public.pa_extract_thumbs(r.data) x where r.col = 'plans')) = (select huella from public.zz_antes), 'huella de miniaturas distinta';
+  assert (select data ->> 'id' from public.pa_docs where col = 'plans' and id = 'PA-2026-020') = 'PA-2026-020' and (select jsonb_array_length(data -> 'acts') from public.pa_docs where col = 'plans' and id = 'PA-2026-020') = 5, 'plan vacío no recuperó sus claves';
+  assert (select data ->> 'branch' from public.pa_docs where col = 'plans' and id = 'PA-2026-021') is not null, 'clave borrada no repuesta';
+  assert (select data #>> '{acts,0,text}' from public.pa_docs where col = 'plans' and id = 'PA-2026-030') = 'edición legítima posterior', 'la recuperación PISÓ una edición legítima posterior';
+  assert exists (select 1 from public.pa_docs where col = 'plans' and id = 'PA-NUEVO-POST'), 'se perdió un plan nuevo posterior al respaldo';
+  assert not exists (select 1 from public.pa_docs where col = 'plans' and id = 'PA-2026-012'), 'la recuperación reinsertó un plan eliminado legítimamente (no estaba en la lista de ids)';
+  assert (select data -> 'read' from public.pa_docs where col = 'notifs' and id = 'n1') = '["u1","u2"]'::jsonb, 'se pisó un aviso marcado como leído';
   raise notice 'RECUPERACION OK'; end $$;
 SQL
 # E1 no amplía permisos: quien puede editar SU plan no puede pisar ni leer la miniatura de otro plan reutilizando su llave
@@ -175,7 +184,7 @@ Q -f $P/E2_compactar_miniaturas.sql 2>&1 | grep -q "verificación OK" && ok "E2:
 DESP=$(Q -At -c "select pg_total_relation_size('public.pa_docs')"); echo "      tamaño de pa_docs: antes $ANTES B → después $DESP B (sin VACUUM FULL; el espacio se reutiliza)"
 Q -f $P/E2_reversion.sql >/dev/null && ok "E2_reversion: las miniaturas vuelven a los planes" || fallo "E2_reversion"
 Q <<'SQL' 2>&1 | grep -q "REV OK" && echo "OK    tras revertir E2 cada plan coincide con el original (+ las ediciones hechas durante la prueba)" || { echo "FALLO reversión E2"; exit 1; }
-do $$ begin assert (select count(*) from public.pa_docs d join public.zz_orig o on o.col = d.col and o.id = d.id where d.col = 'plans' and d.data <> o.data and d.id not in ('PA-2026-001', 'PA-2026-002', 'PA-2026-003')) = 0, 'planes distintos del original'; raise notice 'REV OK'; end $$;
+do $$ begin assert (select count(*) from public.pa_docs d join public.zz_orig o on o.col = d.col and o.id = d.id where d.col = 'plans' and d.data <> o.data and d.id not in ('PA-2026-001', 'PA-2026-002', 'PA-2026-003', 'PA-2026-010', 'PA-2026-011', 'PA-2026-020', 'PA-2026-021', 'PA-2026-030', 'PA-NUEVO-POST', 'PA-2026-900')) = 0, 'planes distintos del original'; raise notice 'REV OK'; end $$;
 SQL
 Q -f $P/E1_reversion.sql >/dev/null && ok "E1_reversion: sin disparador, vista ni RPC; pa_thumbs se conserva" || fallo "E1_reversion"
 [ "$(Q -At -c "select count(*) from pg_trigger where tgname = 'pa_docs_split_thumbs_t'")" = 0 ] && [ "$(Q -At -c "select count(*) from public.pa_thumbs")" -ge 400 ] && ok "tras revertir: no queda el disparador y no se perdió ninguna miniatura" || fallo "reversión incompleta"
