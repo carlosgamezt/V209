@@ -27,3 +27,13 @@
 - **Atribución:** P0 debe bajar sobre todo Database/API (listados periódicos) y las solicitudes a `pa_docs`/`pa_arqueos`/`pa_descargas`; E1 debe bajar el tamaño por solicitud (Database/API y Realtime). Si un servicio no baja donde se espera, investigar antes de seguir (p. ej. `super-api`, `arqueos`, `recordatorios`).
 - **Ciclo:** el acumulado del ciclo no baja; lo que se mide es la **pendiente diaria**. La restricción por haber excedido la cuota se levanta al reiniciar el ciclo o al pasar a Pro.
 - **Informe:** tabla antes/después por servicio, por usuario activo y por día + gráfico de Usage con las marcas de los eventos.
+
+## 5. Qué atribuir a cada cambio (guía para leer Usage)
+| Cambio | Dónde debe notarse |
+|---|---|
+| v513 (P0) | Database/API: menos solicitudes a `pa_docs`, `pa_descargas`, `pa_arqueos`, `supervision_mensual`; Realtime sin cambio |
+| v514: descarga directa de fotos | **Edge Functions egress** (la función `super-api`, acción `photo_data`): debe caer casi a cero si OneDrive permite la lectura directa (comprobación de 1 minuto en `PLAN-V514-Y-VENTANA-E1.md`). Es la hipótesis de mayor impacto: cada descarga de un plan movía todas sus fotos originales (+33 % por base64) a través de Supabase |
+| v514: Arqueos incremental | Database/API: solicitudes a `pa_arqueos` más pequeñas |
+| v514: caché persistente (si se activa) | Database/API: inicio de sesión (primeras solicitudes del día) |
+| E1 | Database/API y Realtime: tamaño medio por respuesta/evento (miniaturas fuera) |
+**Dato clave para confirmar la hipótesis de las descargas:** `medicion_egress.sql` entrega `descargas` (conteo de descargas registradas). Estimación rápida: descargas del ciclo × (fotos por plan × tamaño medio de la foto original × 1.33). Compárala con el egress de Edge Functions de Usage.

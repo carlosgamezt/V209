@@ -1,0 +1,238 @@
+{
+ "resultados": [
+  {
+   "version": "v512",
+   "B": 26,
+   "plansTotal": 104,
+   "admin": {
+    "login_frio": {
+     "n": 6,
+     "raw": 4218904,
+     "gz": 2899839
+    },
+    "planes": 26,
+    "cpu_login_ms": 287,
+    "login_caliente": {
+     "n": 4,
+     "raw": 4217696,
+     "gz": 2898631
+    },
+    "cpu_caliente_ms": 284,
+    "hora_visible": {
+     "n": 264,
+     "raw": 11295510,
+     "gz": 3274734
+    },
+    "arqueos_5min": {
+     "n": 46,
+     "raw": 3289536,
+     "gz": 298490
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 6,
+     "raw": 2228568,
+     "gz": 1569533
+    },
+    "planes": 14,
+    "cpu_login_ms": 191,
+    "login_caliente": {
+     "n": 4,
+     "raw": 2227360,
+     "gz": 1568325
+    },
+    "cpu_caliente_ms": 191,
+    "hora_visible": {
+     "n": 258,
+     "raw": 4198002,
+     "gz": 2317236
+    },
+    "arqueos_5min": {
+     "n": 45,
+     "raw": 1548637,
+     "gz": 193978
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 156503,
+     "gz": 105629
+    },
+    "planes": 1,
+    "cpu_login_ms": 132,
+    "login_caliente": {
+     "n": 2,
+     "raw": 156503,
+     "gz": 105629
+    },
+    "cpu_caliente_ms": 129,
+    "hora_visible": {
+     "n": 192,
+     "raw": 2620596,
+     "gz": 1494378
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v512",
+   "B": 75,
+   "plansTotal": 300,
+   "admin": {
+    "login_frio": {
+     "n": 7,
+     "raw": 11978361,
+     "gz": 8234862
+    },
+    "planes": 75,
+    "cpu_login_ms": 462,
+    "login_caliente": {
+     "n": 5,
+     "raw": 11977153,
+     "gz": 8233654
+    },
+    "cpu_caliente_ms": 458,
+    "hora_visible": {
+     "n": 516,
+     "raw": 34405002,
+     "gz": 10827708
+    },
+    "arqueos_5min": {
+     "n": 61,
+     "raw": 8972881,
+     "gz": 553751
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 6,
+     "raw": 2771383,
+     "gz": 1943670
+    },
+    "planes": 18,
+    "cpu_login_ms": 225,
+    "login_caliente": {
+     "n": 4,
+     "raw": 2770175,
+     "gz": 1942462
+    },
+    "cpu_caliente_ms": 217,
+    "hora_visible": {
+     "n": 306,
+     "raw": 12575952,
+     "gz": 7826244
+    },
+    "arqueos_5min": {
+     "n": 45,
+     "raw": 1967028,
+     "gz": 197764
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 166993,
+     "gz": 107837
+    },
+    "planes": 1,
+    "cpu_login_ms": 118,
+    "login_caliente": {
+     "n": 2,
+     "raw": 166993,
+     "gz": 107837
+    },
+    "cpu_caliente_ms": 128,
+    "hora_visible": {
+     "n": 192,
+     "raw": 3291492,
+     "gz": 1624332
+    },
+    "errores": []
+   }
+  },
+  {
+   "version": "v512",
+   "B": 190,
+   "plansTotal": 760,
+   "admin": {
+    "login_frio": {
+     "n": 10,
+     "raw": 29989734,
+     "gz": 20629799
+    },
+    "planes": 190,
+    "cpu_login_ms": 986,
+    "login_caliente": {
+     "n": 8,
+     "raw": 29988526,
+     "gz": 20628591
+    },
+    "cpu_caliente_ms": 980,
+    "hora_visible": {
+     "n": 1188,
+     "raw": 87612522,
+     "gz": 27917010
+    },
+    "arqueos_5min": {
+     "n": 105,
+     "raw": 14349002,
+     "gz": 1021986
+    },
+    "errores": []
+   },
+   "supervisor": {
+    "login_frio": {
+     "n": 6,
+     "raw": 5631845,
+     "gz": 3939312
+    },
+    "planes": 37,
+    "cpu_login_ms": 387,
+    "login_caliente": {
+     "n": 4,
+     "raw": 5630637,
+     "gz": 3938104
+    },
+    "cpu_caliente_ms": 307,
+    "hora_visible": {
+     "n": 342,
+     "raw": 22744350,
+     "gz": 13518354
+    },
+    "arqueos_5min": {
+     "n": 44,
+     "raw": 3711423,
+     "gz": 148901
+    },
+    "errores": []
+   },
+   "sucursal": {
+    "login_frio": {
+     "n": 2,
+     "raw": 218102,
+     "gz": 132215
+    },
+    "planes": 1,
+    "cpu_login_ms": 161,
+    "login_caliente": {
+     "n": 2,
+     "raw": 218102,
+     "gz": 132215
+    },
+    "cpu_caliente_ms": 135,
+    "hora_visible": {
+     "n": 192,
+     "raw": 5087472,
+     "gz": 2077170
+    },
+    "errores": []
+   }
+  }
+ ]
+}

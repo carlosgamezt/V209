@@ -26,10 +26,10 @@ Una sola sentencia `SELECT`; no modifica nada. Está en el repositorio y su cont
 **Clientes con versión anterior (v512) tras E1 — comportamiento medido:**
 - *No pierden ni sobrescriben evidencias:* el disparador copia a `pa_thumbs` las miniaturas que traía la fila ANTES de quitarlas, así que una escritura de una versión antigua nunca borra una foto (probado: ida y vuelta byte a byte).
 - *Sí mostrarían las miniaturas en blanco* en los planes ya separados (los escritos después de E1, o todos si se aplica E2) hasta que se actualicen; los datos, estados y avances se ven igual (probado). Mitigación: la app compara su versión cada pocos segundos y se actualiza sola al quedar inactiva (≤ 1–2 min).
-- **Condición para aplicar E1:** haber publicado v513 al menos 7 días antes (que todos los equipos activos ya la tengan) y avisar el horario a quienes usan la app.
+- **Condición para aplicar E1:** ya no se fija un plazo de 7 días; se sustituye por verificaciones objetivas (ninguna actividad de v512 durante 24 h en los registros de la API, RLS reales revisadas, respaldo E0 verificado, reversión probada). Ver `PLAN-V514-Y-VENTANA-E1.md` §3. Plazo mínimo razonable: 2 días hábiles completos tras publicar y la verificación 1 cumplida 24 h.
 
 ## 4. Lista de verificación antes de pedir la autorización de E1
-- [ ] v513 publicada ≥ 7 días y consumo de P0 medido (ver `PROCEDIMIENTO-MEDICION-REAL.md`).
+- [ ] Las 6 verificaciones de `PLAN-V514-Y-VENTANA-E1.md` §3 cumplidas y consumo de P0 medido (ver `PROCEDIMIENTO-MEDICION-REAL.md`).
 - [ ] Resultado de `medicion_egress.sql` revisado (políticas, disparadores, espacio).
 - [ ] E0 ejecutado y verificado (`E0 OK`, huella anotada) + copia `pg_dump` guardada (opcional recomendada).
 - [ ] Horario de poco uso acordado; reversión (`E1_reversion.sql`) a la mano.
