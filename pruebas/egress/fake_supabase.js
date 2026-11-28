@@ -98,7 +98,9 @@
   const client = {
     auth: { onAuthStateChange(cb) { authCbs.push(cb); return { data: { subscription: { unsubscribe() { } } } } }, async getSession() { return { data: { session: sess() } } }, async refreshSession() { return { data: { session: sess() }, error: null } }, async signInWithPassword() { return { data: { session: sess() }, error: null } }, async signOut() { authCbs.forEach(c => c('SIGNED_OUT', null)); return { error: null } } },
     from: t => new Q(t),
-    async rpc(name, args) { await Promise.resolve(); if (name === 'pa_next_seq') return { data: 1, error: null }; if (X.rpc && X.rpc[name]) { const out = X.rpc[name](db, args || {}, { visible, prof: profOf(), rec }); rec('rest', 'rpc:' + name, 'rpc', out); return { data: out, error: null } } return { data: null, error: { message: 'function ' + name + ' not found' } } },
+    async rpc(name, args) { await Promise.resolve(); if (name === 'pa_next_seq') return { data: 1, error: null };
+      if (X.rpc && X.rpc[name]) { let out; try { out = X.rpc[name](db, args || {}, { visible, prof: profOf(), rec, emit }) } catch (e) { if (e.message === 'nf') return { data: null, error: { message: 'function ' + name + ' not found' } }; throw e } rec('rest', 'rpc:' + name, 'rpc', out); return { data: out, error: null } }
+      return { data: null, error: { message: 'function ' + name + ' not found' } } },
     channel(name) { const ch = { _l: [], on(kind, f, cb) { this._l.push({ table: f.table, cb }); return this }, subscribe(st) { ch.__st = st; if (net.rtBlocked) { (window.__pendingSubs = window.__pendingSubs || []).push(ch); return this } this._l.forEach(l => listeners.push(l)); setTimeout(() => { net.rtStatus = 'SUBSCRIBED'; st && st('SUBSCRIBED') }, 0); return this } }; return ch },
     removeChannel(ch) { ch._l.forEach(l => { const i = listeners.indexOf(l); if (i >= 0) listeners.splice(i, 1) }); return Promise.resolve('ok') },
   };

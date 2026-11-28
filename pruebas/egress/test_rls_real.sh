@@ -28,6 +28,7 @@ do $$ declare u record; a text[]; b text[]; begin
 SQL
 Q -f $P/E1_miniaturas_y_listados.sql >/dev/null 2>&1 && echo "OK    E1 completa aplicada sobre la réplica (encima de E1a) con las políticas reales"
 Q -c "select public.zz_matriz('post')"
+Q -f $P/E3_guardado_parcial.sql >/dev/null 2>&1 && echo "OK    E3 (guardado parcial) aplicada"
 Q -f $R/04_verificaciones.sql 2>&1 | grep -E "^psql:.*NOTICE:  (OK|   rol)|ERROR|CONTEXT" | sed 's/^psql:[^ ]* NOTICE:  //'
 Q -At -c "select 'matriz de escritura (filas actualizables por usuario, 12 planes):'" ; Q -At -c "select u, count(*) filter (where filas > 0) as actualizables, count(*) filter (where filas = 0) as sin_filas, count(*) filter (where filas < 0) as rechazadas from public.zz_res where fase = 'post' group by u order by u"
 echo "PRUEBAS E1 CON POLÍTICAS REALES OK"

@@ -1133,6 +1133,11 @@ const PCache={FULL_MS:864e5,tm:0,sn:new Map(),dbp:null,
 const Poll={gate(k,ms){try{const key='nx_poll_'+k,t=+localStorage.getItem(key)||0,n=Date.now();if(n-t<ms)return false;localStorage.setItem(key,String(n));return true}catch(e){return true}},
  bc:(()=>{try{return new BroadcastChannel('nexa-sync')}catch(e){return null}})(),on:{},tell(k){try{this.bc&&this.bc.postMessage({k})}catch(e){}}};
 if(Poll.bc)Poll.bc.onmessage=e=>{try{const f=Poll.on[e.data&&e.data.k];if(f&&!document.hidden)f()}catch(x){}};
+/* v515 · GUARDADO PARCIAL: compara el JSON anterior y el nuevo y devuelve solo los cambios puntuales [{path,value}|{path,del}]. Los arreglos de igual largo se comparan elemento a elemento; si el largo cambia se reemplaza el arreglo completo. */
+function diffOps(a,b,path,out){if(a===b)return out;const ta=Object.prototype.toString.call(a),tb=Object.prototype.toString.call(b);
+ if(ta==='[object Object]'&&tb==='[object Object]'){for(const k of Object.keys(b))if(!(k in a))out.push({path:path.concat(k),value:b[k]});else diffOps(a[k],b[k],path.concat(k),out);for(const k of Object.keys(a))if(!(k in b))out.push({path:path.concat(k),del:true})}
+ else if(ta==='[object Array]'&&tb==='[object Array]'&&a.length===b.length){for(let i=0;i<b.length;i++)diffOps(a[i],b[i],path.concat(String(i)),out)}
+ else if(JSON.stringify(a)!==JSON.stringify(b))out.push({path,value:b});return out}
 const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,profiles:[],ch:null,
  cfg(){if(PA_CFG.url&&PA_CFG.key)return{url:PA_CFG.url,key:PA_CFG.key};try{const c=JSON.parse(localStorage.getItem('pa_supa_cfg')||'{}');if(c.off)return{url:'',key:''};return{url:c.url||SUPA_URL,key:c.key||SUPA_KEY}}catch(e){return{url:SUPA_URL,key:SUPA_KEY}}},
  lib(){return window.supabase?Promise.resolve():new Promise((ok,ko)=>{const cargar=(src,sig)=>{const t=document.createElement('script');t.src=src;t.onload=ok;t.onerror=()=>sig?sig():ko(new Error('No se pudo cargar la librería de Supabase (¿hay internet?)'));document.head.appendChild(t)};cargar('supabase.js',()=>cargar('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js'))})},
@@ -1143,7 +1148,7 @@ const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,pro
  bump(u){const t=u?Date.parse(u):0;if(t>(this.maxUa||0))this.maxUa=t},
  /* v513 · P1: con la migración de miniaturas aplicada (vista pa_docs_lite + tabla pa_thumbs) los planes se leen SIN miniaturas y estas se piden solo al verlas. Sin la migración (o con localStorage nx_nolite=1) todo funciona como antes. */
  lite:false,tbl(){return this.lite?'pa_docs_lite':'pa_docs'},
- async probeLite(){this.lite=false;try{if(localStorage.getItem('nx_nolite')==='1')return;const[a,b]=await Promise.all([this.sb.from('pa_docs_lite').select('id').limit(1),this.sb.from('pa_thumbs').select('k').limit(1)]);this.lite=!(a.error||b.error)}catch(e){this.lite=false}},
+ async probeLite(){this.lite=false;try{if(localStorage.getItem('nx_nolite')==='1')return;const[a,b]=await Promise.all([this.sb.from('pa_docs_lite').select('id').limit(1),this.sb.from('pa_thumbs').select('k').limit(1)]);this.lite=!(a.error||b.error);this.patch=false;if(this.lite)try{const q=await this.sb.rpc('pa_docs_patch',{p_col:'plans',p_id:'__sonda__',p_ops:[]});this.patch=!q.error}catch(e){}}catch(e){this.lite=false}},
  async loadAll(fresh){if(!fresh){const c=await PCache.start();if(c){try{const d=await this.loadCached(c);if(d)return d}catch(e){await PCache.wipe()}}}
   const rows=[];for(let f=0;;f+=1000){const{data,error}=await this.sb.from(this.tbl()).select('col,id,data,updated_at').order('col').order('id').range(f,f+999);if(error)throw error;rows.push(...data);if(data.length<1000)break}const d=this.fromRows(rows);this.lfull=Date.now();PCache.touch();return d},
  /* inicio con caché: solo las filas modificadas desde la última copia (+ un conteo sin cuerpo para detectar borrados o planes que dejaron de ser visibles) */
@@ -1159,13 +1164,17 @@ const Supa={on:false,sb:null,snap:new Map(),q:Promise.resolve(),profile:null,pro
   me=u;if(p.role==='admin'||p.role==='supervisor')await this.loadProfiles();try{await loadDls()}catch(e){}this.listen();CHG=!!p.must_change;if(this._needFull){this._needFull=false;this.refresh(true,true)}},
  async loadProfiles(){const{data}=await this.sb.from('pa_profiles').select('*').order('user_id');this.profiles=data||[]},
  cleanup(){try{if(PCache.on()&&(!PCache.keep()||(window.__lo&&!window.__idle)))PCache.wipe();else PCache.flush()}catch(e){}this.tok=null;if(this.rt){clearTimeout(this.rt.tm);this.rt=null}if(this.ch){try{this.sb.removeChannel(this.ch)}catch(e){}this.ch=null}this.snap.clear();this.profile=null;this.profiles=[];CRED=[];CHG=false;RM=null},
- save(d){if(!d)return;const next=new Map(),ch=[];this.rows(d).forEach(r=>{const k=r.col+'|'+r.id,j=JSON.stringify(r.data);next.set(k,j);const old=this.snap.get(k);if(old!==j)ch.push({r,isNew:old===undefined})});
+ save(d){if(!d)return;const next=new Map(),ch=[];this.rows(d).forEach(r=>{const k=r.col+'|'+r.id,j=JSON.stringify(r.data);next.set(k,j);const old=this.snap.get(k);if(old!==j)ch.push({r,isNew:old===undefined,old})});
   const del=[];this.snap.forEach((_,k)=>{if(!next.has(k)){const i=k.indexOf('|');del.push({col:k.slice(0,i),id:k.slice(i+1)})}});
   this.snap=next;if(!ch.length&&!del.length)return;PCache.touch();const hk=ch.map(x=>x.r.col+'|'+x.r.id).concat(del.map(x=>x.col+'|'+x.id));this.hold=this.hold||new Map();hk.forEach(k=>{const h=this.hold.get(k)||{n:0,until:0};h.n++;this.hold.set(k,h)});const rel=()=>hk.forEach(k=>{const h=this.hold.get(k);if(h){h.n--;if(h.n<=0)h.until=Date.now()+4000}});
   this.q=this.q.then(async()=>{try{
    const ins=ch.filter(x=>x.isNew).map(x=>({col:x.r.col,id:x.r.id,data:x.r.data}));
    for(let i=0;i<ins.length;i+=25){const{error}=await this.sb.from('pa_docs').insert(ins.slice(i,i+25));if(error)throw error}
-   for(const x of ch.filter(x=>!x.isNew)){const{data,error}=await this.sb.from('pa_docs').update({data:x.r.data,updated_at:new Date().toISOString()}).eq('col',x.r.col).eq('id',x.r.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para guardar ese cambio')}
+   for(const x of ch.filter(x=>!x.isNew)){
+    /* v515: con E3 aplicada y solo para planes, se envían únicamente los cambios puntuales (si son muchos o la función falla, se guarda la fila completa como antes) */
+    if(this.patch&&x.r.col==='plans'&&x.old){let ops=null;try{ops=diffOps(JSON.parse(x.old),JSON.parse(JSON.stringify(x.r.data)),[],[])}catch(e){}
+     if(ops&&ops.length&&JSON.stringify(ops).length<JSON.stringify(x.r.data).length*0.7){const q=await this.sb.rpc('pa_docs_patch',{p_col:x.r.col,p_id:x.r.id,p_ops:ops});if(!q.error&&q.data){this.ua&&this.ua.set(x.r.col+'|'+x.r.id,q.data);this.bump(q.data);continue}if(!q.error&&q.data===null)throw new Error('No tienes permiso para guardar ese cambio')}}
+const{data,error}=await this.sb.from('pa_docs').update({data:x.r.data,updated_at:new Date().toISOString()}).eq('col',x.r.col).eq('id',x.r.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para guardar ese cambio')}
    for(const x of del){const{data,error}=await this.sb.from('pa_docs').delete().eq('col',x.col).eq('id',x.id).select('id');if(error)throw error;if(!data||!data.length)throw new Error('No tienes permiso para eliminar eso')}
   rel()}catch(e){rel();this.hold.clear();toast('No se pudo guardar: '+(e.message||e)+'. Se recargan los datos.');await this.resync()}})},
  async refresh(force,full){if(!me||!db||!this.sb||this.rbusy||document.hidden&&!force)return;const now=Date.now();if(!force&&now-(this.rlt||0)<15000)return;if(this.hold&&[...this.hold.values()].some(h=>h.n>0))return;this.rbusy=1;

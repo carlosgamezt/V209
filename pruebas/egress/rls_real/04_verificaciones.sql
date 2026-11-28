@@ -57,3 +57,32 @@ do $$ begin
   assert (select count(*) from public.zz_orig o, lateral public.pa_extract_thumbs(o.data) x where o.col = 'plans') = 96, 'fixture';
   assert not exists (select 1 from public.zz_orig o, lateral public.pa_extract_thumbs(o.data) x where o.col = 'plans' and not exists (select 1 from public.pa_thumbs t where t.k = x.k and t.t = x.t)), 'miniatura original ausente o alterada';
   raise notice 'OK F) las 96 miniaturas originales siguen presentes y con contenido idéntico en pa_thumbs'; end $$;
+
+-- G) E3 guardado parcial bajo las políticas reales: SOLO quien podía actualizar la fila puede aplicar un cambio parcial (misma matriz que la actualización completa); y dos ediciones concurrentes de partes distintas se conservan ambas
+create function public.zz_intentar_patch(p_plan text) returns int language plpgsql as $$
+declare n int := 0; r timestamptz;
+begin
+  begin
+    r := public.pa_docs_patch('plans', p_plan, '[{"path":["marca2"],"value":"x"}]'::jsonb);
+    n := case when r is null then 0 else 1 end; raise exception using errcode = 'P0001', message = 'deshacer';
+  exception when sqlstate 'P0001' then null; when others then n := -1; end;
+  return n;
+end $$;
+do $$ declare u record; p record; n int; malos int := 0; total int := 0; begin
+  for u in select * from public.zz_u loop for p in select o.id from public.zz_orig o where o.col = 'plans' and exists (select 1 from public.pa_docs d where d.col = 'plans' and d.id = o.id) order by o.id loop
+    execute 'set local role authenticated'; perform set_config('request.jwt.claim.sub', u.uid::text, true);
+    n := public.zz_intentar_patch(p.id); execute 'reset role'; total := total + 1;
+    if (n > 0) is distinct from ((select filas from public.zz_res where fase = 'post' and zz_res.u = u.u and plan = p.id) > 0) then malos := malos + 1; end if;
+  end loop; end loop;
+  assert malos = 0, 'E3 cambió quién puede escribir en ' || malos || ' casos'; raise notice 'OK G1) guardado parcial: quién puede aplicarlo coincide con quién podía actualizar la fila en los % casos usuario × plan (políticas reales)', total; end $$;
+do $$ declare t1 timestamptz; antes jsonb; fin jsonb; begin
+  execute 'set local role authenticated'; perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000a5', true);   -- supervisor región 1
+  perform public.pa_docs_patch('plans', 'PA-111', '[{"path":["acts","0","text"],"value":"cambio de A"}]');
+  perform set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-0000000000b1', true);   -- sucursal b11 (parte distinta del mismo plan, con su copia vieja)
+  perform public.pa_docs_patch('plans', 'PA-111', '[{"path":["acts","1","st"],"value":"Aprobada"},{"path":["acts","1","rv","ok"],"value":false}]');
+  execute 'reset role'; select data into fin from public.pa_docs where col = 'plans' and id = 'PA-111';
+  assert fin #>> '{acts,0,text}' = 'cambio de A' and fin #>> '{acts,1,st}' = 'Aprobada' and (fin #> '{acts,1,rv,ok}') = 'false'::jsonb, 'una edición concurrente se perdió';
+  assert fin #>> '{acts,2,text}' = 'A3' and fin #>> '{region}' = '1', 'las partes no editadas deben quedar intactas';
+  assert fin::text not like '%data:image/%', 'el plan no debe quedar con imágenes';
+  assert not exists (select 1 from public.zz_orig o, lateral public.pa_extract_thumbs(o.data) x where o.col = 'plans' and o.id = 'PA-111' and not exists (select 1 from public.pa_thumbs t where t.k = x.k and t.t = x.t)), 'miniatura perdida';
+  raise notice 'OK G2) dos ediciones concurrentes de partes distintas del mismo plan se conservan ambas; lo no editado y las miniaturas quedan intactos'; end $$;
