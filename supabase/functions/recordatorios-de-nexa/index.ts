@@ -203,32 +203,60 @@ async function enviar(a: any, avisos: any[]) {
   return enviados
 }
 
+// Autenticación de las tareas programadas. FASE 1 de la rotación: se acepta el secreto de la base (tabla nexa_cron_secret, comprobado con nexa_cron_check, sin que la función lo lea)
+// y, mientras dure la transición, también el CRON_SECRET anterior del entorno. La fase 2 elimina esta segunda vía.
+async function autorizado(req: Request) {
+  const h = req.headers.get('x-cron-secret') || ''
+  if (!h || h.length > 200) return false
+  if (env('CRON_SECRET') && h === env('CRON_SECRET')) return true
+  try { const { data } = await db().rpc('nexa_cron_check', { p: h }); return data === true } catch (_) { return false }
+}
+
 Deno.serve(async (req) => {
   try {
-    if (!env('CRON_SECRET') || req.headers.get('x-cron-secret') !== env('CRON_SECRET')) return json({ ok: false, error: 'No autorizado' }, 401)
+    if (!(await autorizado(req))) return json({ ok: false, error: 'No autorizado' }, 401)
     const b = await req.json().catch(() => ({}))
     const slot = b.slot === 'pm' ? 'pm' : 'am'
     const mode = b.mode === 'unread' ? 'unread' : b.mode === 'badge' ? 'badge' : 'recordatorios'
     const dry = !!b.dry // prueba: muestra qué enviaría, sin enviar ni guardar nada
     const hoy = dry && /^\d{4}-\d{2}-\d{2}$/.test(b.today || '') ? b.today : hoyGT()
     const a = db()
-    // Egress (E1): los planes se leen por la vista ligera (sin miniaturas Base64); si la vista aún no existe se usa la tabla de siempre. El resultado es el mismo: aquí solo se usan fechas, estados y asignaciones.
-    const lite = await a.from('pa_docs_lite').select('data').eq('col', 'plans').limit(5000)
-    const { data: pl } = lite.error ? await a.from('pa_docs').select('data').eq('col', 'plans').limit(5000) : lite
-    // Medición real de lo que lee cada corrida (queda en la respuesta de pg_net y en los registros de la función): de dónde salen los planes y cuántos KB
-    const lectura = { fuente: lite.error ? 'tabla (RETROCESO: la vista no está disponible)' : 'vista ligera', planes: (pl || []).length, kb_planes: Math.round(JSON.stringify(pl || []).length / 1024) }
-    if (lite.error) console.error('recordatorios: la vista pa_docs_lite no respondió; se leyó la tabla pesada:', lite.error.message)
+    // Lectura mínima: PostgreSQL entrega solo los campos que usa esta función y solo los planes que pueden generar aviso o contador en este modo (nexa_recordatorios_planes).
+    // Retroceso 1: vista ligera (pa_docs_lite); retroceso 2: tabla completa. En los tres casos el resultado es el mismo: aquí solo se usan fechas, estados y asignaciones.
+    const modoLect = mode === 'badge' ? 'badge' : mode === 'unread' ? 'unread' : 'recordatorios'
+    let plans: any[] = [], fuente = ''
+    const forzarVista = dry && b.legacy === true // solo en pruebas: obliga a usar la vista ligera para comparar resultados con la lectura mínima
+    const mini = forzarVista ? { error: { message: 'forzado' }, data: null } as any : await a.rpc('nexa_recordatorios_planes', { p_modo: modoLect })
+    if (!mini.error && Array.isArray(mini.data)) { plans = mini.data; fuente = 'lectura minima' }
+    else {
+      console.error('recordatorios: la lectura mínima no respondió:', mini.error && mini.error.message)
+      const lite = await a.from('pa_docs_lite').select('data').eq('col', 'plans').limit(5000)
+      const { data: pl } = lite.error ? await a.from('pa_docs').select('data').eq('col', 'plans').limit(5000) : lite
+      plans = (pl || []).map((r: any) => r.data); fuente = lite.error ? 'tabla (RETROCESO: la vista no está disponible)' : 'vista ligera (retroceso)'
+    }
+    // Medición real de lo que lee cada corrida (queda en la respuesta de pg_net y en los registros de la función)
+    const lectura = { fuente, modo: modoLect, planes: plans.length, kb_planes: Math.round(JSON.stringify(plans).length / 1024) }
+    // Usuarios: solo los 4 campos usados (antes se bajaba el registro completo de cada usuario)
+    let users: any[] = []
+    const us = await a.from('pa_docs').select('id,role:data->>role,region:data->>region,branch:data->>branch,assigned:data->assigned').eq('col', 'users').limit(5000)
+    if (!us.error) users = (us.data || []).map((r: any) => ({ id: r.id, role: r.role, region: r.region, branch: r.branch, assigned: r.assigned }))
+    else {
+      const { data: full } = await a.from('pa_docs').select('id,data').eq('col', 'users').limit(5000)
+      users = (full || []).map((r: any) => ({ id: r.id, role: r.data && r.data.role, region: r.data && r.data.region, branch: r.data && r.data.branch, assigned: r.data && r.data.assigned }))
+    }
+    ;(lectura as any).usuarios = users.length
     console.log('recordatorios lectura', JSON.stringify(lectura))
-    const { data: us } = await a.from('pa_docs').select('id,data').eq('col', 'users').limit(5000)
-    const plans = (pl || []).map((r: any) => r.data)
-    const users = (us || []).map((r: any) => ({ id: r.id, role: r.data && r.data.role, region: r.data && r.data.region, branch: r.data && r.data.branch, assigned: r.data && r.data.assigned }))
-    const { data: cf } = await a.from('pa_docs').select('data').eq('col', 'meta').eq('id', 'cfg').maybeSingle()
-    const invMailOn = !(cf && cf.data && cf.data.invMail === false)
+    // Configuración y descargas: solo los modos que las usan (el recordatorio diario por fecha no las necesita)
+    let invMailOn = true
     let descargados = new Set<string>()
-    try {
-      const { data: dl } = await a.from('pa_descargas').select('plan_id,role,manual').or('role.eq.inventarios,manual.eq.true').limit(20000)
-      descargados = new Set((dl || []).map((r: any) => r.plan_id))
-    } catch (_) { /* si la tabla aún no existe, no hay avisos de descarga */ }
+    if (modoLect !== 'recordatorios') {
+      const { data: cf } = await a.from('pa_docs').select('data').eq('col', 'meta').eq('id', 'cfg').maybeSingle()
+      invMailOn = !(cf && cf.data && cf.data.invMail === false)
+      try {
+        const { data: dl } = await a.from('pa_descargas').select('plan_id,role,manual').or('role.eq.inventarios,manual.eq.true').limit(20000)
+        descargados = new Set((dl || []).map((r: any) => r.plan_id))
+      } catch (_) { /* si la tabla aún no existe, no hay avisos de descarga */ }
+    }
 
     if (mode === 'badge') {
       const lista = contarPendientes(plans, users, descargados, invMailOn)
