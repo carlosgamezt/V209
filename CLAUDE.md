@@ -22,6 +22,7 @@ Léelo completo al empezar. Este archivo manda sobre cualquier costumbre por omi
 - Pedir solo lo necesario; sincronización incremental (`updated_at`); contadores y agregados en PostgreSQL; sin `select *`; sin Base64 dentro de registros listados.
 - **El backend autoriza, el almacenamiento transfiere (§7 del estándar):** archivos pesados van entre el dispositivo y OneDrive/almacén con credenciales temporales de una sola ruta; alternativa segura por el camino anterior; piloto solo administrador; interruptor de apagado.
 - Seguridad en el servidor (RLS + `security_invoker`); autorización por recurso real, no solo «sesión iniciada».
+- **Estándar obligatorio para NEXA CORE, FEL, Hotel, POS y Colegios: `docs/egress/ESTANDAR-DESARROLLO-NEXA.md` §8** (autorización por recurso, activación por fases con registro, secretos, pruebas y publicación idénticas al candidato, no optimizar sin beneficio medido). Cierre técnico de la optimización: `docs/egress/CIERRE-TECNICO-OPTIMIZACION.md`.
 - Un proyecto de Supabase **por producto** (FEL, POS, Colegios, Hotel…); tablas/funciones con prefijo del producto (`pos_`, `col_`, `hot_`); `empresa_id` y membresías desde el inicio; sin tablas compartidas entre productos; sin compartir claves entre proyectos.
 
 ## 4. Cómo se prueba (en este orden; reutilizar lo ya válido, no repetir auditorías)

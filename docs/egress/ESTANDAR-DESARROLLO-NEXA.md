@@ -47,3 +47,24 @@ Apagada por omisión. Modo `true` (recomendado en equipos compartidos): se borra
 4. **Generación local:** ZIP y PDF se arman en el dispositivo (ZIP con los bytes ya descargados; PDF con impresión del navegador) cuando es eficiente y compatible con móvil; no se crean en servidor salvo que el dispositivo no pueda.
 5. **Medir de verdad:** cada optimización se prueba contando los bytes que realmente atraviesan Supabase (función y REST) frente a los que van al almacenamiento (`descarga_test.cjs`, `subida_test.cjs`); no basta con que cambie el mecanismo. Meta: 0 MB de archivos por Supabase con almacenamiento compatible.
 6. **Antes de activar en producción:** validar CORS real del almacenamiento (fragmento de `PLAN-V514-Y-VENTANA-E1.md` §1.1), que la función solo emita enlaces tras comprobar sesión/permiso, y revisar la CSP (`connect-src`) si pasa de «solo informe» a obligatoria.
+
+## 8. Buenas prácticas consolidadas — OBLIGATORIAS para NEXA CORE, FEL, Hotel, POS, Colegios y todo módulo nuevo
+Salen de la optimización de NEXA y de los hallazgos reales de producción. Un módulo no se publica si incumple alguna (excepciones solo por orden expresa del usuario y documentadas).
+**A. Seguridad y autorización**
+1. **Autorizar por recurso, no por sesión.** Toda acción sobre un archivo/registro verifica el permiso real de la persona sobre el recurso (mismas políticas RLS, funciones `SECURITY INVOKER`, sin atajos de rol en el navegador). «Tener sesión iniciada» no basta.
+2. **No confiar en nombres.** Un nombre de archivo no concede acceso: se resuelve al recurso que lo referencia y se comprueba contra ese recurso. Los nombres saneados (espacios, símbolos) deben reconocerse igual que las claves originales; se audita con los datos reales antes de obligar (hallazgo real: 3 planes con espacios en el número).
+3. **Secretos:** nunca en el repositorio, comandos, chat ni registros. Se generan en la base, se leen en cada ejecución y la función solo comprueba por RPC (`nexa_cron_check`); rotación en dos fases (doble verificación → solo el secreto nuevo).
+4. **Credenciales de almacenamiento:** el cliente solo recibe enlaces/sesiones temporales de UNA ruta, sin tokens; alternativa por la función; jamás enlaces permanentes.
+**B. Activación y reversión**
+5. **Todo cambio de comportamiento se activa por fases y se puede apagar:** modo `registro` (no bloquea, deja constancia) → `obligar`; piloto administrador por dispositivo → por rol → lista de personas → todos; interruptores independientes (`PHOTO_AUTH`, `odDirect`, `cache`, `cacheRoles`) y reversión probada.
+6. **Se obliga solo después de revisar los registros reales** (`*_deny`) y de auditar los datos existentes contra la regla nueva.
+7. **Migraciones:** aditivas, idempotentes, con respaldo y reversión (probada), y con comprobación contra TODOS los perfiles reales dentro de una transacción que se deshace sola si algo difiere. Resultado final como `select json` después de `commit`.
+**C. Pruebas y publicación**
+8. **Orden:** pruebas locales/simuladas (PostgreSQL con RLS réplica, funciones con Deno, interfaz con Playwright) → **una sola suite integral sobre el commit exacto que se publica** → vista previa con enlace de pruebas → publicación por pasos (primero backend y verificación con prueba de humo sin sesión, luego el cliente) → verificación de solo lectura en producción. Informes: **real vs simulado**.
+9. **El contenido publicado debe ser idéntico al candidato probado** (se comprueba con `git diff`), y nunca se publican flujos que den acceso nuevo a producción.
+10. **Funciones:** sin estado compartido entre peticiones simultáneas; cambios puntuales (parches) en lugar de reescribir filas completas; fallo cerrado en autorización; registros sin secretos ni direcciones de carga.
+**D. Consumo**
+11. **Archivos pesados** directo del almacenamiento (credencial temporal) y se mide cuántos bytes pasan por Supabase; contadores y agregados en PostgreSQL; tareas programadas con lectura mínima (solo campos y filas necesarias) y medición por corrida.
+12. **No se optimiza sin beneficio significativo medido:** se mide primero; si el ahorro no es relevante (p. ej. E2 no reduce Egress) se documenta y no se hace.
+**E. Organización**
+13. Un proyecto de Supabase y una carpeta por producto, tablas con prefijo (`fel_`, `pos_`, `hot_`, `col_`), `empresa_id` desde el inicio, sin compartir claves ni tablas; plantillas en `docs/plantillas/` y reglas en `CLAUDE.md`.
