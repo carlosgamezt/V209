@@ -74,6 +74,7 @@
       const T = this.t, trace = { table: T }; const rows = tableRows(T); if (!rows) return { data: null, error: { message: 'relation "' + T + '" does not exist' } };
       const nowIso = new Date().toISOString();
       if (this.op === 'select') {
+        if ((P.caps || {}).rechazaAlias && /\w+:\w+->\w+/.test(this.cols || '')) return { data: null, error: { message: 'alias JSON no soportado' } };
         let r = rows.filter(x => visible(T, x) && this.f.every(f => f(x)));
         this.ord.forEach(() => {}); for (let i = this.ord.length - 1; i >= 0; i--) { const [c, asc] = this.ord[i]; r = r.slice().sort((a, b) => (asc ? 1 : -1) * cmp(a[c], b[c])) }
         const total = r.length; if (this.rng) r = r.slice(this.rng[0], this.rng[1] + 1); else if (this.lim != null) r = r.slice(0, this.lim);
