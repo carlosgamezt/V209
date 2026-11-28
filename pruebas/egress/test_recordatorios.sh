@@ -2,7 +2,7 @@
 # Prueba LOCAL de: (1) la lectura mínima de las tareas programadas (equivalencia con los planes completos en los 3 modos), (2) la rotación del secreto (fase 1 y fase 2 sobre un pg_cron simulado).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-PGBIN=${PGBIN:-$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)}; D=/tmp/eg-rec-pg-$$; PORT=$((57300 + RANDOM % 150)); A=supabase/auto; T=/tmp/rec_$$; mkdir -p $T
+PGBIN=${PGBIN:-$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)}; D=/tmp/eg-rec-pg-$$; PORT=$((57300 + RANDOM % 150)); A=supabase/auto; B=supabase/propuestas/egress; T=/tmp/rec_$$; mkdir -p $T
 id pgtest >/dev/null 2>&1 || useradd -m pgtest
 su pgtest -s /bin/bash -c "mkdir -p '$D' && '$PGBIN/initdb' -D '$D' -A trust -U postgres >/dev/null && '$PGBIN/pg_ctl' -D '$D' -o '-p $PORT -k /tmp -c listen_addresses=' -w -l '$D/log' start >/dev/null"
 trap 'su pgtest -s /bin/bash -c "'"$PGBIN"'/pg_ctl -D '"$D"' -m immediate stop >/dev/null" || true; rm -rf "$D" $T' EXIT
@@ -76,12 +76,12 @@ S1=$(Q -At -c "select valor from public.nexa_cron_secret"); Q -At -f $A/cron_sec
 [ "$(Q -At -c "select public.nexa_cron_check('$S1')")" = t ] && [ "$(Q -At -c "select public.nexa_cron_check('VIEJO-SECRETO-DE-PRUEBA')")" = f ] && ok "el secreto nuevo se acepta y el viejo se rechaza" || fallo "comprobación del secreto"
 Q -c "set role anon; select count(*) from public.nexa_cron_secret" >/dev/null 2>&1 && fallo "anon leyó el secreto" || ok "anon no puede leer la tabla del secreto"
 # con 3 tareas (no 4) la fase 2 debe DESHACERSE
-if Q -f $A/cron_secret_fase2.sql >/dev/null 2>&1; then fallo "fase 2 se aplicó con 3 tareas"; else ok "fase 2 se detiene si no hay exactamente 4 tareas"; fi
+if Q -f $B/cron_secret_fase2.sql >/dev/null 2>&1; then fallo "fase 2 se aplicó con 3 tareas"; else ok "fase 2 se detiene si no hay exactamente 4 tareas"; fi
 [ "$(Q -At -c "select count(*) from cron.job where command like '%VIEJO-SECRETO%'")" = 3 ] && ok "y no cambió ninguna tarea" || fallo "se modificó una tarea pese al error"
 mk nexa-badge '*/15 12-23,0-1 * * *' '{"mode":"badge"}'
 Q -c "insert into cron.job (jobname, schedule, command) values ('otra', '0 0 * * *', 'select 1')"
 SCH=$(Q -At -c "select string_agg(jobid || schedule, '|' order by jobid) from cron.job")
-Q -At -f $A/cron_secret_fase2.sql | tail -1 > $T/f2.json
+Q -At -f $B/cron_secret_fase2.sql | tail -1 > $T/f2.json
 python3 - $T/f2.json <<'PY' && ok "fase 2: 4 tareas leen el secreto de la base, ya sin secreto escrito, con espera de 60 s y el mismo cuerpo" || fallo "fase 2"
 import json, sys; v = json.loads(open(sys.argv[1]).read())['tareas']
 assert len(v) == 4 and all(not t['secreto_escrito_en_el_comando'] and t['lee_secreto_de_la_base'] and t['espera_60s'] and t['activa'] for t in v), v
@@ -90,7 +90,7 @@ PY
 [ "$(Q -At -c "select string_agg(jobid || schedule, '|' order by jobid) from cron.job")" = "$SCH" ] && ok "los horarios no cambiaron" || fallo "cambió un horario"
 [ "$(Q -At -c "select command from cron.job where jobname='otra'")" = "select 1" ] && ok "las tareas ajenas no se tocaron" || fallo "tocó otra tarea"
 [ "$(Q -At -c "select count(*) from cron.job where command like '%VIEJO-SECRETO%'")" = 0 ] && ok "el secreto anterior ya no está en ningún comando" || fallo "queda el secreto viejo"
-Q -At -f $A/cron_secret_fase2.sql >/dev/null && [ "$(Q -At -c "select count(*) from cron.job where command like '%nexa_cron_secret%'")" = 4 ] && ok "la fase 2 es idempotente" || fallo "fase 2 no idempotente"
+Q -At -f $B/cron_secret_fase2.sql >/dev/null && [ "$(Q -At -c "select count(*) from cron.job where command like '%nexa_cron_secret%'")" = 4 ] && ok "la fase 2 es idempotente" || fallo "fase 2 no idempotente"
 # el comando generado es SQL válido y entrega el secreto correcto como cabecera
 Q -c "create schema net; create function net.http_post(url text, headers jsonb, body jsonb, timeout_milliseconds int) returns bigint language plpgsql as \$\$ begin if headers->>'x-cron-secret' is distinct from (select valor from public.nexa_cron_secret) or timeout_milliseconds <> 60000 then raise exception 'cabecera incorrecta'; end if; return 1; end \$\$;"
 for id in $(Q -At -c "select jobid from cron.job where command like '%nexa_cron_secret%'"); do Q -At -c "$(Q -At -c "select command from cron.job where jobid=$id")" >/dev/null || fallo "el comando de la tarea $id no ejecuta"; done; ok "los 4 comandos nuevos se ejecutan y envían el secreto de la base con espera de 60 s"
